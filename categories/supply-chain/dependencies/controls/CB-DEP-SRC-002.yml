@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEP-SRC-002
+title: Bind internal package namespaces to the private registry
+finding:
+  title: Internal package names can be resolved from a public registry
+  description: An attacker can publish a public package with the name of an internal one. The package manager may install the attacker's package instead (dependency confusion).
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: partial
+tags: [dependency-confusion, namespace]
+description: |
+  Internal packages use a dedicated namespace, scope or prefix. The package manager is configured so that this namespace is only ever resolved from the private registry, never from a public one, and the registry proxy does not fall back to public sources for it.
+rationale: |
+  When a package manager searches several registries for the same name, it may pick the public one, often because it has a higher version number. This lets anyone on the internet inject code into internal builds by guessing or leaking an internal package name.
+impact: |
+  Existing internal packages without a namespace must be renamed or explicitly mapped, which touches every project that uses them.
+notes: |
+  Ecosystems differ: some have native scopes or namespaces, others only allow one index or need explicit per-package source mapping. Where no reliable mapping exists, use a single private registry that serves internal packages and proxies public ones without name overlap.
+audit:
+  manual: |
+    1. List internal packages and the namespace or prefix they use.
+    2. For each ecosystem, check that this namespace is mapped to the private registry only.
+    3. Check the registry proxy: a request for an internal name must never be forwarded upstream.
+remediation:
+  manual: |
+    1. Choose a namespace or prefix for internal packages and move them under it.
+    2. Map the namespace to the private registry in versioned configuration.
+    3. Disable upstream fallback for that namespace in the registry proxy.
+references:
+  - title: Secure Supply Chain Consumption Framework (S2C2F)
+    url: https://github.com/ossf/s2c2f
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-10-16
+  - title: Package Manager Best Practices
+    url: https://github.com/ossf/package-manager-best-practices
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-10-16
+mappings:
+  - framework: nist-800-53r5
+    framework_version: 5.1.1
+    id: SR-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: 5.1.1
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.001
+  - framework: cwe
+    id: CWE-427
+related_controls:
+  - id: CB-DEP-SRC-001
+    type: related
+  - id: CB-DEP-SRC-003
+    type: related
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 1.0.0
+created: 2026-10-16
+updated: 2026-10-16
