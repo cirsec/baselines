@@ -54,6 +54,8 @@ def test_current_repo_is_valid(repo):
         ("controls/CB-BUF-ABUSE-001.yml", "deprecated_in: 1.1.0", "deprecated_in: 9.0.0", r"after the standard version"),
         ("controls/CB-BUF-HYG-002.yml", "introduced_in: 1.1.0", "introduced_in: 2.0.0", r"after the standard version"),
         ("controls/CB-BUF-HYG-001.yml", "created: 2026-10-01", "created: 2026-12-01", r"updated is earlier than created"),
+        # people
+        ("controls/CB-BUF-HYG-001.yml", "  - name: Chef Demo\n", "  - name: Ali\n    github: sn0walice\n", r"is also an author"),
         # schema
         ("controls/CB-BUF-HYG-001.yml", "assessment: automated", "assessment: vibes", r"schema: assessment"),
         ("controls/CB-BUF-HYG-001.yml", "tags: [temperature", "flavour: umami\ntags: [temperature", r"schema: .*flavour"),

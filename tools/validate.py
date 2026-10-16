@@ -388,6 +388,15 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                 if pattern and not re.match(pattern, str(m.get("id", ""))):
                     report.error(f, f"{where}: id {m.get('id')!r} does not match {fw['key']} pattern {pattern}")
 
+        # People: nobody reviews their own control
+        def _who(p):
+            return (p.get("github") or p.get("name", "")).lower()
+
+        authors = {_who(p) for p in d.get("authors", []) or []}
+        for p in d.get("reviewers", []) or []:
+            if _who(p) in authors:
+                report.error(f, f"reviewer {p.get('name')!r} is also an author")
+
         # Dates
         created, updated = d.get("created", ""), d.get("updated", "")
         if created and updated and updated < created:
