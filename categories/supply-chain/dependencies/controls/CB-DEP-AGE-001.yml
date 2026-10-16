@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEP-AGE-001
+title: Wait a minimum age before installing a new package version
+finding:
+  title: Package versions can be installed minutes after they are published
+  description: A compromised or malicious release is installed before the community or registry has had time to detect and remove it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: partial
+tags: [release-age, quarantine, malware]
+description: |
+  A package version can only be resolved once it has been public for at least {{ min_release_age_hours }} hours. The rule applies to direct and transitive dependencies, on workstations, in pipelines and in automated update proposals. Older versions stay selectable.
+rationale: |
+  Most malicious releases, including those pushed from hijacked maintainer accounts, are detected and removed within hours to a few days. A short quarantine turns most of these attacks into a non-event for the organization, at almost no cost.
+impact: |
+  New features and fixes arrive a few days later. Urgent security fixes need the exception process in CB-DEP-AGE-003. Some package managers resolve to an older version or fail when only a too-recent version satisfies the constraints.
+notes: |
+  Enforce the rule where it cannot be bypassed: in the registry proxy if possible, otherwise in the package manager configuration. A rule that only applies to update proposals does not protect against a developer adding a fresh release by hand, nor against transitive dependencies.
+setting:
+  location: Registry proxy policy, or package manager configuration (see CB-DEP-SRC-006)
+  default_value: No minimum age
+  recommended_value: At least {{ min_release_age_hours }} hours since publication
+parameters:
+  - name: min_release_age_hours
+    type: integer
+    description: Minimum time between publication of a version and its first install.
+    unit: hours
+    default: 48
+    profile_defaults:
+      hardened: 72
+    minimum: 24
+    maximum: 720
+audit:
+  manual: |
+    1. Find where the release-age rule is enforced (proxy, package manager, both).
+    2. Check that the configured age is at least {{ min_release_age_hours }} hours and that it covers transitive dependencies.
+    3. Try to install a version published less than {{ min_release_age_hours }} hours ago: it must be refused.
+remediation:
+  manual: |
+    1. Configure a minimum release age of {{ min_release_age_hours }} hours in the registry proxy, or in committed package manager configuration for each ecosystem.
+    2. Apply the same delay to automated update proposals.
+references:
+  - title: Secure Supply Chain Consumption Framework (S2C2F)
+    url: https://github.com/ossf/s2c2f
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-10-16
+  - title: Package Manager Best Practices
+    url: https://github.com/ossf/package-manager-best-practices
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-10-16
+mappings:
+  - framework: nist-800-53r5
+    framework_version: 5.1.1
+    id: SR-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: 5.1.1
+    id: SR-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.001
+  - framework: cwe
+    id: CWE-1357
+related_controls:
+  - id: CB-DEP-AGE-002
+    type: related
+  - id: CB-DEP-AGE-003
+    type: related
+  - id: CB-DEP-UPD-001
+    type: related
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 1.0.0
+created: 2026-10-16
+updated: 2026-10-16
