@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baselines.cirsec.org/schema/standard.schema.json",
+  "title": "CIRSEC Baselines - standard (_standard.yml)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": { "^x-": {} },
+  "required": ["id", "code", "title", "description", "status", "version", "applies_to", "profiles", "domains", "maintainers", "primary_sources"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "Must match the standard folder name. Used in URLs. Never changes." },
+    "code": { "type": "string", "pattern": "^[A-Z0-9]+$", "description": "Uppercase code used in control IDs (CB-<code>-...). Unique in the repo. Never changes." },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["draft", "active", "deprecated"] },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$",
+      "description": "SemVer of the next or current release. Releases are git tags <id>/v<version>."
+    },
+    "released": { "type": "string", "format": "date", "description": "Date of the release matching version, if released." },
+    "applies_to": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Products covered. Controls may narrow versions with applicability.versions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product"],
+        "properties": {
+          "product": { "type": "string" },
+          "vendor": { "type": "string" },
+          "versions": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "Supported versions. Omit for versionless products (SaaS)." }
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Profiles a control can belong to (e.g. baseline, hardened). A profile may extend another one.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "title", "description"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "extends": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "Key of a profile whose controls are all included." }
+        }
+      }
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Allowed DOMAIN segments for control IDs of this standard.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "title"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[A-Z0-9]+$" },
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "maintainers": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/person" } },
+    "primary_sources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Vendor or public-domain sources the standard is written from. Never a proprietary benchmark.",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "i18n": {
+      "type": "object",
+      "description": "Translations of the standard metadata, keyed by locale. Control translations live in i18n/<locale>/<ID>.yml.",
+      "propertyNames": { "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "domains": { "type": "object", "propertyNames": { "pattern": "^[A-Z0-9]+$" }, "additionalProperties": { "type": "string" } },
+          "profiles": {
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]*$" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "title": { "type": "string" }, "description": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "person": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "github": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "affiliation": { "type": "string" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "url"],
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "publisher": { "type": "string" },
+        "kind": { "enum": ["vendor-doc", "standard", "rfc", "guide", "paper", "tool", "other"] }
+      }
+    }
+  }
+}

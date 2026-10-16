@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baselines.cirsec.org/schema/baselines.schema.json",
+  "title": "CIRSEC Baselines - root metadata (baselines.yml)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": { "^x-": {} },
+  "required": ["schema_version", "project", "licenses", "locales", "id_format", "engines", "frameworks"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "repository"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri" },
+        "repository": { "type": "string", "format": "uri" },
+        "contact": { "type": "string", "format": "email" }
+      }
+    },
+    "licenses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "tooling"],
+      "properties": {
+        "content": { "type": "string", "description": "SPDX identifier for control text." },
+        "tooling": { "type": "string", "description": "SPDX identifier for schemas and code." }
+      }
+    },
+    "locales": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "available"],
+      "properties": {
+        "default": { "$ref": "#/$defs/locale", "description": "Locale of the source control files." },
+        "available": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/locale" } }
+      }
+    },
+    "id_format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern", "template"],
+      "properties": {
+        "pattern": { "type": "string", "format": "regex" },
+        "template": { "type": "string" },
+        "example": { "type": "string" }
+      }
+    },
+    "engines": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Check and remediation engines allowed in controls (audit.checks[].engine, remediation.scripts[].engine).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": { "^x-": {} },
+        "required": ["key", "title", "description"],
+        "properties": {
+          "key": { "$ref": "#/$defs/slug" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "url": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "External references usable in controls: mappings (kind control-framework) and threats (other kinds).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": { "^x-": {} },
+        "required": ["key", "kind", "name", "publisher", "reference_policy"],
+        "properties": {
+          "key": { "$ref": "#/$defs/slug" },
+          "kind": { "enum": ["control-framework", "threat-taxonomy", "weakness-taxonomy", "vulnerability-database"] },
+          "name": { "type": "string" },
+          "publisher": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "id_pattern": { "type": "string", "format": "regex", "description": "Regex every referenced identifier must match." },
+          "reference_policy": {
+            "enum": ["id-only", "id-title"],
+            "description": "id-only: only identifiers may be written in this repository. id-title: identifiers and official titles are allowed."
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+  }
+}

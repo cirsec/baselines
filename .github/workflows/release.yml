@@ -1,0 +1,86 @@
+# Manual release of one standard.
+#
+# Before running it, merge a pull request that sets the new version
+# (and optionally "released") in categories/<category>/<standard>/_standard.yml.
+# The workflow refuses to run if the version does not match, if the tag already
+# exists, or if validation fails. It creates the tag <standard>/v<version> on the
+# current commit and a GitHub release with the zip, its checksum and generated notes.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      standard:
+        description: "Standard id (folder name), e.g. m365"
+        required: true
+        type: string
+      version:
+        description: "Version to release, must equal _standard.yml, e.g. 1.0.0"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.standard }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Releases only from the default branch.
+    if: github.ref_name == github.event.repository.default_branch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # previous tags are needed for the changelog
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements*.txt
+
+      - name: Install tooling
+        run: pip install -r tools/requirements.txt
+
+      - name: Validate content
+        run: python tools/validate.py
+
+      # Inputs are passed through env, never interpolated in the script (no injection).
+      - name: Build release
+        id: build
+        env:
+          STANDARD: ${{ inputs.standard }}
+          VERSION: ${{ inputs.version }}
+        run: python tools/build.py --standard "$STANDARD" --version "$VERSION" --out dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.build.outputs.tag }}
+          TITLE: ${{ steps.build.outputs.title }}
+          ZIP: ${{ steps.build.outputs.zip }}
+          SHA: ${{ steps.build.outputs.sha256 }}
+          NOTES: ${{ steps.build.outputs.notes }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          args=()
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          gh release create "$TAG" "$ZIP" "$SHA" \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes-file "$NOTES" \
+            "${args[@]}"
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.build.outputs.tag }}
+          NOTES: ${{ steps.build.outputs.notes }}
+        run: cat "$NOTES" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+#
+# DEMO CONTROL 5 - the REPLACEMENT of CB-BUF-ABUSE-001 ("supersedes"),
+# a "conflicts" relation, and x- extension fields.
+
+id: CB-BUF-ABUSE-002
+title: Limit plate size to reduce food waste
+finding:
+  title: Plates are large enough to encourage hoarding
+status: active
+profiles: [baseline]
+risk:
+  severity: info             # informational: no security impact, just good practice
+assessment: automated
+
+description: |
+  Plates offered at the buffet have a diameter of at most {{ max_plate_cm }} cm.
+  Customers come back more often but take less each time.
+rationale: |
+  Large plates encourage customers to pile up food they will not eat.
+  Smaller plates cut waste without limiting how much people can eat.
+impact: |
+  More trips to the buffet, so more traffic around the dishes.
+
+parameters:
+  - name: max_plate_cm
+    type: number             # number = decimals allowed
+    description: Maximum plate diameter.
+    unit: cm
+    default: 24
+    profile_defaults:
+      hardened: 21.5
+    minimum: 18
+    maximum: 30
+
+audit:
+  manual: |
+    Measure a plate from the stack at the start of the buffet.
+  checks:
+    - id: plate-diameter
+      engine: demo-sensor
+      spec:
+        sensor: plate_stack.top.diameter_cm
+        operator: "<="
+        value: "{{ max_plate_cm }}"
+
+remediation:
+  manual: |
+    Replace large plates with plates of at most {{ max_plate_cm }} cm.
+
+references:
+  - title: "[DEMO] Imaginary Food Code, chapter 9: waste"
+    url: https://example.org/food-code/chapter-9
+    kind: standard
+    accessed: 2026-10-10
+
+threats:
+  - framework: demo-buffet-threats
+    id: BT-007
+    note: Plate hoarding.
+
+related_controls:
+  - id: CB-BUF-GUARD-001
+    type: conflicts          # more trips = more people leaning over the dishes
+    note: Smaller plates mean more trips, so sneeze guards matter even more.
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+
+supersedes: [CB-BUF-ABUSE-001]   # the control this one replaces
+introduced_in: 1.1.0
+created: 2026-10-10
+updated: 2026-10-10
+
+# x- fields: tool-specific data, ignored by the official tooling.
+# Lets a tool (here mlab) store its own info without changing the schema.
+x-mlab:
+  rule_id: demo-plate-size
+  dashboard_widget: gauge

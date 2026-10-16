@@ -1,0 +1,49 @@
+# Runs every check on each push and pull request:
+#   1. content validation (schemas + cross-file rules)
+#   2. tooling tests
+#   3. build smoke test of every standard (archives uploaded as an artifact)
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # tags are needed for release notes
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements*.txt
+
+      - name: Install tooling
+        run: pip install -r tools/requirements-dev.txt
+
+      - name: Validate content
+        run: python tools/validate.py
+
+      - name: Test tooling
+        run: python -m pytest -q tools/tests
+
+      - name: Build smoke test
+        run: python tools/build.py --all --allow-demo --allow-empty --no-tag-check --out dist
+
+      - name: Upload preview bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-bundles
+          path: dist/
+          retention-days: 7

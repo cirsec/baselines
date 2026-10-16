@@ -1,1 +1,445 @@
-# baselines
+# CIRSEC Baselines
+
+Open, free and versioned security configuration baselines, maintained by the CIRSEC community.
+
+Published at **https://baselines.cirsec.org**.
+
+CIRSEC Baselines describe how to securely configure systems and services (cloud tenants, operating systems, network devices, software). Each recommendation, called a **control**, is written from scratch by domain experts from primary sources (vendor documentation, RFCs, public-domain guides), and released under a permissive license so anyone can use it, including in commercial products.
+
+When a control covers the same ground as another framework (CIS Benchmarks, ISO/IEC 27001, NIST SP 800-53, CISA SCuBA, ANSSI...), it links to it through a typed **mapping**. We reference other frameworks, we never copy them.
+
+**Contents**
+
+- [Principles](#principles)
+- [Repository layout](#repository-layout)
+- [Control identifiers](#control-identifiers)
+- [Standards, profiles and domains](#standards-profiles-and-domains)
+- [Control format](#control-format)
+- [Parameters and customization](#parameters-and-customization)
+- [Mappings and threats](#mappings-and-threats)
+- [Translations](#translations)
+- [Lifecycle and versioning](#lifecycle-and-versioning)
+- [Extensions](#extensions)
+- [Validation rules](#validation-rules)
+- [Editor support](#editor-support)
+- [Tooling, CI and releases](#tooling-ci-and-releases)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+---
+
+## Principles
+
+1. **Clean room.** Controls are written from primary sources only. Contributors must not have a proprietary benchmark open while writing a control. Mappings to other frameworks are added afterwards, in a separate pass, ideally by another contributor.
+2. **Provenance.** Every control lists the sources it was written from (`references`). Every commit is signed off (DCO).
+3. **Stable identifiers.** A control ID is never renumbered and never reused.
+4. **Reference, don't reproduce.** For frameworks with restrictive licenses, only identifiers appear in this repository (`reference_policy` in `baselines.yml`).
+5. **Customizable.** Tunable values are parameters with per-profile defaults, so organizations adapt a baseline without forking it.
+6. **Stable format.** The schemas are designed to be complete from day one. Growth happens through content, not format changes. Tool-specific data goes in `x-` fields.
+7. **Open by default.** Control content is CC BY 4.0, tooling is Apache 2.0.
+
+---
+
+## Repository layout
+
+```
+baselines/
+├── baselines.yml                    # global settings: licenses, locales, ID format, engines, frameworks
+├── LICENSE                          # Apache 2.0 (tooling)
+├── LICENSE-CONTENT                  # CC BY 4.0 (control content)
+├── schema/                          # JSON Schemas (draft 2020-12)
+│   ├── baselines.schema.json
+│   ├── category.schema.json
+│   ├── standard.schema.json
+│   ├── control.schema.json
+│   └── control-i18n.schema.json
+├── templates/                       # copy-paste starting points, valid against the schemas
+│   ├── control.yml
+│   └── control-i18n.yml
+├── tools/                           # validator, release builder, tests
+│   ├── validate.py
+│   ├── build.py
+│   ├── common.py
+│   ├── requirements.txt
+│   └── tests/
+├── .github/workflows/
+│   ├── ci.yml                       # validate + test + build smoke test, on every push and PR
+│   └── release.yml                  # manual release of one standard (workflow_dispatch)
+└── categories/
+    ├── cloud/                       # category
+    │   ├── _category.yml
+    │   └── m365/                    # standard
+    │       ├── _standard.yml
+    │       ├── controls/            # one file per control, in the default locale (en)
+    │       │   └── CB-M365-AUTH-001.yml
+    │       └── i18n/
+    │           └── fr/              # translations, one file per control
+    │               └── CB-M365-AUTH-001.yml
+    └── os/
+        ├── _category.yml
+        └── debian/
+            ├── _standard.yml
+            ├── controls/
+            └── i18n/fr/
+```
+
+| Level       | Location                                  | File             | Schema                     |
+|-------------|-------------------------------------------|------------------|----------------------------|
+| Root        | `/`                                       | `baselines.yml`  | `baselines.schema.json`    |
+| Category    | `categories/<category>/`                  | `_category.yml`  | `category.schema.json`     |
+| Standard    | `categories/<category>/<standard>/`       | `_standard.yml`  | `standard.schema.json`     |
+| Control     | `.../<standard>/controls/`                | `<ID>.yml`       | `control.schema.json`      |
+| Translation | `.../<standard>/i18n/<locale>/`           | `<ID>.yml`       | `control-i18n.schema.json` |
+
+### Design decisions
+
+- **The folder tree is the source of truth.** No hand-maintained index lists categories, standards or controls. Indexes and the website are generated from the tree, so they cannot drift.
+- **One file per control.** A standard can hold hundreds of controls. One file each keeps reviews readable, avoids merge conflicts between experts working in parallel, and gives a clean `git log` / `git blame` per control, which is what proves provenance.
+- **One standard per product, not per product version.** `debian` covers Debian 12 and 13. Version differences are handled per control (`applicability.versions`, `audit.checks[].versions`). This avoids duplicating hundreds of controls at each release. A new major product version is just a new entry in `applies_to`.
+- **`_` prefix for metadata files.** They sort first and are clearly distinct from content.
+- **Small metadata is translated inline, controls in separate files.** Categories and standards carry an `i18n` block. Controls are large and translated by different people, so each translation is its own file with its own history.
+
+### Demo category
+
+`categories/demo/buffet` is a deliberately silly standard (all-you-can-eat buffet security) that uses every field of the format, with comments explaining each one. Read it before writing your first control. It relies on demo-only entries in `baselines.yml` (`demo-sensor` engine, `demo-food-code` and `demo-buffet-threats` frameworks) and is excluded from releases and from the public site.
+
+| Control            | Shows                                                                        |
+|--------------------|------------------------------------------------------------------------------|
+| `CB-BUF-HYG-001`   | Full example: automated checks per version, parameters with profile defaults, setting, mappings, threats, verification, French translation |
+| `CB-BUF-GUARD-001` | Manual control, `applicability` block, `requires` relation                   |
+| `CB-BUF-HYG-002`   | Partial assessment, enum and boolean parameters, `logic: any`, hardened-only profile, `review` status |
+| `CB-BUF-ABUSE-001` | Deprecated control with its replacement                                      |
+| `CB-BUF-ABUSE-002` | Replacement (`supersedes`), `conflicts` relation, `x-` extension fields      |
+
+### Naming rules
+
+- Category and standard folder names are lowercase slugs (`cloud`, `m365`, `debian`) equal to the `id` field of their metadata file. They appear in URLs and never change once published.
+- A control file is named exactly `<ID>.yml`, in `controls/` and in each `i18n/<locale>/`.
+
+---
+
+## Control identifiers
+
+```
+CB-<STANDARD>-<DOMAIN>-<NNN>
+CB-M365-AUTH-001
+```
+
+| Segment    | Meaning                                                  | Defined in                  |
+|------------|----------------------------------------------------------|-----------------------------|
+| `CB`       | CIRSEC Baselines                                         | fixed                       |
+| `STANDARD` | Standard `code` (uppercase, unique, never changes)       | `_standard.yml` → `code`    |
+| `DOMAIN`   | Functional area at creation time (AUTH, NET, MAIL...)    | `_standard.yml` → `domains` |
+| `NNN`      | Sequential number inside the domain, 3 digits            | assigned on creation        |
+
+The domain is frozen in the ID. A control is never renumbered, never moved to another domain, and its number is never reused. If a control must change meaning or domain, it is deprecated and replaced by a new one (see [Lifecycle](#lifecycle-and-versioning)).
+
+---
+
+## Standards, profiles and domains
+
+A standard (`_standard.yml`) declares:
+
+| Field             | Purpose                                                                           |
+|-------------------|-----------------------------------------------------------------------------------|
+| `id`, `code`      | URL slug and ID code. Both permanent.                                             |
+| `status`          | `draft`, `active` or `deprecated`.                                                |
+| `version`         | SemVer of the current or upcoming release. `released` holds its date.             |
+| `applies_to`      | Products, vendors and supported versions.                                         |
+| `profiles`        | Named sets of controls (e.g. `baseline`, `hardened`). `extends` chains them.      |
+| `domains`         | Allowed DOMAIN codes for control IDs.                                             |
+| `maintainers`     | People responsible for the standard.                                              |
+| `primary_sources` | Sources the standard is written from. Never a proprietary benchmark.              |
+| `i18n`            | Translated title, description, domain and profile names.                          |
+
+**Profiles** replace the usual "Level 1 / Level 2". A control lists the profiles it belongs to. With `hardened: extends: baseline`, applying `hardened` applies every `baseline` control too, plus the `hardened` ones, and uses `hardened` parameter defaults. Standards can define other profiles (e.g. `workstation`, `small-business`) without any format change.
+
+---
+
+## Control format
+
+The full contract is [`schema/control.schema.json`](schema/control.schema.json). The annotated starting point is [`templates/control.yml`](templates/control.yml).
+
+| Group       | Field                  | Req. | Purpose |
+|-------------|------------------------|:----:|---------|
+| Identity    | `id`                   | yes  | Permanent ID, equal to the file name. |
+|             | `title`                | yes  | The recommendation, as the desired state, in our own words. |
+|             | `finding`              | yes  | How a failure appears in a report: `title` (the problem) and optional `description`. |
+|             | `status`               | yes  | `draft`, `review`, `active`, `deprecated`. |
+|             | `profiles`             | yes  | Profile keys from the standard. |
+|             | `risk`                 | yes  | `severity` (`info` to `critical`) and optional `score` (0-10). |
+|             | `assessment`           | yes  | `automated`, `partial` or `manual`. `automated` requires at least one check. |
+|             | `tags`                 |      | Free lowercase slugs. |
+| Scope       | `applicability`        |      | `versions`, `requires` (licenses, editions, features), `conditions`. Omitted = always applies. |
+| Content     | `description`          | yes  | What the setting or practice is. Markdown. |
+|             | `rationale`            | yes  | Why it matters. Markdown. |
+|             | `impact`               | yes  | Side effects of applying it. "None known." if none. |
+|             | `notes`                |      | Edge cases, exceptions, vendor quirks. |
+|             | `setting`              |      | `location`, `default_value`, `recommended_value` for single-setting controls. |
+|             | `parameters`           |      | Tunable values. See below. |
+| Audit       | `audit.manual`         | yes  | Human check procedure. |
+|             | `audit.logic`          |      | `all` (default) or `any` of the checks must pass. |
+|             | `audit.checks[]`       |      | Machine checks: `id`, `engine`, `description`, `versions`, engine-specific `spec`. |
+| Remediation | `remediation.manual`   | yes  | Human fix procedure. |
+|             | `remediation.requires_restart`, `rollback` | | Operational info. |
+|             | `remediation.scripts[]`|      | `id`, `engine`, `description`, `versions`, `content`. |
+| Links       | `references[]`         | yes  | Primary sources used, with `kind` and `accessed` date. |
+|             | `mappings[]`           |      | Links to control frameworks. |
+|             | `threats[]`            |      | ATT&CK techniques, CWE, CVE mitigated. |
+|             | `related_controls[]`   |      | `requires`, `related` or `conflicts` with other CIRSEC controls. |
+| People      | `authors`              | yes  | Writers. |
+|             | `reviewers`            |      | Experts who reviewed. |
+|             | `verified[]`           |      | Tests against real environments: `date`, `by`, `environment`, `notes`. |
+| Lifecycle   | `introduced_in`        | yes  | Standard version where it first appeared. |
+|             | `created`, `updated`   | yes  | Dates. `updated` is bumped on every content change. |
+|             | `deprecated_in`, `deprecation_reason`, `superseded_by` | | Required when `status: deprecated`. |
+|             | `supersedes`           |      | On the replacing control. |
+
+### Title vs finding
+
+`title` is the rule, `finding.title` is what a report shows when the check fails:
+
+```yaml
+title: Block user consent to third-party applications
+finding:
+  title: Users can grant third-party apps access to company data
+```
+
+### Checks and engines
+
+`engine` must be a key declared under `engines` in `baselines.yml` (`graph-api`, `exchange-powershell`, `powershell`, `shell`, `osquery`, `windows-registry`, `file-content`). Each engine defines its own `spec` payload. Adding an engine is a change to `baselines.yml`, not to the schemas.
+
+Scanners (mlab.sh, CI jobs, custom tools) report results per `audit.checks[].id`, so a multi-check control can say exactly which part failed.
+
+---
+
+## Parameters and customization
+
+Values an organization may want to tune are declared as parameters, and referenced as `{{ name }}` in `setting.recommended_value`, `audit.checks[].spec` and `remediation.scripts[].content`:
+
+```yaml
+setting:
+  recommended_value: "At most {{ max_days }} days"
+parameters:
+  - name: max_days
+    type: integer          # string | integer | number | boolean | enum | list
+    description: Maximum allowed lifetime.
+    unit: days
+    default: 180           # used by every profile without its own value
+    profile_defaults:
+      hardened: 90
+    minimum: 1
+    maximum: 365
+```
+
+Resolution order for a value: user override, then `profile_defaults[<profile>]`, then `default`. `minimum`, `maximum` and `allowed` bound what users may set. `allowed` is required for `type: enum`.
+
+---
+
+## Mappings and threats
+
+### Mappings
+
+A mapping says how **our** control relates to a control in another framework. Only frameworks of `kind: control-framework` can be used.
+
+```yaml
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "x.y.z"
+    relation: partial
+    note: Ours also covers service principals.
+```
+
+| `relation`   | Meaning                                                  |
+|--------------|----------------------------------------------------------|
+| `equivalent` | Same intent and same expected configuration              |
+| `stricter`   | Ours requires more than theirs                           |
+| `looser`     | Ours requires less than theirs                           |
+| `partial`    | Overlap, each covers things the other does not           |
+| `related`    | Same topic, different approach                           |
+
+### Threats
+
+```yaml
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: cwe
+    id: CWE-284
+```
+
+Only frameworks of kind `threat-taxonomy`, `weakness-taxonomy` or `vulnerability-database` can be used here.
+
+### Framework registry
+
+Every framework is declared once in `baselines.yml` with:
+
+- `kind`: which field may use it.
+- `id_pattern`: regex every referenced identifier must match (catches typos).
+- `reference_policy`:
+  - `id-only`: only identifiers may appear in this repository. No titles, no excerpts. Applies to CIS Benchmarks and ISO/IEC standards.
+  - `id-title`: identifiers and official titles are allowed (NIST, CISA, ANSSI, MITRE...).
+
+Adding a framework is a change to `baselines.yml`, not to the schemas.
+
+---
+
+## Translations
+
+- The default locale (`en`) lives in `controls/`. Available locales are listed in `baselines.yml`.
+- A translation is `i18n/<locale>/<ID>.yml`, containing **only text fields** (title, finding, description, rationale, impact, notes, conditions, setting text, parameter descriptions, manual audit and remediation). IDs, checks, parameter values and mappings always come from the source control.
+- Missing fields fall back to the source.
+- `source_updated` records the source control's `updated` date at translation time. When the source is updated later, the translation is reported as **stale**.
+- Categories and standards are translated inline through their `i18n` block.
+
+---
+
+## Lifecycle and versioning
+
+### Control status
+
+```
+draft ──► review ──► active ──► deprecated
+```
+
+- `draft`: being written.
+- `review`: a second expert is reviewing it.
+- `active`: part of a release.
+- `deprecated`: kept forever for history, never deleted. Requires `deprecated_in`, `deprecation_reason` and `superseded_by` (`[]` if retired without replacement). The replacing control lists the old one in `supersedes`.
+
+### Standard releases
+
+- Each standard has its own [SemVer](https://semver.org) version in `_standard.yml`.
+- A release is a git tag `<standard-id>/v<version>`, e.g. `m365/v1.0.0`. No version folders: history lives in git.
+- The website and the resolver read tags to serve any past version, e.g. `https://baselines.cirsec.org/m365/v1.0.0/CB-M365-AUTH-001`.
+
+| Change                                                              | Bump  |
+|---------------------------------------------------------------------|-------|
+| Control deprecated, profile membership changed, parameter default made stricter | major |
+| New control, new domain, new profile, new supported product version | minor |
+| Wording, references, mappings, translations, fixes to checks        | patch |
+
+---
+
+## Extensions
+
+Every object that may need tool-specific data accepts fields prefixed with `x-` (root, categories, standards, controls, checks, scripts, translations). They are ignored by the official tooling and never needed to understand a control.
+
+```yaml
+x-mlab:
+  rule_id: m365-consent-001
+```
+
+Anything that proves generally useful through `x-` fields can be promoted to the core format in a future `schema_version`.
+
+---
+
+## Validation rules
+
+JSON Schemas cover the structure of each file. `tools/validate.py` also enforces cross-file rules:
+
+1. `_category.yml` and `_standard.yml` `id` equal their folder name.
+2. Standard `code` is unique across the repository.
+3. Control `id` equals its file name, starts with `CB-<standard code>-`, and its DOMAIN is declared in the standard.
+4. Control IDs are unique across the repository.
+5. `profiles` exist in the standard. Profile `extends` chains have no cycles.
+6. `applicability.versions` and `checks[].versions` are within the standard's `applies_to` versions.
+7. Every `engine` is declared in `baselines.yml`.
+8. `mappings[].framework` has kind `control-framework`. `threats[].framework` has another kind. Every `id` matches the framework's `id_pattern`.
+9. `{{ name }}` placeholders reference declared parameters. Parameter defaults match their type and bounds.
+10. `related_controls`, `supersedes` and `superseded_by` point to existing controls.
+11. Translations: file name, `id` and folder locale match an existing control and an available locale. Translations with `source_updated` older than the source's `updated` are reported as stale (warning).
+12. `updated` is not earlier than `created`.
+13. Lifecycle: `introduced_in` and `deprecated_in` are not after the standard version, `deprecated_in` is after `introduced_in`, deprecation fields only appear on deprecated controls, a control can only `supersedes` a deprecated one.
+14. Layout: no stray files or folders, `.yml` extension only, YAML files without duplicate keys.
+
+Warnings (do not fail CI unless `--strict`): stale translations, one-sided `supersedes`/`superseded_by`, dates in the future.
+
+---
+
+## Editor support
+
+Every YAML file starts with a `yaml-language-server` comment pointing to its schema. With the YAML extension (VS Code, Neovim, Zed...), you get autocompletion, inline documentation and validation while typing.
+
+```yaml
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+```
+
+---
+
+## Tooling, CI and releases
+
+Requires Python 3.11+.
+
+```sh
+pip install -r tools/requirements-dev.txt
+
+python tools/validate.py              # check everything (add --strict to fail on warnings)
+python -m pytest -q tools/tests       # test the tooling itself
+python tools/build.py --standard buffet --allow-demo --no-tag-check   # local test build into dist/
+```
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+1. `validate.py`: schemas and cross-file rules. Errors are shown as annotations on the PR files.
+2. `pytest`: every validation rule is tested by breaking it on purpose in a copy of the repository.
+3. `build.py --all`: builds every standard at its current version. The archives are attached to the run as a `preview-bundles` artifact for 7 days.
+
+### Release content
+
+`build.py` produces, for one standard:
+
+| File                                         | Content |
+|----------------------------------------------|---------|
+| `cirsec-baselines-<standard>-<version>.zip`  | Controls with status `active` or `deprecated` (never `draft` or `review`), their translations, the category and standard metadata, `baselines.yml`, the schemas, `LICENSE-CONTENT`, plus generated `bundle.json` (everything resolved in one JSON) and `index.json` (lightweight list) |
+| `...zip.sha256`                              | SHA-256 of the archive |
+| `RELEASE_NOTES.md`                           | Summary (counts per status, profile, severity, translation coverage) and changes since the previous tag of the same standard: added, deprecated, updated, removed |
+
+Archives are reproducible: building the same commit twice gives the same checksum.
+
+### Releasing a standard
+
+1. Open a pull request that bumps `version` (and optionally `released`) in the standard's `_standard.yml`, and sets `introduced_in` / `deprecated_in` on the controls it touches. Merge it.
+2. Run **Actions → Release → Run workflow** on the default branch, with:
+   - `standard`: the folder name, e.g. `m365`
+   - `version`: the version you just set, e.g. `1.0.0`
+   - `prerelease`: optional
+3. The workflow validates, refuses if the version does not match `_standard.yml` or if the tag already exists, builds, then creates the tag `<standard>/v<version>` and the GitHub release with the archive, the checksum and the notes.
+
+The demo category can never be released.
+
+---
+
+## Contributing
+
+1. **Write from primary sources.** Vendor docs, RFCs, man pages, public-domain guides (NIST, CISA, ANSSI). List them in `references`.
+2. **Never copy text from proprietary benchmarks**, and do not keep one open while writing. Mappings are added in a separate pass.
+3. **Sign off your commits** (`git commit -s`). By signing off you certify, under the [Developer Certificate of Origin](https://developercertificate.org), that your contribution is your own work and contains no text you have no right to publish.
+4. **Start from `templates/`**, one control per file, validated against the schemas.
+5. New controls start as `draft`, move to `review` once a second expert reads them, and to `active` when they ship in a release.
+
+---
+
+## Roadmap
+
+- [x] Repository layout and global settings
+- [x] JSON Schemas (root, category, standard, control, translation)
+- [x] Templates
+- [x] Validator (schemas and cross-file rules)
+- [x] CI on every push and pull request
+- [x] Release builder and manual release workflow (`bundle.json`, `index.json`, notes)
+- [ ] First standard: Microsoft 365
+- [ ] Website and versioned resolver on baselines.cirsec.org
+
+---
+
+## License
+
+- Control content (`categories/**`, `templates/**`): [CC BY 4.0](LICENSE-CONTENT)
+- Schemas and tooling: [Apache 2.0](LICENSE)
+
+CIRSEC Baselines is an independent project. It is not affiliated with, endorsed by, or certified by the Center for Internet Security, ISO, NIST, CISA, ANSSI, MITRE or any vendor. Third-party framework identifiers are used for reference only.

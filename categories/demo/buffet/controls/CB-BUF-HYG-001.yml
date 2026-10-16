@@ -1,0 +1,174 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+#
+# DEMO CONTROL 1 - the "full" example: automated, parameters, profiles,
+# version-specific checks, mappings, threats, verification.
+# File name must be exactly the ID + .yml
+
+# =============================================================================
+# IDENTITY
+# =============================================================================
+id: CB-BUF-HYG-001           # CB-<standard code>-<domain>-<number>. Never renumbered, never reused.
+
+# The rule, phrased as the desired state. Our own words.
+title: Keep hot dishes above the safe holding temperature
+
+# What a scan report shows when this control FAILS. Describes the problem, not the rule.
+finding:
+  title: Hot dishes are held at an unsafe temperature
+  description: Bacteria multiply quickly in lukewarm food. Customers may get sick.
+
+status: active               # draft -> review -> active -> deprecated
+profiles: [baseline]         # belongs to baseline, so also to hardened (hardened extends baseline)
+
+risk:
+  severity: high             # info | low | medium | high | critical
+  score: 8.2                 # optional 0-10, to rank findings of the same severity
+
+# automated = fully checkable by audit.checks (then at least one check is required)
+# partial   = some of it needs a human
+# manual    = human only
+assessment: automated
+
+tags: [temperature, food-safety]   # free lowercase slugs, for search and filters
+
+# =============================================================================
+# SCOPE
+# =============================================================================
+# No "applicability" block here: the control applies to every buffet format,
+# with no prerequisite. See CB-BUF-GUARD-001 for an example with one.
+
+# =============================================================================
+# CONTENT (Markdown allowed)
+# =============================================================================
+description: |
+  Hot dishes on the buffet are kept in heated containers (bain-marie, heat lamps,
+  heated conveyor plates) at or above a minimum core temperature.
+rationale: |
+  Between roughly 5 and 60 °C, bacteria such as *Salmonella* multiply fast.
+  Keeping hot food hot is the main defence against food poisoning at a buffet.
+impact: |
+  Higher energy use. Some delicate dishes may dry out if left too long.
+notes: |
+  Measure the **core** temperature of the dish, not the surface or the container.
+
+# Where the "setting" lives. Useful when a control is about one value.
+setting:
+  location: Bain-marie thermostat, front panel
+  default_value: "50 °C (factory setting of most bains-marie)"
+  recommended_value: "At least {{ min_temp_c }} °C core temperature"   # {{ }} = parameter
+
+# =============================================================================
+# PARAMETERS = customization
+# =============================================================================
+# Value resolution: user override > profile_defaults[profile] > default.
+# Bounds (minimum/maximum/allowed) limit what a user may override.
+parameters:
+  - name: min_temp_c
+    type: integer            # string | integer | number | boolean | enum | list
+    description: Minimum core temperature of hot dishes.
+    unit: °C
+    default: 63              # used by baseline
+    profile_defaults:
+      hardened: 70           # hardened is stricter
+    minimum: 60              # nobody may configure below 60
+    maximum: 90
+
+# =============================================================================
+# AUDIT
+# =============================================================================
+audit:
+  manual: |
+    1. Pick three hot dishes at random.
+    2. Measure the core temperature with a probe thermometer.
+    3. Every measure must be at least {{ min_temp_c }} °C.
+  logic: all                 # all checks must pass ("any" = at least one)
+  checks:
+    # Each check has a stable id so a scanner can say WHICH check failed.
+    - id: bain-marie-temp
+      engine: demo-sensor    # must be declared in baselines.yml > engines
+      description: Read the bain-marie probes.
+      versions: [classic]    # only for the "classic" buffet format
+      spec:                  # free payload, defined by the engine
+        sensor: bain_marie.*.core_temp
+        operator: ">="
+        value: "{{ min_temp_c }}"
+    - id: conveyor-plate-temp
+      engine: demo-sensor
+      description: Read the heated conveyor plate probes.
+      versions: [conveyor]   # only for sushi belts
+      spec:
+        sensor: conveyor.heated_plates.*.temp
+        operator: ">="
+        value: "{{ min_temp_c }}"
+
+# =============================================================================
+# REMEDIATION
+# =============================================================================
+remediation:
+  manual: |
+    Set the thermostat so the core temperature reaches {{ min_temp_c }} °C.
+    Throw away any dish that stayed below this temperature for more than 2 hours.
+  requires_restart: false    # does the "system" need a restart?
+  rollback: |
+    Set the thermostat back to its previous value.
+  scripts:
+    - id: set-thermostat
+      engine: demo-sensor
+      description: Push the target temperature to every bain-marie.
+      versions: [classic]
+      content: |
+        set bain_marie.*.target_temp {{ min_temp_c }}
+
+# =============================================================================
+# SOURCES AND LINKS
+# =============================================================================
+# references = what we wrote this control FROM (clean-room provenance). At least one.
+references:
+  - title: "[DEMO] Imaginary Food Code, chapter 3: hot holding"
+    url: https://example.org/food-code/chapter-3
+    publisher: Demo
+    kind: standard
+    accessed: 2026-10-16     # docs change, keep the date you read it
+
+# mappings = how OUR control relates to a control of ANOTHER framework.
+# framework must be kind "control-framework" in baselines.yml.
+# id must match that framework's id_pattern. Identifiers only if reference_policy is id-only.
+mappings:
+  - framework: demo-food-code
+    framework_version: "2026"
+    id: FC-3.4
+    relation: stricter       # equivalent | stricter | looser | partial | related
+    note: The Food Code accepts 60 °C, we require 63 °C by default.
+
+# threats = what this control mitigates (ATT&CK, CWE, CVE... or here a demo matrix).
+threats:
+  - framework: demo-buffet-threats
+    id: BT-001
+    note: Food poisoning through lukewarm dishes.
+
+# links to other CIRSEC controls: requires | related | conflicts
+related_controls:
+  - id: CB-BUF-GUARD-001
+    type: related
+    note: Sneeze guards also slow down heat loss.
+
+# =============================================================================
+# PEOPLE AND LIFECYCLE
+# =============================================================================
+authors:
+  - name: Alice
+    github: Sn0wAlice
+reviewers:
+  - name: Chef Demo
+    affiliation: Imaginary Bistro
+
+# Proof the control was tested in real life.
+verified:
+  - date: 2026-10-16
+    by: Sn0wAlice
+    environment: Classic buffet, 12 bains-marie
+    notes: All checks behaved as expected.
+
+introduced_in: 1.0.0         # standard version where this control first shipped
+created: 2026-10-01
+updated: 2026-10-16          # bump on every content change (makes translations stale)

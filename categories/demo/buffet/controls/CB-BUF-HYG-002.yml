@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+#
+# DEMO CONTROL 3 - PARTIAL assessment, ENUM and BOOLEAN parameters,
+# "any" logic between checks, hardened-only profile.
+
+id: CB-BUF-HYG-002
+title: Replace serving utensils and clean sneeze guards on a fixed schedule
+finding:
+  title: Serving utensils and sneeze guards are not cleaned regularly
+status: review               # a second expert is reviewing it
+profiles: [hardened]         # ONLY in hardened (baseline buffets do not need it)
+risk:
+  severity: low
+  score: 3.5
+assessment: partial          # the schedule is checkable, the actual cleanliness is not
+
+description: |
+  Tongs, ladles and sneeze guards are replaced or cleaned every
+  {{ interval_min }} minutes, using the {{ cleaning_method }} method.
+rationale: |
+  Every customer touches the same tongs. Utensils become a transfer point
+  between customers.
+impact: |
+  Requires staff time and a stock of spare utensils.
+
+setting:
+  location: Kitchen cleaning schedule board
+  recommended_value: "Every {{ interval_min }} minutes, method {{ cleaning_method }}"
+
+parameters:
+  - name: interval_min
+    type: integer
+    description: Time between two utensil swaps.
+    unit: minutes
+    default: 30
+    minimum: 10
+    maximum: 120
+  - name: cleaning_method
+    type: enum               # enum -> "allowed" is mandatory
+    description: How utensils are cleaned.
+    default: dishwasher
+    allowed: [dishwasher, sanitizer-spray, steam]
+  - name: log_required
+    type: boolean
+    description: Whether each swap must be written in a log.
+    default: false
+    profile_defaults:
+      hardened: true
+
+audit:
+  manual: |
+    Look at the schedule board and the log. Then check visually that the
+    utensils in service look clean.
+  logic: any                 # ANY check passing is enough: one schedule source is sufficient
+  checks:
+    - id: schedule-app
+      engine: demo-sensor
+      description: Read the cleaning app schedule.
+      spec:
+        sensor: cleaning_app.utensils.interval
+        operator: "<="
+        value: "{{ interval_min }}"
+    - id: paper-log
+      engine: demo-sensor
+      description: Scan the paper log with the camera.
+      spec:
+        sensor: camera.cleaning_log.last_entry_age_min
+        operator: "<="
+        value: "{{ interval_min }}"
+
+remediation:
+  manual: |
+    Prepare {{ interval_min }}-minute swap rounds. Keep a spare set of utensils
+    per dish so swaps are instant.
+
+references:
+  - title: "[DEMO] Imaginary Food Code, chapter 4: utensils"
+    url: https://example.org/food-code/chapter-4
+    kind: standard
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 1.1.0         # appeared in a later release than the others
+created: 2026-10-10
+updated: 2026-10-12
