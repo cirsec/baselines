@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-005
+title: Disable XDMCP in the display manager
+finding:
+  title: The display manager accepts XDMCP remote logins
+  description: XDMCP sends the login screen, passwords and the whole session unencrypted over the network.
+status: draft
+profiles: [desktop]
+risk:
+  severity: high
+assessment: automated
+tags: [gdm, lightdm, xdmcp, network]
+
+description: |
+  XDMCP (X Display Manager Control Protocol) lets a remote X terminal request a login screen
+  from the display manager. It is off by default in GDM (`[xdmcp] Enable` in
+  `/etc/gdm3/daemon.conf`) and in LightDM (`[XDMCPServer] enabled`). This control checks that
+  nobody turned it on.
+rationale: |
+  XDMCP and the X11 session it opens are not encrypted or authenticated: anyone on the network
+  path can read the password typed at login and every keystroke after. Remote graphical access
+  should go through an encrypted channel such as SSH or a VPN.
+impact: |
+  None with the defaults. Thin clients that rely on XDMCP stop working.
+notes: |
+  SDDM has no XDMCP server. The LightDM check reads `/usr/share/lightdm/lightdm.conf.d/`,
+  `/etc/xdg/lightdm/lightdm.conf.d/`, `/etc/lightdm/lightdm.conf.d/` and
+  `/etc/lightdm/lightdm.conf` in that order; the last value wins. The automated fix covers GDM
+  only; the LightDM check was written from its documentation and not tested in a lab.
+
+setting:
+  location: /etc/gdm3/daemon.conf [xdmcp] Enable; LightDM [XDMCPServer] enabled
+  default_value: "false"
+  recommended_value: false or unset
+
+audit:
+  manual: |
+    1. GDM: in `/etc/gdm3/daemon.conf`, the `[xdmcp]` section must not set `Enable=true`.
+    2. LightDM: no file of `/etc/lightdm/lightdm.conf.d/` or `/etc/lightdm/lightdm.conf` may set
+       `enabled=true` in an `[XDMCPServer]` section.
+  checks:
+    - id: gdm
+      engine: shell
+      description: GDM does not enable XDMCP.
+      facts: [gdm]
+      spec:
+        script: |
+          [ -f /etc/gdm3/daemon.conf ] || { echo "no /etc/gdm3/daemon.conf"; exit 0; }
+          v=$(awk '/^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[xdmcp]"); next }
+            s && /^[ \t]*Enable[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+            END { print v }' /etc/gdm3/daemon.conf)
+          echo "[xdmcp] Enable=${v:-unset}"
+          case $v in [Tt][Rr][Uu][Ee] | 1) exit 1 ;; esac
+    - id: lightdm
+      engine: shell
+      description: LightDM does not enable its XDMCP server.
+      facts: [lightdm]
+      spec:
+        script: |
+          set -- /usr/share/lightdm/lightdm.conf.d/*.conf /etc/xdg/lightdm/lightdm.conf.d/*.conf \
+            /etc/lightdm/lightdm.conf.d/*.conf /etc/lightdm/lightdm.conf
+          files=
+          for f in "$@"; do [ -f "$f" ] && files="$files $f"; done
+          [ -n "$files" ] || { echo "no LightDM configuration file"; exit 0; }
+          # shellcheck disable=SC2086 # one word per file
+          v=$(awk 'FNR == 1 { s = 0 } /^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[XDMCPServer]"); next }
+            s && /^[ \t]*enabled[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+            END { print v }' $files)
+          echo "[XDMCPServer] enabled=${v:-unset}"
+          case $v in [Tt][Rr][Uu][Ee] | 1) exit 1 ;; esac
+
+remediation:
+  manual: |
+    - GDM: in `/etc/gdm3/daemon.conf`, set `Enable=false` in the `[xdmcp]` section (or remove the
+      line), then restart GDM at a convenient time (`systemctl restart gdm` closes every
+      graphical session).
+    - LightDM: remove `enabled=true` from the `[XDMCPServer]` sections, then restart LightDM.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore `/etc/gdm3/daemon.conf` from the backup directory.
+  scripts:
+    - id: gdm
+      engine: shell
+      facts: [gdm]
+      file: fix.sh
+
+references:
+  - title: gdm3(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/gdm3/gdm3.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GDM - configuration keys (gdm.schemas)
+    url: https://gitlab.gnome.org/GNOME/gdm/-/blob/main/data/gdm.schemas.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - LightDM
+    url: https://wiki.debian.org/LightDM
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.6"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "GDM check and fix tested (desktop-hardened), including Enable=true in [xdmcp] fixed without touching [debug]; the LightDM check was not tested (no LightDM machine), only reported not applicable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "GDM check and fix tested (desktop-hardened), including Enable=true in [xdmcp] fixed without touching [debug]; the LightDM check was not tested (no LightDM machine), only reported not applicable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

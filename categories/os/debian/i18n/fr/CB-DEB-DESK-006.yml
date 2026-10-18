@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-006
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger un mot de passe à la connexion graphique, sans connexion automatique ni session invité
+finding:
+  title: Le gestionnaire de connexion ouvre une session sans mot de passe
+  description: La connexion automatique, différée ou invité donne une session fonctionnelle à quiconque allume la machine ou s'installe devant.
+description: |
+  Les gestionnaires de connexion peuvent ouvrir une session sans authentification :
+
+  - GDM : `AutomaticLoginEnable` et `TimedLoginEnable` dans la section `[daemon]` de
+    `/etc/gdm3/daemon.conf` ;
+  - LightDM : `autologin-user`, `autologin-guest` et la session invité (`allow-guest`, activée
+    par défaut en amont) ;
+  - SDDM : `User` dans la section `[Autologin]` de sa configuration.
+
+  Ce contrôle vérifie qu'aucun n'est activé et que LightDM désactive explicitement la session
+  invité.
+rationale: |
+  Une session ouverte sans mot de passe donne les fichiers du compte, ses sessions de navigateur,
+  ses identifiants enregistrés et ses accès réseau à la personne devant l'écran, ou à celle qui
+  vole la machine. Une session invité offre un point d'entrée non tracé sur le système.
+impact: |
+  Chaque utilisateur saisit un mot de passe au démarrage. Les bornes qui reposent sur la
+  connexion automatique doivent être exclues par personnalisation.
+notes: |
+  GDM n'a pas de session invité. La session invité de LightDM nécessite un script d'assistance
+  que Debian ne fournit pas, mais l'option est tout de même désactivée explicitement. Les
+  contrôles LightDM et SDDM lisent tous les fichiers de configuration dans l'ordre de chargement
+  et gardent la dernière valeur ; ils ignorent les sections, si bien qu'une valeur définie pour un
+  seul poste compte pour tous. Le correctif automatique ne couvre que GDM ; les contrôles LightDM
+  et SDDM ont été écrits d'après leur documentation et n'ont pas été testés en laboratoire.
+setting:
+  location: /etc/gdm3/daemon.conf, /etc/lightdm/lightdm.conf(.d), /etc/sddm.conf(.d)
+  recommended_value: Aucune connexion automatique, différée ou invité
+audit:
+  manual: |
+    1. GDM : `/etc/gdm3/daemon.conf` ne doit pas contenir `AutomaticLoginEnable=true` ni
+       `TimedLoginEnable=true` dans `[daemon]`.
+    2. LightDM : la configuration doit contenir `allow-guest=false`, et ne doit définir ni
+       `autologin-user` ni `autologin-guest=true`.
+    3. SDDM : aucune valeur `User=` dans une section `[Autologin]` de `/etc/sddm.conf`,
+       `/etc/sddm.conf.d/` ou `/usr/lib/sddm/sddm.conf.d/`.
+remediation:
+  manual: |
+    - GDM : dans `/etc/gdm3/daemon.conf`, section `[daemon]`, mettre `AutomaticLoginEnable=false`
+      et `TimedLoginEnable=false` (ou supprimer les lignes). Le changement s'applique au
+      redémarrage de GDM.
+    - LightDM : dans `/etc/lightdm/lightdm.conf`, section `[Seat:*]`, mettre `allow-guest=false`,
+      `greeter-allow-guest=false`, et supprimer `autologin-user` et `autologin-guest`.
+    - SDDM : supprimer `User=` de la section `[Autologin]` des fichiers de configuration de SDDM.
+  rollback: |
+    Restaurer `/etc/gdm3/daemon.conf` depuis le répertoire de sauvegarde.

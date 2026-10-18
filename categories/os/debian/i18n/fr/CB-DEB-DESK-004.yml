@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne jamais lancer automatiquement de logiciel depuis un support inséré dans GNOME
+finding:
+  title: GNOME peut lancer des programmes depuis un support inséré
+  description: À l'insertion d'un disque ou d'un périphérique USB, GNOME peut proposer ou lancer le programme déclaré par le support, ce qu'un support piégé peut exploiter.
+description: |
+  `org.gnome.desktop.media-handling autorun-never` à `true` empêche GNOME de proposer ou de
+  lancer des programmes à l'insertion d'un support. La clé est définie dans la base dconf
+  système `local` et verrouillée.
+rationale: |
+  L'exécution automatique transforme l'insertion d'un support en exécution de code en un clic,
+  voire sans clic si l'utilisateur a choisi « toujours ». C'est un vecteur d'infection classique
+  des supports amovibles.
+impact: |
+  Les utilisateurs ouvrent eux-mêmes le contenu des supports depuis le gestionnaire de fichiers.
+notes: |
+  Debian 13 vaut déjà `true` par défaut ; Debian 12 vaut `false`. Dans les deux cas, les
+  utilisateurs peuvent le modifier tant que la clé n'est pas verrouillée.
+setting:
+  location: /etc/dconf/db/local.d/, clé /org/gnome/desktop/media-handling/autorun-never
+  recommended_value: true, verrouillé
+audit:
+  manual: |
+    1. `dconf read /org/gnome/desktop/media-handling/autorun-never` doit afficher `true`.
+    2. La clé doit figurer dans un fichier de `/etc/dconf/db/local.d/locks/`.
+remediation:
+  manual: |
+    1. Vérifier que `/etc/dconf/profile/user` contient `user-db:user` et `system-db:local`.
+    2. Créer `/etc/dconf/db/local.d/00-media-autorun` :
+       ```
+       [org/gnome/desktop/media-handling]
+       autorun-never=true
+       ```
+    3. Lister `/org/gnome/desktop/media-handling/autorun-never` dans
+       `/etc/dconf/db/local.d/locks/00-media-autorun`.
+    4. Lancer `dconf update`.
+  rollback: |
+    Supprimer les fichiers écrits dans `/etc/dconf/db/local.d/` et son répertoire `locks/`, puis
+    lancer `dconf update`.

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-011
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Retirer le raccourci Ctrl-Alt-Suppr de GNOME
+finding:
+  title: Ctrl-Alt-Suppr dans GNOME ouvre la boîte de dialogue d'extinction et de redémarrage
+  description: Une combinaison de touches pressée par habitude, ou par quelqu'un devant la console, mène au redémarrage ou à l'extinction de la machine en deux clics.
+description: |
+  `org.gnome.settings-daemon.plugins.media-keys logout` associe Ctrl-Alt-Suppr à la boîte de
+  dialogue de déconnexion, qui propose aussi le redémarrage et l'extinction. La valeur `['']`
+  supprime ce raccourci ; la clé est définie dans la base dconf système `local` et verrouillée.
+rationale: |
+  Ctrl-Alt-Suppr est pressé par réflexe sur les machines utilisées à côté de Windows, et sur une
+  console partagée il donne à n'importe qui un moyen rapide de redémarrer la machine. Supprimer
+  le raccourci évite les redémarrages accidentels ou opportunistes du poste.
+impact: |
+  Les utilisateurs se déconnectent ou éteignent depuis le menu système. Ctrl-Alt-Suppr ne fait
+  rien dans GNOME.
+notes: |
+  Seul le raccourci GNOME est concerné. Ctrl-Alt-Suppr sur une console texte est géré par systemd
+  (`ctrl-alt-del.target`).
+setting:
+  location: /etc/dconf/db/local.d/, clé /org/gnome/settings-daemon/plugins/media-keys/logout
+  recommended_value: "[''], verrouillé"
+audit:
+  manual: |
+    1. `dconf read /org/gnome/settings-daemon/plugins/media-keys/logout` doit afficher `['']`.
+    2. La clé doit figurer dans un fichier de `/etc/dconf/db/local.d/locks/`.
+remediation:
+  manual: |
+    1. Vérifier que `/etc/dconf/profile/user` contient `user-db:user` et `system-db:local`.
+    2. Créer `/etc/dconf/db/local.d/00-ctrl-alt-del` :
+       ```
+       [org/gnome/settings-daemon/plugins/media-keys]
+       logout=['']
+       ```
+    3. Lister `/org/gnome/settings-daemon/plugins/media-keys/logout` dans
+       `/etc/dconf/db/local.d/locks/00-ctrl-alt-del` et lancer `dconf update`.
+  rollback: |
+    Supprimer les fichiers écrits dans `/etc/dconf/db/local.d/` et son répertoire `locks/`, puis
+    lancer `dconf update`.

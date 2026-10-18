@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-005
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver XDMCP dans le gestionnaire de connexion
+finding:
+  title: Le gestionnaire de connexion accepte les connexions distantes XDMCP
+  description: XDMCP transmet l'écran de connexion, les mots de passe et toute la session en clair sur le réseau.
+description: |
+  XDMCP (X Display Manager Control Protocol) permet à un terminal X distant de demander un écran
+  de connexion au gestionnaire de connexion. Il est désactivé par défaut dans GDM (`[xdmcp]
+  Enable` dans `/etc/gdm3/daemon.conf`) et dans LightDM (`[XDMCPServer] enabled`). Ce contrôle
+  vérifie que personne ne l'a activé.
+rationale: |
+  XDMCP et la session X11 qu'il ouvre ne sont ni chiffrés ni authentifiés : toute personne sur le
+  chemin réseau peut lire le mot de passe saisi à la connexion puis chaque frappe. L'accès
+  graphique à distance doit passer par un canal chiffré comme SSH ou un VPN.
+impact: |
+  Aucun avec les valeurs par défaut. Les clients légers qui reposent sur XDMCP cessent de
+  fonctionner.
+notes: |
+  SDDM n'a pas de serveur XDMCP. Le contrôle LightDM lit `/usr/share/lightdm/lightdm.conf.d/`,
+  `/etc/xdg/lightdm/lightdm.conf.d/`, `/etc/lightdm/lightdm.conf.d/` et
+  `/etc/lightdm/lightdm.conf` dans cet ordre ; la dernière valeur l'emporte. Le correctif
+  automatique ne couvre que GDM ; le contrôle LightDM a été écrit d'après sa documentation et n'a
+  pas été testé en laboratoire.
+setting:
+  location: /etc/gdm3/daemon.conf [xdmcp] Enable ; LightDM [XDMCPServer] enabled
+  recommended_value: false ou absent
+audit:
+  manual: |
+    1. GDM : dans `/etc/gdm3/daemon.conf`, la section `[xdmcp]` ne doit pas contenir
+       `Enable=true`.
+    2. LightDM : aucun fichier de `/etc/lightdm/lightdm.conf.d/` ni `/etc/lightdm/lightdm.conf` ne
+       doit contenir `enabled=true` dans une section `[XDMCPServer]`.
+remediation:
+  manual: |
+    - GDM : dans `/etc/gdm3/daemon.conf`, mettre `Enable=false` dans la section `[xdmcp]` (ou
+      supprimer la ligne), puis redémarrer GDM au moment opportun (`systemctl restart gdm` ferme
+      toutes les sessions graphiques).
+    - LightDM : retirer `enabled=true` des sections `[XDMCPServer]`, puis redémarrer LightDM.
+  rollback: |
+    Restaurer `/etc/gdm3/daemon.conf` depuis le répertoire de sauvegarde.
