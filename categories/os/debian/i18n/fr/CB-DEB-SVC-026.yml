@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-026
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le service de vidage mémoire du noyau kdump
+finding:
+  title: Les vidages mémoire du noyau sont collectés sur le système
+  description: Un vidage mémoire est une copie de la mémoire qui peut contenir des clés, des mots de passe et des données sensibles.
+description: |
+  `kdump-tools` charge un noyau de capture au démarrage (`kdump-tools.service`). Quand le noyau
+  principal plante, le noyau de capture enregistre sa mémoire dans `/var/crash`.
+
+  Le contrôle est conforme quand `kdump-tools.service` est masqué ou n'est pas installé du tout.
+rationale: |
+  Le vidage contient tout ce qui était en mémoire : secrets des services en cours, clés de
+  session, documents. Il reste sur le disque après le redémarrage et peut être copié par quiconque
+  accède à `/var/crash` ou aux sauvegardes. L'analyse des plantages du noyau est rarement
+  nécessaire en production.
+impact: |
+  Les plantages du noyau ne laissent plus de vidage à analyser. La mémoire réservée par le
+  paramètre de démarrage `crashkernel=` le reste tant que ce paramètre n'est pas retiré
+  (`apt purge kdump-tools`, puis `update-grub` et un redémarrage).
+notes: |
+  `kdump-tools` n'est pas installé par défaut. Les systèmes sur lesquels des développeurs noyau ou
+  le support ont besoin de vidages doivent exclure ce contrôle dans leur fichier de
+  personnalisation et protéger `/var/crash` à la place.
+audit:
+  manual: |
+    Lancer `systemctl is-enabled kdump-tools.service`. La commande doit afficher `masked`, ou échouer
+    parce que l'unité n'existe pas.
+remediation:
+  manual: |
+    Lancer `systemctl mask --now kdump-tools.service`. Pour libérer aussi la mémoire réservée, lancer
+    `apt purge kdump-tools`, puis `update-grub`, et redémarrer.
+  rollback: |
+    Lancer `systemctl unmask kdump-tools.service` puis `systemctl enable --now kdump-tools.service`.

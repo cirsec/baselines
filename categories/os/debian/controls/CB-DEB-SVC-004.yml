@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-004
+title: Disable LDAP and NIS directory server services the system does not provide
+finding:
+  title: An LDAP or NIS directory server can run on a system that does not provide one
+  description: A forgotten directory server can leak account data or let an attacker publish accounts.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, ldap, nis, attack-surface]
+
+description: |
+  Directory servers packaged by Debian:
+
+  - OpenLDAP: `slapd`;
+  - NIS: `ypserv`, with its companions `yppasswdd` (password changes) and `ypxfrd` (map
+    transfers).
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  A directory server holds account and group data that other systems trust. NIS sends password
+  hashes to any client that asks and has no real authentication; an unattended OpenLDAP server
+  can expose or accept changes to that data.
+impact: |
+  Masking a unit stops it and prevents it from starting again. LDAP and NIS clients are not
+  affected. Directory servers must exclude this control in their tailoring file.
+notes: |
+  A unit that does not exist counts as compliant. On Debian 12, `slapd` only ships a System V init
+  script; systemd still masks the generated `slapd.service`.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `slapd.service`, `ypserv.service`, `yppasswdd.service`, `ypxfrd.service`.
+  logic: all
+  checks:
+    - id: slapd
+      engine: systemd-unit
+      description: OpenLDAP server.
+      spec: { unit: slapd.service, state: masked }
+    - id: ypserv
+      engine: systemd-unit
+      description: NIS server.
+      spec: { unit: ypserv.service, state: masked }
+    - id: yppasswdd
+      engine: systemd-unit
+      description: NIS password update server.
+      spec: { unit: yppasswdd.service, state: masked }
+    - id: ypxfrd
+      engine: systemd-unit
+      description: NIS map transfer server.
+      spec: { unit: ypxfrd.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead: `apt purge slapd ypserv`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: slapd
+      from_check: slapd
+    - id: ypserv
+      from_check: ypserv
+    - id: yppasswdd
+      from_check: yppasswdd
+    - id: ypxfrd
+      from_check: ypxfrd
+
+references:
+  - title: slapd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/slapd/slapd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ypserv(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/ypserv/ypserv.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service and names NIS; this control covers directory servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.10"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1087.002
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with slapd and ypserv installed the checks fail (ypserv disabled still fails), fix masks, audit passes after reboot; packages still purge cleanly."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with slapd and ypserv installed the checks fail (ypserv disabled still fails), fix masks, audit passes after reboot; packages still purge cleanly."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

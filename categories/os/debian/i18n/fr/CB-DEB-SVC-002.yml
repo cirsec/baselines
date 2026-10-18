@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-002
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les services serveur de transfert et de partage de fichiers que le système ne fournit pas
+finding:
+  title: Des serveurs FTP, TFTP, rsync ou Samba peuvent tourner sur un système qui ne les fournit pas
+  description: Un serveur de fichiers inutile expose des données et transmet souvent les identifiants en clair.
+description: |
+  Démons de transfert et de partage de fichiers fournis par Debian :
+
+  - FTP : `vsftpd`, `proftpd` (service et socket), `pure-ftpd` ;
+  - TFTP : `tftpd-hpa`, `atftpd` (service et socket) ;
+  - rsync en mode démon : `rsync` ;
+  - Samba : `smbd`, `nmbd`, `samba-ad-dc`.
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  FTP et TFTP transmettent les données, et FTP aussi les mots de passe, sans chiffrement. TFTP n'a
+  aucune authentification. Les démons rsync et Samba publient des répertoires sur le réseau.
+  Chacun est du code joignable à distance et une voie de sortie pour les données.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer. Les outils clients ne sont pas
+  concernés : `rsync` via SSH et `smbclient` fonctionnent toujours. Les serveurs de fichiers
+  doivent exclure ce contrôle dans leur fichier de personnalisation.
+notes: |
+  Une unité inexistante est considérée conforme, donc supprimer le paquet est une correction tout
+  aussi valable. Le paquet rsync installe `rsync.service` désactivé ; le contrôle échoue tout de
+  même tant qu'il n'est pas masqué, car n'importe quel paquet ou administrateur peut l'activer.
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `vsftpd.service`, `proftpd.service`, `proftpd.socket`,
+    `pure-ftpd.service`, `tftpd-hpa.service`, `atftpd.service`, `atftpd.socket`,
+    `rsync.service`, `smbd.service`, `nmbd.service`, `samba-ad-dc.service`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si le paquet n'est
+    pas utile du tout, le supprimer plutôt, par exemple `apt purge vsftpd tftpd-hpa samba`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

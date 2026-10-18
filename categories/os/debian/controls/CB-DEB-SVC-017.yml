@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-017
+title: Keep the cron daemon enabled and running
+finding:
+  title: The cron daemon is installed but not running
+  description: Scheduled maintenance and security jobs, such as log rotation or integrity checks, silently stop.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [cron, scheduling]
+
+applicability:
+  facts: [cron]
+
+description: |
+  `cron` runs the jobs in `/etc/crontab`, `/etc/cron.d/`, the `/etc/cron.hourly` to
+  `/etc/cron.monthly` directories and the users' crontabs. When the package is installed,
+  `cron.service` must be enabled and running.
+rationale: |
+  Packages and administrators rely on cron for periodic tasks: integrity checks, report mails,
+  cleanup jobs. A stopped daemon disables them without any error message.
+impact: |
+  None known.
+notes: |
+  Debian cloud images do not install cron (systemd timers do the package maintenance); the
+  control is then not applicable.
+
+audit:
+  manual: |
+    `systemctl is-enabled cron` must print `enabled` and `systemctl is-active cron` must print
+    `active`.
+  logic: all
+  checks:
+    - id: enabled
+      engine: systemd-unit
+      description: cron is enabled.
+      spec: { unit: cron.service, state: enabled }
+    - id: active
+      engine: shell
+      description: cron is running.
+      spec:
+        script: systemctl is-active cron.service || exit 1
+
+remediation:
+  manual: |
+    Run `systemctl unmask cron` if it is masked, then `systemctl enable --now cron`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now cron`.
+  scripts:
+    - id: enabled
+      from_check: enabled
+
+references:
+  - title: cron(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/cron/cron.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.4.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.4.1.1"
+    relation: equivalent
+related_controls:
+  - id: CB-DEB-SVC-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable on fresh image; passes with cron installed (enabled by default)."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable on fresh image; passes with cron installed (enabled by default)."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

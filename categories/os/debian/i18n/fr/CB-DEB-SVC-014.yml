@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-014
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner exactement un démon de synchronisation du temps
+finding:
+  title: L'horloge système n'est pas synchronisée, ou plusieurs démons se la disputent
+  description: Des horodatages faux cassent la corrélation des journaux, la vérification des certificats et Kerberos ; deux démons font sauter l'horloge.
+description: |
+  Debian fournit plusieurs clients NTP : `systemd-timesyncd` (par défaut sur la plupart des
+  installations), `chrony`, `chronyd-restricted` (Debian 13), `ntpsec` et `openntpd`. Exactement
+  un d'entre eux doit être actif.
+rationale: |
+  Les journaux, les traces d'audit et les protocoles d'authentification reposent sur une heure
+  exacte. Sans démon, l'horloge dérive ; avec deux, chacun corrige l'autre et l'horloge saute, ce
+  qui fausse les chronologies lors d'une investigation.
+impact: |
+  Aucun connu quand un démon est déjà actif, ce qui est le cas par défaut sur Debian.
+notes: |
+  Les paquets Debian sont en conflit entre eux, donc deux démons cohabitent rarement ; l'échec
+  habituel est l'absence de démon, par exemple dans un conteneur où `systemd-timesyncd` ne
+  démarre pas (l'hôte garde l'heure). Les conteneurs peuvent exclure ce contrôle dans leur fichier
+  de personnalisation. Les paramètres du démon sont vérifiés par CB-DEB-SVC-015 (timesyncd) et
+  CB-DEB-SVC-016 (chrony).
+audit:
+  manual: |
+    Lancer `systemctl is-active chrony chronyd-restricted systemd-timesyncd ntpsec openntpd`.
+    Exactement une ligne doit afficher `active`.
+remediation:
+  manual: |
+    - Aucun démon : lancer `systemctl enable --now systemd-timesyncd`, ou `apt install chrony`.
+    - Plusieurs démons : en garder un, puis `systemctl mask --now <unité>` pour les autres ou purger
+      leurs paquets.

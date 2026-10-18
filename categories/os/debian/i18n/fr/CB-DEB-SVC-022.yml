@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-022
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le démon mDNS/DNS-SD Avahi
+finding:
+  title: Avahi annonce le système et ses services sur le réseau local
+  description: La découverte sans configuration indique à chaque hôte du segment ce qu'est ce système et ce qu'il propose.
+description: |
+  `avahi-daemon` implémente le DNS multicast et la découverte de services DNS (Zeroconf, Bonjour)
+  sur le port UDP 5353. Il est démarré par `avahi-daemon.service` et par `avahi-daemon.socket`.
+
+  Le contrôle est conforme quand les deux unités sont masquées ou ne sont pas installées du tout.
+rationale: |
+  Avahi publie sur le réseau local le nom de l'hôte, les services qu'il propose et parfois le
+  système d'exploitation, et accepte les paquets multicast de n'importe quel hôte du segment. Les
+  serveurs ont des noms et des adresses fixes et n'en ont pas besoin.
+impact: |
+  Les noms `.local` ne sont plus résolus ni publiés, et la découverte automatique des imprimantes
+  et des partages s'arrête. Les postes qui en dépendent le gardent avec le profil poste standard ;
+  seul le profil poste renforcé le désactive.
+notes: |
+  Il faut masquer à la fois le service et le socket : chacun peut démarrer le démon. Le résolveur
+  `libnss-mdns` reste installé et n'obtient simplement plus de réponse.
+audit:
+  manual: |
+    Lancer `systemctl is-enabled avahi-daemon.service avahi-daemon.socket`. Chacune doit afficher
+    `masked`, ou la commande doit échouer parce que les unités n'existent pas.
+remediation:
+  manual: |
+    Lancer `systemctl mask --now avahi-daemon.socket avahi-daemon.service`, ou `apt purge avahi-daemon`
+    si rien n'en dépend.
+  rollback: |
+    Lancer `systemctl unmask avahi-daemon.socket avahi-daemon.service` puis
+    `systemctl enable --now avahi-daemon.service`.

@@ -1,0 +1,220 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-002
+title: Disable file transfer and file sharing server services the system does not provide
+finding:
+  title: FTP, TFTP, rsync or Samba servers can run on a system that does not provide them
+  description: An unneeded file server exposes data and often sends credentials in clear text.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, ftp, tftp, rsync, samba, attack-surface]
+
+description: |
+  File transfer and sharing daemons packaged by Debian:
+
+  - FTP: `vsftpd`, `proftpd` (service and socket), `pure-ftpd`;
+  - TFTP: `tftpd-hpa`, `atftpd` (service and socket);
+  - rsync in daemon mode: `rsync`;
+  - Samba: `smbd`, `nmbd`, `samba-ad-dc`.
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  FTP and TFTP send data, and FTP also passwords, without encryption. TFTP has no authentication
+  at all. rsync and Samba daemons publish directories on the network. Each of them is remotely
+  reachable code and a path for data to leave the system.
+impact: |
+  Masking a unit stops it and prevents it from starting again. Client tools are not affected:
+  `rsync` over SSH and `smbclient` keep working. File servers must exclude this control in their
+  tailoring file.
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid
+  fix. The rsync package ships `rsync.service` disabled; it still fails this control until masked,
+  because any package or administrator can enable it.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `vsftpd.service`, `proftpd.service`, `proftpd.socket`,
+    `pure-ftpd.service`, `tftpd-hpa.service`, `atftpd.service`, `atftpd.socket`,
+    `rsync.service`, `smbd.service`, `nmbd.service`, `samba-ad-dc.service`.
+  logic: all
+  checks:
+    - id: vsftpd
+      engine: systemd-unit
+      description: vsftpd FTP server.
+      spec: { unit: vsftpd.service, state: masked }
+    - id: proftpd
+      engine: systemd-unit
+      description: ProFTPD FTP server.
+      spec: { unit: proftpd.service, state: masked }
+    - id: proftpd-socket
+      engine: systemd-unit
+      description: ProFTPD socket activation.
+      spec: { unit: proftpd.socket, state: masked }
+    - id: pure-ftpd
+      engine: systemd-unit
+      description: Pure-FTPd FTP server.
+      spec: { unit: pure-ftpd.service, state: masked }
+    - id: tftpd-hpa
+      engine: systemd-unit
+      description: tftp-hpa TFTP server.
+      spec: { unit: tftpd-hpa.service, state: masked }
+    - id: atftpd
+      engine: systemd-unit
+      description: atftpd TFTP server.
+      spec: { unit: atftpd.service, state: masked }
+    - id: atftpd-socket
+      engine: systemd-unit
+      description: atftpd socket activation.
+      spec: { unit: atftpd.socket, state: masked }
+    - id: rsync
+      engine: systemd-unit
+      description: rsync daemon.
+      spec: { unit: rsync.service, state: masked }
+    - id: smbd
+      engine: systemd-unit
+      description: Samba file server.
+      spec: { unit: smbd.service, state: masked }
+    - id: nmbd
+      engine: systemd-unit
+      description: Samba NetBIOS name server.
+      spec: { unit: nmbd.service, state: masked }
+    - id: samba-ad-dc
+      engine: systemd-unit
+      description: Samba Active Directory domain controller.
+      spec: { unit: samba-ad-dc.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead, for example `apt purge vsftpd tftpd-hpa samba`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: vsftpd
+      from_check: vsftpd
+    - id: proftpd
+      from_check: proftpd
+    - id: proftpd-socket
+      from_check: proftpd-socket
+    - id: pure-ftpd
+      from_check: pure-ftpd
+    - id: tftpd-hpa
+      from_check: tftpd-hpa
+    - id: atftpd
+      from_check: atftpd
+    - id: atftpd-socket
+      from_check: atftpd-socket
+    - id: rsync
+      from_check: rsync
+    - id: smbd
+      from_check: smbd
+    - id: nmbd
+      from_check: nmbd
+    - id: samba-ad-dc
+      from_check: samba-ad-dc
+
+references:
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: vsftpd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/vsftpd/vsftpd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: tftpd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/tftpd-hpa/tftpd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: rsyncd.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsync/rsyncd.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: smbd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/samba/smbd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers file transfer and sharing servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.8"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.16"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.17"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.20"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.14"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.17"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1048
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with vsftpd, tftpd-hpa, rsync and samba installed the checks fail (rsync disabled still fails), fix masks, audit passes after reboot; packages still purge cleanly; SSH reachable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with vsftpd, tftpd-hpa, rsync and samba installed the checks fail (rsync disabled still fails), fix masks, audit passes after reboot; packages still purge cleanly; SSH reachable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

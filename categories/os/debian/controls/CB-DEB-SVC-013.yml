@@ -1,0 +1,227 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-013
+title: Remove clear-text network clients (NIS, rsh, talk, telnet, LDAP tools, FTP)
+finding:
+  title: Clients for clear-text or obsolete network protocols are installed
+  description: These clients send credentials in clear text or help an intruder move to other systems.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [packages, clients, telnet, rsh, ftp, nis, ldap]
+
+description: |
+  Client packages for protocols that are obsolete or that send credentials without encryption:
+
+  - NIS client: `nis` (ypbind);
+  - rsh, rlogin and rcp: `rsh-client`, `rsh-redone-client` (Debian 12 only);
+  - talk: `talk`, `inetutils-talk`;
+  - telnet: `telnet`, `inetutils-telnet`;
+  - LDAP command-line tools: `ldap-utils`;
+  - FTP: `ftp`, `tnftp`, `inetutils-ftp`.
+
+  The control passes when none of them is installed.
+rationale: |
+  Using these clients exposes passwords and data on the network. An intruder who lands on the
+  system can also use them to reach or probe other hosts. SSH, SFTP and LDAP over TLS libraries
+  replace them.
+impact: |
+  Removes the listed packages, and any package that depends on them. Administrators who use
+  `ldapsearch` or `telnet` for troubleshooting lose them; `nc` or `openssl s_client` cover most
+  of these uses. Systems that really need one of them must exclude this control in their
+  tailoring file.
+notes: |
+  The NIS client also needs CB-DEB-SVC-003 (rpcbind); LDAP authentication through SSSD does not
+  need `ldap-utils`.
+
+audit:
+  manual: |
+    Run `dpkg-query -W -f='${Package} ${Status}\n' nis rsh-client rsh-redone-client talk
+    inetutils-talk telnet inetutils-telnet ldap-utils ftp tnftp inetutils-ftp`. No line may end
+    with `install ok installed`.
+  logic: all
+  checks:
+    - id: nis
+      engine: package
+      description: NIS client.
+      spec: { name: nis, state: absent }
+    - id: rsh-client
+      engine: package
+      description: rsh client.
+      spec: { name: rsh-client, state: absent }
+    - id: rsh-redone-client
+      engine: package
+      description: rsh-redone client.
+      spec: { name: rsh-redone-client, state: absent }
+    - id: talk
+      engine: package
+      description: talk client.
+      spec: { name: talk, state: absent }
+    - id: inetutils-talk
+      engine: package
+      description: GNU inetutils talk client.
+      spec: { name: inetutils-talk, state: absent }
+    - id: telnet
+      engine: package
+      description: telnet client.
+      spec: { name: telnet, state: absent }
+    - id: inetutils-telnet
+      engine: package
+      description: GNU inetutils telnet client.
+      spec: { name: inetutils-telnet, state: absent }
+    - id: ldap-utils
+      engine: package
+      description: OpenLDAP command-line tools.
+      spec: { name: ldap-utils, state: absent }
+    - id: ftp
+      engine: package
+      description: ftp client.
+      spec: { name: ftp, state: absent }
+    - id: tnftp
+      engine: package
+      description: tnftp client.
+      spec: { name: tnftp, state: absent }
+    - id: inetutils-ftp
+      engine: package
+      description: GNU inetutils ftp client.
+      spec: { name: inetutils-ftp, state: absent }
+
+remediation:
+  manual: |
+    Run `apt purge nis rsh-client rsh-redone-client talk inetutils-talk telnet inetutils-telnet
+    ldap-utils ftp tnftp inetutils-ftp`, after checking the list of packages apt will remove.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Reinstall the needed package with `apt install <package>`.
+  scripts:
+    - id: nis
+      from_check: nis
+    - id: rsh-client
+      from_check: rsh-client
+    - id: rsh-redone-client
+      from_check: rsh-redone-client
+    - id: talk
+      from_check: talk
+    - id: inetutils-talk
+      from_check: inetutils-talk
+    - id: telnet
+      from_check: telnet
+    - id: inetutils-telnet
+      from_check: inetutils-telnet
+    - id: ldap-utils
+      from_check: ldap-utils
+    - id: ftp
+      from_check: ftp
+    - id: tnftp
+      from_check: tnftp
+    - id: inetutils-ftp
+      from_check: inetutils-ftp
+
+references:
+  - title: apt-get(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt-get.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: telnet(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/inetutils-telnet/telnet.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ldapsearch(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/ldap-utils/ldapsearch.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 lists rsh, talk, telnet and NIS components among the services to remove.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.5"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.2.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.2.6"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: mitre-attack
+    id: T1021
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with nis, talk, telnet, ldap-utils and ftp clients (and rsh-client on 12) installed the checks fail, fix purges them, audit passes after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with nis, talk, telnet, ldap-utils and ftp clients (and rsh-client on 12) installed the checks fail, fix purges them, audit passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

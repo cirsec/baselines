@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-015
+title: Configure systemd-timesyncd with approved time servers and keep it running
+finding:
+  title: systemd-timesyncd uses built-in fallback servers or is not running
+  description: The clock follows whatever servers were compiled in, or is not synchronized at all.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [time, ntp, timesyncd]
+
+applicability:
+  facts: [systemd-timesyncd]
+
+description: |
+  `systemd-timesyncd` is a simple SNTP client. Its servers are set with `NTP=` in
+  `/etc/systemd/timesyncd.conf` or in a drop-in under `/etc/systemd/timesyncd.conf.d/`. Without
+  `NTP=`, it only uses the `FallbackNTP=` list compiled into the package. The service must be
+  enabled and running.
+rationale: |
+  Explicit servers make the time source a documented choice: internal servers for isolated
+  networks, or a public pool the organization trusts. A stopped client lets the clock drift,
+  which breaks log correlation and time-based authentication.
+impact: |
+  The system contacts the configured servers on UDP port 123; the firewall must allow it. When
+  the default list is kept, the servers are the public Debian pool.
+notes: |
+  The check reads the merged configuration with `systemd-analyze cat-config` and keeps the last
+  `NTP=` line, which is the one systemd applies. Debian ships no `NTP=` line, so the control fails
+  on a fresh install. The fix writes `/etc/systemd/timesyncd.conf.d/60-cirsec.conf`.
+
+  **Check and swap the default servers.** `time_servers` defaults to the public Debian pool so
+  that the fix works everywhere. It is not an approved source: replace it in the tailoring file
+  with your organization's own time servers (internal NTP, domain controllers, or a provider you
+  trust) before applying the fix in production.
+
+setting:
+  location: /etc/systemd/timesyncd.conf.d/60-cirsec.conf
+  default_value: No NTP= line (compiled-in fallback servers)
+  recommended_value: "NTP={{ time_servers }}"
+
+parameters:
+  - name: time_servers
+    type: string
+    description: Space-separated list of approved NTP servers, written by the fix.
+    default: 0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org 3.debian.pool.ntp.org
+
+audit:
+  manual: |
+    1. Run `systemd-analyze cat-config systemd/timesyncd.conf`. The last `NTP=` line must list at
+       least one approved server.
+    2. `systemctl is-enabled systemd-timesyncd` must print `enabled` and
+       `systemctl is-active systemd-timesyncd` must print `active`.
+  logic: all
+  checks:
+    - id: servers
+      engine: shell
+      description: Time servers set with NTP= in the merged configuration.
+      spec:
+        script: |
+          o=$(systemd-analyze cat-config systemd/timesyncd.conf 2>/dev/null | grep -E '^[[:space:]]*NTP=' | tail -n 1)
+          v=$(printf '%s' "$o" | sed 's/^[[:space:]]*NTP=[[:space:]]*//')
+          echo "NTP=${v:-<not set>}"
+          [ -n "$v" ]
+    - id: enabled
+      engine: systemd-unit
+      description: systemd-timesyncd is enabled.
+      spec: { unit: systemd-timesyncd.service, state: enabled }
+    - id: active
+      engine: shell
+      description: systemd-timesyncd is running.
+      spec:
+        script: systemctl is-active systemd-timesyncd.service || exit 1
+
+remediation:
+  manual: |
+    Create `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` containing:
+    ```
+    [Time]
+    NTP={{ time_servers }}
+    ```
+    then run `systemctl enable systemd-timesyncd` and `systemctl restart systemd-timesyncd`.
+    Check with `timedatectl timesync-status`.
+  effects:
+    restart: service
+    services: [systemd-timesyncd]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` and restart systemd-timesyncd.
+  scripts:
+    - id: enabled
+      from_check: enabled
+    - id: servers
+      engine: shell
+      content: |
+        f=/etc/systemd/timesyncd.conf.d/60-cirsec.conf
+        want=$(printf '# Written by CIRSEC Baselines CB-DEB-SVC-015\n[Time]\nNTP=%s' "$CB_TIME_SERVERS")
+        if [ "$(cat "$f" 2>/dev/null)" != "$want" ]; then
+          cb_backup "$f"
+          mkdir -p /etc/systemd/timesyncd.conf.d
+          printf '%s\n' "$want" >"$f"
+        fi
+        systemctl is-active --quiet systemd-timesyncd.service || systemctl start systemd-timesyncd.service
+
+references:
+  - title: timesyncd.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd-timesyncd/timesyncd.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemd-timesyncd.service(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd-timesyncd/systemd-timesyncd.service.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - NTP
+    url: https://wiki.debian.org/NTP
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-8(1)
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.006
+related_controls:
+  - id: CB-DEB-SVC-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on fresh image (no NTP=), fix writes the drop-in and restarts timesyncd, audit passes, timedatectl uses the configured server; state kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on fresh image (no NTP=), fix writes the drop-in and restarts timesyncd, audit passes, timedatectl uses the configured server; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
