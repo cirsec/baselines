@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-007
+title: Never disable authentication for sudo globally
+finding:
+  title: sudo is configured to skip authentication
+  description: With authentication disabled, every sudo rule works without a password, for every user it applies to.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [sudo, privilege-escalation]
+
+applicability:
+  facts: [sudo]
+
+description: |
+  The `!authenticate` default turns off password checks for every rule it applies to. Unlike a
+  `NOPASSWD:` tag on one rule, it is easy to miss because it sits in a `Defaults` line.
+rationale: |
+  A global `!authenticate` silently turns every administrator account into a password-less root
+  account: stealing any of their sessions is enough to control the system.
+impact: |
+  None for a standard configuration. Debian does not set it.
+
+audit:
+  manual: |
+    Run `grep -r '!authenticate' /etc/sudoers /etc/sudoers.d/`. There must be no match.
+  checks:
+    - id: sudoers
+      engine: file-content
+      description: No !authenticate in /etc/sudoers.
+      spec: { path: /etc/sudoers, pattern: "^[^#]*!\\s*authenticate", expect: no_match }
+    - id: sudoers-d
+      engine: file-content
+      description: No !authenticate in /etc/sudoers.d/.
+      spec: { path: /etc/sudoers.d/*, pattern: "^[^#]*!\\s*authenticate", expect: no_match }
+
+remediation:
+  manual: |
+    Remove every `Defaults ... !authenticate` entry with `visudo` (or `visudo -f` for files in
+    `/etc/sudoers.d/`).
+  rollback: |
+    Add the entry back with `visudo`.
+
+references:
+  - title: sudoers(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sudo/sudoers.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R39)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R39
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

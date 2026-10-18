@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-029
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder privés les répertoires personnels et les fichiers cachés des utilisateurs
+finding:
+  title: Des répertoires personnels ou fichiers de démarrage sont lisibles ou modifiables par d'autres
+  description: D'autres utilisateurs peuvent lire des fichiers privés, ou modifier les fichiers de démarrage du shell d'un utilisateur pour lancer des commandes sous son identité.
+description: |
+  Pour chaque compte interactif (UID 1000 ou plus avec un shell de connexion) :
+
+  - le répertoire personnel existe, appartient à l'utilisateur et a un mode `750` ou plus strict ;
+  - les fichiers et répertoires dont le nom commence par un point, directement dans le répertoire
+    personnel (`.bashrc`, `.profile`, `.ssh`...), appartiennent à l'utilisateur et ne sont
+    modifiables ni par le groupe ni par les autres ;
+  - `.netrc` et `.rhosts` n'existent pas, et `.forward` n'est pas utilisé.
+rationale: |
+  Un répertoire personnel lisible par tous expose documents, historique et clés. Un fichier de
+  démarrage du shell modifiable par un autre lui permet de lancer des commandes sous l'identité de
+  l'utilisateur à sa prochaine connexion. `.rhosts` autorise une connexion sans mot de passe avec
+  d'anciens outils, et `.netrc` stocke des mots de passe en clair.
+impact: |
+  Les autres utilisateurs ne peuvent plus parcourir les répertoires personnels. Les fichiers
+  partagés ont leur place dans un répertoire de groupe.
+notes: |
+  Debian 13 crée les nouveaux répertoires personnels en mode `700` (`HOME_MODE` dans
+  `/etc/login.defs`) ; Debian 12 les crée en `755`.
+audit:
+  manual: |
+    Pour chaque compte interactif, vérifier `stat -c '%U %a' ~utilisateur` (propriétaire
+    l'utilisateur, mode 750 ou plus strict), `ls -la ~utilisateur/.??*` (pas d'écriture pour le
+    groupe ni les autres, propriétaire l'utilisateur) et l'absence de `.netrc`, `.rhosts` et `.forward`.
+remediation:
+  manual: |
+    Pour chaque compte signalé :
+    1. `chown <utilisateur> ~utilisateur` et `chmod 750 ~utilisateur`.
+    2. `chown <utilisateur> ~utilisateur/.<fichier>` et `chmod go-w ~utilisateur/.<fichier>`.
+    3. Retirer `.rhosts` et `.netrc` après vérification avec l'utilisateur ; examiner et retirer `.forward`.
+  rollback: |
+    Les permissions ne sont pas sauvegardées : noter les modes précédents depuis la sortie de l'audit avant d'appliquer.

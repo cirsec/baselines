@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-007
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne jamais désactiver globalement l'authentification de sudo
+finding:
+  title: sudo est configuré pour ne pas authentifier
+  description: Sans authentification, toutes les règles sudo fonctionnent sans mot de passe, pour tous les utilisateurs concernés.
+description: |
+  Le réglage `!authenticate` désactive la vérification du mot de passe pour toutes les règles
+  auxquelles il s'applique. Contrairement à une marque `NOPASSWD:` sur une règle, il passe
+  facilement inaperçu car il est dans une ligne `Defaults`.
+rationale: |
+  Un `!authenticate` global transforme silencieusement chaque compte administrateur en compte root
+  sans mot de passe : voler n'importe laquelle de leurs sessions suffit à contrôler le système.
+impact: |
+  Aucun pour une configuration standard. Debian ne le définit pas.
+audit:
+  manual: |
+    Lancer `grep -r '!authenticate' /etc/sudoers /etc/sudoers.d/`. Il ne doit y avoir aucun résultat.
+remediation:
+  manual: |
+    Retirer chaque entrée `Defaults ... !authenticate` avec `visudo` (ou `visudo -f` pour les
+    fichiers de `/etc/sudoers.d/`).
+  rollback: |
+    Remettre l'entrée avec `visudo`.

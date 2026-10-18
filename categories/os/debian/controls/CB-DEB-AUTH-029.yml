@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-029
+title: Keep user home directories and dot files private
+finding:
+  title: User home directories or startup files are readable or writable by others
+  description: Other users can read private files, or change a user's shell startup files to run commands as that user.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [accounts, home, permissions]
+
+description: |
+  For every interactive account (UID 1000 or above with a login shell):
+
+  - the home directory exists, belongs to the user and has mode `750` or stricter;
+  - files and directories whose name starts with a dot directly in the home (`.bashrc`,
+    `.profile`, `.ssh`...) belong to the user and are not writable by group or others;
+  - `.netrc` and `.rhosts` do not exist, and `.forward` is not used.
+rationale: |
+  A world-readable home exposes documents, history and keys. A shell startup file writable by
+  someone else lets that person run commands as the user at their next login. `.rhosts` allows
+  password-less login with legacy tools, and `.netrc` stores plain-text passwords.
+impact: |
+  Other users can no longer browse home directories. Shared files belong in a group directory.
+notes: |
+  Debian 13 creates new homes with mode `700` (`HOME_MODE` in `/etc/login.defs`); Debian 12
+  creates them with `755`.
+
+audit:
+  manual: |
+    For each interactive account, check `stat -c '%U %a' ~user` (owner is the user, mode 750 or
+    stricter), `ls -la ~user/.??*` (no group or world write, owned by the user) and that
+    `.netrc`, `.rhosts` and `.forward` are absent.
+  checks:
+    - id: homes
+      engine: shell
+      description: Ownership and mode of interactive homes and their dot files.
+      spec:
+        script: |
+          rc=0
+          awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /nologin$|false$/ {print $1 ":" $6}' /etc/passwd > /tmp/.cb_users.$$
+          while IFS=: read -r u h; do
+            [ -d "$h" ] || { echo "$u: home $h missing"; rc=1; continue; }
+            [ "$(stat -c %U "$h")" = "$u" ] || { echo "$u: home not owned by user"; rc=1; }
+            m=$(stat -c %a "$h"); [ $(( 0$m & 027 )) -eq 0 ] || { echo "$u: home mode $m"; rc=1; }
+            for f in "$h"/.[!.]* "$h"/..?*; do
+              [ -e "$f" ] || continue
+              [ -L "$f" ] && continue
+              case ${f##*/} in .netrc | .rhosts | .forward) echo "$u: ${f##*/} present"; rc=1 ;; esac
+              [ "$(stat -c %U "$f")" = "$u" ] || { echo "$u: ${f##*/} not owned by user"; rc=1; }
+              m=$(stat -c %a "$f"); [ $(( 0$m & 022 )) -eq 0 ] || { echo "$u: ${f##*/} mode $m"; rc=1; }
+            done
+          done < /tmp/.cb_users.$$
+          rm -f /tmp/.cb_users.$$
+          [ "$rc" -eq 0 ] && echo "all interactive homes are private"
+          exit $rc
+
+remediation:
+  manual: |
+    For each reported account:
+    1. `chown <user> ~user` and `chmod 750 ~user`.
+    2. `chown <user> ~user/.<file>` and `chmod go-w ~user/.<file>`.
+    3. Remove `.rhosts` and `.netrc` after checking with the user; review and remove `.forward`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Permissions are not backed up: note the previous modes from the audit output before applying.
+  scripts:
+    - id: permissions
+      engine: shell
+      content: |
+        awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /nologin$|false$/ {print $1 ":" $6}' /etc/passwd |
+          while IFS=: read -r u h; do
+            [ -d "$h" ] || continue
+            chown "$u" "$h"
+            chmod g-w,o-rwx "$h"
+            for f in "$h"/.[!.]* "$h"/..?*; do
+              [ -e "$f" ] && [ ! -L "$f" ] || continue
+              chown "$u" "$f"
+              chmod go-w "$f"
+            done
+          done
+
+references:
+  - title: login.defs(5), Debian manual pages (HOME_MODE)
+    url: https://manpages.debian.org/trixie/login.defs/login.defs.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.11"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1546.004
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

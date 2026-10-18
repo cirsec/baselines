@@ -1,0 +1,194 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-010
+title: Enforce password quality with pam_pwquality
+finding:
+  title: Users can set short or trivial passwords
+  description: Weak local passwords are guessed quickly, online or from a stolen shadow file.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [pam, password]
+
+description: |
+  `pam_pwquality` (package `libpam-pwquality`) checks every new password when it is set with
+  `passwd`. Its settings live in `/etc/security/pwquality.conf` and `/etc/security/pwquality.conf.d/`:
+
+  - `minlen`: minimum length;
+  - `minclass`: minimum number of character classes (lower, upper, digit, other);
+  - `difok`: characters that must differ from the old password;
+  - `maxrepeat` / `maxsequence`: longest run of the same or consecutive characters;
+  - `dictcheck`: reject words from the cracklib dictionary;
+  - `enforce_for_root`: apply the rules when root sets a password too.
+rationale: |
+  Length is what makes a password resist guessing. The other rules reject the patterns attackers
+  try first (repeated characters, sequences, dictionary words, a one-character change).
+impact: |
+  Users must pick passwords that follow the rules when they next change them. Existing passwords
+  are not checked.
+notes: |
+  Without `libpam-pwquality`, Debian only applies the weak built-in `obscure` check of `pam_unix`.
+  Installing the package enables the module in `/etc/pam.d/common-password` through `pam-auth-update`.
+
+setting:
+  location: /etc/security/pwquality.conf.d/60-cirsec.conf
+  default_value: Module not installed
+  recommended_value: "minlen >= {{ minlen }}, minclass >= {{ minclass }}, difok >= 2, maxrepeat <= 3, maxsequence <= 3, dictcheck, enforce_for_root"
+
+parameters:
+  - name: minlen
+    type: integer
+    description: Minimum password length.
+    default: 14
+    profile_defaults:
+      server-hardened: 16
+      desktop-hardened: 16
+    minimum: 8
+    maximum: 64
+  - name: minclass
+    type: integer
+    description: Minimum number of character classes.
+    default: 3
+    minimum: 0
+    maximum: 4
+
+audit:
+  manual: |
+    1. `dpkg -s libpam-pwquality` must show the package installed.
+    2. `/etc/pam.d/common-password` must contain a `pam_pwquality.so` line.
+    3. The last value of each setting in `/etc/security/pwquality.conf` then
+       `/etc/security/pwquality.conf.d/*.conf` must be: `minlen` >= {{ minlen }},
+       `minclass` >= {{ minclass }}, `difok` >= 2, `maxrepeat` and `maxsequence` between 1 and 3,
+       `dictcheck` not 0, and `enforce_for_root` present.
+  checks:
+    - id: package
+      engine: package
+      spec: { name: libpam-pwquality, state: installed }
+    - id: module
+      engine: file-content
+      description: pam_pwquality is in the password stack.
+      spec: { path: /etc/pam.d/common-password, pattern: "^\\s*password\\s+.*pam_pwquality\\.so" }
+    - id: settings
+      engine: shell
+      description: Effective pwquality settings.
+      spec:
+        script: |
+          files="/etc/security/pwquality.conf $(ls /etc/security/pwquality.conf.d/*.conf 2>/dev/null)"
+          get() { cat $files 2>/dev/null | sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\([-0-9]*\).*/\1/p" | tail -n 1; }
+          minlen=$(get minlen) minclass=$(get minclass) difok=$(get difok)
+          maxrepeat=$(get maxrepeat) maxsequence=$(get maxsequence) dictcheck=$(get dictcheck)
+          root=$(cat $files 2>/dev/null | grep -c '^[[:space:]]*enforce_for_root')
+          echo "minlen=${minlen:-9} minclass=${minclass:-0} difok=${difok:-1} maxrepeat=${maxrepeat:-0} maxsequence=${maxsequence:-0} dictcheck=${dictcheck:-1} enforce_for_root=$root"
+          [ "${minlen:-9}" -ge "$CB_MINLEN" ] && [ "${minclass:-0}" -ge "$CB_MINCLASS" ] && [ "${difok:-1}" -ge 2 ] \
+            && [ "${maxrepeat:-0}" -ge 1 ] && [ "${maxrepeat:-0}" -le 3 ] \
+            && [ "${maxsequence:-0}" -ge 1 ] && [ "${maxsequence:-0}" -le 3 ] \
+            && [ "${dictcheck:-1}" != 0 ] && [ "$root" -gt 0 ]
+
+remediation:
+  manual: |
+    1. Run `apt install libpam-pwquality`.
+    2. Create `/etc/security/pwquality.conf.d/60-cirsec.conf`:
+       ```
+       minlen = {{ minlen }}
+       minclass = {{ minclass }}
+       difok = 2
+       maxrepeat = 3
+       maxsequence = 3
+       dictcheck = 1
+       enforce_for_root
+       ```
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/security/pwquality.conf.d/60-cirsec.conf`. Remove the package to drop the module.
+  scripts:
+    - id: package
+      from_check: package
+    - id: settings
+      engine: shell
+      content: |
+        f=/etc/security/pwquality.conf.d/60-cirsec.conf
+        cb_backup "$f"
+        mkdir -p /etc/security/pwquality.conf.d
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUTH-010' "minlen = $CB_MINLEN" "minclass = $CB_MINCLASS" \
+          'difok = 2' 'maxrepeat = 3' 'maxsequence = 3' 'dictcheck = 1' 'enforce_for_root' >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: pam_pwquality(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpam-pwquality/pam_pwquality.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: pwquality.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpwquality-common/pwquality.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: NIST SP 800-63B - Digital Identity Guidelines, Authentication
+    url: https://pages.nist.gov/800-63-4/sp800-63b.html
+    publisher: NIST
+    kind: standard
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R31)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R31
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.3.3.2.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.3.3.2.3"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.3.3.2.8"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.3.3.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.3.3.2.3"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.3.3.2.8"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1110
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Weak password rejected and strong one accepted with pamtester; minlen 14 core, 16 hardened.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Weak password rejected and strong one accepted with pamtester; minlen 14 core, 16 hardened.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

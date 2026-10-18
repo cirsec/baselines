@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-012
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher la réutilisation des derniers mots de passe
+finding:
+  title: Les utilisateurs peuvent remettre un mot de passe déjà utilisé
+  description: Un utilisateur obligé de changer de mot de passe peut revenir à l'ancien, peut-être déjà connu d'un attaquant.
+description: |
+  `pam_pwhistory` (dans `libpam-modules`) garde les empreintes des derniers mots de passe de chaque
+  utilisateur dans `/etc/security/opasswd` et refuse un nouveau mot de passe identique à l'un des
+  `remember` derniers. Debian fournit le module sans l'activer ; un profil `pam-auth-update`
+  l'ajoute à la pile password, après la vérification de qualité et avant `pam_unix`.
+rationale: |
+  Quand un mot de passe est changé après une compromission supposée, revenir au précédent annule le
+  changement. Garder un historique empêche aussi d'alterner entre deux valeurs.
+impact: |
+  Les utilisateurs ne peuvent pas reprendre leurs {{ remember }} derniers mots de passe. Le fichier
+  d'historique grossit d'une empreinte par utilisateur et par changement.
+setting:
+  location: /usr/share/pam-configs/cirsec_pwhistory
+  recommended_value: "remember={{ remember }}, enforce_for_root, use_authtok"
+parameters:
+  remember: Nombre de mots de passe précédents qui ne peuvent pas être réutilisés.
+audit:
+  manual: |
+    `/etc/pam.d/common-password` doit contenir une ligne `pam_pwhistory.so` avec `remember=` d'au
+    moins {{ remember }}, `enforce_for_root` et `use_authtok`, placée avant `pam_unix.so`.
+remediation:
+  manual: |
+    1. Créer `/usr/share/pam-configs/cirsec_pwhistory` :
+       ```
+       Name: CIRSEC - password history (pam_pwhistory)
+       Default: yes
+       Priority: 1000
+       Password-Type: Primary
+       Password:
+               requisite       pam_pwhistory.so remember={{ remember }} enforce_for_root try_first_pass use_authtok
+       ```
+    2. Lancer `pam-auth-update --enable cirsec_pwhistory`.
+  rollback: |
+    Lancer `pam-auth-update --remove cirsec_pwhistory` et supprimer le fichier de profil.

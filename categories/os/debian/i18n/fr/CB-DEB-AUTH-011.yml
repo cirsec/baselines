@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-011
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller les comptes après des échecs de connexion répétés
+finding:
+  title: Les mots de passe peuvent être devinés sans limite
+  description: Sans verrouillage, un attaquant peut essayer des mots de passe sur les comptes locaux aussi vite que les services de connexion le permettent.
+description: |
+  `pam_faillock` (dans `libpam-modules`) compte les échecs d'authentification par utilisateur et
+  refuse l'accès quand le compteur atteint `deny` pendant `fail_interval`, jusqu'à ce que
+  `unlock_time` secondes se soient écoulées ou qu'un administrateur lance
+  `faillock --user <nom> --reset`. Ses réglages sont dans `/etc/security/faillock.conf`. Debian
+  fournit le module sans l'activer : deux profils `pam-auth-update` l'ajoutent avant (`preauth`)
+  et après (`authfail`) `pam_unix`, ainsi que dans la pile account.
+rationale: |
+  Un verrouillage ramène une attaque en ligne de millions d'essais à une poignée par compte et par
+  période, et rend l'attaque visible dans les journaux.
+impact: |
+  Un utilisateur qui se trompe {{ deny }} fois attend {{ unlock_time }} secondes ou demande à un
+  administrateur. Un attaquant peut volontairement verrouiller un compte connu. Avec `deny_root`,
+  root peut aussi être verrouillé : garder un accès console qui ne dépend pas de la vérification
+  des mots de passe par PAM, comme une clé SSH.
+notes: |
+  Les connexions SSH par clé publique ne passent pas par la vérification du mot de passe et ne sont pas comptées.
+setting:
+  location: /usr/share/pam-configs/cirsec_faillock*, /etc/security/faillock.conf
+  recommended_value: "deny = {{ deny }}, unlock_time = {{ unlock_time }}"
+parameters:
+  deny: Nombre d'échecs avant le verrouillage du compte.
+  unlock_time: Secondes avant le déverrouillage automatique. 0 signifie que seul un administrateur peut déverrouiller.
+  deny_root: Verrouiller aussi root après des échecs (even_deny_root).
+audit:
+  manual: |
+    1. `/etc/pam.d/common-auth` doit contenir `pam_faillock.so preauth` avant `pam_unix.so` et
+       `pam_faillock.so authfail` après ; `/etc/pam.d/common-account` doit contenir `pam_faillock.so`.
+    2. Dans `/etc/security/faillock.conf` : `deny` entre 1 et {{ deny }}, `unlock_time` à 0 ou au
+       moins {{ unlock_time }} ; si `deny_root` est exigé, `even_deny_root` est présent.
+remediation:
+  manual: |
+    1. Créer `/usr/share/pam-configs/cirsec_faillock_notify` :
+       ```
+       Name: CIRSEC - count failed logins (pam_faillock preauth)
+       Default: yes
+       Priority: 1024
+       Auth-Type: Primary
+       Auth:
+               requisite       pam_faillock.so preauth
+       Account-Type: Primary
+       Account:
+               required        pam_faillock.so
+       ```
+    2. Créer `/usr/share/pam-configs/cirsec_faillock` :
+       ```
+       Name: CIRSEC - lock after failed logins (pam_faillock authfail)
+       Default: yes
+       Priority: 0
+       Auth-Type: Primary
+       Auth:
+               [default=die]   pam_faillock.so authfail
+       ```
+    3. Lancer `pam-auth-update --enable cirsec_faillock_notify cirsec_faillock`.
+    4. Définir `deny = {{ deny }}` et `unlock_time = {{ unlock_time }}` dans
+       `/etc/security/faillock.conf` (et `even_deny_root` si exigé).
+    5. Avant de fermer la session, vérifier qu'une nouvelle connexion fonctionne.
+  rollback: |
+    Lancer `pam-auth-update --remove cirsec_faillock cirsec_faillock_notify`, supprimer les deux
+    fichiers de profil, et déverrouiller les comptes avec `faillock --user <nom> --reset`.

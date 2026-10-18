@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-001
+title: Show a legal warning before login, without system details
+finding:
+  title: The login prompt shows the operating system version and no legal warning
+  description: The banner helps attackers fingerprint the system and gives no legal notice that access is restricted.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login]
+
+description: |
+  `/etc/issue` is printed before local console logins and `/etc/issue.net` before network logins
+  of services that use it. On Debian both contain the distribution name and version, and
+  `/etc/issue` also uses escape sequences (`\s`, `\r`, `\v`, `\m`) that print the kernel name,
+  release, version and architecture.
+rationale: |
+  A banner that states access is restricted and monitored supports legal action against
+  intruders in many jurisdictions. Version details in the banner help an attacker pick exploits
+  without any interaction with the system.
+impact: |
+  None known. Administrators who want the version still get it from `uname -a` after login.
+notes: |
+  The SSH server only shows a banner when its `Banner` option is set; that is covered with the
+  other SSH settings.
+
+setting:
+  location: /etc/issue, /etc/issue.net
+  default_value: Distribution name and version
+  recommended_value: "{{ banner_text }}"
+
+parameters:
+  - name: banner_text
+    type: string
+    description: Text of the legal warning. It must not name the operating system or its version.
+    default: "Authorized use only. Activity on this system is monitored and recorded."
+
+audit:
+  manual: |
+    1. Read `/etc/issue` and `/etc/issue.net`. Both must contain a warning and no OS name or version.
+    2. Neither file may contain the escape sequences `\m`, `\r`, `\s` or `\v`.
+  checks:
+    - id: issue-present
+      engine: file-content
+      description: /etc/issue has some text.
+      spec: { path: /etc/issue, pattern: "\\w" }
+    - id: issue-no-os
+      engine: file-content
+      description: /etc/issue does not reveal the system.
+      spec: { path: /etc/issue, pattern: "\\\\[mrsv]|Debian|GNU/Linux", expect: no_match }
+    - id: issue-net-present
+      engine: file-content
+      description: /etc/issue.net has some text.
+      spec: { path: /etc/issue.net, pattern: "\\w" }
+    - id: issue-net-no-os
+      engine: file-content
+      description: /etc/issue.net does not reveal the system.
+      spec: { path: /etc/issue.net, pattern: "\\\\[mrsv]|Debian|GNU/Linux", expect: no_match }
+
+remediation:
+  manual: |
+    Replace the content of `/etc/issue` and `/etc/issue.net` with the warning text:
+    "{{ banner_text }}"
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the files from the backup, or write `Debian GNU/Linux \n \l` back to `/etc/issue`.
+  scripts:
+    - id: write
+      engine: shell
+      content: |
+        for f in /etc/issue /etc/issue.net; do
+          cb_backup "$f"
+          printf '%s\n' "$CB_BANNER_TEXT" >"$f"
+          chmod 644 "$f"
+        done
+
+references:
+  - title: issue(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/manpages/issue.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: agetty(8), Debian manual pages (issue file escapes)
+    url: https://manpages.debian.org/trixie/util-linux/agetty.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1082
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

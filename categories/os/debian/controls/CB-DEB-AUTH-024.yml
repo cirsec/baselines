@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-024
+title: Give each service its own dedicated account
+finding:
+  title: Several services share one account, or run as a person's account
+  description: A compromise of one service gives access to the files and secrets of all the others running as the same user.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [accounts, service-accounts, least-privilege]
+
+description: |
+  Each service runs under its own system account, used by nothing else: not shared with another
+  service, not a person's account, and not `root` unless the service truly needs it.
+rationale: |
+  Unix permissions separate users, not programs. Services sharing an account can read and modify
+  each other's files, keys and memory, so the weakest one exposes all of them.
+impact: |
+  Separating services that shared an account means new accounts, new file ownership and
+  sometimes new group memberships.
+
+audit:
+  manual: |
+    1. List running services and their users: `ps -eo user,comm --sort=user` and
+       `systemctl show -p User --value <unit>` for each service unit.
+    2. Check that no account runs two unrelated services, that no service runs as a person's
+       account, and that services running as root need it.
+
+remediation:
+  manual: |
+    Create a system account per service (`adduser --system --group <name>`), give it ownership of
+    its files only, and set `User=` and `Group=` in the service unit (or use `DynamicUser=yes`).
+
+references:
+  - title: systemd.exec(5), Debian manual pages (User=, DynamicUser=)
+    url: https://manpages.debian.org/trixie/systemd/systemd.exec.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R35)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R35
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1068
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

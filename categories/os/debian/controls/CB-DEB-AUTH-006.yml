@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-006
+title: Require a password for every sudo rule
+finding:
+  title: Some sudo rules run commands without asking for a password
+  description: Anyone who takes over such an account, or just an unlocked session, gets root without knowing any secret.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: high
+assessment: automated
+tags: [sudo, privilege-escalation]
+
+applicability:
+  facts: [sudo]
+
+description: |
+  A sudo rule tagged `NOPASSWD:` runs commands without asking the user for their password.
+rationale: |
+  The password prompt is the last barrier between a stolen session or a compromised process
+  running as an administrator and full control of the system. Without it, privilege escalation
+  needs no secret at all.
+impact: |
+  Automation that relies on password-less sudo (configuration management, deployment accounts)
+  needs another approach: a dedicated account restricted to precise commands, run from a
+  controlled host, or root access through SSH keys for that tool only.
+notes: |
+  Debian cloud images get a `NOPASSWD:ALL` rule for the default user from cloud-init, in
+  `/etc/sudoers.d/90-cloud-init-users`. Set a password for that user before removing the rule.
+
+audit:
+  manual: |
+    Run `grep -r NOPASSWD /etc/sudoers /etc/sudoers.d/`. There must be no match.
+  checks:
+    - id: sudoers
+      engine: file-content
+      description: No NOPASSWD tag in /etc/sudoers.
+      spec: { path: /etc/sudoers, pattern: "^[^#]*NOPASSWD", expect: no_match }
+    - id: sudoers-d
+      engine: file-content
+      description: No NOPASSWD tag in /etc/sudoers.d/.
+      spec: { path: /etc/sudoers.d/*, pattern: "^[^#]*NOPASSWD", expect: no_match }
+
+remediation:
+  manual: |
+    1. Make sure every user concerned has a password (`passwd <user>`) and can still run `sudo -v`.
+    2. Edit the files with `visudo` (or `visudo -f /etc/sudoers.d/<file>`) and remove `NOPASSWD:`
+       from each rule.
+  rollback: |
+    Add the `NOPASSWD:` tag back with `visudo`.
+
+references:
+  - title: sudoers(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sudo/sudoers.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R39)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R39
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Fails on the cloud image (cloud-init NOPASSWD rule) as expected; manual fix.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Fails on the cloud image (cloud-init NOPASSWD rule) as expected; manual fix.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

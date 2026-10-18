@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-022
+title: Disable reboot with Ctrl-Alt-Del on the console
+finding:
+  title: Anyone at the console can reboot the system with Ctrl-Alt-Del
+  description: A reboot without logging in interrupts services and can be the first step of a boot-time attack.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [console, physical-access, systemd]
+
+description: |
+  systemd reboots the system when Ctrl-Alt-Del is pressed on a text console, through
+  `ctrl-alt-del.target`. Masking that target turns the key combination into a no-op.
+rationale: |
+  On a server, a reboot should always be a deliberate, authenticated action. The key combination
+  is reachable without logging in from a physical keyboard, a KVM switch or a hypervisor console,
+  sometimes by accident.
+impact: |
+  Ctrl-Alt-Del no longer reboots the system from a text console. Administrators reboot with
+  `systemctl reboot`.
+notes: |
+  Desktops handle the key combination in the graphical session; see the desktop controls.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled ctrl-alt-del.target`. It must print `masked`.
+  checks:
+    - id: masked
+      engine: systemd-unit
+      spec: { unit: ctrl-alt-del.target, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask ctrl-alt-del.target` and `systemctl daemon-reload`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask ctrl-alt-del.target`.
+  scripts:
+    - id: mask
+      from_check: masked
+
+references:
+  - title: systemd.special(7), Debian manual pages (ctrl-alt-del.target)
+    url: https://manpages.debian.org/trixie/systemd/systemd.special.7.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1529
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

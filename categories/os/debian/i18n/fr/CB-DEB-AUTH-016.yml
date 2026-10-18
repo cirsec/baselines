@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-016
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder root seul compte superutilisateur et protéger son mot de passe
+finding:
+  title: Un autre compte a l'identité du superutilisateur, ou root n'a aucune protection par mot de passe
+  description: Un second compte d'UID 0 est une porte dérobée root cachée ; un compte root au mot de passe vide ne demande aucun secret.
+description: |
+  Le noyau donne tous les privilèges à l'UID 0, quel que soit le nom du compte. Le GID 0 donne
+  accès à tous les fichiers du groupe `root`. Ce contrôle vérifie que :
+
+  - `root` est le seul compte d'UID 0 et le seul de groupe principal 0 ;
+  - `root` est le seul groupe de GID 0 ;
+  - le compte `root` a un mot de passe ou est verrouillé (`passwd -S root` affiche `P` ou `L`).
+rationale: |
+  Un attaquant qui obtient root ajoute souvent un second compte d'UID 0 sous un nom anodin pour
+  garder l'accès. Un compte root sans mot de passe, ou avec un mot de passe vide, est utilisable
+  par quiconque atteint une invite de connexion.
+impact: |
+  Aucun pour un système standard.
+notes: |
+  Les images cloud Debian verrouillent root (`L`) ; une installation avec mot de passe root affiche `P`. Les deux conviennent.
+audit:
+  manual: |
+    1. `awk -F: '$3 == 0' /etc/passwd` ne liste que `root`.
+    2. `awk -F: '$4 == 0' /etc/passwd` ne liste que `root` (et `sync`, `shutdown`, `halt` s'ils existent).
+    3. `awk -F: '$3 == 0' /etc/group` ne liste que `root`.
+    4. `passwd -S root` affiche `P` ou `L` dans le deuxième champ.
+remediation:
+  manual: |
+    1. Examiner tout autre compte d'UID 0 ou de GID 0 : ce peut être une porte dérobée. Le supprimer
+       avec `userdel`, ou lui donner ses propres identifiants avec `usermod -u` et `usermod -g`.
+    2. Définir un mot de passe root robuste avec `passwd root`, ou le verrouiller avec
+       `passwd -l root` si les administrateurs utilisent sudo.

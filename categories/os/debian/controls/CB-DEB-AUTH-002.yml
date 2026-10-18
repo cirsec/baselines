@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-002
+title: Keep system details out of the message of the day
+finding:
+  title: The message of the day shows the kernel version to every user who logs in
+  description: Every login session, including a compromised account, learns the exact kernel release.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login, motd]
+
+description: |
+  After login, `pam_motd` shows `/etc/motd` and the output of the executable scripts in
+  `/etc/update-motd.d/`. Debian ships `10-uname`, which prints the kernel name, release,
+  version and architecture.
+rationale: |
+  The kernel release tells an attacker who reached a shell which local privilege escalation
+  exploits apply. There is no need to show it to every user at every login.
+impact: |
+  Users no longer see the kernel version at login. They can still run `uname -a`.
+
+setting:
+  location: /etc/motd, /etc/update-motd.d/10-uname
+  default_value: 10-uname executable
+  recommended_value: 10-uname not executable, /etc/motd without OS details
+
+audit:
+  manual: |
+    1. `/etc/motd` must not contain the escape sequences `\m`, `\r`, `\s`, `\v` or the OS name.
+    2. `/etc/update-motd.d/10-uname` must not be executable (`ls -l`).
+  checks:
+    - id: motd-no-os
+      engine: file-content
+      description: /etc/motd does not reveal the system version.
+      spec: { path: /etc/motd, pattern: "\\\\[mrsv]|Debian GNU/Linux [0-9]", expect: no_match }
+    - id: uname-script
+      engine: file-perms
+      description: The 10-uname dynamic MOTD script is not executable.
+      spec: { path: /etc/update-motd.d/10-uname, owner: root, group: root, mode: "0644" }
+
+remediation:
+  manual: |
+    1. Run `chmod 644 /etc/update-motd.d/10-uname`.
+    2. Remove OS names, versions and escape sequences from `/etc/motd`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `chmod 755 /etc/update-motd.d/10-uname`.
+  scripts:
+    - id: uname-script
+      from_check: uname-script
+
+references:
+  - title: pam_motd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpam-runtime/pam_motd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: motd(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/manpages/motd.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also disables the dynamic uname script.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.4"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also disables the dynamic uname script.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.4"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1082
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

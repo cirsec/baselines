@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-014
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Définir l'âge et le hachage des mots de passe par défaut pour les nouveaux comptes
+finding:
+  title: Les nouveaux comptes reçoivent des mots de passe qui n'expirent jamais et ne sont jamais désactivés faute d'usage
+  description: Les comptes créés avec les valeurs Debian gardent le même mot de passe pour toujours et restent utilisables après le départ de leur propriétaire.
+description: |
+  `/etc/login.defs` et `useradd -D` définissent ce que reçoivent les nouveaux comptes locaux :
+
+  - `PASS_MAX_DAYS` : âge maximal d'un mot de passe (Debian : 99999, n'expire jamais) ;
+  - `PASS_MIN_DAYS` : délai minimal en jours entre deux changements (Debian : 0) ;
+  - `PASS_WARN_AGE` : jours d'avertissement avant l'expiration (Debian : 7) ;
+  - `ENCRYPT_METHOD` : hachage utilisé par `chpasswd` et `newusers` (Debian 12 : SHA512, Debian 13 : YESCRYPT) ;
+  - `INACTIVE` (`useradd -D`) : jours après l'expiration avant la désactivation du compte (Debian : jamais).
+rationale: |
+  Un mot de passe jamais renouvelé et un compte jamais désactivé laissent un mot de passe divulgué,
+  ou un utilisateur parti, garder l'accès indéfiniment. Un âge minimal empêche de faire défiler
+  l'historique pour retrouver l'ancien mot de passe.
+impact: |
+  Les nouveaux comptes doivent changer de mot de passe tous les {{ max_days }} jours et sont
+  désactivés {{ inactive_days }} jours après l'expiration. Les comptes existants sont traités par
+  CB-DEB-AUTH-015.
+notes: |
+  Le NIST SP 800-63B déconseille les changements périodiques forcés quand les mots de passe sont
+  longs et vérifiés contre des listes de fuites. Mettre `max_days` à 99999 dans le fichier de
+  personnalisation pour suivre ce modèle et s'appuyer sur les contrôles de qualité et de verrouillage.
+setting:
+  location: /etc/login.defs, /etc/default/useradd
+  recommended_value: "PASS_MAX_DAYS <= {{ max_days }}, PASS_MIN_DAYS >= {{ min_days }}, PASS_WARN_AGE >= 7, YESCRYPT ou SHA512, INACTIVE <= {{ inactive_days }}"
+parameters:
+  max_days: Âge maximal d'un mot de passe en jours.
+  min_days: Délai minimal en jours entre deux changements.
+  inactive_days: Jours après l'expiration avant la désactivation du compte.
+audit:
+  manual: |
+    1. Dans `/etc/login.defs` : `PASS_MAX_DAYS` <= {{ max_days }}, `PASS_MIN_DAYS` >= {{ min_days }},
+       `PASS_WARN_AGE` >= 7, `ENCRYPT_METHOD` vaut `YESCRYPT` ou `SHA512`.
+    2. `useradd -D | grep INACTIVE` affiche une valeur entre 0 et {{ inactive_days }}.
+remediation:
+  manual: |
+    1. Définir dans `/etc/login.defs` : `PASS_MAX_DAYS {{ max_days }}`, `PASS_MIN_DAYS {{ min_days }}`,
+       `PASS_WARN_AGE 7` et garder `ENCRYPT_METHOD` à `YESCRYPT` (ou `SHA512`).
+    2. Lancer `useradd -D -f {{ inactive_days }}`.
+  rollback: |
+    Restaurer `/etc/login.defs` et `/etc/default/useradd` depuis la sauvegarde.

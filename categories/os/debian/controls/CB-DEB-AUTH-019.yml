@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-019
+title: Set a restrictive default umask for login sessions
+finding:
+  title: New files are readable by every local user by default
+  description: With the Debian default umask, documents, exports and logs created by users and root are world-readable.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [accounts, umask, permissions]
+
+description: |
+  The umask removes permission bits from every file and directory a process creates. Debian
+  login sessions get `022` (files `644`, everyone can read them); on Debian 13, `pam_umask` with
+  `USERGROUPS_ENAB` even gives regular users `002`. This control sets `{{ umask }}` from
+  `/etc/profile.d/`, which applies to the login shells of every user, root included.
+rationale: |
+  Users and administrators regularly create files with sensitive content (exports, dumps,
+  configuration copies) in their home or in `/tmp`. A restrictive umask keeps them private
+  unless someone opens them on purpose.
+impact: |
+  Files created in shared directories are no longer readable by other users. Teams that share
+  files through a common group need `chmod g+r` or a setgid group directory.
+notes: |
+  Services started by systemd do not read `/etc/profile`; set their umask with `UMask=` in their unit.
+
+setting:
+  location: /etc/profile.d/60-cirsec-umask.sh
+  default_value: "022"
+  recommended_value: "{{ umask }}"
+
+parameters:
+  - name: umask
+    type: enum
+    description: Default umask of login shells.
+    default: "027"
+    allowed: ["027", "077"]
+    profile_defaults:
+      server-hardened: "077"
+
+audit:
+  manual: |
+    Run `su -s /bin/sh -l nobody -c umask` and `su -l root -c umask`. Both must print
+    `0{{ umask }}` (or a stricter value).
+  checks:
+    - id: user
+      engine: shell
+      description: Umask of a login shell for a regular account.
+      spec:
+        script: |
+          u=$(su -s /bin/sh -l nobody -c umask 2>/dev/null | tail -n 1) || exit 3
+          echo "nobody login umask: $u"
+          [ $(( 0$u & 0$CB_UMASK )) -eq $(( 0$CB_UMASK )) ]
+    - id: root
+      engine: shell
+      description: Umask of a root login shell.
+      spec:
+        script: |
+          u=$(su -l root -c umask 2>/dev/null | tail -n 1) || exit 3
+          echo "root login umask: $u"
+          [ $(( 0$u & 0$CB_UMASK )) -eq $(( 0$CB_UMASK )) ]
+
+remediation:
+  manual: |
+    Create `/etc/profile.d/60-cirsec-umask.sh` containing `umask {{ umask }}`. New login sessions
+    pick it up.
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/profile.d/60-cirsec-umask.sh`.
+  scripts:
+    - id: profile
+      engine: shell
+      content: |
+        f=/etc/profile.d/60-cirsec-umask.sh
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUTH-019' "umask $CB_UMASK" >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: pam_umask(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpam-runtime/pam_umask.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: bash(1), Debian manual pages (umask, INVOCATION)
+    url: https://manpages.debian.org/trixie/bash/bash.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R36)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R36
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.3.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.3.3"
+    relation: equivalent
+threats:
+  - framework: cwe
+    id: CWE-276
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

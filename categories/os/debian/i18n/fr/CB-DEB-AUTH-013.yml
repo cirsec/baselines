@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-013
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Refuser les mots de passe vides et hacher les mots de passe avec un algorithme robuste dans pam_unix
+finding:
+  title: pam_unix accepte les comptes sans mot de passe
+  description: Un compte dont le champ mot de passe est vide peut être utilisé sans aucun mot de passe.
+description: |
+  `pam_unix` vérifie les mots de passe locaux à partir de `/etc/shadow`. Deux options comptent ici :
+
+  - `nullok` permet aux comptes dont le champ mot de passe est vide de s'authentifier sans mot de
+    passe. Debian la met dans le profil `unix` par défaut ;
+  - la méthode de hachage utilisée lors d'un changement de mot de passe (`yescrypt` sur Debian 12
+    et 13, ou `sha512`). Les méthodes anciennes (`md5`, `bigcrypt`, DES) se cassent vite.
+rationale: |
+  Un champ mot de passe vide, créé par erreur ou par un outil, devient un compte ouvert tant que
+  `nullok` est présent. Une méthode de hachage faible permet à un attaquant qui copie `/etc/shadow`
+  de retrouver rapidement les mots de passe.
+impact: |
+  Les comptes sans mot de passe ne peuvent plus se connecter par mot de passe. Leur en donner un, ou
+  les verrouiller avec `passwd -l`.
+notes: |
+  Le profil `unix` du paquet est remplacé par une copie sans `nullok`, pour que les mises à jour du
+  paquet ne remettent pas l'option. Les mots de passe gardent leur empreinte actuelle jusqu'à leur
+  prochain changement.
+setting:
+  location: /usr/share/pam-configs/cirsec_unix
+  recommended_value: Pas de nullok, yescrypt ou sha512
+audit:
+  manual: |
+    1. Aucune ligne `pam_unix.so` de `/etc/pam.d/common-auth` ou `/etc/pam.d/common-password` ne contient `nullok`.
+    2. La ligne `pam_unix.so` de `/etc/pam.d/common-password` contient `yescrypt` ou `sha512`.
+remediation:
+  manual: |
+    1. Verrouiller ou donner un mot de passe à chaque compte au champ vide : `awk -F: '$2==""' /etc/shadow`.
+    2. Copier `/usr/share/pam-configs/unix` vers `/usr/share/pam-configs/cirsec_unix`, retirer chaque
+       `nullok`, changer `Name:` et vérifier que les lignes `Password:` portent `yescrypt`.
+    3. Lancer `pam-auth-update --enable cirsec_unix --disable unix`.
+    4. Vérifier qu'une nouvelle connexion fonctionne avant de fermer la session.
+  rollback: |
+    Lancer `pam-auth-update --enable unix --remove cirsec_unix` et supprimer le fichier de profil.
