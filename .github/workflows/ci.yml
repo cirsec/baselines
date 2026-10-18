@@ -1,7 +1,9 @@
 # Runs every check on each push and pull request:
 #   1. content validation (schemas + cross-file rules)
-#   2. tooling tests
-#   3. build smoke test of every standard (archives uploaded as an artifact)
+#   2. tooling tests (generator outputs are also checked with shellcheck)
+#   3. lint of script files: shellcheck for .sh, PSScriptAnalyzer for .ps1
+#   4. build smoke test of every standard (archives uploaded as an artifact)
+# On pull requests, every commit must carry a DCO sign-off by its author.
 name: CI
 
 on:
@@ -38,6 +40,21 @@ jobs:
       - name: Test tooling
         run: python -m pytest -q tools/tests
 
+      # shellcheck and pwsh are preinstalled on ubuntu-latest runners.
+      - name: Lint script files
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          sh_files=(tools/lib/*.sh categories/**/scripts/**/*.sh)
+          shellcheck -S warning -s sh "${sh_files[@]}"
+          ps1_files=(categories/**/scripts/**/*.ps1)
+          if [ ${#ps1_files[@]} -gt 0 ]; then
+            pwsh -NoProfile -Command 'Install-Module PSScriptAnalyzer -Force -Scope CurrentUser'
+            for f in "${ps1_files[@]}"; do
+              pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path '$f' -Severity Warning,Error -EnableExit"
+            done
+          fi
+
       - name: Build smoke test
         run: python tools/build.py --all --allow-demo --allow-empty --no-tag-check --out dist
 
@@ -47,3 +64,27 @@ jobs:
           name: preview-bundles
           path: dist/
           retention-days: 7
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # SHAs come through env, never interpolated in the script.
+      - name: Every commit is signed off by its author (git commit -s)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          fail=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            author=$(git log -1 --format='%an <%ae>' "$c")
+            if ! git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$c" | grep -Fxq "$author"; then
+              echo "::error::$(git log -1 --format='%h %s' "$c"): missing 'Signed-off-by: $author', see CONTRIBUTING in README"
+              fail=1
+            fi
+          done
+          exit "$fail"

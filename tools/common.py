@@ -210,6 +210,29 @@ def resolve_parameters(ctl: "Control", profile: str, overrides: dict | None = No
     return out
 
 
+def resolve_value(value: Any, params: dict) -> Any:
+    """Replace {{ name }} in a spec. A string that is exactly one placeholder takes the parameter's type."""
+    if isinstance(value, str):
+        m = PLACEHOLDER_RE.fullmatch(value.strip())
+        if m:
+            return params[m.group(1)]
+        return PLACEHOLDER_RE.sub(lambda m: render_text(params[m.group(1)]), value)
+    if isinstance(value, dict):
+        return {k: resolve_value(v, params) for k, v in value.items()}
+    if isinstance(value, list):
+        return [resolve_value(v, params) for v in value]
+    return value
+
+
+def render_text(value: Any) -> str:
+    """A parameter value as text: true/false for booleans, space-separated lists."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return " ".join(render_text(v) for v in value)
+    return str(value)
+
+
 def control_profiles(ctl: "Control") -> list[str]:
     """Every profile of the standard that includes this control, directly or through extends."""
     own = set(ctl.data.get("profiles", []) or [])

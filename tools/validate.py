@@ -281,6 +281,12 @@ def check_categories_and_standards(repo: Repo, report: Report) -> None:
             _check_i18n_block(repo, f, d, report, std)
 
 
+# Operators a generated fix can satisfy by setting the expected value.
+FIXABLE_OPERATORS = {"==", "<=", ">="}
+# File extension expected for script files, per script engine.
+SCRIPT_EXTENSIONS = {"shell": ".sh", "powershell": ".ps1"}
+
+
 def check_spec(repo: Repo, engine: str | None, spec, capability: str, where: str) -> list[str]:
     """Engine declared, able to do `capability`, and spec valid against its spec_schema."""
     if engine not in repo.engines:
@@ -329,7 +335,7 @@ def check_parameters(ctl: Control, report: Report) -> set[str]:
             if prof not in std.profiles:
                 report.error(f, f"parameter {name}: profile_defaults uses unknown profile {prof!r}")
 
-        lo, hi, allowed = p.get("minimum"), p.get("maximum"), p.get("allowed")
+        lo, hi = p.get("minimum"), p.get("maximum")
         if lo is not None and hi is not None and lo > hi:
             report.error(f, f"parameter {name}: minimum is greater than maximum")
         if (lo is not None or hi is not None) and ptype not in ("integer", "number"):
@@ -338,20 +344,28 @@ def check_parameters(ctl: Control, report: Report) -> set[str]:
         values = [("default", p["default"])] if "default" in p else []
         values += [(f"profile_defaults.{k}", v) for k, v in (p.get("profile_defaults") or {}).items()]
         for label, value in values:
-            if not _type_ok(ptype, value):
-                report.error(f, f"parameter {name}: {label} {value!r} is not of type {ptype}")
-                continue
-            if ptype in ("integer", "number"):
-                if lo is not None and value < lo:
-                    report.error(f, f"parameter {name}: {label} {value!r} is below minimum {lo}")
-                if hi is not None and value > hi:
-                    report.error(f, f"parameter {name}: {label} {value!r} is above maximum {hi}")
-            if allowed is not None:
-                items = value if ptype == "list" else [value]
-                for item in items:
-                    if item not in allowed:
-                        report.error(f, f"parameter {name}: {label} {item!r} is not in allowed {allowed}")
+            for msg in value_errors(p, value, label):
+                report.error(f, msg)
     return names
+
+
+def value_errors(p: dict, value, label: str) -> list[str]:
+    """Type and bounds of one value of parameter p. Shared with tailor.py for user overrides."""
+    name, ptype = p.get("name"), p.get("type")
+    lo, hi, allowed = p.get("minimum"), p.get("maximum"), p.get("allowed")
+    if not _type_ok(ptype, value):
+        return [f"parameter {name}: {label} {value!r} is not of type {ptype}"]
+    out = []
+    if ptype in ("integer", "number"):
+        if lo is not None and value < lo:
+            out.append(f"parameter {name}: {label} {value!r} is below minimum {lo}")
+        if hi is not None and value > hi:
+            out.append(f"parameter {name}: {label} {value!r} is above maximum {hi}")
+    if allowed is not None:
+        for item in value if ptype == "list" else [value]:
+            if item not in allowed:
+                out.append(f"parameter {name}: {label} {item!r} is not in allowed {allowed}")
+    return out
 
 
 def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
@@ -423,6 +437,9 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                         report.error(f, f"{where}: from_check {item['from_check']!r} is not a check of this control")
                     elif not repo.has_capability(src.get("engine"), "fix"):
                         report.error(f, f"{where}: engine {src.get('engine')!r} of check {item['from_check']!r} has no 'fix' capability")
+                    elif (src.get("spec") or {}).get("operator", "==") not in FIXABLE_OPERATORS:
+                        report.error(f, f"{where}: check {item['from_check']!r} uses operator "
+                                        f"{src['spec']['operator']!r}, a fix can only be generated for {sorted(FIXABLE_OPERATORS)}")
                 elif engine not in engines:
                     report.error(f, f"{where}: engine {engine!r} is not declared in baselines.yml")
                 elif not repo.has_capability(engine, "script"):
@@ -431,6 +448,9 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                     code.append((where, item["content"]))
                 elif "file" in item:
                     sp = script_path(ctl, item["file"])
+                    ext = SCRIPT_EXTENSIONS.get(engine)
+                    if ext and sp.suffix != ext:
+                        report.error(f, f"{where}: file of engine {engine!r} must end with {ext}")
                     if not sp.is_file():
                         report.error(f, f"{where}: file {sp.relative_to(std.path).as_posix()} does not exist")
                     else:

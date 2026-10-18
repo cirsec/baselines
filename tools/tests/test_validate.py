@@ -80,6 +80,8 @@ def test_current_repo_is_valid(repo):
         ("controls/CB-BUF-HYG-002.yml", "  effects:\n    restart: none\n    disruption: none\n", "", r"'effects' is a dependency of 'scripts'"),
         ("controls/CB-BUF-HYG-002.yml", "file: reminder.sh", "file: gone.sh", r"scripts/CB-BUF-HYG-002/gone.sh does not exist"),
         ("controls/CB-BUF-HYG-002.yml", "      file: reminder.sh", "      file: reminder.sh\n      content: echo", r"schema: remediation/scripts/0"),
+        ("controls/CB-BUF-HYG-001.yml", "operator: \">=\"\n        value: \"{{ min_temp_c }}\"\n    - id: conveyor",
+         "operator: \">\"\n        value: \"{{ min_temp_c }}\"\n    - id: conveyor", r"a fix can only be generated for"),
         # verification
         ("controls/CB-BUF-HYG-001.yml", "versions: [conveyor]\n    environment: Sushi", "versions: [classic]\n    environment: Sushi", r"not verified on version\(s\) \['conveyor'\]"),
         ("controls/CB-BUF-ABUSE-002.yml", "versions: [classic, conveyor]", "versions: [classic, vegan]", r"version 'vegan' not in"),
@@ -160,3 +162,10 @@ def test_id_only_mappings_are_a_warning(repo):
     errors, warnings = run(repo)
     assert errors == []
     assert any("only point to id-only frameworks" in w for w in warnings)
+
+
+def test_script_file_extension_matches_engine(buffet, repo):
+    d = buffet / "scripts/CB-BUF-HYG-002"
+    (d / "reminder.sh").rename(d / "reminder.ps1")
+    edit(buffet / "controls/CB-BUF-HYG-002.yml", "file: reminder.sh", "file: reminder.ps1")
+    assert_error(repo, r"file of engine 'shell' must end with \.sh")

@@ -8,6 +8,8 @@ schemas and the content license, plus two generated files:
   bundle.json   everything resolved in one JSON file (controls + translations, parameter
                 values per profile, script files inlined as content)
   index.json    lightweight list of controls, for sites and scanners
+  oscal/        OSCAL catalog and one OSCAL profile per profile
+  generated/    per profile: audit.sh, remediate.sh, controls/<ID>.sh, ansible/ (tools/generate.py)
 
 Outputs, in --out (default: dist/):
 
@@ -41,7 +43,9 @@ from common import (  # noqa: E402
     ROOT, SLUG_RE, Control, Repo, Standard, control_profiles, load_yaml_text, parse_semver,
     resolve_parameters, script_path,
 )
+import generate  # noqa: E402
 import validate  # noqa: E402
+from oscal import build_oscal  # noqa: E402
 
 RELEASED_STATUSES = {"active", "deprecated"}
 DEMO_CATEGORY = "demo"
@@ -232,7 +236,8 @@ def release_notes(repo: Repo, std: Standard, controls: list[Control], release: d
     lines += [
         "## Files",
         "",
-        "- `cirsec-baselines-*.zip`: controls (YAML), translations, schemas, `bundle.json`, `index.json`",
+        "- `cirsec-baselines-*.zip`: controls (YAML), translations, schemas, `bundle.json`, `index.json`, "
+        "OSCAL export, generated audit and remediation scripts and Ansible role per profile",
         "- `*.sha256`: checksum of the archive",
         "",
         f"Text licensed under {repo.meta.get('licenses', {}).get('content', 'CC-BY-4.0')}, "
@@ -251,7 +256,11 @@ def bundle_readme(std: Standard, release: dict) -> str:
         "- `index.json`: lightweight list of controls\n"
         "- `categories/`: source YAML files and script files (same layout as the repository)\n"
         "- `schema/`: JSON Schemas for the YAML files\n"
-        "- `baselines.yml`: engines, frameworks and locales referenced by controls\n\n"
+        "- `baselines.yml`: engines, frameworks and locales referenced by controls\n"
+        "- `oscal/`: OSCAL 1.1.2 catalog, and one OSCAL profile per profile\n"
+        "- `generated/<profile>/`: `audit.sh` (result JSON), `remediate.sh` (dry run unless `--apply`),\n"
+        "  `controls/<ID>.sh`, and an Ansible playbook and role (`ansible/site.yml`).\n"
+        "  Built for the profile defaults; regenerate with your tailoring file using `tools/generate.py`.\n\n"
         "Only controls with status `active` or `deprecated` are included.\n"
         "Control text is licensed under CC BY 4.0 (`LICENSE-CONTENT`). Code (scripts, script files,\n"
         "specs of script engines) is licensed under Apache 2.0 (`LICENSE`).\n"
@@ -267,7 +276,7 @@ def write_zip(src_dir: Path, zip_path: Path) -> None:
         for f in files:
             info = zipfile.ZipInfo(f.relative_to(src_dir.parent).as_posix(), date_time=ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
+            info.external_attr = (0o755 if f.suffix == ".sh" else 0o644) << 16
             zf.writestr(info, f.read_bytes())
 
 
@@ -336,6 +345,11 @@ def build_standard(repo: Repo, std: Standard, version: str | None, out: Path, *,
     (stage / "bundle.json").write_text(dump(build_bundle(repo, std, controls, release)), encoding="utf-8")
     (stage / "index.json").write_text(dump(build_index(std, controls, release)), encoding="utf-8")
     (stage / "README.md").write_text(bundle_readme(std, release), encoding="utf-8")
+    for fname, doc in build_oscal(std, controls, release).items():
+        (stage / "oscal").mkdir(exist_ok=True)
+        (stage / "oscal" / fname).write_text(dump(doc), encoding="utf-8")
+    for prof in sorted(std.profiles):
+        generate.generate(repo, std, prof, stage / "generated" / prof)
 
     zip_path = out / f"{name}.zip"
     write_zip(stage, zip_path)

@@ -1,0 +1,86 @@
+id: CB-LAB-SYS-001
+title: Every Linux engine
+finding:
+  title: Some Linux setting is wrong
+status: active
+profiles: [strict]
+risk:
+  severity: high
+assessment: partial
+applicability:
+  versions: [a]
+  facts: [has-tmp]
+description: Test.
+rationale: Test.
+impact: None known.
+parameters:
+  - name: max_auth
+    type: integer
+    description: MaxAuthTries.
+    default: 6
+    profile_defaults:
+      strict: 4
+audit:
+  manual: Test.
+  checks:
+    - id: forward
+      engine: sysctl
+      spec: { key: net.ipv4.ip_forward, value: 0 }
+    - id: auth-tries
+      engine: sshd-config
+      spec: { key: maxauthtries, operator: "<=", value: "{{ max_auth }}" }
+    - id: telnet
+      engine: package
+      spec: { name: telnetd, state: absent }
+    - id: avahi
+      engine: systemd-unit
+      spec: { unit: avahi-daemon.service, state: masked }
+    - id: shadow
+      engine: file-perms
+      spec: { path: /etc/gshadow*, owner: root, group: shadow, mode: "0640" }
+    - id: lock
+      engine: dconf
+      facts: [has-tmp]
+      spec: { key: /org/gnome/desktop/screensaver/lock-enabled, value: true }
+    - id: no-nopasswd
+      engine: file-content
+      spec: { path: /etc/sudoers.d/*, pattern: NOPASSWD, expect: no_match }
+    - id: no-suid-tmp
+      engine: osquery
+      spec: { query: "SELECT path FROM suid_bin WHERE path LIKE '/tmp/%'", expect: no_rows }
+remediation:
+  manual: Test.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  scripts:
+    - id: forward
+      from_check: forward
+    - id: auth-tries
+      from_check: auth-tries
+    - id: telnet
+      from_check: telnet
+    - id: avahi
+      from_check: avahi
+    - id: shadow
+      from_check: shadow
+    - id: lock
+      from_check: lock
+mappings:
+  - framework: nist-800-53r5
+    id: CM-6
+    relation: related
+references:
+  - title: Test
+    url: https://example.org
+authors:
+  - name: Test
+verified:
+  - date: 2026-10-01
+    by: test
+    versions: [a, b]
+introduced_in: 0.1.0
+created: 2026-10-01
+updated: 2026-10-01

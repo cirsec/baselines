@@ -19,6 +19,7 @@ When a control covers the same ground as another framework (CIS Benchmarks, ISO/
 - [Remediation](#remediation)
 - [Parameters and customization](#parameters-and-customization)
 - [Tailoring and scan results](#tailoring-and-scan-results)
+- [Generated artifacts](#generated-artifacts)
 - [Mappings and threats](#mappings-and-threats)
 - [Translations](#translations)
 - [Lifecycle and versioning](#lifecycle-and-versioning)
@@ -65,15 +66,23 @@ baselines/
 │   ├── control.yml
 │   ├── control-i18n.yml
 │   └── tailoring.yml
-├── tools/                           # validator, release builder, tests
+├── SECURITY.md                      # how to report a dangerous fix or a false negative
+├── tools/                           # validator, generators, release builder, tests
 │   ├── validate.py
+│   ├── tailor.py                    # checks a tailoring file against the content
+│   ├── generate.py                  # audit/remediation scripts and Ansible role for one profile
+│   ├── oscal.py                     # OSCAL catalog and profiles
 │   ├── build.py
 │   ├── common.py
+│   ├── lib/cirsec.sh                # shell runtime inlined into every generated control script
 │   ├── requirements.txt
-│   └── tests/
-├── .github/workflows/
-│   ├── ci.yml                       # validate + test + build smoke test, on every push and PR
-│   └── release.yml                  # manual release of one standard (workflow_dispatch)
+│   └── tests/                       # with fixtures/ (test-only standard) and golden/ (expected outputs)
+├── .github/
+│   ├── CODEOWNERS                   # reviewers per standard
+│   ├── ISSUE_TEMPLATE/              # new control, wrong check result, broken fix
+│   └── workflows/
+│       ├── ci.yml                   # validate, test, lint scripts, build, DCO, on every push and PR
+│       └── release.yml              # manual release of one standard (workflow_dispatch)
 └── categories/
     ├── cloud/                       # category
     │   ├── _category.yml
@@ -364,6 +373,40 @@ In a spec, a value that is exactly one placeholder (`value: "{{ min_temp_c }}"`)
 
 Each check result carries `evidence` (`observed`, `expected`, `source`), and the result names the standard version, profile and resolved parameters, so it can be reproduced.
 
+Check a tailoring file against the content (controls exist, parameters within bounds, past review dates):
+
+```sh
+python tools/tailor.py acme-servers.yml
+```
+
+---
+
+## Generated artifacts
+
+`tools/generate.py` turns the controls of one profile into code. Every release contains them for each profile, built with the profile defaults. Regenerate with your tailoring file to apply your overrides and exclusions.
+
+```sh
+python tools/generate.py --standard debian --tailoring acme-servers.yml --out gen/
+```
+
+| Output | Use |
+|--------|-----|
+| `controls/<ID>.sh` | One self-contained POSIX sh script per control. `check` prints one line per check and exits `0` pass, `1` fail, `2` not applicable, `3` error, `4` manual or review. `fix` is a dry run, `fix --apply` applies. |
+| `audit.sh` | Runs every check, prints a [result JSON](#tailoring-and-scan-results). Exit `1` if anything fails. |
+| `remediate.sh` | Runs every enabled fix in dependency order (`related_controls: requires`), dry run unless `--apply`. Backs up changed files under `/var/backups/cirsec/<date>/`, restarts each service from `effects` once at the end, says when a reboot or new login is needed. |
+| `ansible/` | `site.yml` and a role running the same control scripts: one task pair (check, fix) per control, tagged with the control ID, `cirsec_<standard>_<id>_enabled` per control, handlers from `effects`, `--check` mode supported. |
+
+Rules applied by every generator:
+
+- Only `active` controls (`--include-drafts` adds `draft` and `review` for testing).
+- A fix runs only when its check fails, and the check runs again afterwards. A check that cannot run (`error`) blocks its fix.
+- Fixes with `lockout_risk` are disabled unless the tailoring file opts in (`fixes:`), or `CB_ENABLE_<ID>=1` for `remediate.sh`.
+- The product version comes from `/etc/os-release` (`VERSION_ID` major), or `CB_PRODUCT_VERSION`. When it is unknown, version-specific checks report `error`, never `not_applicable`.
+- Engines without a shell generator (`graph-api`, `windows-registry`, `demo-sensor`...) report `error` in shell outputs. They need a scanner that implements them.
+- A fix can only be generated for checks using `==`, `<=` or `>=` (the fix sets the expected value).
+
+Generators live in `tools/generate.py`, one check and one fix function per engine. A bug is fixed there once, for every control. `tools/tests/golden/` holds the expected output for the test standard in `tools/tests/fixtures/lab`. After an intended change, refresh it with `UPDATE_GOLDEN=1 python -m pytest -q tools/tests/test_generate.py` and review the diff.
+
 ---
 
 ## Mappings and threats
@@ -519,6 +562,8 @@ pip install -r tools/requirements-dev.txt
 python tools/validate.py              # check everything (add --strict to fail on warnings)
 python -m pytest -q tools/tests       # test the tooling itself
 python tools/build.py --standard buffet --allow-demo --no-tag-check   # local test build into dist/
+python tools/generate.py --standard buffet --profile hardened --include-drafts --out gen/   # generated scripts
+python tools/tailor.py templates/tailoring.yml   # check a tailoring file
 ```
 
 ### Continuous integration
@@ -526,8 +571,10 @@ python tools/build.py --standard buffet --allow-demo --no-tag-check   # local te
 `.github/workflows/ci.yml` runs on every push and pull request:
 
 1. `validate.py`: schemas and cross-file rules. Errors are shown as annotations on the PR files.
-2. `pytest`: every validation rule is tested by breaking it on purpose in a copy of the repository.
-3. `build.py --all`: builds every standard at its current version. The archives are attached to the run as a `preview-bundles` artifact for 7 days.
+2. `pytest`: every validation rule is tested by breaking it on purpose in a copy of the repository. Generated scripts are run end to end, compared to golden files, and checked with `shellcheck`.
+3. Script files: `shellcheck` for `.sh`, PSScriptAnalyzer for `.ps1`.
+4. `build.py --all`: builds every standard at its current version. The archives are attached to the run as a `preview-bundles` artifact for 7 days.
+5. On pull requests: every commit carries a `Signed-off-by` matching its author (DCO).
 
 ### Release content
 
@@ -535,7 +582,7 @@ python tools/build.py --standard buffet --allow-demo --no-tag-check   # local te
 
 | File                                         | Content |
 |----------------------------------------------|---------|
-| `cirsec-baselines-<standard>-<version>.zip`  | Controls with status `active` or `deprecated` (never `draft` or `review`), their translations and script files, the category and standard metadata, `baselines.yml`, the schemas, `LICENSE` and `LICENSE-CONTENT`, plus generated `bundle.json` (everything in one JSON: resolved parameters per profile, script files inlined) and `index.json` (lightweight list) |
+| `cirsec-baselines-<standard>-<version>.zip`  | Controls with status `active` or `deprecated` (never `draft` or `review`), their translations and script files, the category and standard metadata, `baselines.yml`, the schemas, `LICENSE` and `LICENSE-CONTENT`, plus generated: `bundle.json` (everything in one JSON: resolved parameters per profile, script files inlined), `index.json` (lightweight list), `oscal/` (OSCAL 1.1.2 catalog and one profile per profile), `generated/<profile>/` ([generated artifacts](#generated-artifacts)) |
 | `...zip.sha256`                              | SHA-256 of the archive |
 | `RELEASE_NOTES.md`                           | Summary (counts per status, profile, severity, translation coverage) and changes since the previous tag of the same standard: added, deprecated, updated, removed |
 
@@ -558,9 +605,11 @@ The demo category can never be released.
 
 1. **Write from primary sources.** Vendor docs, RFCs, man pages, public-domain guides (NIST, CISA, ANSSI). List them in `references`.
 2. **Never copy text from proprietary benchmarks**, and do not keep one open while writing. Mappings are added in a separate pass.
-3. **Sign off your commits** (`git commit -s`). By signing off you certify, under the [Developer Certificate of Origin](https://developercertificate.org), that your contribution is your own work and contains no text you have no right to publish.
+3. **Sign off your commits** (`git commit -s`). By signing off you certify, under the [Developer Certificate of Origin](https://developercertificate.org), that your contribution is your own work and contains no text you have no right to publish. CI refuses pull requests with unsigned commits.
 4. **Start from `templates/`**, one control per file, validated against the schemas.
-5. New controls start as `draft`, move to `review` once a second expert reads them, and to `active` when they ship in a release.
+5. New controls start as `draft`, move to `review` once a second expert reads them, and to `active` when they ship in a release, after being verified on every version they apply to.
+6. **Prefer a declarative engine** over a script. If none fits, consider adding the engine (schema in `schema/engines/`, generator in `tools/generate.py`) rather than writing the same script twice.
+7. **Dangerous fix or false negative?** Report it privately, see [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -572,6 +621,11 @@ The demo category can never be released.
 - [x] Validator (schemas and cross-file rules)
 - [x] CI on every push and pull request
 - [x] Release builder and manual release workflow (`bundle.json`, `index.json`, notes)
+- [x] Format v2: declarative engines, facts, effects, tailoring, scan results
+- [x] Generators: audit and remediation scripts, Ansible role, OSCAL export
+- [ ] Test matrix on real VMs per standard and version (check, fix, check, fix again)
+- [ ] PowerShell and Graph generators (Windows, Microsoft 365)
+- [ ] Read-only scanner implementing every check engine
 - [ ] First standard: Microsoft 365
 - [ ] Website and versioned resolver on baselines.cirsec.org
 

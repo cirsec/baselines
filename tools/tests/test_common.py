@@ -5,6 +5,7 @@ import json
 from jsonschema import Draft202012Validator
 
 import build
+import tailor
 import validate
 from common import control_profiles, load_yaml, resolve_parameters
 from conftest import REPO
@@ -51,3 +52,4 @@ def test_tailoring_template_is_valid():
     schema = json.loads((REPO / "schema/tailoring.schema.json").read_text())
     data = load_yaml(REPO / "templates/tailoring.yml")
     assert list(Draft202012Validator(schema).iter_errors(data)) == []
+    assert tailor.main([str(REPO / "templates/tailoring.yml")]) == 0
