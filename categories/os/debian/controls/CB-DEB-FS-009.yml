@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-009
+title: Leave no file without a known owner or group
+finding:
+  title: Some files belong to a user or group that does not exist
+  description: An account created later with the same ID would silently own these files.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [permissions, ownership]
+
+description: |
+  Every file and directory on local filesystems (ext2/3/4, XFS, Btrfs, JFS, F2FS, FAT, exFAT and
+  tmpfs) belongs to a user and a group that exist in the account databases.
+rationale: |
+  Orphaned files usually come from deleted accounts or from archives extracted with their original
+  IDs. The next account or group created with that numeric ID becomes their owner and can read or
+  change them. They also point to incomplete account clean-up.
+impact: |
+  None: the control only reports.
+notes: |
+  The scan stays on each filesystem (`find -xdev`). Network filesystems are not scanned: their IDs
+  come from another system.
+
+audit:
+  manual: |
+    For each local filesystem listed by `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, run
+    `find <mount point> -xdev \( -nouser -o -nogroup \)`. The command must print nothing.
+  checks:
+    - id: unowned
+      engine: shell
+      description: Files and directories without a known owner or group on local filesystems.
+      spec:
+        script: |
+          out=$(for m in $(findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs); do
+            find "$m" -xdev \( -nouser -o -nogroup \) -print 2>/dev/null
+          done | sort -u)
+          [ -z "$out" ] && { echo "every file has a known owner and group"; exit 0; }
+          echo "$(printf '%s\n' "$out" | wc -l) item(s):"
+          printf '%s\n' "$out" | head -n 20 | while IFS= read -r f; do stat -c '%n %u:%g' "$f"; done
+          exit 1
+
+remediation:
+  manual: |
+    For each reported item, find where it comes from (`ls -ln`, `dpkg -S`), then:
+    - give it to its current owner with `chown <user>:<group> <file>`;
+    - or delete it if it belonged to a removed account and is no longer needed.
+
+    Restore files from archives with `tar --no-same-owner` (default for non-root) or fix the
+    owner right after extraction.
+
+references:
+  - title: find(1), Debian manual pages (-nouser, -nogroup)
+    url: https://manpages.debian.org/trixie/findutils/find.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R53)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R53
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.12"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.12"
+    relation: equivalent
+threats:
+  - framework: cwe
+    id: CWE-283
+related_controls:
+  - id: CB-DEB-AUTH-023
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on fresh install; file with unknown UID/GID detected."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on fresh install; file with unknown UID/GID detected."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

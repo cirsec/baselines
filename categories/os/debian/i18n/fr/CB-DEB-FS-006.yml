@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-006
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Monter les systèmes de fichiers séparés avec nodev, nosuid et noexec là où ils sont inutiles
+finding:
+  title: Des systèmes de fichiers séparés sont montés sans options restrictives
+  description: Des fichiers de périphérique, des programmes setuid ou des exécutables peuvent être utilisés depuis des systèmes de fichiers qui ne devraient contenir que des données.
+description: |
+  Quand ces répertoires sont des systèmes de fichiers séparés, ils sont montés avec les options de
+  `{{ mount_options }}` (format `répertoire:option,option`). Par défaut :
+
+  | Répertoire | Options |
+  |---|---|
+  | `/home`, `/var`, `/opt`, `/srv` | `nodev,nosuid` |
+  | `/var/tmp`, `/var/log`, `/var/log/audit`, `/boot` | `nodev,nosuid,noexec` |
+  | `/usr` | `nodev` |
+
+  Les profils renforcés exigent aussi `noexec` sur `/home`. Tout autre système de fichiers local
+  sur un périphérique bloc, hors `/`, doit être monté avec `nodev`. Un répertoire qui n'est pas un
+  système de fichiers séparé est ignoré ; s'il n'y en a aucun en dehors de `/`, le contrôle ne
+  s'applique pas.
+rationale: |
+  Seul `/dev` a besoin de fichiers de périphérique, et seuls les répertoires système ont besoin de
+  programmes setuid ou d'exécutables. `nodev` empêche qu'un nœud de périphérique créé sur un système
+  de fichiers de données (ou apporté sur un support amovible) donne un accès brut aux disques ou à
+  la mémoire. `nosuid` empêche les programmes setuid qui y seraient déposés d'accorder des
+  privilèges, et `noexec` empêche de lancer directement les outils qui y seraient déposés.
+impact: |
+  `noexec` sur `/home` (profils renforcés) empêche les utilisateurs de lancer directement leurs
+  propres scripts et programmes, y compris les outils installés dans `~/.local/bin`. `noexec` sur
+  `/boot` et `/var/log` n'a pas d'effet connu sur Debian.
+notes: |
+  L'ANSSI recommande aussi `noexec` sur `/var`. Il est écarté : dpkg exécute les scripts de
+  maintenance des paquets depuis `/var/lib/dpkg/info/`, et l'installation comme la mise à jour des
+  paquets échouent avec cette option. Les moteurs de conteneurs qui stockent leurs images sous
+  `/var/lib` ont aussi besoin de `exec`.
+setting:
+  location: /etc/fstab
+  recommended_value: "{{ mount_options }} ; nodev sur tout autre système de fichiers local hors /"
+parameters:
+  mount_options: Options exigées par point de montage, au format répertoire:option,option.
+audit:
+  manual: |
+    1. Lancer `findmnt -kn -o TARGET,SOURCE,OPTIONS`.
+    2. Pour chaque répertoire monté de `{{ mount_options }}`, les options doivent contenir celles listées.
+    3. Toute autre ligne dont la source est un périphérique `/dev/`, hors `/`, doit contenir `nodev`.
+remediation:
+  manual: |
+    Pour chaque répertoire signalé :
+    1. Ajouter les options manquantes au quatrième champ de sa ligne dans `/etc/fstab` (pour un
+       montage fait par une unité systemd `.mount`, à son `Options=`).
+    2. Lancer `systemctl daemon-reload` et `mount -o remount <répertoire>`.
+    3. Vérifier avec `findmnt -kn <répertoire>`, et redémarrer à la prochaine fenêtre de maintenance
+       pour confirmer.
+
+    Tester d'abord `noexec` et `nosuid` sur les systèmes qui exécutent des logiciels depuis `/opt`,
+    `/srv` ou `/home`.

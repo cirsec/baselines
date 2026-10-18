@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Monter /dev/shm avec nodev, nosuid et noexec
+finding:
+  title: Des programmes peuvent être exécutés depuis le système de fichiers de mémoire partagée
+  description: /dev/shm est accessible en écriture à tous et n'existe qu'en mémoire, ce qui en fait un endroit commode pour lancer des outils d'attaque sans laisser de fichiers sur le disque.
+description: |
+  `/dev/shm` est le tmpfs de la mémoire partagée POSIX. systemd le monte au démarrage avec `nodev`
+  et `nosuid`. Ce contrôle exige aussi `noexec`, posé par une ligne `/dev/shm` dans `/etc/fstab`
+  que systemd applique au démarrage.
+rationale: |
+  Tous les utilisateurs peuvent écrire dans `/dev/shm`, et son contenu n'atteint jamais le disque.
+  Les attaquants s'en servent pour stocker et lancer des outils en laissant peu de traces. `noexec`
+  bloque l'exécution directe, `nosuid` et `nodev` empêchent d'utiliser les fichiers setuid et les
+  nœuds de périphérique qui y seraient déposés.
+impact: |
+  Les programmes qui projettent en mémoire exécutable du code depuis des fichiers de `/dev/shm`
+  échouent. C'est rare (certains moteurs JIT et anciens logiciels de base de données) : vérifier les
+  exigences de l'éditeur avant d'appliquer sur ces systèmes.
+setting:
+  location: /etc/fstab
+  recommended_value: nodev,nosuid,noexec
+audit:
+  manual: |
+    Lancer `findmnt -kn /dev/shm`. Ses options doivent contenir `nodev`, `nosuid` et `noexec`.
+remediation:
+  manual: |
+    1. Si `/etc/fstab` a une ligne `/dev/shm`, ajouter `nodev,nosuid,noexec` à ses options. Sinon
+       ajouter la ligne :
+       ```
+       tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0
+       ```
+    2. Lancer `systemctl daemon-reload` et `mount -o remount,nodev,nosuid,noexec /dev/shm`.
+  rollback: |
+    Retirer la ligne `/dev/shm` de `/etc/fstab` (ou restaurer la copie du répertoire de sauvegarde),
+    lancer `systemctl daemon-reload` et `mount -o remount,exec /dev/shm`.

@@ -1,0 +1,173 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-010
+title: Review setuid and setgid programs and keep only those that are needed
+finding:
+  title: Unexpected setuid or setgid programs are present
+  description: Each setuid or setgid program runs with extra privileges for any user, so one flaw or one planted binary gives those privileges away.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: partial
+tags: [permissions, setuid, setgid, privilege-escalation]
+
+description: |
+  A program with the setuid (or setgid) bit runs with the rights of its owner (or group), usually
+  root, whoever starts it. Every such program on local filesystems is known and needed. The
+  check lists the ones that do not match `{{ allowed }}`, a list of shell patterns that holds the
+  setuid and setgid programs shipped by common Debian packages. A human still reviews the full list.
+rationale: |
+  Setuid root programs are the main way for a local user to escalate privileges: a bug in any of
+  them (pkexec, sudo and others have had several) gives root. Attackers also leave a setuid copy
+  of a shell behind as a backdoor. Fewer such programs mean less attack surface, and a reviewed
+  list makes a new one stand out.
+impact: |
+  Removing the setuid bit from a program stops non-root users from using it (for example `chfn`,
+  `chsh` or `newgrp`). Check who needs each program before removing it.
+notes: |
+  A fresh Debian 12 or 13 cloud image has 16 or 17 such programs, all in the default list.
+  `dpkg-statoverride` keeps a removed bit across package upgrades; a plain `chmod` is undone at
+  the next upgrade of the package. The check passes as "review": it confirms there is nothing
+  unexpected, not that every listed program is needed.
+
+parameters:
+  - name: allowed
+    type: list
+    description: Shell patterns of setuid and setgid programs accepted without review.
+    default:
+      - /usr/bin/at
+      - /usr/bin/chage
+      - /usr/bin/chfn
+      - /usr/bin/chsh
+      - /usr/bin/crontab
+      - /usr/bin/dotlockfile
+      - /usr/bin/expiry
+      - /usr/bin/fusermount
+      - /usr/bin/fusermount3
+      - /usr/bin/gpasswd
+      - /usr/bin/mount
+      - /usr/bin/newgrp
+      - /usr/bin/passwd
+      - /usr/bin/pkexec
+      - /usr/bin/ssh-agent
+      - /usr/bin/su
+      - /usr/bin/sudo
+      - /usr/bin/umount
+      - /usr/bin/wall
+      - /usr/bin/write
+      - /usr/bin/bsd-write
+      - /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+      - /usr/lib/openssh/ssh-keysign
+      - /usr/lib/polkit-1/polkit-agent-helper-1
+      - /usr/lib/*/utempter/utempter
+      - /usr/lib/xorg/Xorg.wrap
+      - /usr/sbin/exim4
+      - /usr/sbin/pam_extrausers_chkpwd
+      - /usr/sbin/unix_chkpwd
+
+audit:
+  manual: |
+    1. For each local filesystem listed by `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, run
+       `find <mount point> -xdev -type f -perm /6000 -exec ls -l {} +`.
+    2. For each program, check that it comes from a package (`dpkg -S <program>`), that
+       `dpkg --verify <package>` reports no change, and that it is needed on this system.
+  checks:
+    - id: unexpected
+      engine: shell
+      description: Setuid and setgid files on local filesystems that match none of the allowed patterns.
+      spec:
+        script: |
+          all=$(for m in $(findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs); do
+            find "$m" -xdev -type f -perm /6000 -print 2>/dev/null
+          done | sort -u)
+          set -f
+          rc=0 n=0
+          for f in $all; do
+            n=$((n + 1))
+            ok=0
+            for p in $CB_ALLOWED; do
+              # shellcheck disable=SC2254 # the pattern is the point
+              case $f in $p) ok=1; break ;; esac
+            done
+            [ "$ok" = 1 ] && continue
+            echo "unexpected: $(stat -c '%A %U:%G' "$f") $f"
+            rc=1
+          done
+          echo "$n setuid/setgid file(s) in total"
+          exit $rc
+
+remediation:
+  manual: |
+    For each unexpected program, and for listed programs that this system does not need:
+    1. If it belongs to no package (`dpkg -S` finds nothing) or `dpkg --verify` reports it as
+       changed, treat it as a possible compromise and investigate before deleting it.
+    2. If its package is not needed, purge the package.
+    3. Otherwise remove the bit in a way that survives upgrades:
+       `dpkg-statoverride --update --add root root 0755 <program>`.
+    4. Add programs that are needed and reviewed to `{{ allowed }}` in the tailoring file.
+
+references:
+  - title: dpkg-statoverride(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/dpkg/dpkg-statoverride.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: inode(7), Debian manual pages (set-user-ID and set-group-ID bits)
+    url: https://manpages.debian.org/trixie/manpages/inode.7.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R56, R57)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R56
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R57
+    relation: partial
+    note: R57 asks to remove the setuid root bit wherever possible; ours requires the review, the removal stays a local decision.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.13"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.001
+  - framework: cwe
+    id: CWE-250
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Review on fresh install (17 files on 12, 16 on 13, all allowed); setuid copy in /usr/local/bin reported as unexpected."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Review on fresh install (17 files on 12, 16 on 13, all allowed); setuid copy in /usr/local/bin reported as unexpected."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
