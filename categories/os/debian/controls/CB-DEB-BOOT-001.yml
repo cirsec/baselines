@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-BOOT-001
+title: Enable full address space layout randomization
+finding:
+  title: Memory layout of processes is predictable
+  description: Without full randomization, an attacker exploiting a memory bug can guess where code and data live.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, memory]
+
+description: |
+  The `kernel.randomize_va_space` sysctl controls address space layout randomization (ASLR).
+  With the value `2`, the kernel randomizes the positions of the stack, the virtual dynamic
+  shared object page, shared memory regions and the data segment (heap) of every process.
+rationale: |
+  Most memory corruption exploits need to know the address of the code or data they target.
+  Randomizing the layout at every execution turns a reliable exploit into a guess, and makes
+  return-oriented programming much harder.
+impact: |
+  None known. `2` is the kernel default and the Debian default.
+notes: |
+  `1` randomizes everything except the heap, `0` disables ASLR. A program that needs ASLR off
+  for debugging can be started with `setarch -R` instead of changing the system setting.
+
+setting:
+  location: sysctl `kernel.randomize_va_space`, persisted in `/etc/sysctl.d/`
+  default_value: "2"
+  recommended_value: "2"
+
+audit:
+  manual: |
+    Run `sysctl kernel.randomize_va_space`. The value must be `2`.
+    Then check that no file in `/etc/sysctl.conf`, `/etc/sysctl.d/`, `/run/sysctl.d/`
+    or `/usr/lib/sysctl.d/` sets it to another value.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.randomize_va_space.
+      spec: { key: kernel.randomize_va_space, value: 2 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `kernel.randomize_va_space = 2`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl --system`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Linux kernel documentation - Documentation for /proc/sys/kernel/ (randomize_va_space)
+    url: https://docs.kernel.org/admin-guide/sysctl/kernel.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R9)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R9
+    relation: partial
+    note: R9 lists several kernel settings; this control covers kernel.randomize_va_space.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-30
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.5.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.5.9"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-119
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

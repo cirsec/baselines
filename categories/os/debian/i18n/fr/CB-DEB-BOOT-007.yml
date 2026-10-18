@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-007
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les liens physiques vers des fichiers d'autres utilisateurs
+finding:
+  title: Les utilisateurs peuvent créer des liens physiques vers des fichiers qui ne leur appartiennent pas
+  description: Les liens physiques vers des fichiers privilégiés permettent des attaques par compétition et gardent accessibles des binaires vulnérables après une mise à jour.
+description: |
+  Avec `fs.protected_hardlinks = 1`, un utilisateur ne peut créer un lien physique que vers un
+  fichier qu'il possède, ou vers un fichier qu'il peut à la fois lire et écrire. Lier d'autres
+  fichiers demande la capacité `CAP_FOWNER`.
+rationale: |
+  Les liens physiques vers des fichiers d'autres utilisateurs permettent des attaques par
+  compétition proches de celles à base de liens symboliques. Ils permettent aussi à un attaquant
+  de garder une copie d'un binaire setuid vulnérable qui survit à son remplacement par une mise à
+  jour, et de l'exploiter plus tard.
+impact: |
+  Aucun connu en usage normal. Les outils qui créent des liens physiques vers des fichiers qu'ils
+  ne possèdent pas (certains outils de sauvegarde ou de déduplication lancés par un utilisateur)
+  doivent tourner avec les privilèges nécessaires.
+notes: |
+  Debian l'active par défaut : via `/usr/lib/sysctl.d/99-protect-links.conf` (procps) sur
+  Debian 12, et via `/usr/lib/sysctl.d/50-default.conf` (linux-sysctl-defaults) sur Debian 13.
+setting:
+  location: sysctl `fs.protected_hardlinks`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "1"
+audit:
+  manual: |
+    Lancer `sysctl fs.protected_hardlinks`. La valeur doit être `1`.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne la passe à `0`.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `fs.protected_hardlinks = 1`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl --system`.

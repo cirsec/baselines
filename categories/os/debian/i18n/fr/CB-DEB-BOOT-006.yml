@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-006
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les liens symboliques dans les répertoires partagés à sticky bit
+finding:
+  title: Les liens symboliques des répertoires temporaires partagés sont suivis pour tous les utilisateurs
+  description: Un attaquant peut déposer un lien symbolique dans /tmp et faire écraser un fichier arbitraire par un programme privilégié.
+description: |
+  Avec `fs.protected_symlinks = 1`, le noyau ne suit un lien symbolique situé dans un répertoire
+  accessible en écriture à tous et à sticky bit (comme `/tmp`) que si le processus qui le suit
+  possède le lien, ou si le propriétaire du lien possède aussi le répertoire.
+rationale: |
+  Une attaque classique dépose dans `/tmp` un lien symbolique portant le nom qu'un programme
+  privilégié va créer, et pointant vers un fichier sensible. Quand le programme écrit « son »
+  fichier, il écrase la cible. Ce réglage bloque toute cette famille de situations de compétition
+  (time-of-check to time-of-use) à base de liens symboliques dans les répertoires partagés.
+impact: |
+  Aucun connu en usage normal. Les programmes qui suivent les liens symboliques d'autres
+  utilisateurs dans `/tmp` sont rares et déjà dangereux.
+notes: |
+  Debian l'active par défaut : via `/usr/lib/sysctl.d/99-protect-links.conf` (procps) sur
+  Debian 12, et via `/usr/lib/sysctl.d/50-default.conf` (linux-sysctl-defaults) sur Debian 13.
+setting:
+  location: sysctl `fs.protected_symlinks`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "1"
+audit:
+  manual: |
+    Lancer `sysctl fs.protected_symlinks`. La valeur doit être `1`.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne la passe à `0`.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `fs.protected_symlinks = 1`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl --system`.

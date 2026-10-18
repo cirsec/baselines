@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-BOOT-002
+title: Hide kernel addresses from users
+finding:
+  title: Kernel memory addresses are exposed through /proc and other interfaces
+  description: Leaked kernel addresses defeat kernel address randomization and help local privilege escalation exploits.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, information-disclosure]
+
+description: |
+  The `kernel.kptr_restrict` sysctl controls whether kernel pointers printed through `%pK`
+  (for example in `/proc/kallsyms` and `/proc/modules`) are shown. With `1`, they are hidden
+  from users without the `CAP_SYSLOG` capability. With `2`, they are hidden from everyone,
+  including root.
+rationale: |
+  Kernel exploits need the address of kernel structures and functions. The kernel randomizes
+  its own layout at boot, but a single leaked pointer is enough to undo that randomization.
+  Hiding pointers removes an easy source of leaks for a local attacker.
+impact: |
+  With `2`, profiling and tracing tools run as root (`perf`, some eBPF tools) see zeroed kernel
+  addresses and cannot resolve kernel symbols. Use `1` on hosts where administrators need them.
+notes: |
+  Debian ships `0`. The value can be raised at runtime; lowering it needs no reboot either.
+
+setting:
+  location: sysctl `kernel.kptr_restrict`, persisted in `/etc/sysctl.d/`
+  default_value: "0"
+  recommended_value: "At least {{ kptr_restrict }}"
+
+parameters:
+  - name: kptr_restrict
+    type: integer
+    description: Minimum value of kernel.kptr_restrict. 1 hides pointers from unprivileged users, 2 from everyone.
+    default: 2
+    minimum: 1
+    maximum: 2
+
+audit:
+  manual: |
+    Run `sysctl kernel.kptr_restrict`. The value must be at least {{ kptr_restrict }}.
+    Then check that no sysctl configuration file sets a lower value.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.kptr_restrict.
+      spec: { key: kernel.kptr_restrict, operator: ">=", value: "{{ kptr_restrict }}" }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `kernel.kptr_restrict = {{ kptr_restrict }}`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl -w kernel.kptr_restrict=0`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Linux kernel documentation - Documentation for /proc/sys/kernel/ (kptr_restrict)
+    url: https://docs.kernel.org/admin-guide/sysctl/kernel.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R9)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R9
+    relation: partial
+    note: R9 recommends 2 among other kernel settings; this control covers kernel.kptr_restrict only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-30
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.5.8"
+    relation: stricter
+    note: The benchmark accepts 1; ours defaults to 2.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.5.8"
+    relation: stricter
+    note: The benchmark accepts 1; ours defaults to 2.
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-200
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

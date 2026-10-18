@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-003
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver le journal du noyau aux utilisateurs privilégiés
+finding:
+  title: Les utilisateurs non privilégiés peuvent lire le journal du noyau
+  description: Le journal du noyau peut révéler des adresses, des détails matériels et des erreurs utiles à un attaquant.
+description: |
+  Le sysctl `kernel.dmesg_restrict` détermine qui peut lire le tampon circulaire du noyau avec
+  `dmesg` ou `/dev/kmsg`. Avec `1`, seuls les processus ayant la capacité `CAP_SYSLOG` peuvent le lire.
+rationale: |
+  Les messages du noyau contiennent souvent des adresses mémoire, des versions de pilotes et de
+  firmware, et des traces d'opérations échouées. Les lire aide un attaquant local à ajuster un exploit noyau.
+impact: |
+  Les utilisateurs non privilégiés ne peuvent plus lancer `dmesg`. Les administrateurs utilisent
+  `sudo dmesg` ou `journalctl -k`, qui demande l'appartenance au groupe `adm` ou `systemd-journal`.
+notes: |
+  Les noyaux Debian sont compilés avec cette restriction active par défaut : le contrôle passe en
+  général sur une installation neuve. Il protège contre sa désactivation.
+setting:
+  location: sysctl `kernel.dmesg_restrict`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "1"
+audit:
+  manual: |
+    Lancer `sysctl kernel.dmesg_restrict`. La valeur doit être `1`.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne la passe à `0`.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `kernel.dmesg_restrict = 1`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl -w kernel.dmesg_restrict=0`.

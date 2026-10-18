@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-BOOT-005
+title: Disable core dumps of setuid programs
+finding:
+  title: Privileged programs can write their memory to core dump files
+  description: A crashing setuid program can leave secrets such as password hashes in a core file.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, core-dump, credentials]
+
+description: |
+  The `fs.suid_dumpable` sysctl decides whether a process that changed privileges (setuid or
+  setgid programs, or programs that dropped privileges) can produce a core dump when it crashes.
+  With `0`, such processes never dump core.
+rationale: |
+  Setuid programs such as `passwd` or `su` handle secrets while running with root privileges.
+  A core dump of their memory can expose password hashes, keys or tokens, and an attacker who
+  can make one crash may be able to read the dump.
+impact: |
+  Crashes of setuid programs cannot be analysed from a core dump. Debug them on a test system.
+notes: |
+  `1` dumps them like any process and `2` dumps them readable by root only. Both are unsafe
+  on production systems. Core dumps of regular processes are a separate topic.
+
+setting:
+  location: sysctl `fs.suid_dumpable`, persisted in `/etc/sysctl.d/`
+  default_value: "0"
+  recommended_value: "0"
+
+audit:
+  manual: |
+    Run `sysctl fs.suid_dumpable`. The value must be `0`.
+    Then check that no sysctl configuration file sets another value.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of fs.suid_dumpable.
+      spec: { key: fs.suid_dumpable, value: 0 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `fs.suid_dumpable = 0`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl --system`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Linux kernel documentation - Documentation for /proc/sys/fs/ (suid_dumpable)
+    url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R14)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R14
+    relation: partial
+    note: R14 lists several filesystem settings; this control covers fs.suid_dumpable.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.5.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.5.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1003
+  - framework: cwe
+    id: CWE-528
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; values kept after reboot; fix idempotent.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
