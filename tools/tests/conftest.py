@@ -8,7 +8,7 @@ TOOLS = Path(__file__).resolve().parent.parent
 REPO = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 
-IGNORE = shutil.ignore_patterns(".git", "dist", "__pycache__", ".pytest_cache", ".venv")
+IGNORE = shutil.ignore_patterns(".git", "dist", "__pycache__", ".pytest_cache", ".venv", ".local")
 
 
 @pytest.fixture

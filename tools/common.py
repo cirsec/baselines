@@ -182,6 +182,62 @@ class Standard:
     def domains(self) -> set[str]:
         return {d.get("code") for d in self.data.get("domains", []) or []}
 
+    @property
+    def facts(self) -> set[str]:
+        return {f.get("key") for f in self.data.get("facts", []) or []}
+
+    def profile_chain(self, profile: str) -> list[str]:
+        """The profile, then every profile it extends, nearest first. Stops on a cycle."""
+        parents = {p.get("key"): p.get("extends") for p in self.data.get("profiles", []) or []}
+        chain, cur = [], profile
+        while cur is not None and cur not in chain:
+            chain.append(cur)
+            cur = parents.get(cur)
+        return chain
+
+
+def resolve_parameters(ctl: "Control", profile: str, overrides: dict | None = None) -> dict:
+    """Parameter values for one profile: override, then profile_defaults along the extends chain, then default."""
+    chain = ctl.standard.profile_chain(profile)
+    out = {}
+    for p in ctl.data.get("parameters", []) or []:
+        name = p.get("name")
+        if overrides and name in overrides:
+            out[name] = overrides[name]
+            continue
+        defaults = p.get("profile_defaults") or {}
+        out[name] = next((defaults[k] for k in chain if k in defaults), p.get("default"))
+    return out
+
+
+def resolve_value(value: Any, params: dict) -> Any:
+    """Replace {{ name }} in a spec. A string that is exactly one placeholder takes the parameter's type."""
+    if isinstance(value, str):
+        m = PLACEHOLDER_RE.fullmatch(value.strip())
+        if m:
+            return params[m.group(1)]
+        return PLACEHOLDER_RE.sub(lambda m: render_text(params[m.group(1)]), value)
+    if isinstance(value, dict):
+        return {k: resolve_value(v, params) for k, v in value.items()}
+    if isinstance(value, list):
+        return [resolve_value(v, params) for v in value]
+    return value
+
+
+def render_text(value: Any) -> str:
+    """A parameter value as text: true/false for booleans, space-separated lists."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return " ".join(render_text(v) for v in value)
+    return str(value)
+
+
+def control_profiles(ctl: "Control") -> list[str]:
+    """Every profile of the standard that includes this control, directly or through extends."""
+    own = set(ctl.data.get("profiles", []) or [])
+    return [k for k in sorted(ctl.standard.profiles) if own & set(ctl.standard.profile_chain(k))]
+
 
 @dataclass
 class Category:
@@ -199,6 +255,7 @@ class Repo:
     root: Path
     meta: dict
     categories: dict[str, Category] = field(default_factory=dict)
+    spec_validators: dict[str, Draft202012Validator] = field(default_factory=dict)  # engine key -> spec schema
 
     def standards(self):
         for c in self.categories.values():
@@ -215,8 +272,11 @@ class Repo:
         return None
 
     @property
-    def engines(self) -> set[str]:
-        return {e.get("key") for e in self.meta.get("engines", []) or []}
+    def engines(self) -> dict[str, dict]:
+        return {e.get("key"): e for e in self.meta.get("engines", []) or []}
+
+    def has_capability(self, engine: str | None, capability: str) -> bool:
+        return capability in ((self.engines.get(engine) or {}).get("capabilities") or [])
 
     @property
     def frameworks(self) -> dict[str, dict]:
@@ -236,16 +296,21 @@ class Repo:
 
 def load_validators(root: Path) -> dict[str, Draft202012Validator]:
     out = {}
-    for name in ("baselines", "category", "standard", "control", "control-i18n"):
+    for name in ("baselines", "category", "standard", "control", "control-i18n", "result", "tailoring"):
         schema = json.loads((root / "schema" / f"{name}.schema.json").read_text(encoding="utf-8"))
         Draft202012Validator.check_schema(schema)
         out[name] = Draft202012Validator(schema, format_checker=FormatChecker())
     return out
 
 
-def schema_errors(validator: Draft202012Validator, data: Any) -> list[str]:
+def schema_errors(validator: Draft202012Validator, data: Any, prefix: str = "schema") -> list[str]:
     msgs = []
     for e in sorted(validator.iter_errors(data), key=lambda e: list(e.path)):
         where = "/".join(str(p) for p in e.path) or "<root>"
-        msgs.append(f"schema: {where}: {e.message}")
+        msgs.append(f"{prefix}: {where}: {e.message}")
     return msgs
+
+
+def script_path(ctl: "Control", file: str) -> Path:
+    """Where remediation.scripts[].file lives: <standard>/scripts/<control ID>/<file>."""
+    return ctl.standard.path / "scripts" / ctl.id / file

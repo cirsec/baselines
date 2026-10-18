@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=../../../../schema/control.schema.json
 #
 # DEMO CONTROL 3 - PARTIAL assessment, ENUM and BOOLEAN parameters,
-# "any" logic between checks, hardened-only profile.
+# "any" logic between checks, hardened-only profile, a check limited by a fact,
+# a handwritten fix script stored in a file.
 
 id: CB-BUF-HYG-002
 title: Replace serving utensils and clean sneeze guards on a fixed schedule
@@ -56,6 +57,7 @@ audit:
     - id: schedule-app
       engine: demo-sensor
       description: Read the cleaning app schedule.
+      facts: [cleaning-app]  # only run where the app is in use (fact from _standard.yml)
       spec:
         sensor: cleaning_app.utensils.interval
         operator: "<="
@@ -72,6 +74,17 @@ remediation:
   manual: |
     Prepare {{ interval_min }}-minute swap rounds. Keep a spare set of utensils
     per dish so swaps are instant.
+  effects:
+    restart: none
+    disruption: none
+  scripts:
+    # Handwritten code, only for engines with the "script" capability (shell, powershell).
+    # Longer than a few lines -> a file in <standard>/scripts/<control ID>/, so CI can lint it.
+    # Parameters arrive as environment variables CB_<NAME> (here CB_INTERVAL_MIN), never {{ }}.
+    - id: reminder
+      engine: shell
+      description: Install a cron job reminding staff to swap utensils.
+      file: reminder.sh
 
 references:
   - title: "[DEMO] Imaginary Food Code, chapter 4: utensils"

@@ -22,7 +22,8 @@ tags: [example]                        # (optional) lowercase slugs
 # --- Scope ------------------------------------------------------------------
 applicability:                         # (optional) omit = all versions, no prerequisite
   versions: ["12"]                     # subset of _standard.yml applies_to versions
-  requires: [Some license or feature]
+  facts: [some-fact]                   # fact keys from _standard.yml facts, machine-detectable
+  requires: [Some license or feature]  # human-only prerequisites a scanner cannot detect
   conditions: |
     Only relevant when ...
 
@@ -59,24 +60,39 @@ audit:
   logic: all                           # all | any
   checks:                              # required when assessment is automated
     - id: main-check                   # stable slug, used in per-check results
-      engine: shell                    # engine key from baselines.yml
+      engine: sysctl                   # engine key from baselines.yml. Prefer declarative engines.
       description: What this check reads.
-      spec:                            # engine-specific
-        command: "test $(some-command) -le {{ max_days }}"
+      facts: [some-fact]               # (optional) run only when these facts are true
+      spec:                            # validated against schema/engines/<engine>.schema.json
+        key: some.kernel.setting
+        operator: "<="
+        value: "{{ max_days }}"        # a lone {{ }} keeps the parameter's type
+    - id: fallback-check               # (optional) script engine, only when no declarative engine fits
+      engine: shell
+      spec:                            # exit 0 pass, 1 fail, 2 not applicable; no {{ }} in code
+        script: 'test "$(some-command)" -le "$CB_MAX_DAYS"'
 
 # --- Remediation --------------------------------------------------------------
 remediation:
   manual: |
     Step-by-step fix.
-  requires_restart: false              # (optional)
+  effects:                             # required when scripts are present
+    restart: service                   # none | service | session | reboot
+    services: [some-service]           # required when restart is service
+    disruption: low                    # none | low | high
+    lockout_risk: false                # true = disabled by default in generated artifacts
   rollback: |                          # (optional)
     How to revert.
-  scripts:                             # (optional)
+  scripts:                             # (optional) one of the three forms below per entry
     - id: fix
+      from_check: main-check           # generated from the check (engine needs the fix capability)
+    - id: fix-inline
+      engine: shell                    # engine with the script capability
+      content: |                       # a few lines; parameters as CB_<NAME> env vars
+        some-command --set "$CB_MAX_DAYS"
+    - id: fix-file
       engine: shell
-      description: Applies the recommended value.
-      content: |
-        echo "fix here"
+      file: fix.sh                     # <standard>/scripts/<ID>/fix.sh, for longer code
 
 # --- Sources and links ------------------------------------------------------
 references:                            # sources used to write this control, at least one
@@ -103,9 +119,10 @@ authors:
   - name: Jane Doe
     github: janedoe
 reviewers: []                          # (optional)
-verified:                              # (optional) real-environment tests
-  - date: 2026-10-16
+verified:                              # real-environment tests. Required on every applicable version
+  - date: 2026-10-16                   # before an automated or partial control becomes active
     by: janedoe
+    versions: ["12"]
     environment: Test environment description
 introduced_in: 0.1.0                   # standard version where it first appears
 created: 2026-10-16
