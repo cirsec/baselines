@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-007
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Installer automatiquement les mises à jour de sécurité
+finding:
+  title: Les mises à jour de sécurité ne sont pas installées automatiquement
+  description: Les correctifs attendent qu'un humain les applique, souvent pendant des semaines, alors que les vulnérabilités qu'ils corrigent sont publiques.
+description: |
+  `unattended-upgrades` installe les mises à jour disponibles sans action humaine. Deux minuteries
+  systemd le pilotent : `apt-daily.timer` rafraîchit les listes de paquets et
+  `apt-daily-upgrade.timer` installe les mises à jour, quand `APT::Periodic::Update-Package-Lists`
+  et `APT::Periodic::Unattended-Upgrade` ne valent pas `0`. Les mises à jour installées sont
+  choisies par `Unattended-Upgrade::Origins-Pattern` ; la valeur par défaut de Debian inclut la
+  suite de sécurité.
+rationale: |
+  La plupart des compromissions exploitent des vulnérabilités pour lesquelles un correctif existe
+  déjà. Installer les correctifs de sécurité chaque jour et automatiquement referme cette fenêtre
+  sans dépendre d'un processus manuel. Les mises à jour de sécurité Debian sont des correctifs
+  minimaux rétroportés, conçus pour être installés sans revue.
+impact: |
+  Les services sont redémarrés par leur paquet lors de la mise à jour, ce qui peut causer une
+  courte interruption. Le système n'est pas redémarré (`Unattended-Upgrade::Automatic-Reboot` est
+  à false par défaut) : les correctifs du noyau et de la libc demandent toujours un redémarrage
+  planifié. Les organisations qui déploient les mises à jour avec un outil central de gestion des
+  correctifs peuvent exclure ce contrôle dans leur fichier d'adaptation, en le documentant.
+notes: |
+  Installé et actif par défaut sur les images cloud Debian 12 et 13. Une installation avec
+  l'installateur Debian ne l'installe que si ce choix est fait pendant l'installation.
+setting:
+  location: /etc/apt/apt.conf.d/20auto-upgrades, /etc/apt/apt.conf.d/50unattended-upgrades
+  recommended_value: unattended-upgrades installé, les deux options APT::Periodic à 1, origine de sécurité autorisée, minuteries actives
+audit:
+  manual: |
+    1. `dpkg -s unattended-upgrades` affiche `Status: install ok installed`.
+    2. `apt-config dump APT::Periodic` affiche `Update-Package-Lists` et `Unattended-Upgrade` à
+       `1` (ou une autre valeur non nulle).
+    3. `apt-config dump Unattended-Upgrade::Origins-Pattern` contient `label=Debian-Security` ou
+       un nom de code en `-security`.
+    4. `systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer` affiche deux fois `enabled`.
+    5. `unattended-upgrade --dry-run --debug` liste l'origine de sécurité parmi les origines autorisées.
+remediation:
+  manual: |
+    1. `apt-get install unattended-upgrades`.
+    2. Écrire `/etc/apt/apt.conf.d/20auto-upgrades` avec
+       `APT::Periodic::Update-Package-Lists "1";` et `APT::Periodic::Unattended-Upgrade "1";`
+       (c'est ce que fait `dpkg-reconfigure -plow unattended-upgrades`), et supprimer tout réglage
+       ultérieur à `0`.
+    3. Si `Unattended-Upgrade::Origins-Pattern` a été personnalisé, y remettre
+       `"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";` dans
+       `/etc/apt/apt.conf.d/50unattended-upgrades`.
+    4. `systemctl enable --now apt-daily.timer apt-daily-upgrade.timer`.
+  rollback: |
+    Mettre les deux options `APT::Periodic` à `0` dans `/etc/apt/apt.conf.d/20auto-upgrades`, ou
+    purger `unattended-upgrades`.

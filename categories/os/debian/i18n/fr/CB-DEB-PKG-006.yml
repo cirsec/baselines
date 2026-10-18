@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-006
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer le dépôt de sécurité Debian
+finding:
+  title: Le dépôt de sécurité Debian n'est pas configuré
+  description: Les correctifs de sécurité sont publiés dans une suite séparée ; sans elle, le système ne les reçoit jamais.
+description: |
+  L'équipe de sécurité Debian publie ses correctifs dans la suite `<nom de code>-security` (par
+  exemple `trixie-security`), servie par `security.debian.org/debian-security` et
+  `deb.debian.org/debian-security`. Chaque version de Debian doit avoir une entrée `deb` active
+  pour cette suite, ou pour un miroir interne de celle-ci.
+rationale: |
+  Les correctifs de vulnérabilités n'arrivent dans la suite principale qu'avec les versions
+  intermédiaires, des semaines ou des mois plus tard. Sans la suite de sécurité, le système reste
+  exposé à chaque vulnérabilité publiée entre-temps, même si les mises à jour sont appliquées
+  chaque jour.
+impact: |
+  Aucun connu. Le système doit joindre le miroir de sécurité ou une copie interne.
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/
+  recommended_value: Une entrée deb active pour la suite <nom de code>-security
+audit:
+  manual: |
+    Lancer `apt-cache policy | grep -- '-security'`. La commande doit lister la suite
+    `<nom de code>-security` de la version installée (`. /etc/os-release; echo "$VERSION_CODENAME"`).
+remediation:
+  manual: |
+    Ajouter la suite de sécurité, par exemple dans `/etc/apt/sources.list.d/debian-security.sources`
+    (remplacer `trixie` par le nom de code de la version installée, ou l'URI par un miroir interne) :
+
+    ```
+    Types: deb
+    URIs: https://security.debian.org/debian-security
+    Suites: trixie-security
+    Components: main
+    Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+    ```
+
+    Reprendre les mêmes composants que l'entrée principale (`contrib`, `non-free`,
+    `non-free-firmware`), puis lancer `apt-get update`.

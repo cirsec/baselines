@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-003
+title: Keep APT signature, freshness and TLS checks enabled
+finding:
+  title: APT is configured to accept unsigned, weakly signed, outdated or unverified repositories
+  description: Global APT options disable the checks that stop a tampered or replayed repository from being used.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [apt, repositories, signatures, supply-chain]
+
+description: |
+  These APT options, set in `/etc/apt/apt.conf` or `/etc/apt/apt.conf.d/`, weaken the checks APT
+  makes on every repository:
+
+  - `Acquire::AllowInsecureRepositories`: use repositories without a signed `Release` file;
+  - `Acquire::AllowWeakRepositories`: accept signatures made with weak algorithms (SHA-1);
+  - `Acquire::AllowDowngradeToInsecureRepositories`: accept a repository that was signed and no
+    longer is;
+  - `APT::Get::AllowUnauthenticated`: install packages that cannot be authenticated;
+  - `Acquire::Check-Date` and `Acquire::Check-Valid-Until` set to false: accept `Release` files
+    dated in the future or past their expiry date;
+  - `Acquire::https::Verify-Peer` and `Acquire::https::Verify-Host` set to false, globally or for
+    one host: accept any TLS certificate.
+
+  APT's defaults are safe; the control checks that nothing overrides them.
+rationale: |
+  Signature checks are what make a compromised mirror or network harmless. With them disabled, or
+  with expired metadata accepted, an attacker can install arbitrary packages as root, or replay old
+  signed metadata so that known vulnerable versions stay installed.
+impact: |
+  None for the Debian archive. A repository that only works with one of these options must be
+  fixed (signed, given a valid date or certificate) or removed.
+
+setting:
+  location: /etc/apt/apt.conf, /etc/apt/apt.conf.d/
+  default_value: All checks enabled
+  recommended_value: All checks enabled, written explicitly in /etc/apt/apt.conf.d/99cirsec-apt-security
+
+audit:
+  manual: |
+    Run `apt-config dump` and check that it shows none of:
+    `Acquire::AllowInsecureRepositories`, `Acquire::AllowWeakRepositories`,
+    `Acquire::AllowDowngradeToInsecureRepositories` or `APT::Get::AllowUnauthenticated` set to
+    `1`/`true`/`yes`, nor `Acquire::Check-Date`, `Acquire::Check-Valid-Until`,
+    `Acquire::https::Verify-Peer` or `Acquire::https::Verify-Host` (also under
+    `Acquire::https::<host>::`) set to `0`/`false`/`no`.
+  checks:
+    - id: options
+      engine: shell
+      description: Effective APT configuration, as merged by apt-config.
+      spec:
+        script: |
+          o=$(apt-config dump 2>/dev/null) || { echo "apt-config failed"; exit 3; }
+          p='^(Binary::[^:]+::)?'
+          bad=$(printf '%s\n' "$o" | grep -Ei "$p(Acquire::(AllowInsecureRepositories|AllowWeakRepositories|AllowDowngradeToInsecureRepositories)|APT::Get::AllowUnauthenticated) \"(1|true|yes|on)\"";
+                printf '%s\n' "$o" | grep -Ei "$p""Acquire::(Check-Date|Check-Valid-Until|https(::[^ ]+)?::Verify-(Peer|Host)) \"(0|false|no|off)\"")
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "no option disables signature, date or TLS checks"
+
+remediation:
+  manual: |
+    1. Find where each option is set with `grep -riE 'Allow(Insecure|Weak|DowngradeToInsecure|Unauthenticated)|Check-(Date|Valid-Until)|Verify-(Peer|Host)' /etc/apt/apt.conf /etc/apt/apt.conf.d/`.
+    2. Remove those lines.
+    3. Optionally, write the safe values explicitly in `/etc/apt/apt.conf.d/99cirsec-apt-security`,
+       which is read after the other files of the directory. `/etc/apt/apt.conf` is read last and
+       wins over it.
+    4. Run `apt-get update` and check that it prints no error.
+
+    The automated fix writes `99cirsec-apt-security` and comments out the offending lines of
+    `/etc/apt/apt.conf`. Host-specific `Verify-Peer`/`Verify-Host` lines must be removed by hand.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove `/etc/apt/apt.conf.d/99cirsec-apt-security` and restore `/etc/apt/apt.conf` from the
+    backup directory printed by `remediate.sh`.
+  scripts:
+    - id: options
+      engine: shell
+      content: |
+        f=/etc/apt/apt.conf
+        if [ -f "$f" ] && grep -Eqi '^[^#]*(Allow(Insecure|Weak|DowngradeToInsecure)Repositories|AllowUnauthenticated|Check-(Date|Valid-Until)|Verify-(Peer|Host))' "$f"; then
+          cb_backup "$f"
+          sed -E -i 's/^([^#]*(Allow(Insecure|Weak|DowngradeToInsecure)Repositories|AllowUnauthenticated|Check-(Date|Valid-Until)|Verify-(Peer|Host)))/# disabled by CB-DEB-PKG-003: \1/I' "$f"
+        fi
+        f=/etc/apt/apt.conf.d/99cirsec-apt-security
+        cb_backup "$f"
+        cat >"$f" <<'EOF'
+        // CB-DEB-PKG-003: keep APT signature, freshness and TLS checks enabled.
+        Acquire::AllowInsecureRepositories "false";
+        Acquire::AllowWeakRepositories "false";
+        Acquire::AllowDowngradeToInsecureRepositories "false";
+        APT::Get::AllowUnauthenticated "false";
+        Acquire::Check-Date "true";
+        Acquire::Check-Valid-Until "true";
+        Acquire::https::Verify-Peer "true";
+        Acquire::https::Verify-Host "true";
+        EOF
+
+references:
+  - title: apt.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: apt-secure(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt-secure.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: apt-transport-https(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt-transport-https.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R59
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.12"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.14"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.15"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: cwe
+    id: CWE-494
+  - framework: cwe
+    id: CWE-295
+related_controls:
+  - id: CB-DEB-PKG-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on stock; AllowInsecureRepositories, AllowUnauthenticated in apt.conf, Check-Valid-Until and Verify-Peer false (global and per host) detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works, kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on stock; AllowInsecureRepositories, AllowUnauthenticated in apt.conf, Check-Valid-Until and Verify-Peer false (global and per host) detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works, kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

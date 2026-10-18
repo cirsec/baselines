@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-012
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Chiffrer les disques qui portent le système et les données
+finding:
+  title: Des systèmes de fichiers ou le swap sont stockés en clair sur disque
+  description: Quiconque détient le disque ou l'appareil, perdu, volé ou mis au rebut, peut lire ses données et modifier le système hors ligne.
+description: |
+  Avec LUKS (dm-crypt), chaque partition ou groupe de volumes LVM est chiffré par une clé
+  déverrouillée au démarrage, par une phrase de passe, un TPM ou un serveur de clés. L'installateur
+  Debian le met en place avec la méthode de partitionnement « Assisté - utiliser tout un disque
+  avec LVM chiffré ». Seuls `/boot` et la partition système EFI restent en clair.
+rationale: |
+  Les portables et les postes de travail se perdent et se volent, et les disques partent avec le
+  matériel rendu ou mis au rebut. Sans chiffrement, les données, les empreintes de mots de passe
+  et les clés du disque peuvent être lues, et le système modifié hors ligne (par exemple pour y
+  installer une porte dérobée) sans laisser de trace.
+impact: |
+  Une phrase de passe doit être saisie à chaque démarrage, sauf si un déverrouillage par TPM ou
+  par le réseau est mis en place, ce qui complique les redémarrages sans surveillance. Chiffrer un
+  système existant demande une réinstallation ou une conversion hors ligne. Le coût en
+  performances est négligeable sur les processeurs avec instructions AES.
+notes: |
+  La vérification couvre chaque système de fichiers ext2/3/4, XFS, Btrfs, F2FS et JFS monté, sauf
+  `/boot` et ce qui est en dessous, et chaque partition ou fichier de swap ; le swap zram est en
+  mémoire et ignoré. Un périphérique qui n'est pas un périphérique bloc (jeu de données ZFS,
+  système de fichiers réseau) fait remonter une erreur, à examiner à la main.
+setting:
+  location: Partitionnement des disques, /etc/crypttab
+  recommended_value: Tous les systèmes de fichiers sauf /boot, et le swap, sur un périphérique dm-crypt
+audit:
+  manual: |
+    Lancer `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS`. Chaque système de fichiers monté sauf `/boot`
+    et `/boot/efi`, et chaque swap, doit se trouver sous un périphérique de type `crypt`.
+remediation:
+  manual: |
+    Le chiffrement ne peut pas être ajouté sans risque par un script à un système en marche.
+
+    1. Pour un nouveau système, choisir « Assisté - utiliser tout un disque avec LVM chiffré »
+       dans l'installateur Debian, ou créer des volumes LUKS2 avec `cryptsetup luksFormat` et les
+       déclarer dans `/etc/crypttab`.
+    2. Pour un système existant, sauvegarder les données, réinstaller avec chiffrement et
+       restaurer ; ou convertir hors ligne avec `cryptsetup reencrypt --encrypt` depuis un système
+       live, après une sauvegarde complète.
+    3. Chiffrer aussi le swap (dans le LVM chiffré, ou avec une clé aléatoire dans `/etc/crypttab`).
+    4. Conserver une phrase de passe de secours en lieu sûr, séparément de l'appareil.
