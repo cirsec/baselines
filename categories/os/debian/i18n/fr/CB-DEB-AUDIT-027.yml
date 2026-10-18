@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-027
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les registres de connexion et les fichiers de session
+finding:
+  title: La falsification des registres de connexion n'est pas détectée
+  description: Les fichiers qui enregistrent les connexions et les échecs peuvent être modifiés pour cacher une session.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-session.rules` :
+
+  - les écritures dans les registres de sessions `/run/utmp`, `/var/log/wtmp`, `/var/log/btmp` et, sur
+    Debian 13, la base `wtmpdb` dans `/var/lib/wtmpdb/` (clé `session`) ;
+  - les écritures dans `/var/log/lastlog` et dans les compteurs `pam_faillock` de `/run/faillock/`
+    (clé `logins`).
+rationale: |
+  `last`, `lastb`, `who` et `faillock` lisent ces fichiers. Chaque connexion y écrit, donc les
+  événements montrent les connexions et déconnexions ; une modification hors connexion est le signe
+  d'une tentative d'effacer une session.
+impact: |
+  Chaque connexion et déconnexion produit quelques événements.
+notes: |
+  `/run/utmp` est utilisé au lieu de `/var/run/utmp` : `/var/run` est un lien symbolique vers `/run` et le noyau surveille le chemin réel.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-session.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-session.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `logins`, `session`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -w /run/utmp -p wa -k session
+    -w /var/log/wtmp -p wa -k session
+    -w /var/log/btmp -p wa -k session
+    -w /var/lib/wtmpdb -p wa -k session
+    -w /var/log/lastlog -p wa -k logins
+    -w /run/faillock -p wa -k logins
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-session.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-session.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

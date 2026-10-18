@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-016
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les changements des droits sudo et les commandes lancées sous une autre identité
+finding:
+  title: Les changements des droits d'administration et l'usage d'autres identités ne sont pas enregistrés
+  description: Sans ces événements, personne ne peut dire qui a accordé des droits sudo ni qui a agi sous un autre compte.
+description: |
+  Trois groupes de règles auditd, écrits dans `/etc/audit/rules.d/60-cirsec-scope.rules` :
+
+  - les écritures et changements d'attributs sur `/etc/sudoers` et `/etc/sudoers.d/` (clé `scope`) ;
+  - chaque programme lancé avec un utilisateur effectif différent de l'utilisateur réel, par un
+    utilisateur connecté (`execve` avec `uid!=euid`, appels 64 et 32 bits, clé `user_emulation`),
+    ce qui couvre `sudo`, `su` et les autres programmes setuid ;
+  - les écritures dans le journal de sudo `{{ sudo_log_file }}` (clé `sudo_log_file`).
+rationale: |
+  S'accorder des droits sudo est une étape classique de persistance et d'élévation de privilèges.
+  Enregistrer chaque changement de la politique sudo, chaque commande lancée sous une autre identité et
+  chaque tentative de modifier le journal de sudo garde les actions d'administration imputables à la
+  personne qui s'est connectée.
+impact: |
+  Les systèmes où les utilisateurs lancent beaucoup de programmes setuid produisent plus d'événements d'audit.
+notes: |
+  Pour chaque appel système, le noyau garde la clé de la première règle qui correspond. L'exécution de `sudo` ou `su` est en général enregistrée avec la clé `privileged` (CB-DEB-AUDIT-026), dont les règles sont chargées avant ; `user_emulation` couvre les autres cas.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-scope.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-scope.rules"
+parameters:
+  sudo_log_file: Chemin du journal de sudo à surveiller (option logfile de sudoers, voir CB-DEB-AUTH-005).
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `scope`, `sudo_log_file`, `user_emulation`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -w /etc/sudoers -p wa -k scope
+    -w /etc/sudoers.d -p wa -k scope
+    -a always,exit -F arch=b64 -S execve -C uid!=euid -F auid!=-1 -F key=user_emulation
+    -a always,exit -F arch=b32 -S execve -C uid!=euid -F auid!=-1 -F key=user_emulation
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-scope.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-scope.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

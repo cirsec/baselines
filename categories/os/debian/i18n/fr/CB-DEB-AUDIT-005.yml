@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-005
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner rsyslog et créer ses fichiers avec des droits restreints
+finding:
+  title: rsyslog est installé mais ne tourne pas, ou écrit des journaux lisibles par tous
+  description: Un rsyslog installé mais arrêté perd sans bruit les journaux texte et les copies distantes qu'il devrait produire ; des fichiers créés avec un mode large divulguent leur contenu.
+applicability:
+  conditions: |
+    Seulement si rsyslog est installé. Debian 12 et 13 journalisent dans le journal systemd par
+    défaut et n'installent pas rsyslog ; l'installer revient à choisir rsyslog comme système de
+    journalisation.
+description: |
+  Quand rsyslog est le système de journalisation choisi, son service doit être activé et démarré, et
+  les fichiers qu'il crée ne doivent pas être lisibles par les autres utilisateurs : le dernier
+  `$FileCreateMode` de `/etc/rsyslog.conf` et `/etc/rsyslog.d/*.conf` doit valoir `0640` ou plus
+  strict.
+rationale: |
+  rsyslog écrit `/var/log/syslog`, `/var/log/auth.log` et transfère les messages vers un serveur de
+  journalisation. Arrêté, ces fichiers et la copie distante s'interrompent sans erreur. Un mode de
+  création restrictif garde les fichiers nouveaux et tournés privés à root et au groupe `adm`.
+impact: |
+  Aucun connu. Debian livre déjà `$FileCreateMode 0640`.
+notes: |
+  Le choix entre le journal seul et rsyslog est laissé à l'administrateur : ce contrôle n'installe
+  pas rsyslog. CB-DEB-AUDIT-002 aligne le transfert du journal sur ce choix.
+setting:
+  location: rsyslog.service, /etc/rsyslog.conf, /etc/rsyslog.d/
+  recommended_value: Activé et démarré, $FileCreateMode 0640 ou plus strict
+audit:
+  manual: |
+    1. Lancer `systemctl is-enabled rsyslog` et `systemctl is-active rsyslog`. Les commandes doivent
+       afficher `enabled` et `active`.
+    2. Lancer `grep -h '^\s*\$FileCreateMode' /etc/rsyslog.conf /etc/rsyslog.d/*.conf | tail -n 1`.
+       Le mode doit valoir `0640` ou plus strict.
+remediation:
+  manual: |
+    1. Lancer `systemctl enable --now rsyslog`.
+    2. Créer `/etc/rsyslog.d/60-cirsec.conf` avec `$FileCreateMode 0640` et lancer
+       `systemctl restart rsyslog`.
+  rollback: |
+    Supprimer `/etc/rsyslog.d/60-cirsec.conf` et lancer `systemctl restart rsyslog`.

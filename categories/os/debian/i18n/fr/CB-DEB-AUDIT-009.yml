@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-009
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Chiffrer et authentifier la connexion de rsyslog au serveur de journalisation
+finding:
+  title: Les journaux sont envoyés au serveur de journalisation sans TLS
+  description: Les messages traversent le réseau en clair et peuvent être lus, modifiés ou envoyés à un faux serveur.
+applicability:
+  conditions: |
+    Seulement quand rsyslog est le système de journalisation. Avec le journal seul,
+    `systemd-journal-upload` utilise toujours HTTPS (CB-DEB-AUDIT-008).
+description: |
+  rsyslog chiffre ses transferts avec le pilote réseau GnuTLS du paquet `rsyslog-gnutls`. Ce contrôle
+  exige :
+
+  - le paquet `rsyslog-gnutls` ;
+  - une action de transfert (`omfwd` ou l'ancienne forme `@@machine`) qui utilise le pilote `gtls`
+    en mode TLS seul (`StreamDriverMode="1"`) ;
+  - le certificat de l'autorité qui signe le certificat du serveur (`DefaultNetstreamDriverCAFile`
+    ou `StreamDriver.CAFile`), et l'authentification du serveur par le nom de son certificat
+    (`StreamDriverAuthMode="x509/name"`).
+rationale: |
+  Les journaux contiennent des noms d'utilisateurs, des adresses et parfois des secrets. TLS les garde
+  confidentiels et intègres pendant le transport, et la vérification des certificats empêche un
+  attaquant de se faire passer pour le serveur de journalisation.
+impact: |
+  Nécessite un serveur de journalisation qui accepte TLS (port 6514 par convention) et une chaîne de
+  certificats à distribuer. Une mauvaise autorité ou un mauvais nom fait que rsyslog met les messages
+  en file au lieu de les envoyer.
+setting:
+  location: /etc/rsyslog.conf, /etc/rsyslog.d/
+  recommended_value: omfwd avec StreamDriver gtls, StreamDriverMode 1, StreamDriverAuthMode x509/name et un fichier d'autorité
+audit:
+  manual: |
+    1. Lancer `dpkg-query -W -f='${Status}\n' rsyslog-gnutls`. La sortie doit se terminer par `installed`.
+    2. Dans `/etc/rsyslog.conf` et `/etc/rsyslog.d/*.conf`, trouver l'action de transfert. Elle doit
+       utiliser `StreamDriver="gtls"` (ou `$DefaultNetstreamDriver gtls`), `StreamDriverMode="1"` et
+       `StreamDriverAuthMode="x509/name"`.
+    3. `DefaultNetstreamDriverCAFile` (ou `StreamDriver.CAFile`) doit désigner un fichier d'autorité existant.
+remediation:
+  manual: |
+    1. Lancer `apt-get install rsyslog-gnutls`.
+    2. Copier le certificat de l'autorité du serveur de journalisation dans `/etc/ssl/certs/log-ca.pem`.
+    3. Créer `/etc/rsyslog.d/60-remote.conf` :
+       ```
+       global(DefaultNetstreamDriverCAFile="/etc/ssl/certs/log-ca.pem")
+       *.* action(type="omfwd" target="<serveur>" port="6514" protocol="tcp"
+                  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+                  StreamDriverPermittedPeers="<serveur>"
+                  queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on"
+                  action.resumeRetryCount="-1")
+       ```
+    4. Lancer `rsyslogd -N1` pour vérifier la syntaxe, puis `systemctl restart rsyslog`.
+  rollback: |
+    Retirer `/etc/rsyslog.d/60-remote.conf` et redémarrer rsyslog.

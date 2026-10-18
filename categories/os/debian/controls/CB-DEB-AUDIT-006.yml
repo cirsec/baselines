@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-006
+title: Review which messages rsyslog writes and where
+finding:
+  title: The rsyslog rules have not been reviewed against the site logging needs
+  description: Security messages may be missing from the files that are kept, monitored or forwarded.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: manual
+tags: [rsyslog, logging]
+
+applicability:
+  facts: [rsyslog]
+  conditions: |
+    Only when rsyslog is installed.
+
+description: |
+  rsyslog sorts messages into files by facility and priority with the rules in
+  `/etc/rsyslog.conf` and `/etc/rsyslog.d/*.conf`. Debian writes, among others,
+  `/var/log/syslog`, `/var/log/auth.log` (authentication), `/var/log/kern.log` and
+  `/var/log/user.log`. The site must check that the messages it needs (authentication, privilege
+  use, kernel, critical errors of its services) end up in files that are kept long enough and
+  monitored.
+rationale: |
+  A message that is not written anywhere cannot be investigated. The defaults are generic; only
+  the administrator knows which services and events matter.
+impact: |
+  None known.
+
+audit:
+  manual: |
+    1. Read the rules with `grep -Ev '^\s*(#|$)' /etc/rsyslog.conf /etc/rsyslog.d/*.conf`.
+    2. Check that `auth,authpriv.*` goes to a dedicated file (`/var/log/auth.log` on Debian), that
+       `kern.*` and `*.emerg` are logged, and that the messages of the services this system runs
+       reach a file or the remote log server.
+    3. Check that each file is rotated (CB-DEB-AUDIT-007) and kept as long as the site policy
+       requires.
+
+remediation:
+  manual: |
+    Add the missing rules in a file of `/etc/rsyslog.d/`, for example:
+    ```
+    auth,authpriv.*   /var/log/auth.log
+    kern.*            -/var/log/kern.log
+    *.emerg           :omusrmsg:*
+    ```
+    Then run `systemctl restart rsyslog`.
+  rollback: |
+    Remove the added file and run `systemctl restart rsyslog`.
+
+references:
+  - title: rsyslog.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsyslog/rsyslog.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.4"
+    relation: equivalent
+threats:
+  - framework: cwe
+    id: CWE-778
+related_controls:
+  - id: CB-DEB-AUDIT-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

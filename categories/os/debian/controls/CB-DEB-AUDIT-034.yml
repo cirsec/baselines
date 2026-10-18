@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-034
+title: Build the AIDE database and check file integrity every day
+finding:
+  title: File integrity is never checked
+  description: Without a reference database and a regular check, AIDE cannot report modified system files.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [aide, integrity, systemd]
+
+description: |
+  AIDE needs a reference database, `/var/lib/aide/aide.db`, built with `aideinit` from the
+  current state of the system. `aide-common` then ships `dailyaidecheck.timer`, which compares the
+  files with the database once a day and writes a report to `/var/log/aide/` (and mails it when a
+  mail transport is installed).
+
+  This control requires the database to exist and the timer to be enabled.
+rationale: |
+  The database is the trusted reference; the daily check turns it into detection. Without either,
+  an installed AIDE gives a false sense of protection.
+impact: |
+  Building the database reads every covered file: a few minutes and a short burst of disk
+  activity. The daily check does the same. After legitimate changes (upgrades, configuration),
+  review the report and update the database (`aide --update`, then replace `aide.db` with
+  `aide.db.new`).
+notes: |
+  Build the database once the system is in its intended state: run this fix after the other
+  hardening fixes, or rebuild the database afterwards with `aideinit -y -f`, otherwise the first
+  reports list every change made by the hardening.
+
+setting:
+  location: /var/lib/aide/aide.db, dailyaidecheck.timer
+  default_value: No database; timer enabled when aide-common is installed
+  recommended_value: Database present, timer enabled
+
+audit:
+  manual: |
+    1. Run `ls -l /var/lib/aide/aide.db`. The file must exist and not be empty.
+    2. Run `systemctl is-enabled dailyaidecheck.timer`. It must print `enabled`.
+    3. Read the last report in `/var/log/aide/` and check that differences are explained.
+  checks:
+    - id: database
+      engine: shell
+      description: The AIDE reference database exists.
+      spec:
+        script: |
+          if [ -s /var/lib/aide/aide.db ]; then
+            ls -l /var/lib/aide/aide.db
+          else
+            echo "/var/lib/aide/aide.db missing or empty"
+            exit 1
+          fi
+    - id: timer
+      engine: systemd-unit
+      description: dailyaidecheck.timer is enabled.
+      spec: { unit: dailyaidecheck.timer, state: enabled }
+
+remediation:
+  manual: |
+    1. Run `aideinit -y -f` and wait for it to finish (a few minutes).
+    2. Run `systemctl enable --now dailyaidecheck.timer`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now dailyaidecheck.timer` and delete `/var/lib/aide/aide.db`.
+  scripts:
+    - id: database
+      engine: shell
+      content: |
+        command -v aideinit >/dev/null 2>&1 || { echo "AIDE is not installed" >&2; exit 1; }
+        # umask 027: aideinit would otherwise create its logs readable by everyone
+        [ -s /var/lib/aide/aide.db ] || (umask 027; aideinit -y -f)
+    - id: timer
+      from_check: timer
+
+references:
+  - title: aideinit(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/aide-common/aideinit.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemd.timer(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemd.timer.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R76)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R76
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(1)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.3.1"
+    relation: partial
+    note: The package installation is in CB-DEB-AUDIT-032.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.3.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.3.1"
+    relation: partial
+    note: The package installation is in CB-DEB-AUDIT-032.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.3.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1036.005
+  - framework: cwe
+    id: CWE-353
+related_controls:
+  - id: CB-DEB-AUDIT-032
+    type: requires
+  - id: CB-DEB-AUDIT-033
+    type: requires
+  - id: CB-DEB-AUDIT-035
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; aideinit builds the database in about 2 minutes on 1 GB RAM; dailyaidecheck.timer enabled; daily check run by hand writes 0640 logs."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; aideinit builds the database in about 2 minutes on 1 GB RAM; dailyaidecheck.timer enabled; daily check run by hand writes 0640 logs."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

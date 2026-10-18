@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-034
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Construire la base AIDE et vérifier l'intégrité des fichiers chaque jour
+finding:
+  title: L'intégrité des fichiers n'est jamais vérifiée
+  description: Sans base de référence ni vérification régulière, AIDE ne peut signaler aucun fichier système modifié.
+description: |
+  AIDE a besoin d'une base de référence, `/var/lib/aide/aide.db`, construite avec `aideinit` à partir
+  de l'état actuel du système. `aide-common` fournit ensuite `dailyaidecheck.timer`, qui compare les
+  fichiers avec la base une fois par jour et écrit un rapport dans `/var/log/aide/` (et l'envoie par
+  courriel quand un transport de courrier est installé).
+
+  Ce contrôle exige que la base existe et que le minuteur soit activé.
+rationale: |
+  La base est la référence de confiance ; la vérification quotidienne en fait un moyen de détection.
+  Sans l'une ou l'autre, un AIDE installé donne une fausse impression de protection.
+impact: |
+  Construire la base lit chaque fichier couvert : quelques minutes et une brève charge disque. La
+  vérification quotidienne fait de même. Après des changements légitimes (mises à jour,
+  configuration), relire le rapport et mettre à jour la base (`aide --update`, puis remplacer
+  `aide.db` par `aide.db.new`).
+notes: |
+  Construire la base une fois le système dans son état voulu : lancer cette correction après les
+  autres corrections de durcissement, ou reconstruire la base ensuite avec `aideinit -y -f`, sinon les
+  premiers rapports listent chaque changement fait par le durcissement.
+setting:
+  location: /var/lib/aide/aide.db, dailyaidecheck.timer
+  recommended_value: Base présente, minuteur activé
+audit:
+  manual: |
+    1. Lancer `ls -l /var/lib/aide/aide.db`. Le fichier doit exister et ne pas être vide.
+    2. Lancer `systemctl is-enabled dailyaidecheck.timer`. La commande doit afficher `enabled`.
+    3. Lire le dernier rapport dans `/var/log/aide/` et vérifier que les différences sont expliquées.
+remediation:
+  manual: |
+    1. Lancer `aideinit -y -f` et attendre la fin (quelques minutes).
+    2. Lancer `systemctl enable --now dailyaidecheck.timer`.
+  rollback: |
+    Lancer `systemctl disable --now dailyaidecheck.timer` et supprimer `/var/lib/aide/aide.db`.

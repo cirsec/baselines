@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-003
+title: Do not accept logs from other hosts
+finding:
+  title: The system listens for log messages from the network
+  description: A log receiver opens a network port and lets any host write into the local logs, unless the system is a dedicated log server.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [journald, rsyslog, logging, network]
+
+description: |
+  Two services can receive logs from other hosts:
+
+  - `systemd-journal-remote` (package `systemd-journal-remote`), started by its socket unit
+    `systemd-journal-remote.socket` or its service;
+  - rsyslog, when an input module for the network is loaded: `imtcp`, `imudp` or `imrelp`.
+
+  This control requires both to be off: the journal-remote units disabled or masked (or absent),
+  and no network input in `/etc/rsyslog.conf` or `/etc/rsyslog.d/*.conf`.
+rationale: |
+  A receiver is a network service that parses untrusted input, and lets anyone who can reach the
+  port inject false entries or flood the disk. Only a dedicated log server should run one.
+impact: |
+  Systems that are central log servers must be excluded from this control in the tailoring file.
+notes: |
+  `systemd-journal-upload`, which sends the local journal to a remote server, ships in the same
+  package and is not affected.
+
+setting:
+  location: systemd units systemd-journal-remote.socket/.service, /etc/rsyslog.conf, /etc/rsyslog.d/
+  default_value: Not installed, rsyslog network inputs commented out
+  recommended_value: Units disabled or absent, no imtcp/imudp/imrelp input
+
+audit:
+  manual: |
+    1. Run `systemctl is-enabled systemd-journal-remote.socket systemd-journal-remote.service`. Each
+       must print `disabled`, `masked` or report that the unit does not exist.
+    2. If rsyslog is installed, run
+       `grep -E '^\s*(module\(load="?im(tcp|udp|relp)|input\(type="?im(tcp|udp|relp)|\$ModLoad\s+im(tcp|udp|relp))' /etc/rsyslog.conf /etc/rsyslog.d/*.conf`.
+       It must print nothing.
+  checks:
+    - id: journal-remote-socket
+      engine: systemd-unit
+      description: systemd-journal-remote.socket is not enabled.
+      spec: { unit: systemd-journal-remote.socket, state: disabled }
+    - id: journal-remote-service
+      engine: systemd-unit
+      description: systemd-journal-remote.service is not enabled.
+      spec: { unit: systemd-journal-remote.service, state: disabled }
+    - id: rsyslog-conf
+      engine: file-content
+      description: No network input module in /etc/rsyslog.conf.
+      facts: [rsyslog]
+      spec:
+        path: /etc/rsyslog.conf
+        pattern: '^\s*(module\(load="?im(tcp|udp|relp)|input\(type="?im(tcp|udp|relp)|\$ModLoad\s+im(tcp|udp|relp))'
+        expect: no_match
+    - id: rsyslog-dropins
+      engine: file-content
+      description: No network input module in /etc/rsyslog.d/*.conf.
+      facts: [rsyslog]
+      spec:
+        path: /etc/rsyslog.d/*.conf
+        pattern: '^\s*(module\(load="?im(tcp|udp|relp)|input\(type="?im(tcp|udp|relp)|\$ModLoad\s+im(tcp|udp|relp))'
+        expect: no_match
+
+remediation:
+  manual: |
+    1. Run `systemctl disable --now systemd-journal-remote.socket systemd-journal-remote.service`, or
+       remove the `systemd-journal-remote` package if `systemd-journal-upload` is not used.
+    2. In `/etc/rsyslog.conf` and `/etc/rsyslog.d/*.conf`, comment out the `module(load="imtcp")`,
+       `module(load="imudp")`, `module(load="imrelp")` and matching `input(...)` lines, then run
+       `systemctl restart rsyslog`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl enable --now systemd-journal-remote.socket`, and restore the rsyslog input lines.
+  scripts:
+    - id: journal-remote-socket
+      from_check: journal-remote-socket
+    - id: journal-remote-service
+      from_check: journal-remote-service
+
+references:
+  - title: systemd-journal-remote.service(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd-journal-remote/systemd-journal-remote.service.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: rsyslog.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsyslog/rsyslog.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.1.1.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.1.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.6"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.006
+  - framework: cwe
+    id: CWE-1327
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Passes on fresh install; imtcp input added in rsyslog.d makes it fail as expected."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Passes on fresh install; imtcp input added in rsyslog.d makes it fail as expected."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

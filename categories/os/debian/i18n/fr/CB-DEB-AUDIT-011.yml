@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-011
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Installer et faire tourner le démon d'audit
+finding:
+  title: Les événements d'audit du noyau ne sont pas collectés
+  description: Sans auditd, les appels système, modifications de fichiers et exécutions de commandes sensibles ne sont enregistrés nulle part.
+description: |
+  Le système d'audit de Linux enregistre les événements choisis par des règles (appels système,
+  accès aux fichiers, exécutions de programmes) avec l'identité de l'utilisateur qui s'est connecté.
+  `auditd` (paquet `auditd`) reçoit ces événements du noyau et les écrit dans
+  `/var/log/audit/audit.log` ; `audispd-plugins` ajoute les greffons qui les transfèrent (syslog,
+  serveur distant). Aucun des deux n'est installé par défaut.
+
+  Ce contrôle exige les deux paquets et le service `auditd` activé et démarré.
+rationale: |
+  Le journal d'audit est l'enregistrement détaillé, par utilisateur, sur lequel s'appuient les
+  analyses après une intrusion. Il est aussi requis par les contrôles de règles CB-DEB-AUDIT-016 à
+  CB-DEB-AUDIT-029.
+impact: |
+  auditd utilise quelques mégaoctets de mémoire. L'espace disque dépend des règles et de l'activité ;
+  voir CB-DEB-AUDIT-013 et CB-DEB-AUDIT-014.
+setting:
+  location: paquets auditd et audispd-plugins, auditd.service
+  recommended_value: Installés, auditd.service activé et démarré
+audit:
+  manual: |
+    1. Lancer `dpkg-query -W -f='${Package} ${Status}\n' auditd audispd-plugins`. Les deux lignes
+       doivent se terminer par `installed`.
+    2. Lancer `systemctl is-enabled auditd` et `systemctl is-active auditd`. Les commandes doivent
+       afficher `enabled` et `active`.
+remediation:
+  manual: |
+    Lancer `apt-get install auditd audispd-plugins`, puis `systemctl enable --now auditd`.
+  rollback: |
+    Lancer `apt-get purge auditd audispd-plugins`.
