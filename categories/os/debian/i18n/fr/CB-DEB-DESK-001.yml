@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-001
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le montage automatique des supports amovibles dans GNOME
+finding:
+  title: GNOME monte et ouvre les supports amovibles dès leur branchement
+  description: Une clé USB ou un disque branché sur la machine est monté et ouvert sans décision de l'utilisateur, ce qui expose le gestionnaire de fichiers et ses générateurs de vignettes à un contenu piégé.
+description: |
+  GNOME monte les supports amovibles à leur insertion (`org.gnome.desktop.media-handling
+  automount`) et ouvre une fenêtre du gestionnaire de fichiers dessus (`automount-open`). Les
+  deux clés sont mises à `false` dans la base dconf système `local` et verrouillées, pour que
+  les utilisateurs ne puissent pas les réactiver.
+rationale: |
+  Monter un périphérique fait analyser son système de fichiers par le noyau, et l'ouvrir lance
+  des générateurs de vignettes et des indexeurs sur des fichiers contrôlés par un attaquant. Des
+  failles de ces analyseurs ont servi à compromettre des machines depuis une clé USB. Exiger une
+  action explicite laisse l'utilisateur maître de la décision et le temps de vérifier le support.
+impact: |
+  Les utilisateurs montent les supports amovibles en cliquant dessus dans le gestionnaire de
+  fichiers. Les supports ne s'ouvrent plus automatiquement.
+notes: |
+  Le réglage ne concerne que les sessions GNOME. Le profil dconf `/etc/dconf/profile/user` doit
+  contenir `system-db:local` ; le correctif le crée s'il n'existe pas. Sur un serveur sans GNOME,
+  le contrôle est non applicable.
+setting:
+  location: /etc/dconf/db/local.d/, clés /org/gnome/desktop/media-handling/automount et automount-open
+  recommended_value: false, verrouillé
+audit:
+  manual: |
+    1. `cat /etc/dconf/profile/user` doit contenir `system-db:local`.
+    2. `dconf read /org/gnome/desktop/media-handling/automount` et
+       `dconf read /org/gnome/desktop/media-handling/automount-open` doivent afficher `false`.
+    3. Les deux clés doivent figurer dans un fichier de `/etc/dconf/db/local.d/locks/`.
+remediation:
+  manual: |
+    1. Vérifier que `/etc/dconf/profile/user` contient :
+       ```
+       user-db:user
+       system-db:local
+       ```
+    2. Créer `/etc/dconf/db/local.d/00-media-automount` :
+       ```
+       [org/gnome/desktop/media-handling]
+       automount=false
+       automount-open=false
+       ```
+    3. Créer `/etc/dconf/db/local.d/locks/00-media-automount` :
+       ```
+       /org/gnome/desktop/media-handling/automount
+       /org/gnome/desktop/media-handling/automount-open
+       ```
+    4. Lancer `dconf update`. Les utilisateurs obtiennent les nouvelles valeurs à leur prochaine
+       connexion.
+  rollback: |
+    Supprimer les fichiers écrits dans `/etc/dconf/db/local.d/` et `/etc/dconf/db/local.d/locks/`
+    puis lancer `dconf update`.

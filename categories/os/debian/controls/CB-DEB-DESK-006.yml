@@ -1,0 +1,174 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-006
+title: Require a password at the graphical login, without automatic login or guest session
+finding:
+  title: The display manager opens a session without a password
+  description: Automatic, timed or guest login gives a working session to anyone who turns on or sits at the machine.
+status: draft
+profiles: [desktop]
+risk:
+  severity: high
+assessment: automated
+tags: [gdm, lightdm, sddm, login, authentication]
+
+description: |
+  Display managers can open a session without authentication:
+
+  - GDM: `AutomaticLoginEnable` and `TimedLoginEnable` in the `[daemon]` section of
+    `/etc/gdm3/daemon.conf`;
+  - LightDM: `autologin-user`, `autologin-guest` and the guest session (`allow-guest`, on by
+    default upstream);
+  - SDDM: `User` in the `[Autologin]` section of its configuration.
+
+  This control checks that none of them is enabled and that LightDM explicitly disables the
+  guest session.
+rationale: |
+  A session opened without a password gives the account's files, browser sessions, stored
+  credentials and network access to whoever is in front of the screen, or to whoever steals
+  the machine. A guest session gives an unaudited foothold on the system.
+impact: |
+  Every user types a password at boot. Kiosks that rely on automatic login must be excluded
+  through tailoring.
+notes: |
+  GDM has no guest session. LightDM's guest session needs a helper script that Debian does not
+  ship, but the option is still turned off explicitly. The LightDM and SDDM checks read every
+  configuration file in load order and keep the last value; they ignore sections, so a value
+  set for one seat only counts for all. The automated fix covers GDM only; the LightDM and SDDM
+  checks were written from their documentation and not tested in a lab.
+
+setting:
+  location: /etc/gdm3/daemon.conf, /etc/lightdm/lightdm.conf(.d), /etc/sddm.conf(.d)
+  default_value: Off, except LightDM allow-guest (true upstream)
+  recommended_value: No automatic, timed or guest login
+
+audit:
+  manual: |
+    1. GDM: `/etc/gdm3/daemon.conf` must not set `AutomaticLoginEnable=true` or
+       `TimedLoginEnable=true` in `[daemon]`.
+    2. LightDM: the configuration must set `allow-guest=false`, and must not set
+       `autologin-user` or `autologin-guest=true`.
+    3. SDDM: no `User=` value in an `[Autologin]` section of `/etc/sddm.conf`,
+       `/etc/sddm.conf.d/` or `/usr/lib/sddm/sddm.conf.d/`.
+  checks:
+    - id: gdm
+      engine: shell
+      description: GDM has no automatic or timed login.
+      facts: [gdm]
+      spec:
+        script: |
+          [ -f /etc/gdm3/daemon.conf ] || { echo "no /etc/gdm3/daemon.conf"; exit 0; }
+          rc=0
+          for k in AutomaticLoginEnable TimedLoginEnable; do
+            v=$(K=$k awk '/^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[daemon]"); next }
+              s && $0 ~ "^[ \t]*" ENVIRON["K"] "[ \t]*=" { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+              END { print v }' /etc/gdm3/daemon.conf)
+            echo "$k=${v:-unset}"
+            case $v in [Tt][Rr][Uu][Ee] | 1) rc=1 ;; esac
+          done
+          exit "$rc"
+    - id: lightdm
+      engine: shell
+      description: LightDM has no automatic login and no guest session.
+      facts: [lightdm]
+      spec:
+        script: |
+          files=
+          for f in /usr/share/lightdm/lightdm.conf.d/*.conf /etc/xdg/lightdm/lightdm.conf.d/*.conf \
+            /etc/lightdm/lightdm.conf.d/*.conf /etc/lightdm/lightdm.conf; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          get() {
+            # shellcheck disable=SC2086 # one word per file
+            [ -n "$files" ] && K=$1 awk '$0 ~ "^[ \t]*" ENVIRON["K"] "[ \t]*=" { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+              END { print v }' $files
+          }
+          g=$(get allow-guest) u=$(get autologin-user) a=$(get autologin-guest)
+          echo "allow-guest=${g:-unset} autologin-user=${u:-unset} autologin-guest=${a:-unset}"
+          case $g in [Ff][Aa][Ll][Ss][Ee] | 0) ;; *) exit 1 ;; esac
+          [ -z "$u" ] || exit 1
+          case $a in [Tt][Rr][Uu][Ee] | 1) exit 1 ;; esac
+    - id: sddm
+      engine: shell
+      description: SDDM has no automatic login.
+      facts: [sddm]
+      spec:
+        script: |
+          files=
+          for f in /usr/lib/sddm/sddm.conf.d/*.conf /etc/sddm.conf.d/*.conf /etc/sddm.conf; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no SDDM configuration file"; exit 0; }
+          # shellcheck disable=SC2086 # one word per file
+          u=$(awk 'FNR == 1 { s = 0 } /^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[Autologin]"); next }
+            s && /^[ \t]*User[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+            END { print v }' $files)
+          echo "[Autologin] User=${u:-unset}"
+          [ -z "$u" ]
+
+remediation:
+  manual: |
+    - GDM: in `/etc/gdm3/daemon.conf`, section `[daemon]`, set `AutomaticLoginEnable=false` and
+      `TimedLoginEnable=false` (or remove the lines). The change applies when GDM restarts.
+    - LightDM: in `/etc/lightdm/lightdm.conf`, section `[Seat:*]`, set `allow-guest=false`,
+      `greeter-allow-guest=false`, and remove `autologin-user` and `autologin-guest`.
+    - SDDM: remove `User=` from the `[Autologin]` section of the SDDM configuration files.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore `/etc/gdm3/daemon.conf` from the backup directory.
+  scripts:
+    - id: gdm
+      engine: shell
+      facts: [gdm]
+      file: fix.sh
+
+references:
+  - title: GNOME System Administration Guide - Log in automatically
+    url: https://help.gnome.org/admin/system-admin-guide/stable/login-automatic.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - LightDM
+    url: https://wiki.debian.org/LightDM
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: sddm.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sddm/sddm.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078
+  - framework: cwe
+    id: CWE-306
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "GDM check and fix tested (desktop-hardened), including AutomaticLoginEnable=True and TimedLoginEnable=1 turned off; the LightDM and SDDM checks were not tested (no such machine), only reported not applicable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "GDM check and fix tested (desktop-hardened), including AutomaticLoginEnable=True and TimedLoginEnable=1 turned off; the LightDM and SDDM checks were not tested (no such machine), only reported not applicable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,172 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-002
+title: Show a warning banner and hide the user list on the GDM login screen
+finding:
+  title: The GDM login screen lists local accounts and shows no warning
+  description: Anyone in front of the machine sees valid account names, and users get no notice that access is restricted and monitored.
+status: draft
+profiles: [desktop]
+risk:
+  severity: medium
+assessment: automated
+tags: [gdm, banner, login, dconf]
+
+applicability:
+  facts: [gdm]
+
+description: |
+  Two settings of the GDM login screen (`org.gnome.login-screen`):
+
+  - `banner-message-enable` and `banner-message-text`: show a warning text above the password
+    field;
+  - `disable-user-list`: do not list local accounts; users type their login name.
+
+  On Debian, the login screen reads a dconf database that GDM rebuilds at each start from
+  `/usr/share/gdm/dconf/`. That directory links `/etc/gdm3/greeter.dconf-defaults`, the file
+  where the administrator sets these keys.
+rationale: |
+  A list of accounts gives an attacker with physical or remote display access half of the
+  credentials. A warning banner states that access is restricted and monitored, which supports
+  legal action against intruders in many jurisdictions.
+impact: |
+  Users type their login name instead of clicking it. The banner appears on every login.
+notes: |
+  The check reads the database the login screen actually uses
+  (`DCONF_PROFILE=gdm dconf read`, with a temporary home so that the GDM account's own user
+  database is ignored and no file is created in its home), so it only passes after GDM rebuilt it; the fix runs
+  `/usr/share/gdm/generate-config`, which GDM also runs at each start. The check requires a
+  non-empty banner, not a specific text. `/etc/gdm3/greeter.dconf-defaults` is a configuration
+  file managed by ucf: package upgrades merge local changes. The fix runs on every remediation
+  and rewrites the three keys.
+
+setting:
+  location: /etc/gdm3/greeter.dconf-defaults, section [org/gnome/login-screen]
+  default_value: No banner, user list shown
+  recommended_value: "banner-message-enable=true, banner-message-text='{{ banner_text }}', disable-user-list=true"
+
+parameters:
+  - name: banner_text
+    type: string
+    description: Text of the warning shown on the login screen.
+    default: "Authorized use only. Activity on this system is monitored and recorded."
+
+audit:
+  manual: |
+    Run as root:
+    ```
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/banner-message-enable
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/banner-message-text
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/disable-user-list
+    ```
+    The first and last must print `true`, the second a non-empty warning text.
+  checks:
+    - id: banner
+      engine: shell
+      description: The login screen shows a non-empty warning banner.
+      facts: [gdm]
+      spec:
+        script: |
+          # Temporary HOME: dconf must not create root-owned cache files in GDM's home.
+          d=$(mktemp -d) || exit 3
+          r() { env -u XDG_CONFIG_HOME HOME="$d" XDG_RUNTIME_DIR="$d" DCONF_PROFILE=gdm dconf read "/org/gnome/login-screen/$1" 2>/dev/null; }
+          e=$(r banner-message-enable)
+          t=$(r banner-message-text)
+          rm -rf "$d"
+          echo "banner-message-enable=${e:-unset} banner-message-text=${t:-unset}"
+          [ "$e" = true ] && [ -n "$t" ] && [ "$t" != "''" ]
+    - id: user-list
+      engine: shell
+      description: The login screen does not list local accounts.
+      facts: [gdm]
+      spec:
+        script: |
+          d=$(mktemp -d) || exit 3
+          v=$(env -u XDG_CONFIG_HOME HOME="$d" XDG_RUNTIME_DIR="$d" DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/disable-user-list 2>/dev/null)
+          rm -rf "$d"
+          echo "disable-user-list=${v:-unset}"
+          [ "$v" = true ]
+
+remediation:
+  manual: |
+    1. In `/etc/gdm3/greeter.dconf-defaults`, under the `[org/gnome/login-screen]` section, set:
+       ```
+       banner-message-enable=true
+       banner-message-text='{{ banner_text }}'
+       disable-user-list=true
+       ```
+    2. Run `/usr/share/gdm/generate-config` (or restart GDM) to rebuild the login screen database.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the three lines from `/etc/gdm3/greeter.dconf-defaults` and run
+    `/usr/share/gdm/generate-config`.
+  scripts:
+    - id: greeter-defaults
+      engine: shell
+      facts: [gdm]
+      file: fix.sh
+
+references:
+  - title: GNOME System Administration Guide - Display a text banner on the login screen
+    url: https://help.gnome.org/admin/system-admin-guide/stable/login-banner.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GNOME System Administration Guide - Disable the user list
+    url: https://help.gnome.org/admin/system-admin-guide/stable/login-userlist-disable.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - GDM
+    url: https://wiki.debian.org/GDM
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: partial
+    note: Covers the graphical login screen only; console and SSH banners are separate controls.
+threats:
+  - framework: mitre-attack
+    id: T1087.001
+related_controls:
+  - id: CB-DEB-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated check and fix (desktop-hardened) on GDM; greeter database rebuilt by generate-config and read back with DCONF_PROFILE=gdm; banner text with quotes, backslash and newline compiled correctly; second run idempotent; state kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated check and fix (desktop-hardened) on GDM; greeter database rebuilt by generate-config and read back with DCONF_PROFILE=gdm; banner text with quotes, backslash and newline compiled correctly; second run idempotent; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
