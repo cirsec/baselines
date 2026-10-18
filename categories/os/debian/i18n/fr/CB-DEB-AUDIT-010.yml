@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-010
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Donner à chaque service exposé son propre journal d'activité
+finding:
+  title: L'activité des services est mélangée aux journaux généraux ou pas journalisée du tout
+  description: Sans journal dédié par service, l'activité d'un service web, de messagerie ou de base de données est difficile à suivre et à conserver la bonne durée.
+description: |
+  Chaque service important du système (serveur web, mandataire inverse, base de données, messagerie,
+  VPN, application) doit écrire son activité (requêtes, connexions, erreurs, actions
+  d'administration) dans un journal qui lui est propre : un fichier dédié, un espace de noms du
+  journal, ou au moins son propre identifiant et sa propre facility syslog, lisible seulement par le
+  compte du service et les administrateurs.
+rationale: |
+  Des journaux dédiés rendent l'analyse d'un service praticable, permettent une durée de conservation
+  adaptée à sa sensibilité et limitent qui peut lire des données qui ne concernent que ce service.
+impact: |
+  Plus de fichiers à faire tourner et à transférer.
+audit:
+  manual: |
+    1. Lister les services qui écoutent sur le réseau avec `ss -tulpn` et les services principaux du
+       système.
+    2. Pour chacun, trouver où il journalise (sa configuration, `journalctl -u <unité>`) et vérifier
+       que son activité est enregistrée, conservée la durée exigée, tournée et lisible seulement par
+       le service et les administrateurs.
+remediation:
+  manual: |
+    Configurer chaque service pour qu'il journalise dans son propre fichier (par exemple les journaux
+    d'accès et d'erreurs d'un serveur web) ou son propre espace de noms du journal (`LogNamespace=`
+    dans l'unité), ajouter un fichier logrotate pour lui, et l'inclure dans les journaux envoyés au
+    serveur de journalisation.
+  rollback: |
+    Rétablir la configuration de journalisation du service.

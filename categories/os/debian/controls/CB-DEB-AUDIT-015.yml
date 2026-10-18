@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-015
+title: Send audit records to a remote server
+finding:
+  title: Audit records are only stored on the audited system
+  description: Someone who gains root on the system can erase or alter the audit log, the only copy of the evidence.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, remote]
+
+description: |
+  The `au-remote` plugin of `audispd-plugins` sends each audit record to a remote `auditd` that
+  listens for them (`tcp_listen_port` on the server). It is turned on with `active = yes` in
+  `/etc/audit/plugins.d/au-remote.conf`, and the server is set with `remote_server` in
+  `/etc/audit/audisp-remote.conf`.
+rationale: |
+  A copy kept off the system cannot be erased by an intruder who has taken root, and lets audit
+  records from many systems be reviewed in one place.
+impact: |
+  Requires an audit collection server and a network flow to it (TCP 60 by default). Configure
+  `network_failure_action` and the queue in `audisp-remote.conf` so an outage does not block the
+  system.
+notes: |
+  The fix is manual: the server address, port and transport (Kerberos or plain TCP inside a
+  protected network) depend on the site. Forwarding audit records through rsyslog with TLS
+  (syslog plugin and CB-DEB-AUDIT-009) is an accepted alternative; record it as an exception in
+  the tailoring file.
+
+setting:
+  location: /etc/audit/plugins.d/au-remote.conf, /etc/audit/audisp-remote.conf
+  default_value: active = no, remote_server empty
+  recommended_value: active = yes, remote_server set to the audit collection server
+
+audit:
+  manual: |
+    1. Run `grep -E '^\s*active' /etc/audit/plugins.d/au-remote.conf`. It must print `active = yes`.
+    2. Run `grep -E '^\s*remote_server' /etc/audit/audisp-remote.conf`. It must name the server.
+    3. On the server, check that records from this system arrive.
+  checks:
+    - id: plugin-active
+      engine: file-content
+      description: The au-remote plugin is active.
+      spec:
+        path: /etc/audit/plugins.d/au-remote.conf
+        pattern: '^\s*active\s*=\s*yes\s*$'
+    - id: remote-server
+      engine: file-content
+      description: A remote server is set.
+      spec:
+        path: /etc/audit/audisp-remote.conf
+        pattern: '^\s*remote_server\s*=\s*\S+'
+
+remediation:
+  manual: |
+    1. Set `remote_server = <server>` (and `port`, `transport`) in `/etc/audit/audisp-remote.conf`.
+    2. Set `active = yes` in `/etc/audit/plugins.d/au-remote.conf`.
+    3. Run `systemctl restart auditd`, then check on the server that records arrive.
+  rollback: |
+    Set `active = no` in `/etc/audit/plugins.d/au-remote.conf` and restart auditd.
+
+references:
+  - title: audisp-remote.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/audispd-plugins/audisp-remote.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: auditd.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/auditd.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-4(1)
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+  - framework: mitre-attack
+    id: T1562.012
+related_controls:
+  - id: CB-DEB-AUDIT-011
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails after auditd install (plugin inactive); passes once active = yes and remote_server are set by hand."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails after auditd install (plugin inactive); passes once active = yes and remote_server are set by hand."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

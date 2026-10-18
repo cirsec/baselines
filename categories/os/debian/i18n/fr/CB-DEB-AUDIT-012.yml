@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-012
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer l'audit dès le démarrage avec une file d'attente suffisante
+finding:
+  title: Les processus lancés avant auditd ne sont pas audités
+  description: Les programmes lancés tôt au démarrage, et les événements perdus quand la file d'audit déborde, ne laissent aucune trace d'audit.
+description: |
+  Deux paramètres de la ligne de commande du noyau :
+
+  - `audit=1` active l'audit dès le démarrage du noyau, pour que chaque processus ait un contexte
+    d'audit, y compris ceux lancés avant `auditd` ;
+  - `audit_backlog_limit={{ backlog_limit }}` dimensionne la file du noyau où les événements
+    attendent `auditd`. La valeur par défaut de 64 déborde pendant le démarrage, et des événements
+    sont alors perdus.
+
+  La correction les ajoute à `GRUB_CMDLINE_LINUX` via `/etc/default/grub.d/60-cirsec-audit.cfg` et
+  régénère la configuration de GRUB. Ils s'appliquent au démarrage suivant.
+rationale: |
+  Un attaquant qui fait exécuter du code tôt au démarrage, ou qui sature la file d'audit, échappe à
+  l'audit. L'activer au démarrage et dimensionner la file ferme ces deux brèches.
+impact: |
+  Un redémarrage est nécessaire. La file n'utilise de la mémoire noyau que lorsque des événements
+  s'accumulent.
+notes: |
+  Le contrôle lit la ligne de commande en cours (`/proc/cmdline`) et, quand GRUB est le chargeur de
+  démarrage, le fichier généré `/boot/grub/grub.cfg`. Juste après la correction, la première
+  vérification échoue jusqu'au redémarrage.
+setting:
+  location: /etc/default/grub.d/60-cirsec-audit.cfg, ligne de commande du noyau
+  recommended_value: "audit=1 audit_backlog_limit={{ backlog_limit }} ou plus"
+parameters:
+  backlog_limit: Taille minimale de la file d'attente d'audit du noyau (audit_backlog_limit).
+audit:
+  manual: |
+    1. Lancer `cat /proc/cmdline`. La sortie doit contenir `audit=1` et `audit_backlog_limit=` avec
+       une valeur d'au moins {{ backlog_limit }}.
+    2. Lancer `grep -E '^\s*linux' /boot/grub/grub.cfg`. Chaque ligne doit contenir les deux mêmes
+       paramètres, pour qu'ils survivent au prochain redémarrage.
+remediation:
+  manual: |
+    1. Créer `/etc/default/grub.d/60-cirsec-audit.cfg` avec :
+       ```
+       GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX audit=1 audit_backlog_limit={{ backlog_limit }}"
+       ```
+    2. Lancer `update-grub`, puis redémarrer.
+  rollback: |
+    Supprimer `/etc/default/grub.d/60-cirsec-audit.cfg`, lancer `update-grub` et redémarrer.

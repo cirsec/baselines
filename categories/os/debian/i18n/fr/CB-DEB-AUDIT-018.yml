@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-018
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les changements du nom d'hôte et de la configuration réseau
+finding:
+  title: Les changements de l'identité de la machine et des réglages réseau ne sont pas enregistrés
+  description: La résolution de noms, les bannières et les interfaces peuvent être modifiées pour détourner le trafic ou tromper les utilisateurs sans trace.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-network.rules`, clé `system-locale` :
+  `sethostname` et `setdomainname`, et les écritures dans `/etc/issue`, `/etc/issue.net`, `/etc/hosts`,
+  `/etc/hostname`, `/etc/networks`, `/etc/network/`, `/etc/netplan/` et `/etc/NetworkManager/`.
+rationale: |
+  Un attaquant qui modifie `/etc/hosts` ou la configuration réseau peut rediriger le trafic vers une
+  machine qu'il contrôle. Enregistrer ces changements montre quand et par qui l'identité ou la
+  configuration réseau du système a été modifiée.
+impact: |
+  Aucun connu. Les surveillances de chemins absents (par exemple `/etc/NetworkManager/` sur un serveur) sont acceptées et s'activent quand le chemin est créé.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-network.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-network.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `system-locale`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S sethostname,setdomainname -F key=system-locale
+    -a always,exit -F arch=b32 -S sethostname,setdomainname -F key=system-locale
+    -w /etc/issue -p wa -k system-locale
+    -w /etc/issue.net -p wa -k system-locale
+    -w /etc/hosts -p wa -k system-locale
+    -w /etc/hostname -p wa -k system-locale
+    -w /etc/networks -p wa -k system-locale
+    -w /etc/network -p wa -k system-locale
+    -w /etc/netplan -p wa -k system-locale
+    -w /etc/NetworkManager -p wa -k system-locale
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-network.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-network.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-017
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les changements de l'horloge système et du fuseau horaire
+finding:
+  title: Les changements de l'heure système ne sont pas enregistrés
+  description: Un intrus peut décaler l'horloge pour fausser la chronologie d'une enquête sans laisser de trace.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-time.rules`, clé `time-change` : les appels qui
+  règlent l'horloge (`adjtimex`, `settimeofday`, `clock_settime`, et `stime` pour les programmes 32 bits)
+  et les écritures dans `/etc/localtime`.
+rationale: |
+  Chaque journal et chaque événement d'audit dépend de l'horloge. Un changement d'heure en dehors du
+  service de synchronisation peut masquer le moment d'une attaque ou rendre les journaux incohérents
+  entre systèmes.
+impact: |
+  Les démons de synchronisation qui ajustent souvent l'horloge (chrony, systemd-timesyncd) produisent des événements `time-change` réguliers.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-time.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-time.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `time-change`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -F key=time-change
+    -a always,exit -F arch=b32 -S stime,settimeofday,adjtimex,clock_settime -F key=time-change
+    -w /etc/localtime -p wa -k time-change
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-time.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-time.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

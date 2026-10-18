@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-003
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas accepter de journaux venant d'autres machines
+finding:
+  title: Le système écoute des messages de journalisation sur le réseau
+  description: Un récepteur de journaux ouvre un port réseau et laisse n'importe quelle machine écrire dans les journaux locaux, sauf sur un serveur de journalisation dédié.
+description: |
+  Deux services peuvent recevoir des journaux d'autres machines :
+
+  - `systemd-journal-remote` (paquet `systemd-journal-remote`), démarré par son unité socket
+    `systemd-journal-remote.socket` ou son service ;
+  - rsyslog, quand un module d'entrée réseau est chargé : `imtcp`, `imudp` ou `imrelp`.
+
+  Ce contrôle exige que les deux soient arrêtés : unités journal-remote désactivées ou masquées (ou
+  absentes), et aucune entrée réseau dans `/etc/rsyslog.conf` ni `/etc/rsyslog.d/*.conf`.
+rationale: |
+  Un récepteur est un service réseau qui analyse des données non fiables, et permet à quiconque
+  atteint le port d'injecter de fausses entrées ou de remplir le disque. Seul un serveur de
+  journalisation dédié doit en faire tourner un.
+impact: |
+  Les serveurs centraux de journalisation doivent être exclus de ce contrôle dans le fichier
+  d'adaptation (tailoring).
+notes: |
+  `systemd-journal-upload`, qui envoie le journal local vers un serveur distant, est dans le même
+  paquet et n'est pas concerné.
+setting:
+  location: unités systemd systemd-journal-remote.socket/.service, /etc/rsyslog.conf, /etc/rsyslog.d/
+  recommended_value: Unités désactivées ou absentes, aucune entrée imtcp/imudp/imrelp
+audit:
+  manual: |
+    1. Lancer `systemctl is-enabled systemd-journal-remote.socket systemd-journal-remote.service`.
+       Chacune doit afficher `disabled`, `masked` ou indiquer que l'unité n'existe pas.
+    2. Si rsyslog est installé, lancer
+       `grep -E '^\s*(module\(load="?im(tcp|udp|relp)|input\(type="?im(tcp|udp|relp)|\$ModLoad\s+im(tcp|udp|relp))' /etc/rsyslog.conf /etc/rsyslog.d/*.conf`.
+       La commande ne doit rien afficher.
+remediation:
+  manual: |
+    1. Lancer `systemctl disable --now systemd-journal-remote.socket systemd-journal-remote.service`,
+       ou retirer le paquet `systemd-journal-remote` si `systemd-journal-upload` n'est pas utilisé.
+    2. Dans `/etc/rsyslog.conf` et `/etc/rsyslog.d/*.conf`, commenter les lignes
+       `module(load="imtcp")`, `module(load="imudp")`, `module(load="imrelp")` et les `input(...)`
+       correspondants, puis lancer `systemctl restart rsyslog`.
+  rollback: |
+    Lancer `systemctl enable --now systemd-journal-remote.socket` et rétablir les lignes d'entrée de rsyslog.

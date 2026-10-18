@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-033
+title: Check the integrity of the audit tools with AIDE
+finding:
+  title: A modified audit tool would not be detected
+  description: An attacker who replaces auditctl or auditd can hide their activity from the audit log without the change being noticed.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [aide, auditd, integrity]
+
+description: |
+  An AIDE rule in `/etc/aide/aide.conf.d/70_cirsec_audit_tools` covers each audit tool
+  (`auditctl`, `auditd`, `augenrules`, `aureport`, `ausearch`, `autrace` in `/usr/sbin/`) with
+  permissions, inode, link count, owner, group, size, block count, ACLs, extended attributes and a
+  SHA-512 checksum (`p+i+n+u+g+s+b+acl+xattrs+sha512`).
+rationale: |
+  The audit tools are the first target of someone who wants to stay hidden. A cryptographic
+  checksum makes a replaced or patched tool show up in the next AIDE check.
+impact: |
+  When the file changes and a database already exists, the fix rebuilds the AIDE database, which
+  takes a few minutes and accepts the current state of every file as the new reference.
+notes: |
+  The default Debian AIDE configuration already checks `/usr/sbin`; this rule makes the attributes
+  explicit for the audit tools.
+
+setting:
+  location: /etc/aide/aide.conf.d/70_cirsec_audit_tools
+  default_value: Covered by the generic /usr/sbin rule
+  recommended_value: "/usr/sbin/<tool>$ p+i+n+u+g+s+b+acl+xattrs+sha512 for each audit tool"
+
+audit:
+  manual: |
+    Run `grep -h '^/usr/sbin/au' /etc/aide/aide.conf /etc/aide/aide.conf.d/*`. Each of auditctl,
+    auditd, augenrules, aureport, ausearch and autrace must have a rule that includes
+    `p`, `i`, `n`, `u`, `g`, `s`, `b`, `acl`, `xattrs` and `sha512`.
+  checks:
+    - id: rules
+      engine: shell
+      description: AIDE rules for the audit tools.
+      spec:
+        script: |
+          [ -d /etc/aide ] || { echo "AIDE is not installed"; exit 1; }
+          rc=0
+          for t in auditctl auditd augenrules aureport ausearch autrace; do
+            a=$(cat /etc/aide/aide.conf /etc/aide/aide.conf.d/* 2>/dev/null | sed -n "s|^/usr/sbin/$t\\\$\{0,1\}[[:space:]]\{1,\}\([^[:space:]]*\).*|\1|p" | tail -n 1)
+            for x in p i n u g s b acl xattrs sha512; do
+              case "+$a+" in *"+$x+"*) ;; *) echo "$t: ${a:-no rule}"; rc=1; continue 2 ;; esac
+            done
+          done
+          [ "$rc" = 1 ] || echo "all 6 audit tools covered"
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Create `/etc/aide/aide.conf.d/70_cirsec_audit_tools` with one line per tool:
+       ```
+       /usr/sbin/auditctl$ p+i+n+u+g+s+b+acl+xattrs+sha512
+       ```
+       (same for auditd, augenrules, aureport, ausearch and autrace).
+    2. Run `aide --config-check -c /etc/aide/aide.conf`, then rebuild the database with
+       `aideinit -y -f`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/aide/aide.conf.d/70_cirsec_audit_tools` and rebuild the database.
+  scripts:
+    - id: aide-rules
+      engine: shell
+      content: |
+        [ -d /etc/aide/aide.conf.d ] || { echo "AIDE is not installed" >&2; exit 1; }
+        f=/etc/aide/aide.conf.d/70_cirsec_audit_tools
+        t=$(mktemp)
+        echo '# Written by CIRSEC Baselines CB-DEB-AUDIT-033' >"$t"
+        for x in auditctl auditd augenrules aureport ausearch autrace; do
+          echo "/usr/sbin/$x\$ p+i+n+u+g+s+b+acl+xattrs+sha512" >>"$t"
+        done
+        if ! cmp -s "$t" "$f"; then
+          cb_backup "$f"
+          cat "$t" >"$f"
+          chmod 644 "$f"
+          aide --config-check -c /etc/aide/aide.conf
+          if [ -s /var/lib/aide/aide.db ]; then (umask 027; aideinit -y -f); fi
+        fi
+        rm -f "$t"
+
+references:
+  - title: aide.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/aide/aide.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R76
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(3)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(1)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.3.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.3.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+  - framework: cwe
+    id: CWE-353
+related_controls:
+  - id: CB-DEB-AUDIT-032
+    type: requires
+  - id: CB-DEB-AUDIT-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails before AIDE; fix writes 70_cirsec_audit_tools, aide --config-check OK; a chmod on auditctl is reported by aide --check."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails before AIDE; fix writes 70_cirsec_audit_tools, aide --config-check OK; a chmod on auditctl is reported by aide --check."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

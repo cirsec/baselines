@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-007
+title: Rotate log files with logrotate
+finding:
+  title: Text log files are never rotated
+  description: Without logrotate, files such as /var/log/dpkg.log grow forever and old entries are never archived or removed.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [logrotate, logging]
+
+description: |
+  `logrotate` renames, compresses and removes the text log files under `/var/log/` following
+  `/etc/logrotate.conf` and the files that packages drop in `/etc/logrotate.d/`. On Debian it is
+  started every day by `logrotate.timer`. The Debian 12 and 13 cloud images do not install it.
+
+  This control requires the `logrotate` package and its timer to be enabled.
+rationale: |
+  Logs that are never rotated end up filling the file system, which stops the services that need
+  to write, or are deleted by hand in a hurry. Rotation keeps a predictable history.
+impact: |
+  Old rotated files are deleted after the number of rotations set in each logrotate file (4 weeks
+  by default on Debian). Keep a remote copy when a longer history is required.
+notes: |
+  The systemd journal rotates itself (CB-DEB-AUDIT-001) and auditd rotates its own logs
+  (CB-DEB-AUDIT-013); logrotate handles the remaining text files.
+
+setting:
+  location: logrotate package, logrotate.timer
+  default_value: Not installed on cloud images
+  recommended_value: Installed, timer enabled
+
+audit:
+  manual: |
+    1. Run `dpkg-query -W -f='${Status}\n' logrotate`. It must end with `installed`.
+    2. Run `systemctl is-enabled logrotate.timer`. It must print `enabled`.
+    3. Review `/etc/logrotate.conf` and `/etc/logrotate.d/` against the site retention policy.
+  checks:
+    - id: package
+      engine: package
+      description: logrotate is installed.
+      spec: { name: logrotate, state: installed }
+    - id: timer
+      engine: systemd-unit
+      description: logrotate.timer is enabled.
+      spec: { unit: logrotate.timer, state: enabled }
+
+remediation:
+  manual: |
+    Run `apt-get install logrotate`, then `systemctl enable --now logrotate.timer`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `apt-get purge logrotate`.
+  scripts:
+    - id: package
+      from_check: package
+    - id: timer
+      from_check: timer
+
+references:
+  - title: logrotate(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/logrotate/logrotate.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-4
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.7"
+    relation: partial
+    note: Ours checks that rotation runs; the retention values stay a manual review.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.7"
+    relation: partial
+    note: Ours checks that rotation runs; the retention values stay a manual review.
+threats:
+  - framework: cwe
+    id: CWE-400
+related_controls:
+  - id: CB-DEB-AUDIT-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install (logrotate absent); package installed, timer enabled by the package; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install (logrotate absent); package installed, timer enabled by the package; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

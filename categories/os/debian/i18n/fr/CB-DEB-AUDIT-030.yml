@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-030
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux journaux d'audit
+finding:
+  title: Les journaux d'audit peuvent être lus ou modifiés par d'autres utilisateurs que root
+  description: Le journal d'audit enregistre les actions de chaque utilisateur ; il ne doit pas leur être lisible, ni modifiable par un autre qu'auditd.
+description: |
+  auditd écrit ses journaux dans `/var/log/audit/`. Ce contrôle exige :
+
+  - le répertoire appartenant à root, mode `0750` ou plus strict ;
+  - chaque fichier qu'il contient appartenant à root, mode `0640` ou plus strict ;
+  - chaque fichier appartenant au groupe root ou au `log_group` de `/etc/audit/auditd.conf` (`adm`
+    sur Debian), pour que seul ce groupe puisse les lire.
+rationale: |
+  La trace d'audit est la preuve de ce qu'ont fait les utilisateurs. S'ils peuvent la lire, ils
+  apprennent ce qui est surveillé ; si un autre qu'auditd peut l'écrire, elle peut être falsifiée.
+impact: |
+  Aucun connu. Debian crée déjà le répertoire et les fichiers avec ces droits.
+notes: |
+  Le contrôle suppose la valeur par défaut `log_file = /var/log/audit/audit.log`.
+setting:
+  location: /var/log/audit/
+  recommended_value: "Répertoire root 0750, fichiers root:<log_group> 0640 ou plus strict"
+audit:
+  manual: |
+    1. Lancer `stat -c '%n %U:%G %a' /var/log/audit /var/log/audit/*`.
+    2. Le répertoire doit appartenir à root avec un mode 0750 ou plus strict ; chaque fichier à root
+       avec un mode 0640 ou plus strict, et au groupe root ou au `log_group` de `/etc/audit/auditd.conf`.
+remediation:
+  manual: |
+    Lancer `chown root /var/log/audit /var/log/audit/*`, `chmod 750 /var/log/audit`,
+    `chmod 640 /var/log/audit/*` et `chgrp <log_group> /var/log/audit/*`.
+  rollback: |
+    Aucun retour arrière nécessaire : ce sont les valeurs par défaut de Debian.

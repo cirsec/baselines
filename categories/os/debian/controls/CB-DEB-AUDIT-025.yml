@@ -1,0 +1,176 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-025
+title: Audit kernel module loading and unloading
+finding:
+  title: Kernel modules can be loaded or removed without a record
+  description: A malicious kernel module (rootkit) can be loaded without any trace in the audit log.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, kernel-modules]
+
+description: |
+  auditd rules in `/etc/audit/rules.d/60-cirsec-modules.rules`, key `kernel_modules`:
+  `init_module`, `finit_module` and `delete_module` called by users who logged in, 64-bit and 32-bit
+  programs, and every run of `kmod` (behind `modprobe`, `insmod`, `rmmod`, `lsmod`).
+rationale: |
+  Code loaded into the kernel runs with full privileges and can hide processes, files and
+  connections. Recording module loads is one of the few ways to spot a kernel rootkit after the fact.
+impact: |
+  Running `lsmod` as a logged-in administrator also produces a record, since it is the same `kmod` program.
+notes: |
+  Modules loaded automatically by udev at boot have no login user and are not recorded; this matches the intent (actions by people).
+
+setting:
+  location: /etc/audit/rules.d/60-cirsec-modules.rules
+  default_value: No audit rules
+  recommended_value: "Rules loaded (auditctl -l) and present in /etc/audit/rules.d/60-cirsec-modules.rules"
+
+audit:
+  manual: |
+    1. Run `auditctl -l` as root. It must list the rules shown below (keys `kernel_modules`).
+    2. Run `grep -h . /etc/audit/rules.d/*.rules`. The same rules must be present, so they load at boot.
+
+    Expected rules, as `auditctl -l` prints them:
+    ```
+    -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    -a always,exit -F arch=b32 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    -a always,exit -S all -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    ```
+  checks:
+    - id: rules
+      engine: shell
+      description: Rules loaded in the kernel and present in /etc/audit/rules.d.
+      spec:
+        script: |
+          command -v auditctl >/dev/null 2>&1 || { echo "auditctl not found: auditd is not installed"; exit 1; }
+          want() {
+          cat <<'RULES'
+          -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+          -a always,exit -F arch=b32 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+          -a always,exit -S all -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+          RULES
+          }
+          loaded=$(auditctl -l 2>&1) || { echo "$loaded"; exit 3; }
+          disk=$(cat /etc/audit/rules.d/*.rules 2>/dev/null)
+          n=0 rc=0
+          while IFS= read -r r; do
+            [ -n "$r" ] || continue
+            n=$((n + 1))
+            printf '%s\n' "$loaded" | grep -Fxq -- "$r" || { echo "not loaded: $r"; rc=1; }
+            printf '%s\n' "$disk" | grep -Fxq -- "$r" || { echo "not in /etc/audit/rules.d: $r"; rc=1; }
+          done <<EOF
+          $(want)
+          EOF
+          [ "$rc" = 1 ] || echo "$n rules loaded and present in /etc/audit/rules.d"
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Write the expected rules to `/etc/audit/rules.d/60-cirsec-modules.rules` (mode 0640).
+    2. Run `augenrules --load`. If `auditctl -s` shows `enabled 2`, the configuration is locked:
+       reboot to load the new rules.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/audit/rules.d/60-cirsec-modules.rules` and run `augenrules --load` (or reboot if the configuration is locked).
+  scripts:
+    - id: rules-file
+      engine: shell
+      content: |
+        command -v augenrules >/dev/null 2>&1 || { echo "auditd is not installed" >&2; exit 1; }
+        want() {
+        cat <<'RULES'
+        -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+        -a always,exit -F arch=b32 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+        -a always,exit -S all -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+        RULES
+        }
+        f=/etc/audit/rules.d/60-cirsec-modules.rules
+        t=$(mktemp)
+        { echo '# Written by CIRSEC Baselines CB-DEB-AUDIT-025'; want; } >"$t"
+        if ! cmp -s "$t" "$f"; then
+          cb_backup "$f"
+          cat "$t" >"$f"
+        fi
+        rm -f "$t"
+        chmod 640 "$f"
+        if auditctl -s | grep -q '^enabled 2'; then
+          echo "audit rules are locked (-e 2): reboot to load $f"
+        else
+          augenrules --load >/dev/null
+        fi
+
+references:
+  - title: audit.rules(7), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/audit.rules.7.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: auditctl(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/auditctl.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R73)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: "R73"
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: "AU-12"
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.3.28"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.31"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.32"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.33"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1547.006
+  - framework: mitre-attack
+    id: T1014
+related_controls:
+  - id: CB-DEB-AUDIT-011
+    type: requires
+  - id: CB-DEB-AUDIT-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, auditd 1:3.0.9-1, BIOS boot
+    notes: "Rules fail on fresh install; fix writes /etc/audit/rules.d/60-cirsec-modules.rules and loads it; rules match auditctl -l, kept after reboot; second run idempotent."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, auditd 1:4.0.2-2+deb13u1, BIOS boot
+    notes: "Rules fail on fresh install; fix writes /etc/audit/rules.d/60-cirsec-modules.rules and loads it; rules match auditctl -l, kept after reboot; second run idempotent."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-029
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller la configuration d'audit et charger toutes les règles valides
+finding:
+  title: Les règles d'audit peuvent être modifiées ou désactivées sur le système en marche
+  description: Quiconque dispose de root peut retirer des règles d'audit ou désactiver l'audit sans redémarrage, et une règle erronée arrête le chargement de toutes celles qui la suivent.
+description: |
+  Trois réglages ferment le jeu de règles d'audit :
+
+  - `-c` au début des règles (`/etc/audit/rules.d/01-cirsec-initialize.rules`) : si une règle
+    échoue au chargement, `auditctl` le signale et continue avec les suivantes ;
+  - `-e 2` en dernière règle (`/etc/audit/rules.d/99-cirsec-finalize.rules`) : une fois chargée, la
+    configuration est immuable, aucune règle ne peut être ajoutée ou retirée et l'audit ne peut pas
+    être désactivé avant le prochain redémarrage ;
+  - le fichier compilé `/etc/audit/audit.rules` correspond aux fichiers de `/etc/audit/rules.d/`
+    (`augenrules --check`), pour que ce qui est sur disque soit ce qui est chargé au démarrage.
+
+  La correction écrit les deux fichiers et charge les règles, ce qui verrouille immédiatement la
+  configuration.
+rationale: |
+  Un intrus disposant de root commence par supprimer les règles d'audit (`auditctl -D`) ou arrêter
+  l'audit. Avec une configuration immuable, il lui faut un redémarrage, lui-même visible. `-c` évite
+  qu'une seule règle fausse fasse disparaître sans bruit toutes les suivantes.
+impact: |
+  Changer les règles d'audit demande un redémarrage. Les corrections des contrôles de règles
+  CB-DEB-AUDIT-016 à 028 lancées après le verrouillage écrivent leurs fichiers et demandent un
+  redémarrage.
+notes: |
+  Ce contrôle dépend de tous les contrôles de règles, pour que `remediate.sh` charge chaque règle
+  avant de verrouiller. La vérification n'indique `enabled 2` qu'une fois le verrou chargé. Tant que
+  la configuration est verrouillée, `augenrules` refuse de reconstruire `/etc/audit/audit.rules` :
+  après la modification d'un fichier de règles, la vérification `rules-files` échoue jusqu'au
+  prochain redémarrage, où auditd reconstruit et charge les règles.
+setting:
+  location: /etc/audit/rules.d/01-cirsec-initialize.rules, /etc/audit/rules.d/99-cirsec-finalize.rules
+  recommended_value: "-c au début, -e 2 à la fin, audit.rules à jour"
+audit:
+  manual: |
+    1. Lancer `auditctl -s | grep enabled`. La commande doit afficher `enabled 2`.
+    2. Lancer `grep -hx -- '-c' /etc/audit/rules.d/*.rules`. La commande doit afficher `-c`.
+    3. Lancer `grep -v '^#' /etc/audit/audit.rules | grep . | tail -n 1`. La commande doit afficher `-e 2`.
+    4. Lancer `augenrules --check`. La commande ne doit signaler aucun changement.
+remediation:
+  manual: |
+    1. Créer `/etc/audit/rules.d/01-cirsec-initialize.rules` contenant `-c`.
+    2. Créer `/etc/audit/rules.d/99-cirsec-finalize.rules` contenant `-e 2`.
+    3. Lancer `augenrules --load` une fois toutes les autres règles en place. La configuration est
+       alors verrouillée jusqu'au prochain redémarrage.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/99-cirsec-finalize.rules` et `01-cirsec-initialize.rules`, lancer
+    `augenrules` et redémarrer.

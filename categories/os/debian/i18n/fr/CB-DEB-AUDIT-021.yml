@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-021
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les tentatives refusées d'ouverture ou de troncature de fichiers
+finding:
+  title: Les tentatives d'accès refusées aux fichiers ne sont pas enregistrées
+  description: Les utilisateurs qui sondent des fichiers qu'ils n'ont pas le droit de lire ou de modifier passent inaperçus.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-access.rules`, clé `access` : les appels qui
+  ouvrent, créent ou tronquent un fichier (`open`, `openat`, `creat`, `truncate`, `ftruncate`) et
+  échouent avec « permission refusée » (`EACCES`) ou « opération non permise » (`EPERM`), pour les
+  utilisateurs connectés, programmes 64 et 32 bits.
+rationale: |
+  Des refus répétés sont un signe précoce d'un utilisateur ou d'un compte compromis qui cherche des
+  fichiers à voler ou à modifier.
+impact: |
+  Certains programmes de bureau testent des fichiers qu'ils ne peuvent pas lire et peuvent produire beaucoup d'événements `access` ; surveiller le volume sur les postes de travail.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-access.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-access.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `access`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S open,truncate,ftruncate,creat,openat -F exit=-EACCES -F auid>=1000 -F auid!=-1 -F key=access
+    -a always,exit -F arch=b64 -S open,truncate,ftruncate,creat,openat -F exit=-EPERM -F auid>=1000 -F auid!=-1 -F key=access
+    -a always,exit -F arch=b32 -S open,creat,truncate,ftruncate,openat -F exit=-EACCES -F auid>=1000 -F auid!=-1 -F key=access
+    -a always,exit -F arch=b32 -S open,creat,truncate,ftruncate,openat -F exit=-EPERM -F auid>=1000 -F auid!=-1 -F key=access
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-access.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-access.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).
