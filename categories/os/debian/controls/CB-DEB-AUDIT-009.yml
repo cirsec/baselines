@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-009
+title: Encrypt and authenticate the rsyslog connection to the log server
+finding:
+  title: Logs are sent to the log server without TLS
+  description: Log messages cross the network in clear text and can be read, altered or sent to a rogue server.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [rsyslog, logging, remote, tls]
+
+applicability:
+  facts: [rsyslog]
+  conditions: |
+    Only when rsyslog is the logging system. With the journal alone, `systemd-journal-upload`
+    always uses HTTPS (CB-DEB-AUDIT-008).
+
+description: |
+  rsyslog encrypts its forwarding with the GnuTLS network stream driver from the
+  `rsyslog-gnutls` package. This control requires:
+
+  - the `rsyslog-gnutls` package;
+  - a forwarding action (`omfwd` or the legacy `@@host`) using the `gtls` driver in TLS-only mode
+    (`StreamDriverMode="1"`);
+  - the CA certificate that signs the log server certificate (`DefaultNetstreamDriverCAFile` or
+    `StreamDriver.CAFile`), and server authentication by certificate name
+    (`StreamDriverAuthMode="x509/name"`).
+rationale: |
+  Logs carry user names, addresses and sometimes secrets. TLS keeps them confidential and intact
+  in transit, and certificate checks stop an attacker from posing as the log server.
+impact: |
+  Requires a log server that accepts TLS (port 6514 by convention) and a certificate chain to
+  distribute. A wrong CA or name makes rsyslog queue messages instead of sending them.
+
+setting:
+  location: /etc/rsyslog.conf, /etc/rsyslog.d/
+  default_value: No forwarding
+  recommended_value: omfwd with StreamDriver gtls, StreamDriverMode 1, StreamDriverAuthMode x509/name and a CA file
+
+audit:
+  manual: |
+    1. Run `dpkg-query -W -f='${Status}\n' rsyslog-gnutls`. It must end with `installed`.
+    2. In `/etc/rsyslog.conf` and `/etc/rsyslog.d/*.conf`, find the forwarding action. It must use
+       `StreamDriver="gtls"` (or `$DefaultNetstreamDriver gtls`), `StreamDriverMode="1"` and
+       `StreamDriverAuthMode="x509/name"`.
+    3. `DefaultNetstreamDriverCAFile` (or `StreamDriver.CAFile`) must name an existing CA file.
+  checks:
+    - id: gnutls
+      engine: package
+      description: rsyslog-gnutls is installed.
+      spec: { name: rsyslog-gnutls, state: installed }
+    - id: forward-tls
+      engine: shell
+      description: A forwarding action that uses the gtls driver in TLS-only mode.
+      spec:
+        script: |
+          c=$(cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | grep -Ev '^[[:space:]]*(#|$)')
+          if ! printf '%s\n' "$c" | grep -Eiq 'type="?omfwd|[[:space:]]@@?[^[:space:]]'; then
+            echo "no forwarding action"
+            exit 1
+          fi
+          d=no m=no
+          printf '%s\n' "$c" | grep -Eiq 'StreamDriver(Name)?[[:space:]]*=[[:space:]]*"?gtls|DefaultNetstreamDriver[[:space:]]*=?[[:space:]]*"?gtls' && d=yes
+          printf '%s\n' "$c" | grep -Eiq 'StreamDriverMode[[:space:]]*=?[[:space:]]*"?1' && m=yes
+          echo "forwarding found, gtls driver: $d, TLS-only mode: $m"
+          [ "$d" = yes ] && [ "$m" = yes ]
+    - id: ca-auth
+      engine: shell
+      description: CA file configured and server authenticated by certificate name.
+      spec:
+        script: |
+          c=$(cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | grep -Ev '^[[:space:]]*(#|$)')
+          ca=$(printf '%s\n' "$c" | sed -n 's/.*\(DefaultNetstreamDriverCAFile\|StreamDriver\.CAFile\)[[:space:]]*=\{0,1\}[[:space:]]*"\{0,1\}\([^"[:space:])]*\).*/\2/p' | tail -n 1)
+          a=no
+          printf '%s\n' "$c" | grep -Eiq 'StreamDriverAuthMode[[:space:]]*=?[[:space:]]*"?x509/name' && a=yes
+          echo "CA file: ${ca:-none}, x509/name authentication: $a"
+          [ -n "$ca" ] && [ -s "$ca" ] && [ "$a" = yes ]
+
+remediation:
+  manual: |
+    1. Run `apt-get install rsyslog-gnutls`.
+    2. Copy the CA certificate of the log server to `/etc/ssl/certs/log-ca.pem`.
+    3. Create `/etc/rsyslog.d/60-remote.conf`:
+       ```
+       global(DefaultNetstreamDriverCAFile="/etc/ssl/certs/log-ca.pem")
+       *.* action(type="omfwd" target="<server>" port="6514" protocol="tcp"
+                  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+                  StreamDriverPermittedPeers="<server>"
+                  queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on"
+                  action.resumeRetryCount="-1")
+       ```
+    4. Run `rsyslogd -N1` to check the syntax, then `systemctl restart rsyslog`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove `/etc/rsyslog.d/60-remote.conf` and restart rsyslog.
+  scripts:
+    - id: gnutls
+      from_check: gnutls
+
+references:
+  - title: rsyslog.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsyslog/rsyslog.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+    note: R71 asks for protected log transfer; this control covers TLS for rsyslog.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(2)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.8"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.8"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-319
+related_controls:
+  - id: CB-DEB-AUDIT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "rsyslog installed for the test: fails without forwarding; gnutls installed by the fix; sample omfwd gtls config with CA passes (rsyslogd -N1 OK); anon auth mode fails."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "rsyslog installed for the test: fails without forwarding; gnutls installed by the fix; sample omfwd gtls config with CA passes (rsyslogd -N1 OK); anon auth mode fails."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

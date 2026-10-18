@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-009
+title: Disable the Squid web proxy on systems that are not proxy servers
+finding:
+  title: A web proxy can run on a system that is not a proxy server
+  description: An open or forgotten proxy relays traffic for others and hides its origin.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, proxy, http, attack-surface]
+
+description: |
+  Squid (`squid.service`) is the HTTP caching proxy packaged by Debian.
+
+  The control passes when the unit is masked or not installed at all.
+rationale: |
+  A proxy relays connections for its clients. A misconfigured one lets outsiders reach internal
+  systems or use the host to hide attacks, and its cache can hold sensitive responses.
+impact: |
+  Masking the unit stops it and prevents it from starting again. Proxy servers must exclude this
+  control in their tailoring file.
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid fix.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled squid.service`. It must print `masked`, or fail because the unit does
+    not exist.
+  checks:
+    - id: squid
+      engine: systemd-unit
+      description: Squid proxy server.
+      spec: { unit: squid.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now squid.service`, or `apt purge squid` if the package is not needed.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask squid.service` then `systemctl enable --now squid.service`.
+  scripts:
+    - id: squid
+      from_check: squid
+
+references:
+  - title: squid(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/squid/squid.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers the web proxy.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.21"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.18"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1090
+related_controls:
+  - id: CB-DEB-SVC-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with squid installed the check fails, fix masks, audit passes after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with squid installed the check fails, fix masks, audit passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

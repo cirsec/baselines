@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-018
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les redirections SSH
+finding:
+  title: Les sessions SSH peuvent rediriger des ports, des sockets, X11 et l'agent SSH
+  description: Les redirections transforment n'importe quel compte SSH en tunnel à travers le pare-feu, dans les deux sens.
+description: |
+  `DisableForwarding yes` dans le serveur OpenSSH coupe d'un coup toutes les redirections : ports TCP
+  (`ssh -L`, `-R`, `-D`), sockets Unix, X11 et agent SSH, quoi que disent les autres options
+  `*Forwarding`.
+rationale: |
+  Avec les redirections, un utilisateur ou un attaquant disposant d'un compte SSH quelconque peut
+  ouvrir des tunnels vers des services internes que le pare-feu n'expose pas, ou exposer le réseau du
+  serveur vers l'extérieur (tunnels inverses). Les redirections X11 et d'agent permettent à un serveur
+  compromis d'agir sur l'affichage du client ou de réutiliser ses clés.
+impact: |
+  Les administrateurs perdent les tunnels `ssh -L/-R/-D`, `ssh -A` (redirection d'agent, utilisée pour
+  rebondir vers d'autres hôtes ou pour `git` avec la clé locale) et `ssh -X`. Pour atteindre d'autres
+  hôtes, utiliser `ProxyJump` (`ssh -J`) à travers un bastion dédié plutôt que la redirection d'agent.
+  Les bastions ont besoin de la redirection TCP pour `ProxyJump` : y exclure ce contrôle, ou
+  l'autoriser pour un groupe d'utilisateurs avec un bloc `Match Group`.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+audit:
+  manual: |
+    Lancer `sshd -T | grep '^disableforwarding '`. La commande doit afficher `disableforwarding yes`.
+remediation:
+  manual: |
+    Ajouter `DisableForwarding yes` à `/etc/ssh/sshd_config.d/00-cirsec.conf`, vérifier avec
+    `sshd -t`, puis lancer `systemctl reload ssh`.
+  rollback: |
+    Retirer la ligne et lancer `systemctl reload ssh`.

@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-011
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder les programmes et bibliothèques système à root et non modifiables par les autres
+finding:
+  title: Des programmes ou bibliothèques système peuvent être modifiés par un compte non root
+  description: Un utilisateur ou un service qui peut écrire un programme ou une bibliothèque système exécute du code au nom de tous ceux qui l'appellent, root compris.
+description: |
+  Dans les répertoires de programmes et de bibliothèques système (`/usr/bin`, `/usr/sbin`,
+  `/usr/lib`, `/usr/lib64`, `/usr/libexec`, `/usr/local/bin`, `/usr/local/sbin`, `/usr/local/lib`,
+  ainsi que `/bin`, `/sbin`, `/lib`, `/lib64` quand ce sont de vrais répertoires) :
+
+  - chaque répertoire appartient à `root:root` et n'est pas modifiable par le groupe ni les autres ;
+  - chaque fichier appartient à `root` et n'est pas modifiable par le groupe ni les autres.
+
+  Les fichiers peuvent appartenir à un autre groupe : Debian livre des programmes setgid qui
+  appartiennent à des groupes comme `shadow`, `_ssh` ou `messagebus`.
+rationale: |
+  Les programmes de ces répertoires s'exécutent en root via les services, cron, sudo et les scripts
+  des paquets, et les bibliothèques sont chargées dans tous les processus. Un droit d'écriture pour
+  un autre que root permet à ce compte de les remplacer pour obtenir root, ou de s'installer
+  durablement sans être vu.
+impact: |
+  Aucun sur un système standard, où les paquets installent tout en root. Les logiciels installés à
+  la main sous `/usr/local` par un utilisateur ordinaire doivent être donnés à root.
+notes: |
+  Un écart ici signale en général un logiciel installé hors du gestionnaire de paquets, ou une
+  altération. La correction est donc manuelle : trouver la cause avant de changer le propriétaire,
+  car `chown` efface aussi les bits setuid et setgid.
+audit:
+  manual: |
+    Lancer, pour chacun des répertoires ci-dessus qui existe et n'est pas un lien symbolique :
+    ```
+    find <rép> -xdev \( -type d \( ! -user root -o ! -group root -o -perm /022 \) \) -o \( ! -type d ! -type l \( ! -user root -o -perm /022 \) \) -print
+    ```
+    La commande ne doit rien afficher.
+remediation:
+  manual: |
+    Pour chaque élément signalé :
+    1. Trouver son paquet avec `dpkg -S <chemin>` et le vérifier avec `dpkg --verify <paquet>`. Un
+       fichier de paquet modifié est une compromission possible : enquêter d'abord, puis réinstaller
+       le paquet avec `apt-get install --reinstall <paquet>`.
+    2. Pour les fichiers installés à la main, lancer `chown root <chemin>` (puis rétablir un bit
+       setuid ou setgid voulu) et `chmod go-w <chemin>` ; pour les répertoires,
+       `chown root:root <rép>` et `chmod go-w <rép>`.

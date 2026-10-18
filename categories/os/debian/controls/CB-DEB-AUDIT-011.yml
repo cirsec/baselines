@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-011
+title: Install and run the audit daemon
+finding:
+  title: The kernel audit records are not collected
+  description: Without auditd, security relevant system calls, file changes and command runs are not recorded anywhere.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd]
+
+description: |
+  The Linux audit framework records events chosen by rules (system calls, file accesses, program
+  runs) with the identity of the user who logged in. `auditd` (package `auditd`) receives these
+  records from the kernel and writes them to `/var/log/audit/audit.log`; `audispd-plugins` adds
+  the plugins that forward them (syslog, remote server). Neither is installed by default.
+
+  This control requires both packages and the `auditd` service enabled and running.
+rationale: |
+  The audit log is the detailed, per-user record that investigations rely on after an intrusion.
+  It is also required by the audit rules controls CB-DEB-AUDIT-016 to CB-DEB-AUDIT-029.
+impact: |
+  auditd uses a few megabytes of memory. The disk space used depends on the rules and on the
+  activity; see CB-DEB-AUDIT-013 and CB-DEB-AUDIT-014.
+
+setting:
+  location: auditd and audispd-plugins packages, auditd.service
+  default_value: Not installed
+  recommended_value: Installed, auditd.service enabled and active
+
+audit:
+  manual: |
+    1. Run `dpkg-query -W -f='${Package} ${Status}\n' auditd audispd-plugins`. Both must end with
+       `installed`.
+    2. Run `systemctl is-enabled auditd` and `systemctl is-active auditd`. They must print
+       `enabled` and `active`.
+  checks:
+    - id: auditd
+      engine: package
+      description: auditd is installed.
+      spec: { name: auditd, state: installed }
+    - id: plugins
+      engine: package
+      description: audispd-plugins is installed.
+      spec: { name: audispd-plugins, state: installed }
+    - id: service
+      engine: systemd-unit
+      description: auditd.service is enabled.
+      spec: { unit: auditd.service, state: enabled }
+
+remediation:
+  manual: |
+    Run `apt-get install auditd audispd-plugins`, then `systemctl enable --now auditd`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `apt-get purge auditd audispd-plugins`.
+  scripts:
+    - id: auditd
+      from_check: auditd
+    - id: plugins
+      from_check: plugins
+    - id: service
+      from_check: service
+
+references:
+  - title: auditd.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/auditd.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R73)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: partial
+    note: R73 also lists the events to record, covered by CB-DEB-AUDIT-016 to 029.
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R33
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.1.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.1.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+  - framework: cwe
+    id: CWE-778
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; packages installed and auditd enabled and active; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; packages installed and auditd enabled and active; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

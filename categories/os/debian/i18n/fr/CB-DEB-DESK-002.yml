@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-002
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Afficher une bannière d'avertissement et masquer la liste des utilisateurs sur l'écran de connexion GDM
+finding:
+  title: L'écran de connexion GDM liste les comptes locaux et n'affiche aucun avertissement
+  description: Toute personne devant la machine voit des noms de comptes valides, et les utilisateurs ne sont pas avertis que l'accès est restreint et surveillé.
+description: |
+  Deux réglages de l'écran de connexion GDM (`org.gnome.login-screen`) :
+
+  - `banner-message-enable` et `banner-message-text` : afficher un texte d'avertissement
+    au-dessus du champ de mot de passe ;
+  - `disable-user-list` : ne pas lister les comptes locaux ; l'utilisateur saisit son
+    identifiant.
+
+  Sous Debian, l'écran de connexion lit une base dconf que GDM reconstruit à chaque démarrage à
+  partir de `/usr/share/gdm/dconf/`. Ce répertoire contient un lien vers
+  `/etc/gdm3/greeter.dconf-defaults`, le fichier où l'administrateur définit ces clés.
+rationale: |
+  Une liste de comptes donne à un attaquant ayant un accès physique ou à l'affichage la moitié
+  des identifiants. Une bannière d'avertissement indique que l'accès est restreint et surveillé,
+  ce qui facilite les poursuites contre un intrus dans de nombreux pays.
+impact: |
+  Les utilisateurs saisissent leur identifiant au lieu de cliquer dessus. La bannière s'affiche
+  à chaque connexion.
+notes: |
+  Le contrôle lit la base réellement utilisée par l'écran de connexion
+  (`DCONF_PROFILE=gdm dconf read`, avec un répertoire personnel temporaire pour ignorer la base
+  utilisateur propre au compte GDM et ne créer aucun fichier dans son répertoire) ; il ne passe
+  donc qu'une fois la base reconstruite. Le correctif lance `/usr/share/gdm/generate-config`, que
+  GDM lance aussi à chaque démarrage. Le contrôle exige une bannière non vide, pas un texte
+  précis. `/etc/gdm3/greeter.dconf-defaults` est un fichier de configuration géré par ucf : les
+  mises à jour du paquet fusionnent les modifications locales. Le correctif s'exécute à chaque
+  remédiation et réécrit les trois clés.
+setting:
+  location: /etc/gdm3/greeter.dconf-defaults, section [org/gnome/login-screen]
+  recommended_value: "banner-message-enable=true, banner-message-text='{{ banner_text }}', disable-user-list=true"
+parameters:
+  banner_text: Texte de l'avertissement affiché sur l'écran de connexion.
+audit:
+  manual: |
+    Lancer en root :
+    ```
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/banner-message-enable
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/banner-message-text
+    DCONF_PROFILE=gdm dconf read /org/gnome/login-screen/disable-user-list
+    ```
+    La première et la dernière doivent afficher `true`, la deuxième un texte d'avertissement non
+    vide.
+remediation:
+  manual: |
+    1. Dans `/etc/gdm3/greeter.dconf-defaults`, section `[org/gnome/login-screen]`, définir :
+       ```
+       banner-message-enable=true
+       banner-message-text='{{ banner_text }}'
+       disable-user-list=true
+       ```
+    2. Lancer `/usr/share/gdm/generate-config` (ou redémarrer GDM) pour reconstruire la base de
+       l'écran de connexion.
+  rollback: |
+    Retirer les trois lignes de `/etc/gdm3/greeter.dconf-defaults` et lancer
+    `/usr/share/gdm/generate-config`.

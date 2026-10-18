@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-010
+title: Decide whether to turn off Wayland sessions in GDM (recommended - skip)
+finding:
+  title: GDM starts Wayland sessions, which run X11 programs through Xwayland
+  description: X11 programs running under Xwayland can read each other's input and windows, so one compromised X11 program can log the keys typed in the others.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [gdm, wayland, xwayland, x11]
+
+applicability:
+  facts: [gdm]
+
+description: |
+  With `WaylandEnable=false` in the `[daemon]` section of `/etc/gdm3/daemon.conf`, GDM runs the
+  login screen and user sessions on the Xorg server instead of Wayland, and Xwayland is never
+  started. This is the configuration the CIS benchmarks check for their Xwayland item.
+rationale: |
+  Xwayland gives X11 programs a shared X server: any of them can snoop the keyboard input and
+  window contents of the others. CIS removes Xwayland by turning Wayland sessions off. Note
+  that a full Xorg session has the same weakness for every program, not only X11 ones: this
+  control trades Xwayland's attack surface for Xorg's, and only makes sense where the
+  benchmark is a requirement.
+impact: |
+  Sessions run on Xorg: no Wayland isolation between programs, no Wayland-only features
+  (fractional scaling, per-monitor refresh rate). The Xorg server (`xserver-xorg-core` and its
+  drivers) must be installed, or GDM has no display server and no graphical login is possible.
+  Xwayland cannot be removed on Debian: `gnome-session` and `mutter` depend on it.
+notes: |
+  **Recommendation: skip this control** (exclude it in the tailoring file, with the reason below)
+  unless an audit against the CIS benchmark requires it. On a GNOME desktop, a Wayland session
+  isolates native programs from each other and only X11 programs share Xwayland; turning Wayland
+  off puts every program on Xorg, which removes that isolation for all of them. The control is
+  kept, as a manual decision, so that the choice is recorded and the CIS item can be mapped.
+
+  ```yaml
+  exclude:
+    - control: CB-DEB-DESK-010
+      reason: Wayland isolation is kept on purpose; Xorg would expose every program.
+  ```
+
+setting:
+  location: /etc/gdm3/daemon.conf, section [daemon]
+  default_value: WaylandEnable=true (unset)
+  recommended_value: WaylandEnable=false
+
+audit:
+  manual: |
+    In `/etc/gdm3/daemon.conf`, the `[daemon]` section must contain `WaylandEnable=false`.
+
+remediation:
+  manual: |
+    Only if the decision is to follow the CIS item:
+    1. Install the Xorg server (`apt install xserver-xorg`) and check that an Xorg session works.
+    2. In `/etc/gdm3/daemon.conf`, section `[daemon]`, set `WaylandEnable=false`.
+    3. Restart GDM at a convenient time (`systemctl restart gdm` closes every graphical session).
+  rollback: |
+    Remove `WaylandEnable=false` from `/etc/gdm3/daemon.conf` and restart GDM.
+
+references:
+  - title: gdm3(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/gdm3/gdm3.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GDM - configuration keys (gdm.schemas)
+    url: https://gitlab.gnome.org/GNOME/gdm/-/blob/main/data/gdm.schemas.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - GDM
+    url: https://wiki.debian.org/GDM
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.7"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1056.001
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

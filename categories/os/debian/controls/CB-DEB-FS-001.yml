@@ -1,0 +1,241 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-001
+title: Block kernel modules for filesystems the system does not use
+finding:
+  title: The kernel can load modules for rarely used filesystems
+  description: Any user who can attach a disk image or removable media can make the kernel parse it with old, rarely audited filesystem code.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [kernel-modules, filesystems, modprobe]
+
+description: |
+  The kernel loads a filesystem module on demand, the first time something mounts a filesystem
+  of that type. This control blocks the modules listed in `{{ modules }}` for good: each one gets
+  an `install <module> /bin/false` rule, so any load attempt fails, and a `blacklist` rule, so it
+  is never picked by hardware aliases. A module that no installed kernel ships is compliant.
+
+  The core list holds filesystems that have no use on a Debian server or workstation (cramfs,
+  freevxfs, hfs, hfsplus, jffs2). The hardened profiles add overlay, squashfs and udf.
+rationale: |
+  Filesystem drivers parse complex on-disk structures. Rarely used ones get little review, and
+  crafted images have repeatedly led to kernel memory corruption and privilege escalation. Desktop
+  automounters, udisks and loop devices let an unprivileged user reach this code with a USB stick
+  or a downloaded image. A module that cannot be loaded removes that attack surface.
+impact: |
+  Media using a blocked filesystem can no longer be mounted. In the hardened profiles this
+  includes `overlay` (Docker, Podman and other container engines), `squashfs` (snap packages,
+  live images) and `udf` (DVDs and some USB media). Remove a module from `{{ modules }}` in the
+  tailoring file when the system needs it.
+notes: |
+  Debian cloud kernels do not ship cramfs, freevxfs, hfs, hfsplus or jffs2, so the core list
+  passes there without any configuration. The generic kernels (`linux-image-amd64`) ship them.
+
+  Review the other filesystem modules the same way: `ls /lib/modules/$(uname -r)/kernel/fs`
+  lists what the kernel can load, and the ones the system never mounts can be added to
+  `{{ modules }}`.
+
+setting:
+  location: /etc/modprobe.d/60-cirsec-filesystems.conf
+  default_value: Every module shipped by the kernel can be loaded
+  recommended_value: "install /bin/false and blacklist for: {{ modules }}"
+
+parameters:
+  - name: modules
+    type: list
+    description: Kernel modules to block, as named by modprobe.
+    default: [cramfs, freevxfs, hfs, hfsplus, jffs2]
+    profile_defaults:
+      server-hardened: [cramfs, freevxfs, hfs, hfsplus, jffs2, overlay, squashfs, udf]
+      desktop-hardened: [cramfs, freevxfs, hfs, hfsplus, jffs2, overlay, squashfs, udf]
+
+audit:
+  manual: |
+    For each module of `{{ modules }}`:
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>'` must show
+       `install <module> /bin/false` and `blacklist <module>` (dashes appear as underscores), or
+       `find /lib/modules -name '<module>.ko*'` must find nothing.
+    2. `grep '^<module> ' /proc/modules` must find nothing.
+  checks:
+    - id: modules
+      engine: shell
+      description: Each listed module is blocked in the modprobe configuration, or not shipped, and not loaded.
+      spec:
+        script: |
+          cfg=$(modprobe --showconfig 2>/dev/null) || exit 3
+          rc=0
+          for m in $CB_MODULES; do
+            n=$(printf '%s' "$m" | tr - _)
+            if grep -q "^$n " /proc/modules; then
+              echo "$m: loaded"; rc=1; continue
+            fi
+            if printf '%s\n' "$cfg" | grep -Eq "^install $n (/usr)?/bin/(false|true)( |\$)" &&
+              printf '%s\n' "$cfg" | grep -qx "blacklist $n"; then
+              echo "$m: blocked"
+            elif [ -z "$(find /lib/modules/ \( -name "$m.ko*" -o -name "$n.ko*" \) 2>/dev/null | head -n 1)" ] &&
+              ! grep -qs "/$n.ko\$\|/$m.ko\$" /lib/modules/*/modules.builtin; then
+              echo "$m: not shipped by any installed kernel"
+            else
+              echo "$m: can be loaded"; rc=1
+            fi
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    1. Create `/etc/modprobe.d/60-cirsec-filesystems.conf` with, for each module of `{{ modules }}`:
+       ```
+       install <module> /bin/false
+       blacklist <module>
+       ```
+    2. Unload the modules that are loaded with `modprobe -r <module>`. A module that is in use
+       (mounted filesystem) stays loaded until it is unmounted or the system reboots.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-filesystems.conf`. The modules load again on demand.
+  scripts:
+    - id: modprobe-conf
+      engine: shell
+      content: |
+        f=/etc/modprobe.d/60-cirsec-filesystems.conf
+        cb_backup "$f"
+        {
+          echo '# Written by CIRSEC Baselines CB-DEB-FS-001'
+          for m in $CB_MODULES; do printf 'install %s /bin/false\nblacklist %s\n' "$m" "$m"; done
+        } >"$f"
+        chmod 644 "$f"
+        rc=0
+        for m in $CB_MODULES; do
+          n=$(printf '%s' "$m" | tr - _)
+          grep -q "^$n " /proc/modules || continue
+          modprobe -r "$n" || { echo "$m is in use, it stays loaded until reboot" >&2; rc=1; }
+        done
+        exit $rc
+
+references:
+  - title: modprobe.d(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/kmod/modprobe.d.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: modprobe(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/kmod/modprobe.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.7"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.11"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.7"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.11"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1188
+related_controls:
+  - id: CB-DEB-FS-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Core list passes unconfigured (modules not shipped by the cloud kernel); hardened list fails on overlay, squashfs and udf, fix blocks them, unloads a loaded udf, modprobe then refuses them; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Core list passes unconfigured (modules not shipped by the cloud kernel); hardened list fails on overlay, squashfs and udf, fix blocks them, unloads a loaded udf, modprobe then refuses them; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

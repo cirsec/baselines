@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-009
+title: Lock the session when the screen saver starts and when the system suspends
+finding:
+  title: Users can turn off the screen lock, including on suspend and lid close
+  description: A laptop closed or suspended with an unlocked session resumes straight into that session for whoever opens it.
+status: active
+profiles: [desktop]
+risk:
+  severity: medium
+assessment: automated
+tags: [gnome, kde, dconf, session-lock, suspend]
+
+description: |
+  - GNOME locks the screen when it blanks and before the system suspends (lid close, suspend
+    key, idle suspend) when `org.gnome.desktop.screensaver lock-enabled` is `true`, and lets
+    users lock at all when `org.gnome.desktop.lockdown disable-lock-screen` is `false`. Both
+    keys are set in the system dconf database `local` and locked.
+  - KDE Plasma locks on resume when `LockOnResume` is not false in the `[Daemon]` group of
+    `kscreenlockerrc`; the system file `/etc/xdg/kscreenlockerrc` must mark the group
+    immutable (`[Daemon][$i]`).
+rationale: |
+  Mobile machines are mostly left suspended, not idle. If the session is not locked at suspend,
+  anyone who gets the laptop resumes into the user's open session, without a password, and the
+  idle lock never triggers.
+impact: |
+  Users type their password after resume. They cannot disable the screen lock.
+notes: |
+  These are Debian's defaults, but users can change them unless the keys are locked. With Xfce,
+  check by hand that `xfce4-power-manager` locks the screen on suspend (setting
+  `lock-screen-suspend-hibernate`). The KDE check was written from the KDE documentation and
+  not tested in a lab; it has no automated fix.
+
+setting:
+  location: /etc/dconf/db/local.d/ (GNOME); /etc/xdg/kscreenlockerrc (KDE)
+  default_value: Lock enabled, not locked
+  recommended_value: "lock-enabled=true and disable-lock-screen=false, locked; KDE [Daemon][$i] LockOnResume=true"
+
+audit:
+  manual: |
+    1. GNOME: `dconf read /org/gnome/desktop/screensaver/lock-enabled` must print `true` and
+       `dconf read /org/gnome/desktop/lockdown/disable-lock-screen` must print `false`; both keys
+       must be listed in `/etc/dconf/db/local.d/locks/`.
+    2. KDE Plasma: `/etc/xdg/kscreenlockerrc` must have a `[Daemon][$i]` group that does not set
+       `LockOnResume=false`.
+  checks:
+    - id: gnome-lock-enabled
+      engine: dconf
+      description: GNOME locks the screen when it blanks and before suspend.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/screensaver/lock-enabled
+        value: "true"
+    - id: gnome-lock-allowed
+      engine: dconf
+      description: GNOME users cannot disable the lock screen.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/lockdown/disable-lock-screen
+        value: "false"
+    - id: kde
+      engine: shell
+      description: The KDE screen locker locks on resume and users cannot change it.
+      facts: [desktop-kde]
+      spec:
+        script: |
+          f=/etc/xdg/kscreenlockerrc
+          [ -f "$f" ] || { echo "$f missing"; exit 1; }
+          o=$(awk '/^[ \t]*\[/ { s = ($0 ~ /^[ \t]*\[Daemon\]\[\$i\][ \t]*$/); if (s) imm = 1; next }
+            s && /^[ \t]*LockOnResume[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v) }
+            END { printf "immutable=%d LockOnResume=%s\n", imm, v }' "$f")
+          echo "$o"
+          case $o in *immutable=1*) ;; *) exit 1 ;; esac
+          case $o in *LockOnResume=false*) exit 1 ;; esac
+
+remediation:
+  manual: |
+    1. GNOME: make sure `/etc/dconf/profile/user` contains `user-db:user` and `system-db:local`,
+       then create `/etc/dconf/db/local.d/00-lock-screen`:
+       ```
+       [org/gnome/desktop/screensaver]
+       lock-enabled=true
+
+       [org/gnome/desktop/lockdown]
+       disable-lock-screen=false
+       ```
+       list both keys in `/etc/dconf/db/local.d/locks/00-lock-screen` and run `dconf update`.
+    2. KDE Plasma: add `LockOnResume=true` to the `[Daemon][$i]` group of
+       `/etc/xdg/kscreenlockerrc` (see CB-DEB-DESK-008).
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete the files written in `/etc/dconf/db/local.d/` and its `locks/` directory, then run
+    `dconf update`.
+  scripts:
+    - id: gnome-lock-enabled
+      from_check: gnome-lock-enabled
+    - id: gnome-lock-allowed
+      from_check: gnome-lock-allowed
+
+references:
+  - title: GNOME System Administration Guide - Lock the screen when the user is idle
+    url: https://help.gnome.org/admin/system-admin-guide/stable/desktop-lockscreen.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: gsettings-desktop-schemas - org.gnome.desktop.screensaver schema
+    url: https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas/-/blob/master/schemas/org.gnome.desktop.screensaver.gschema.xml.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: kscreenlocker - kscreenlockerrc settings (kscreenlockersettings.kcfg)
+    url: https://invent.kde.org/plasma/kscreenlocker/-/blob/master/settings/kscreenlockersettings.kcfg
+    publisher: KDE
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R32)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R32
+    relation: partial
+    note: Covers locking at suspend; the idle delay is CB-DEB-DESK-003 and CB-DEB-DESK-008.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-11
+    relation: partial
+threats:
+  - framework: cwe
+    id: CWE-613
+related_controls:
+  - id: CB-DEB-DESK-003
+    type: related
+  - id: CB-DEB-DESK-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "GNOME dconf checks and fixes tested (desktop-hardened); lock-enabled and disable-lock-screen confirmed non-writable for a user; state kept after reboot. The KDE check was not tested (no KDE machine)."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "GNOME dconf checks and fixes tested (desktop-hardened); lock-enabled and disable-lock-screen confirmed non-writable for a user; state kept after reboot. The KDE check was not tested (no KDE machine)."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

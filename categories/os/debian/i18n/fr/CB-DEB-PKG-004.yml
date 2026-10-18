@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'écriture des clés APT et des listes de dépôts
+finding:
+  title: Des utilisateurs non root peuvent modifier les clés APT ou les listes de dépôts
+  description: Qui peut écrire ces fichiers choisit les dépôts et les clés de signature auxquels APT fait confiance, donc le code qui s'exécute en root.
+description: |
+  APT fait confiance aux trousseaux de `/etc/apt/trusted.gpg.d/`, `/etc/apt/keyrings/`,
+  `/usr/share/keyrings/` (et de l'ancien `/etc/apt/trusted.gpg`), et télécharge depuis les dépôts
+  listés dans `/etc/apt/sources.list` et `/etc/apt/sources.list.d/`. Ces dossiers doivent être en
+  `root:root` mode `0755`, et leurs fichiers en `root:root` mode `0644` ou plus strict.
+rationale: |
+  Un utilisateur qui peut ajouter une clé ou une entrée de source peut faire installer par APT le
+  paquet de son choix, dont les scripts de maintenance s'exécutent en root, à la prochaine mise à
+  jour. Seul root doit pouvoir les modifier. Les lire est sans risque : les clés sont publiques et
+  l'utilisateur non privilégié `_apt` d'APT doit pouvoir les lire.
+impact: |
+  Aucun connu. Debian livre ces fichiers avec ces droits.
+notes: |
+  Sur Debian 13, les fichiers `*.gpg` de `/usr/share/keyrings/` sont des liens symboliques vers
+  des fichiers `*.pgp`. Le contrôle suit les liens et vérifie leur cible.
+setting:
+  location: /etc/apt/trusted.gpg.d, /etc/apt/keyrings, /usr/share/keyrings, /etc/apt/sources.list, /etc/apt/sources.list.d
+  recommended_value: "root:root, 0755 ou plus strict pour les dossiers, 0644 ou plus strict pour les fichiers"
+audit:
+  manual: |
+    1. `stat -c '%U:%G %a %n' /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings /etc/apt/sources.list.d`
+       affiche `root:root` et `755` ou plus strict.
+    2. `stat -L -c '%U:%G %a %n' /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d/* /etc/apt/keyrings/* /usr/share/keyrings/* /etc/apt/sources.list /etc/apt/sources.list.d/*`
+       affiche `root:root` et `644` ou plus strict pour chaque fichier existant.
+remediation:
+  manual: |
+    1. `chown root:root /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings /etc/apt/sources.list.d`
+       puis `chmod go-w` sur ces dossiers.
+    2. Pour chaque fichier de clé et de source : `chown root:root <fichier>` et `chmod 644 <fichier>` (ou plus strict).
+  rollback: |
+    Remettre le propriétaire et le mode précédents avec `chown` et `chmod`. Rien d'autre n'en dépend.

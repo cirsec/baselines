@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-014
+title: Run exactly one time synchronization daemon
+finding:
+  title: The system clock is not synchronized, or several daemons fight over it
+  description: Wrong timestamps break log correlation, certificate checks and Kerberos; two daemons make the clock jump.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [time, ntp, chrony, timesyncd]
+
+description: |
+  Debian ships several NTP clients: `systemd-timesyncd` (the default on most installs), `chrony`,
+  `chronyd-restricted` (Debian 13), `ntpsec` and `openntpd`. Exactly one of them must be active.
+rationale: |
+  Logs, audit trails and authentication protocols rely on accurate time. With no daemon the
+  clock drifts; with two, each corrects the other and the clock jumps, which corrupts timelines
+  during an investigation.
+impact: |
+  None known when one daemon is already active, which is the Debian default.
+notes: |
+  The Debian packages conflict with each other, so two daemons rarely coexist; the usual failure
+  is no daemon at all, for example in a container where `systemd-timesyncd` does not start
+  (the host keeps the time). Containers can exclude this control in their tailoring file. The
+  daemon's own settings are checked by CB-DEB-SVC-015 (timesyncd) and CB-DEB-SVC-016 (chrony).
+
+audit:
+  manual: |
+    Run `systemctl is-active chrony chronyd-restricted systemd-timesyncd ntpsec openntpd`. Exactly
+    one line must print `active`.
+  checks:
+    - id: single-daemon
+      engine: shell
+      description: Number of active time synchronization daemons.
+      spec:
+        script: |
+          n=0 act=
+          for u in chrony chronyd-restricted systemd-timesyncd ntpsec openntpd; do
+            if systemctl is-active --quiet "$u.service" 2>/dev/null; then
+              n=$((n + 1)) act="$act $u"
+            fi
+          done
+          echo "active:${act:- none}"
+          [ "$n" -eq 1 ]
+
+remediation:
+  manual: |
+    - No daemon: run `systemctl enable --now systemd-timesyncd`, or `apt install chrony`.
+    - Several daemons: keep one, then `systemctl mask --now <unit>` for the others or purge their
+      packages.
+
+references:
+  - title: Debian Wiki - NTP
+    url: https://wiki.debian.org/NTP
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemd-timesyncd.service(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd-timesyncd/systemd-timesyncd.service.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: chronyd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/chrony/chronyd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-8
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-45
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.1.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.006
+related_controls:
+  - id: CB-DEB-SVC-015
+    type: related
+  - id: CB-DEB-SVC-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes with systemd-timesyncd active on fresh image; fails with chrony installed but stopped; passes once chrony runs."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes with systemd-timesyncd active on fresh image; fails with chrony installed but stopped; passes once chrony runs."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

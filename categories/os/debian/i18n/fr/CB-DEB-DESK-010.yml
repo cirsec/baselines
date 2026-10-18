@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-010
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Décider s'il faut désactiver les sessions Wayland dans GDM (recommandé - ne pas appliquer)
+finding:
+  title: GDM démarre des sessions Wayland, qui exécutent les programmes X11 via Xwayland
+  description: Les programmes X11 exécutés sous Xwayland peuvent lire les saisies et les fenêtres les uns des autres, si bien qu'un programme X11 compromis peut enregistrer les frappes faites dans les autres.
+description: |
+  Avec `WaylandEnable=false` dans la section `[daemon]` de `/etc/gdm3/daemon.conf`, GDM fait
+  tourner l'écran de connexion et les sessions utilisateur sur le serveur Xorg au lieu de
+  Wayland, et Xwayland n'est jamais lancé. C'est la configuration que les référentiels CIS
+  vérifient pour leur point Xwayland.
+rationale: |
+  Xwayland fournit aux programmes X11 un serveur X partagé : chacun peut espionner les saisies
+  clavier et le contenu des fenêtres des autres. Le CIS supprime Xwayland en désactivant les
+  sessions Wayland. Une session Xorg complète a cependant la même faiblesse pour tous les
+  programmes, pas seulement les programmes X11 : ce contrôle échange la surface d'attaque de
+  Xwayland contre celle de Xorg, et n'a de sens que là où le référentiel est une exigence.
+impact: |
+  Les sessions tournent sous Xorg : pas d'isolation Wayland entre programmes, pas de
+  fonctionnalités propres à Wayland (mise à l'échelle fractionnaire, fréquence par écran). Le
+  serveur Xorg (`xserver-xorg-core` et ses pilotes) doit être installé, sinon GDM n'a pas de
+  serveur d'affichage et aucune connexion graphique n'est possible. Xwayland ne peut pas être
+  supprimé sous Debian : `gnome-session` et `mutter` en dépendent.
+notes: |
+  **Recommandation : ne pas appliquer ce contrôle** (l'exclure dans le fichier de personnalisation,
+  avec la raison ci-dessous), sauf si un audit selon le référentiel CIS l'exige. Sur un poste GNOME,
+  une session Wayland isole les programmes natifs les uns des autres et seuls les programmes X11
+  partagent Xwayland ; désactiver Wayland met tous les programmes sur Xorg, ce qui supprime cette
+  isolation pour tous. Le contrôle est gardé, en décision manuelle, pour que le choix soit tracé et
+  que le point CIS puisse être mis en correspondance.
+
+  ```yaml
+  exclude:
+    - control: CB-DEB-DESK-010
+      reason: L'isolation Wayland est gardée volontairement ; Xorg exposerait tous les programmes.
+  ```
+setting:
+  location: /etc/gdm3/daemon.conf, section [daemon]
+  recommended_value: WaylandEnable=false
+audit:
+  manual: |
+    Dans `/etc/gdm3/daemon.conf`, la section `[daemon]` doit contenir `WaylandEnable=false`.
+remediation:
+  manual: |
+    Uniquement si la décision est de suivre le point CIS :
+    1. Installer le serveur Xorg (`apt install xserver-xorg`) et vérifier qu'une session Xorg
+       fonctionne.
+    2. Dans `/etc/gdm3/daemon.conf`, section `[daemon]`, mettre `WaylandEnable=false`.
+    3. Redémarrer GDM au moment opportun (`systemctl restart gdm` ferme toutes les sessions
+       graphiques).
+  rollback: |
+    Retirer `WaylandEnable=false` de `/etc/gdm3/daemon.conf` et redémarrer GDM.

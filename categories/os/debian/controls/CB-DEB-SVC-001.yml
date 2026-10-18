@@ -1,0 +1,183 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-001
+title: Disable DHCP and DNS server services the system does not provide
+finding:
+  title: DHCP or DNS server services can run on a system that does not provide them
+  description: An unneeded DHCP or DNS server answers on the network and can hand out wrong addresses or names.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, dhcp, dns, attack-surface]
+
+description: |
+  Debian packages several network infrastructure servers:
+
+  - DHCP: `isc-dhcp-server` (`isc-dhcp-server`, `isc-dhcp-server6`) and Kea (`kea-dhcp4-server`,
+    `kea-dhcp6-server`, `kea-dhcp-ddns-server`);
+  - DNS: BIND (`named`);
+  - dnsmasq, a combined DNS forwarder and DHCP server (`dnsmasq`).
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  These daemons answer requests from any host on the network. A rogue or forgotten DHCP or DNS
+  server can redirect clients to an attacker, and every running daemon is code that can be
+  exploited remotely.
+impact: |
+  Masking a unit stops it and prevents it from starting again, even as a dependency. Systems
+  whose role is to provide DHCP or DNS must exclude this control in their tailoring file.
+  The dnsmasq binary used by libvirt or NetworkManager (`dnsmasq-base`) is not affected: only the
+  stand-alone `dnsmasq` service is masked.
+notes: |
+  The check reads `systemctl is-enabled`: a unit that does not exist counts as compliant, so
+  removing the package (`apt purge`) is an equally valid fix. The packages are not installed on
+  a default Debian install.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `isc-dhcp-server.service`, `isc-dhcp-server6.service`,
+    `kea-dhcp4-server.service`, `kea-dhcp6-server.service`, `kea-dhcp-ddns-server.service`,
+    `named.service`, `dnsmasq.service`.
+  logic: all
+  checks:
+    - id: isc-dhcp-server
+      engine: systemd-unit
+      description: ISC DHCPv4 server.
+      spec: { unit: isc-dhcp-server.service, state: masked }
+    - id: isc-dhcp-server6
+      engine: systemd-unit
+      description: ISC DHCPv6 server.
+      spec: { unit: isc-dhcp-server6.service, state: masked }
+    - id: kea-dhcp4
+      engine: systemd-unit
+      description: Kea DHCPv4 server.
+      spec: { unit: kea-dhcp4-server.service, state: masked }
+    - id: kea-dhcp6
+      engine: systemd-unit
+      description: Kea DHCPv6 server.
+      spec: { unit: kea-dhcp6-server.service, state: masked }
+    - id: kea-dhcp-ddns
+      engine: systemd-unit
+      description: Kea dynamic DNS update server.
+      spec: { unit: kea-dhcp-ddns-server.service, state: masked }
+    - id: named
+      engine: systemd-unit
+      description: BIND DNS server.
+      spec: { unit: named.service, state: masked }
+    - id: dnsmasq
+      engine: systemd-unit
+      description: dnsmasq DNS and DHCP server.
+      spec: { unit: dnsmasq.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead: `apt purge isc-dhcp-server kea-dhcp4-server kea-dhcp6-server
+    kea-dhcp-ddns-server bind9 dnsmasq`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: isc-dhcp-server
+      from_check: isc-dhcp-server
+    - id: isc-dhcp-server6
+      from_check: isc-dhcp-server6
+    - id: kea-dhcp4
+      from_check: kea-dhcp4
+    - id: kea-dhcp6
+      from_check: kea-dhcp6
+    - id: kea-dhcp-ddns
+      from_check: kea-dhcp-ddns
+    - id: named
+      from_check: named
+    - id: dnsmasq
+      from_check: dnsmasq
+
+references:
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: dhcpd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/isc-dhcp-server/dhcpd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: named(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/bind9/named.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: dnsmasq(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/dnsmasq-base/dnsmasq.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers DHCP and DNS servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.5"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1557
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes (units absent); with isc-dhcp-server, kea and bind9/dnsmasq installed each check fails, fix masks, audit passes, persistent after reboot; masked packages still upgrade and purge cleanly; SSH reachable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes (units absent); with isc-dhcp-server, kea and bind9/dnsmasq installed each check fails, fix masks, audit passes, persistent after reboot; masked packages still upgrade and purge cleanly; SSH reachable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

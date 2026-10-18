@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-003
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer le serveur NFS et désactiver rpcbind quand le système ne les fournit pas
+finding:
+  title: Le serveur NFS ou rpcbind peut tourner sur un système qui n'en a pas besoin
+  description: Les exports NFS et le service de correspondance de ports RPC sont joignables depuis le réseau et ont un long historique de vulnérabilités distantes.
+description: |
+  Le serveur NFS (paquet `nfs-kernel-server`) exporte des répertoires locaux via NFS.
+  `rpcbind` associe les numéros de programmes ONC RPC à des ports ; il écoute sur le port 111 via
+  `rpcbind.socket` et `rpcbind.service`, et est requis par NFSv3 et NIS.
+
+  Le contrôle exige que `nfs-kernel-server` soit absent, et que les unités rpcbind soient masquées
+  ou non installées.
+rationale: |
+  NFS fait confiance aux adresses et identifiants des clients : un export mal configuré donne un
+  accès distant aux fichiers. rpcbind indique à n'importe quel hôte quels services RPC tournent,
+  et a été utilisé pour de l'amplification de trafic et de l'exécution de code à distance.
+impact: |
+  Supprimer le serveur NFS arrête tous les exports. Masquer `rpcbind` casse les montages clients NFSv3, leur verrouillage de fichiers (`rpc.statd`)
+  et NIS. Les montages NFSv4 n'en ont pas besoin. Les serveurs NFS, et les clients qui montent
+  encore des partages NFSv3, doivent exclure ce contrôle dans leur fichier de personnalisation.
+notes: |
+  Le serveur NFS est supprimé plutôt que masqué : ses scripts de maintenance pilotent l'unité via
+  l'alias `nfs-kernel-server.service`, et quand `nfs-server.service` est masqué, la suppression ou
+  la mise à jour du paquet échoue (testé sur Debian 12 et 13). Une unité rpcbind inexistante est
+  considérée conforme. Le paquet client NFS `nfs-common` est traité par CB-DEB-SVC-027 dans le
+  profil serveur renforcé.
+audit:
+  manual: |
+    1. `dpkg-query -W -f='${Status}\n' nfs-kernel-server` ne doit pas afficher `install ok installed`.
+    2. `systemctl is-enabled rpcbind.service rpcbind.socket` doit afficher `masked`, ou échouer parce
+       que les unités n'existent pas.
+remediation:
+  manual: |
+    Lancer `apt purge nfs-kernel-server`, puis `systemctl mask --now rpcbind.socket rpcbind.service`
+    (ou `apt purge rpcbind` si rien n'en dépend).
+  rollback: |
+    Lancer `systemctl unmask rpcbind.socket rpcbind.service`, `systemctl enable --now rpcbind.socket`,
+    et réinstaller le serveur NFS avec `apt install nfs-kernel-server`.

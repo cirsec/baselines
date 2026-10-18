@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-004
+title: Never run software automatically from inserted media in GNOME
+finding:
+  title: GNOME can start programs from inserted media
+  description: When a disc or USB device is inserted, GNOME may offer or start the program the medium declares, which a crafted medium can abuse.
+status: active
+profiles: [desktop]
+risk:
+  severity: medium
+assessment: automated
+tags: [gnome, dconf, removable-media]
+
+applicability:
+  facts: [desktop-gnome]
+
+description: |
+  `org.gnome.desktop.media-handling autorun-never` set to `true` stops GNOME from prompting
+  for or launching programs when media are inserted. The key is set in the system dconf
+  database `local` and locked.
+rationale: |
+  Autorun turns the insertion of a medium into code execution with one click, or none if the
+  user chose "always". It is a classic infection path for removable media.
+impact: |
+  Users open media content themselves from the file manager.
+notes: |
+  Debian 13 already defaults to `true`; Debian 12 defaults to `false`. In both, users can
+  change it unless the key is locked.
+
+setting:
+  location: /etc/dconf/db/local.d/, key /org/gnome/desktop/media-handling/autorun-never
+  default_value: false (Debian 12), true (Debian 13), not locked
+  recommended_value: true, locked
+
+audit:
+  manual: |
+    1. `dconf read /org/gnome/desktop/media-handling/autorun-never` must print `true`.
+    2. The key must be listed in a file of `/etc/dconf/db/local.d/locks/`.
+  checks:
+    - id: autorun-never
+      engine: dconf
+      description: GNOME never runs software from inserted media.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/media-handling/autorun-never
+        value: "true"
+
+remediation:
+  manual: |
+    1. Make sure `/etc/dconf/profile/user` contains `user-db:user` and `system-db:local`.
+    2. Create `/etc/dconf/db/local.d/00-media-autorun`:
+       ```
+       [org/gnome/desktop/media-handling]
+       autorun-never=true
+       ```
+    3. List `/org/gnome/desktop/media-handling/autorun-never` in
+       `/etc/dconf/db/local.d/locks/00-media-autorun`.
+    4. Run `dconf update`.
+  effects:
+    restart: session
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete the files written in `/etc/dconf/db/local.d/` and its `locks/` directory, then run
+    `dconf update`.
+  scripts:
+    - id: autorun-never
+      from_check: autorun-never
+
+references:
+  - title: gsettings-desktop-schemas - org.gnome.desktop.media-handling schema
+    url: https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas/-/blob/master/schemas/org.gnome.desktop.media-handling.gschema.xml.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GNOME System Administration Guide - Lock down specific settings
+    url: https://help.gnome.org/admin/system-admin-guide/stable/dconf-lockdown.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1091
+related_controls:
+  - id: CB-DEB-DESK-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated dconf check and fix (desktop-hardened) on GNOME; value and lock confirmed with gsettings as a user; state kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated dconf check and fix (desktop-hardened) on GNOME; value and lock confirmed with gsettings as a user; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

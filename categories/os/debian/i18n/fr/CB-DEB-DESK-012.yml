@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-012
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que les périphériques USB connus avec USBGuard
+finding:
+  title: Tout périphérique USB branché sur la machine est accepté
+  description: Un émulateur de clavier malveillant, un adaptateur réseau ou un périphérique de stockage est activé dès son branchement.
+description: |
+  USBGuard est un service qui autorise chaque périphérique USB selon une liste de règles
+  (`/etc/usbguard/rules.conf`). À la première installation, le paquet Debian écrit une règle pour
+  chaque périphérique présent, puis démarre le service. Avec `ImplicitPolicyTarget=block` (valeur
+  par défaut), les périphériques qui ne correspondent à aucune règle sont bloqués.
+rationale: |
+  Les attaques USB reposent sur la confiance du système envers tout ce qui est branché : une
+  « rubber ducky » tape des commandes en se présentant comme clavier, un adaptateur réseau
+  malveillant détourne le trafic, un support de stockage transporte un logiciel malveillant. Une
+  liste d'autorisation construite à partir des périphériques réellement utilisés bloque ces
+  attaques sur une machine laissée sans surveillance ou prêtée.
+impact: |
+  Les nouveaux périphériques USB (un autre clavier, une station d'accueil, un téléphone, une clé
+  USB) sont bloqués jusqu'à ce qu'un administrateur les autorise avec `usbguard allow-device` et
+  ajoute une règle avec `usbguard append-rule` ou en régénérant la politique. Les périphériques
+  débranchés au moment de l'installation ne sont pas dans la politique : brancher tous les
+  périphériques habituels avant d'appliquer le correctif.
+notes: |
+  Le correctif installe le paquet et active le service ; il est désactivé par défaut car une
+  règle manquante peut bloquer le seul clavier. Le contrôle vérifie la configuration et le
+  service, pas le contenu de la liste de règles : la relire avec `usbguard list-rules`. Le
+  contrôle est non applicable quand le noyau n'a pas de support USB (`/sys/bus/usb` absent, comme
+  avec les noyaux cloud de Debian), car le service ne peut pas y démarrer.
+setting:
+  location: /etc/usbguard/rules.conf, /etc/usbguard/usbguard-daemon.conf
+  recommended_value: usbguard installé et actif, ImplicitPolicyTarget=block, règles issues des périphériques présents
+audit:
+  manual: |
+    1. `dpkg -s usbguard` indique le paquet installé.
+    2. `systemctl is-enabled usbguard` affiche `enabled` et `systemctl is-active usbguard`
+       affiche `active`.
+    3. `/etc/usbguard/usbguard-daemon.conf` contient `ImplicitPolicyTarget=block` et
+       `/etc/usbguard/rules.conf` existe.
+    4. `usbguard list-rules` liste les périphériques attendus.
+remediation:
+  manual: |
+    1. Brancher tous les périphériques USB utilisés habituellement.
+    2. `apt install usbguard`. À la première installation, le paquet écrit
+       `/etc/usbguard/rules.conf` à partir des périphériques présents et démarre le service.
+    3. Vérifier les règles avec `usbguard list-rules`, puis `systemctl enable --now usbguard`.
+    4. Vérifier que `ImplicitPolicyTarget=block` est défini dans
+       `/etc/usbguard/usbguard-daemon.conf`.
+  rollback: |
+    `systemctl disable --now usbguard` (les périphériques bloqués sont de nouveau autorisés quand
+    on les rebranche), ou `apt purge usbguard`.

@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le service Bluetooth
+finding:
+  title: Le service Bluetooth peut démarrer
+  description: Bluetooth accepte des connexions de tout appareil à portée radio, hors de tout contrôle réseau.
+description: |
+  Sur Debian, Bluetooth est géré par `bluetoothd` du paquet `bluez`, lancé par
+  `bluetooth.service`. Quand le paquet est installé, le service démarre dès qu'un adaptateur est
+  présent. Ce contrôle exige que le service soit masqué, ou que `bluez` soit absent.
+rationale: |
+  Les piles Bluetooth ont eu des failles exploitables à distance sans appairage (BlueBorne,
+  BleedingTooth). Un serveur n'a jamais besoin de Bluetooth, et un poste renforcé ne doit pas exposer
+  une interface radio joignable depuis une pièce voisine ou un parking.
+impact: |
+  Les claviers, souris, casques Bluetooth et le transfert de fichiers cessent de fonctionner.
+audit:
+  manual: |
+    Lancer `systemctl is-enabled bluetooth.service`. La commande doit afficher `masked`, ou échouer
+    parce que l'unité n'existe pas (`bluez` non installé).
+remediation:
+  manual: |
+    Lancer `systemctl mask --now bluetooth.service`, ou supprimer le paquet avec `apt purge bluez`
+    quand rien n'en dépend.
+  rollback: |
+    Lancer `systemctl unmask bluetooth.service` puis `systemctl start bluetooth.service`.

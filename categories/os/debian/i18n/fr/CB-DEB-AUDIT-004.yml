@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux fichiers journaux
+finding:
+  title: Des fichiers journaux sont lisibles ou modifiables par trop d'utilisateurs
+  description: Les journaux contiennent des noms d'utilisateurs, des adresses, des commandes et parfois des secrets ; lisibles par tous ils les divulguent, modifiables ils peuvent être falsifiés.
+description: |
+  Chaque fichier ordinaire sous `/var/log/`, y compris les fichiers du journal dans
+  `/var/log/journal/`, ne doit donner aucun droit aux autres utilisateurs, aucun droit d'écriture à
+  son groupe et aucun bit d'exécution (mode `0640` ou plus strict).
+
+  Deux exceptions :
+
+  - les registres de sessions `wtmp`, `btmp` et `lastlog` (et leurs copies tournées) doivent rester
+    modifiables par le groupe `utmp`, et `wtmp` et `lastlog` lisibles par tous pour que `last` et
+    `lastlog` fonctionnent : pour eux seuls les bits d'exécution et l'écriture par les autres sont
+    interdits (mode `0664` ou plus strict) ;
+  - les journaux du gestionnaire de paquets dans `/var/log/apt/`, qu'apt recrée lisibles par tous à
+    chaque exécution, peuvent être en `0644` ;
+  - les fichiers qui correspondent à `tolerated_0644` (par défaut `dpkg.log*` et `alternatives.log*`,
+    que logrotate recrée avec `create 0644`) peuvent aussi être en `0644`. Ils ne doivent jamais être
+    modifiables par le groupe ni par les autres.
+
+  journald crée ses fichiers en mode `0640` (réglé dans `/usr/lib/tmpfiles.d/systemd.conf`), et
+  rsyslog avec `$FileCreateMode` (CB-DEB-AUDIT-005).
+rationale: |
+  Les journaux enregistrent les échecs de connexion (parfois avec un mot de passe saisi à la place
+  du nom), les adresses sources, des commandes et des données applicatives. Lisibles, ils aident un
+  attaquant à cartographier le système ; modifiables, ils lui permettent d'effacer ou de forger ses
+  traces.
+impact: |
+  Les utilisateurs hors du groupe `adm` ne peuvent plus lire des fichiers comme `/var/log/cloud-init.log`.
+  Donner l'accès par l'appartenance au groupe (`adm`) plutôt que par des modes plus larges.
+notes: |
+  Sur une image cloud Debian 12 ou 13 neuve, `dpkg.log`, `faillog` et, sur Debian 12, `cloud-init.log` sont en `0644`. Un fichier recréé par son programme ou par logrotate
+  avec une directive `create 0644` revient au mode large jusqu'au prochain passage de la correction :
+  ajouter ces fichiers à `tolerated_0644`, ou changer le mode `create` dans `/etc/logrotate.d/`.
+setting:
+  location: /var/log/
+  recommended_value: "0640 ou plus strict ; 0664 pour wtmp, btmp et lastlog ; 0644 dans /var/log/apt et pour {{ tolerated_0644 }}"
+parameters:
+  tolerated_0644: Motifs de noms de fichiers sous /var/log autorisés en 0644 (jamais modifiables par le groupe ni les autres).
+audit:
+  manual: |
+    Lancer, en root :
+    ```
+    find /var/log -type f ! -path '/var/log/apt/*' ! -name 'wtmp*' ! -name 'btmp*' ! -name 'lastlog*' -perm /0137 -ls
+    find /var/log -type f \( -name 'wtmp*' -o -name 'btmp*' -o -name 'lastlog*' \) -perm /0113 -ls
+    find /var/log/apt -type f -perm /0133 -ls
+    ```
+    Les commandes ne doivent rien afficher, sauf les fichiers correspondant à {{ tolerated_0644 }}
+    listés par la première commande en mode `0644` (ils ne doivent pas être modifiables par le groupe ni les autres).
+remediation:
+  manual: |
+    Lancer, en root :
+    ```
+    find /var/log -type f ! -path '/var/log/apt/*' ! -name 'wtmp*' ! -name 'btmp*' ! -name 'lastlog*' -perm /0137 -exec chmod u-x,g-wx,o-rwx {} +
+    find /var/log -type f \( -name 'wtmp*' -o -name 'btmp*' -o -name 'lastlog*' \) -perm /0113 -exec chmod u-x,g-x,o-wx {} +
+    find /var/log/apt -type f -perm /0133 -exec chmod u-x,g-wx,o-wx {} +
+    ```
+    Pour les fichiers tournés par logrotate, changer aussi le mode `create` dans le fichier
+    correspondant de `/etc/logrotate.d/`.
+  rollback: |
+    Lancer `chmod 644` sur les fichiers qui doivent redevenir lisibles par tous.

@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-002
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Transférer le journal à rsyslog seulement quand rsyslog est le système choisi
+finding:
+  title: Le transfert du journal ne correspond pas au système de journalisation utilisé
+  description: Les messages sont envoyés à un démon syslog qui n'existe pas, ou ne sont pas transmis au rsyslog censé les stocker et les transférer.
+description: |
+  Un système Debian doit utiliser un seul système de journalisation : le journal systemd seul, ou le
+  journal qui alimente rsyslog, lequel écrit des fichiers texte et transfère les messages. Le réglage
+  journald `ForwardToSyslog=` décide si chaque message est aussi transmis à un démon syslog.
+
+  - Quand le paquet `rsyslog` est installé, `ForwardToSyslog=yes` est exigé, pour que rsyslog
+    reçoive chaque message.
+  - Quand il ne l'est pas, `ForwardToSyslog=no` est exigé, puisque personne ne lit les messages
+    transférés.
+rationale: |
+  Une incohérence fait perdre des messages dans les fichiers et les copies distantes gérés par
+  rsyslog, ou gaspille des ressources sur une socket que personne ne lit. Choisir un seul système
+  garde la chaîne de journalisation simple à vérifier.
+impact: |
+  Aucun connu. Le journal garde chaque message dans les deux cas.
+notes: |
+  Debian 13 livre `/usr/lib/systemd/journald.conf.d/syslog.conf` avec `ForwardToSyslog=yes`, même
+  sans démon syslog installé. La correction écrit `/etc/systemd/journald.conf.d/syslog.conf`, qui
+  remplace ce fichier du paquet. Sur Debian 12 la valeur par défaut est `no`.
+setting:
+  location: /etc/systemd/journald.conf.d/syslog.conf
+  recommended_value: yes si rsyslog est installé, no sinon
+audit:
+  manual: |
+    1. Lancer `dpkg-query -W -f='${Status}\n' rsyslog` pour savoir si rsyslog est installé.
+    2. Lancer `systemd-analyze cat-config systemd/journald.conf`. Le dernier `ForwardToSyslog=` doit
+       valoir `yes` si rsyslog est installé, et `no` (ou être absent) sinon.
+remediation:
+  manual: |
+    Créer `/etc/systemd/journald.conf.d/syslog.conf` avec `[Journal]` et `ForwardToSyslog=yes` si
+    rsyslog est installé, `ForwardToSyslog=no` sinon, puis lancer `systemctl restart systemd-journald`.
+  rollback: |
+    Supprimer `/etc/systemd/journald.conf.d/syslog.conf` et lancer `systemctl restart systemd-journald`.

@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-019
+title: Log SSH logins with enough detail
+finding:
+  title: The SSH server logs too little to trace logins
+  description: Without login records, and in hardened setups without the key used, an intrusion through SSH cannot be traced back.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [ssh, logging]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  `LogLevel` sets how much the OpenSSH server writes to the system log. `INFO` records successful
+  and failed logins; `VERBOSE` also records the fingerprint of the key used for each login. This
+  control requires `{{ ssh_log_level }}`.
+rationale: |
+  SSH logs are the main evidence of who logged in, from where and when. Knowing which key was used
+  tells which person or automation logged in when several keys open the same account, and which
+  key to revoke after a leak. `QUIET`, `FATAL` and `ERROR` hide logins altogether; `DEBUG` levels
+  can log sensitive data.
+impact: |
+  `VERBOSE` adds about one line per login to the logs.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  default_value: INFO
+  recommended_value: "{{ ssh_log_level }}"
+
+parameters:
+  - name: ssh_log_level
+    type: enum
+    description: Expected LogLevel of the SSH server.
+    default: INFO
+    allowed: [INFO, VERBOSE]
+    profile_defaults:
+      server-hardened: VERBOSE
+      desktop-hardened: VERBOSE
+
+audit:
+  manual: |
+    Run `sshd -T | grep '^loglevel '`. It must print `loglevel {{ ssh_log_level }}`.
+  checks:
+    - id: log-level
+      engine: sshd-config
+      description: LogLevel.
+      spec: { key: loglevel, value: "{{ ssh_log_level }}" }
+
+remediation:
+  manual: |
+    Add `LogLevel {{ ssh_log_level }}` to `/etc/ssh/sshd_config.d/00-cirsec.conf`, check with
+    `sshd -t`, then run `systemctl reload ssh`.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: none
+    lockout_risk: true
+  rollback: |
+    Remove the line and run `systemctl reload ssh`.
+  scripts:
+    - id: log-level
+      from_check: log-level
+
+references:
+  - title: sshd_config(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/openssh-server/sshd_config.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.14"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.16"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1021.004
+  - framework: cwe
+    id: CWE-778
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "INFO passes in core; VERBOSE set by the generated fix in server-hardened; SSH by key still accepted."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "INFO passes in core; VERBOSE set by the generated fix in server-hardened; SSH by key still accepted."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-003
+title: Disable wireless network interfaces on servers
+finding:
+  title: A wireless network interface is available on a server
+  description: A wireless interface can connect the server to a network outside the firewall and monitoring of the data center.
+status: active
+profiles: [server]
+risk:
+  severity: medium
+assessment: automated
+tags: [wireless, network, hardware]
+
+description: |
+  Servers are connected by cable to known networks. A Wi-Fi interface, often present on the
+  mainboard or added by a USB adapter, shows up under `/sys/class/net/` with a `wireless`
+  directory or a `phy80211` link once its driver is loaded. This control checks that no such
+  interface exists, which means the driver of any Wi-Fi hardware is not loaded.
+rationale: |
+  A wireless interface lets someone near the building reach the server, or lets the server reach
+  an uncontrolled network, bypassing the network firewall and its logs. Not loading the driver
+  removes the interface and the driver code from the attack surface.
+impact: |
+  Wi-Fi stops working. Do not apply it to a server whose only network link is wireless.
+
+audit:
+  manual: |
+    Run `ls -d /sys/class/net/*/wireless /sys/class/net/*/phy80211 2>/dev/null`. It must print
+    nothing. `iw dev`, when installed, must not list any interface.
+  checks:
+    - id: interfaces
+      engine: shell
+      description: Network interfaces with a wireless extension.
+      spec:
+        script: |
+          found=
+          for d in /sys/class/net/*; do
+            if [ -e "$d/wireless" ] || [ -e "$d/phy80211" ]; then found="$found ${d##*/}"; fi
+          done
+          if [ -n "$found" ]; then echo "wireless interfaces:$found"; exit 1; fi
+          echo 'no wireless interface'
+
+remediation:
+  manual: |
+    1. Find the driver of each wireless interface:
+       `basename "$(readlink -f /sys/class/net/<interface>/device/driver/module)"`.
+    2. Create `/etc/modprobe.d/60-cirsec-wireless.conf` with, for each driver,
+       `install <driver> /bin/false` and `blacklist <driver>`.
+    3. Bring the interface down (`ip link set <interface> down`) and reboot.
+    Disabling the device in the firmware setup, or removing it, is better when possible.
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-wireless.conf` and reboot.
+
+references:
+  - title: Debian Wiki - WiFi
+    url: https://wiki.debian.org/WiFi
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: modprobe.d(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/kmod/modprobe.d.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-18
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.1.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1011
+  - framework: cwe
+    id: CWE-1188
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

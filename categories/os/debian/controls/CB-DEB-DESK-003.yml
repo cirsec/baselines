@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-DESK-003
+title: Lock GNOME sessions after a short inactivity delay
+finding:
+  title: Users can extend or disable the GNOME inactivity lock
+  description: An unattended GNOME session stays usable by anyone in front of the screen for as long as the user configured.
+status: active
+profiles: [desktop]
+risk:
+  severity: medium
+assessment: automated
+tags: [gnome, dconf, session-lock]
+
+applicability:
+  facts: [desktop-gnome]
+
+description: |
+  Two GNOME keys control when an idle session gets locked:
+
+  - `org.gnome.desktop.session idle-delay`: seconds of inactivity before the session is
+    considered idle and the screen blanks;
+  - `org.gnome.desktop.screensaver lock-delay`: seconds between the screen blanking and the
+    lock.
+
+  Both are set in the system dconf database `local` and locked. The lock itself requires
+  `lock-enabled`, set by CB-DEB-DESK-009.
+rationale: |
+  A session left open on an unattended machine gives its access to anyone passing by. Locking
+  after a short delay limits that window, and locking the keys stops users from disabling it.
+impact: |
+  Sessions lock after {{ idle_delay }} seconds of inactivity, plus {{ lock_delay }} seconds.
+  Users cannot change these delays. Presentations and video calls inhibit the idle delay while
+  they run.
+notes: |
+  Debian's defaults are already 300 and 0 seconds, but users can change them. The check
+  expects exactly the configured values. `dconf read` as root reads the system database, which
+  wins over user values for locked keys.
+
+setting:
+  location: /etc/dconf/db/local.d/, keys /org/gnome/desktop/session/idle-delay and /org/gnome/desktop/screensaver/lock-delay
+  default_value: 300 and 0 seconds, not locked
+  recommended_value: "idle-delay=uint32 {{ idle_delay }}, lock-delay=uint32 {{ lock_delay }}, locked"
+
+parameters:
+  - name: idle_delay
+    type: integer
+    description: Seconds of inactivity before the screen blanks. 0 would disable the lock.
+    unit: seconds
+    default: 300
+    minimum: 1
+    maximum: 900
+  - name: lock_delay
+    type: integer
+    description: Seconds between the screen blanking and the lock.
+    unit: seconds
+    default: 0
+    minimum: 0
+    maximum: 5
+
+audit:
+  manual: |
+    1. `dconf read /org/gnome/desktop/session/idle-delay` must print `uint32 {{ idle_delay }}`.
+    2. `dconf read /org/gnome/desktop/screensaver/lock-delay` must print `uint32 {{ lock_delay }}`.
+    3. Both keys must be listed in a file of `/etc/dconf/db/local.d/locks/`.
+  checks:
+    - id: idle-delay
+      engine: dconf
+      description: Inactivity delay before the screen blanks.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/session/idle-delay
+        value: "uint32 {{ idle_delay }}"
+    - id: lock-delay
+      engine: dconf
+      description: Delay between blanking and locking.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/screensaver/lock-delay
+        value: "uint32 {{ lock_delay }}"
+
+remediation:
+  manual: |
+    1. Make sure `/etc/dconf/profile/user` contains `user-db:user` and `system-db:local`.
+    2. Create `/etc/dconf/db/local.d/00-screen-lock`:
+       ```
+       [org/gnome/desktop/session]
+       idle-delay=uint32 {{ idle_delay }}
+
+       [org/gnome/desktop/screensaver]
+       lock-delay=uint32 {{ lock_delay }}
+       ```
+    3. List `/org/gnome/desktop/session/idle-delay` and `/org/gnome/desktop/screensaver/lock-delay`
+       in `/etc/dconf/db/local.d/locks/00-screen-lock`.
+    4. Run `dconf update`.
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete the files written in `/etc/dconf/db/local.d/` and its `locks/` directory, then run
+    `dconf update`.
+  scripts:
+    - id: idle-delay
+      from_check: idle-delay
+    - id: lock-delay
+      from_check: lock-delay
+
+references:
+  - title: GNOME System Administration Guide - Lock the screen when the user is idle
+    url: https://help.gnome.org/admin/system-admin-guide/stable/desktop-lockscreen.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GNOME System Administration Guide - Lock down specific settings
+    url: https://help.gnome.org/admin/system-admin-guide/stable/dconf-lockdown.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R32)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.7.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.7.3"
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R32
+    relation: partial
+    note: R32 covers every local session; this control covers GNOME, CB-DEB-DESK-008 the others.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-11
+    relation: equivalent
+threats:
+  - framework: cwe
+    id: CWE-613
+related_controls:
+  - id: CB-DEB-DESK-009
+    type: requires
+  - id: CB-DEB-DESK-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated dconf check and fix (desktop-hardened) on GNOME; values and locks confirmed with gsettings as a user (write refused); state kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM with minimal GNOME (gdm3, gnome-shell), Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated dconf check and fix (desktop-hardened) on GNOME; values and locks confirmed with gsettings as a user (write refused); state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

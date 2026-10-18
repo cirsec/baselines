@@ -1,0 +1,235 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-007
+title: Protect the user, group and password database files
+finding:
+  title: The account database files have weak ownership or permissions
+  description: Password hashes can be read for offline cracking, or account files can be changed to add a user or gain root.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [permissions, accounts, shadow]
+
+description: |
+  The files that define local accounts, and the backups that the shadow tools keep with a `-`
+  suffix, have the Debian ownership and at most these modes:
+
+  | Files | Owner:group | Maximum mode |
+  |---|---|---|
+  | `/etc/passwd`, `/etc/passwd-`, `/etc/group`, `/etc/group-` | `root:root` | `644` |
+  | `/etc/shadow`, `/etc/shadow-`, `/etc/gshadow`, `/etc/gshadow-` | `root:shadow` | `640` |
+  | `/etc/shells` | `root:root` | `644` |
+  | `/etc/security/opasswd`, `/etc/security/opasswd.old` | `root:root` | `600` |
+
+  Files that do not exist are skipped.
+rationale: |
+  `passwd` and `group` must stay readable by everyone for name lookups, but only root may change
+  them: write access means creating a UID 0 account. `shadow` and `gshadow` hold password hashes;
+  on Debian the `shadow` group lets `unix_chkpwd` and screen lockers check a password without
+  being root, and nobody else may read them. `opasswd` holds the previous password hashes kept by
+  `pam_pwhistory`. The `-` backups contain the same data as the live files.
+impact: |
+  None known: these are the Debian defaults, and the fix only removes extra access.
+notes: |
+  Debian uses group `shadow` for `shadow` and `gshadow`, not `root` as on other distributions.
+  Setting them to `root:root` breaks password checks by `unix_chkpwd` for non-root programs
+  (screen lockers, some PAM services).
+
+setting:
+  location: /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow, /etc/shells, /etc/security/opasswd
+  default_value: Compliant on a fresh install
+  recommended_value: See the table in the description
+
+audit:
+  manual: |
+    Run `stat -c '%n %U:%G %a' /etc/passwd* /etc/group* /etc/shadow* /etc/gshadow* /etc/shells /etc/security/opasswd*`
+    and compare each line with the table above.
+  checks:
+    - id: passwd
+      engine: file-perms
+      description: /etc/passwd and its backup are root:root, mode 644 or stricter.
+      spec: { path: "/etc/passwd*", owner: root, group: root, mode: "0644" }
+    - id: group
+      engine: file-perms
+      description: /etc/group and its backup are root:root, mode 644 or stricter.
+      spec: { path: "/etc/group*", owner: root, group: root, mode: "0644" }
+    - id: shadow
+      engine: file-perms
+      description: /etc/shadow and its backup are root:shadow, mode 640 or stricter.
+      spec: { path: "/etc/shadow*", owner: root, group: shadow, mode: "0640" }
+    - id: gshadow
+      engine: file-perms
+      description: /etc/gshadow and its backup are root:shadow, mode 640 or stricter.
+      spec: { path: "/etc/gshadow*", owner: root, group: shadow, mode: "0640" }
+    - id: shells
+      engine: file-perms
+      description: /etc/shells is root:root, mode 644 or stricter.
+      spec: { path: /etc/shells, owner: root, group: root, mode: "0644" }
+    - id: opasswd
+      engine: file-perms
+      description: /etc/security/opasswd and its backup are root:root, mode 600 or stricter.
+      spec: { path: "/etc/security/opasswd*", owner: root, group: root, mode: "0600" }
+
+remediation:
+  manual: |
+    ```
+    chown root:root /etc/passwd /etc/passwd- /etc/group /etc/group- /etc/shells
+    chmod u-x,go-wx /etc/passwd /etc/passwd- /etc/group /etc/group- /etc/shells
+    chown root:shadow /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
+    chmod u-x,g-wx,o-rwx /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
+    chown root:root /etc/security/opasswd*
+    chmod 600 /etc/security/opasswd*
+    ```
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Not needed: the fix only restores the Debian ownership and removes extra permissions.
+  scripts:
+    - id: passwd
+      from_check: passwd
+    - id: group
+      from_check: group
+    - id: shadow
+      from_check: shadow
+    - id: gshadow
+      from_check: gshadow
+    - id: shells
+      from_check: shells
+    - id: opasswd
+      from_check: opasswd
+
+references:
+  - title: shadow(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/shadow.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: shells(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/manpages/shells.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers the account databases.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.5"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.6"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.7"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.8"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.1.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.8"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.1.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1003.008
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-DEB-AUTH-028
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on fresh install (shadow and gshadow root:shadow 640); generated fixes report compliant."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on fresh install (shadow and gshadow root:shadow 640); generated fixes report compliant."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

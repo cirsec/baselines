@@ -1,0 +1,288 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-016
+title: Restrict SSH authentication to named accounts with strong methods
+finding:
+  title: The SSH server allows root logins, weak authentication methods or unlimited guessing
+  description: Direct root logins, trust-based or empty-password authentication and generous retry limits make SSH an easy entry point.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [ssh, authentication, root]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  This control sets the OpenSSH server options that decide who may log in and how:
+
+  - `PermitRootLogin no`: administrators log in with their own account, then use `sudo`;
+  - `PermitEmptyPasswords no`: accounts without a password cannot log in;
+  - `HostbasedAuthentication no` and `IgnoreRhosts yes`: no trust based on the client host or on
+    `.rhosts`/`.shosts` files;
+  - `GSSAPIAuthentication no`: no Kerberos/GSSAPI logins unless the host is part of such a realm;
+  - `PermitUserEnvironment no`: users cannot pass environment variables (such as `LD_PRELOAD`)
+    through `~/.ssh/environment` or `authorized_keys`;
+  - `UsePAM yes`: account and session rules of PAM (locking, limits, logging) apply to SSH;
+  - `MaxAuthTries` at most {{ ssh_max_auth_tries }} and `LoginGraceTime` between 1 and
+    {{ ssh_login_grace_time }} seconds.
+rationale: |
+  `root` exists on every system and is the first target of password guessing; logging in with
+  named accounts also keeps a record of who did what. Host-based trust, empty passwords and user
+  supplied environment variables bypass authentication or the restrictions placed on an account.
+  Low retry and grace limits slow down guessing and free unauthenticated connections quickly.
+impact: |
+  Root can no longer log in over SSH, even with a key: create a named administrator account in
+  the `sudo` group and check that it can log in before applying. Scripts and backup tools that
+  connect as root must use a dedicated account. Hosts joined to a Kerberos realm that use GSSAPI
+  logins must keep `GSSAPIAuthentication yes` (exclude that check through tailoring).
+notes: |
+  Debian ships `PermitRootLogin prohibit-password` (key-only root logins), `MaxAuthTries 6` and
+  `LoginGraceTime 120`. The fix writes the options in `/etc/ssh/sshd_config.d/00-cirsec.conf`,
+  which is read first and therefore wins over later files. `LoginGraceTime 0` (no limit) is not
+  fixed automatically. `UsePAM yes` without password authentication still lets PAM check account
+  expiry and locks.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  default_value: PermitRootLogin prohibit-password, MaxAuthTries 6, LoginGraceTime 120
+  recommended_value: "PermitRootLogin no, MaxAuthTries <= {{ ssh_max_auth_tries }}, LoginGraceTime <= {{ ssh_login_grace_time }}"
+
+parameters:
+  - name: ssh_max_auth_tries
+    type: integer
+    description: Maximum authentication attempts per SSH connection.
+    default: 4
+    minimum: 1
+    maximum: 6
+  - name: ssh_login_grace_time
+    type: integer
+    description: Maximum time to authenticate after connecting.
+    unit: seconds
+    default: 60
+    minimum: 1
+    maximum: 120
+
+audit:
+  manual: |
+    Run `sshd -T` and check: `permitrootlogin no`, `permitemptypasswords no`,
+    `hostbasedauthentication no`, `ignorerhosts yes`, `gssapiauthentication no`,
+    `permituserenvironment no`, `usepam yes`, `maxauthtries` at most {{ ssh_max_auth_tries }},
+    `logingracetime` between 1 and {{ ssh_login_grace_time }}.
+  checks:
+    - id: permit-root-login
+      engine: sshd-config
+      description: PermitRootLogin.
+      spec: { key: permitrootlogin, value: "no" }
+    - id: permit-empty-passwords
+      engine: sshd-config
+      description: PermitEmptyPasswords.
+      spec: { key: permitemptypasswords, value: "no" }
+    - id: hostbased-authentication
+      engine: sshd-config
+      description: HostbasedAuthentication.
+      spec: { key: hostbasedauthentication, value: "no" }
+    - id: ignore-rhosts
+      engine: sshd-config
+      description: IgnoreRhosts.
+      spec: { key: ignorerhosts, value: "yes" }
+    - id: gssapi-authentication
+      engine: sshd-config
+      description: GSSAPIAuthentication.
+      spec: { key: gssapiauthentication, value: "no" }
+    - id: permit-user-environment
+      engine: sshd-config
+      description: PermitUserEnvironment.
+      spec: { key: permituserenvironment, value: "no" }
+    - id: use-pam
+      engine: sshd-config
+      description: UsePAM.
+      spec: { key: usepam, value: "yes" }
+    - id: max-auth-tries
+      engine: sshd-config
+      description: MaxAuthTries.
+      spec: { key: maxauthtries, operator: "<=", value: "{{ ssh_max_auth_tries }}" }
+    - id: login-grace-time
+      engine: sshd-config
+      description: LoginGraceTime upper bound.
+      spec: { key: logingracetime, operator: "<=", value: "{{ ssh_login_grace_time }}" }
+    - id: login-grace-time-set
+      engine: sshd-config
+      description: LoginGraceTime is not 0 (unlimited).
+      spec: { key: logingracetime, operator: ">=", value: 1 }
+
+remediation:
+  manual: |
+    1. Make sure a named account in the `sudo` group can log in with SSH.
+    2. Create or edit `/etc/ssh/sshd_config.d/00-cirsec.conf`:
+       ```
+       PermitRootLogin no
+       PermitEmptyPasswords no
+       HostbasedAuthentication no
+       IgnoreRhosts yes
+       GSSAPIAuthentication no
+       PermitUserEnvironment no
+       UsePAM yes
+       MaxAuthTries {{ ssh_max_auth_tries }}
+       LoginGraceTime {{ ssh_login_grace_time }}
+       ```
+    3. Check with `sshd -t`, run `systemctl reload ssh`, and test a new connection before closing
+       the current one.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Remove the lines from `/etc/ssh/sshd_config.d/00-cirsec.conf` and run `systemctl reload ssh`.
+  scripts:
+    - id: permit-root-login
+      from_check: permit-root-login
+    - id: permit-empty-passwords
+      from_check: permit-empty-passwords
+    - id: hostbased-authentication
+      from_check: hostbased-authentication
+    - id: ignore-rhosts
+      from_check: ignore-rhosts
+    - id: gssapi-authentication
+      from_check: gssapi-authentication
+    - id: permit-user-environment
+      from_check: permit-user-environment
+    - id: use-pam
+      from_check: use-pam
+    - id: max-auth-tries
+      from_check: max-auth-tries
+    - id: login-grace-time
+      from_check: login-grace-time
+
+references:
+  - title: sshd_config(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/openssh-server/sshd_config.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R33)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R33
+    relation: partial
+    note: R33 asks for administration actions to be attributable; forbidding direct root logins over SSH is part of it.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.10"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.11"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.13"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.16"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.19"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.20"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.21"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.22"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.11"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.12"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.15"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.18"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.21"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.22"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.23"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.24"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1110
+  - framework: mitre-attack
+    id: T1021.004
+  - framework: cwe
+    id: CWE-307
+related_controls:
+  - id: CB-DEB-AUTH-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated sshd drop-in fixes; key login of a non-root test user accepted before and after the fix and after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated sshd drop-in fixes; key login of a non-root test user accepted before and after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

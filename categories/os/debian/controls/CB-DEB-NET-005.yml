@@ -1,0 +1,156 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-005
+title: Run exactly one host firewall
+finding:
+  title: No host firewall is active, or several firewall tools compete for the same rules
+  description: Without a host firewall every listening service is reachable from the network; with several, rules overwrite each other in ways nobody planned.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [firewall, ufw, nftables, network]
+
+description: |
+  The Linux kernel filters packets with netfilter. On Debian, its rules are managed by one of
+  these tools, each started at boot by its own service:
+
+  - `ufw`, a simple front end, active when `ufw status` shows `Status: active`;
+  - `nftables`, rules loaded from `/etc/nftables.conf` by `nftables.service`;
+  - `firewalld`;
+  - `iptables-persistent`, rules restored by `netfilter-persistent.service`.
+
+  This control requires exactly one of them to be enabled. Its default policy is covered by
+  CB-DEB-NET-006.
+rationale: |
+  A host firewall limits the services reachable from the network to the ones that are meant to
+  be, even when a package starts a new listener or a service binds to all addresses by mistake.
+  Two firewall tools flush or reorder each other's rules on reload, which leaves the host either
+  wide open or cut off after a restart.
+impact: |
+  The automatic fix installs and enables ufw when no firewall is active. It allows the SSH ports
+  first, but ufw then drops every other incoming connection: services such as web or database
+  servers become unreachable until they are allowed with `ufw allow <port>/<protocol>`. It is
+  disabled by default; list the listening services with `ss -tulpn` and allow them before
+  enabling it.
+notes: |
+  Debian 13 favours nftables and the CIS Benchmarks favour ufw; both are accepted. ufw on
+  Debian writes its rules through iptables-nft, so `nft list ruleset` also shows them: that
+  does not count as a second firewall as long as `nftables.service` is not enabled. Docker and
+  libvirt add their own rules beside the host firewall; they are not counted.
+
+audit:
+  manual: |
+    1. `ufw status` (if installed): `Status: active` counts as one.
+    2. `systemctl is-enabled nftables.service firewalld.service netfilter-persistent.service`:
+       each `enabled` counts as one.
+    Exactly one must be counted.
+  checks:
+    - id: single-firewall
+      engine: shell
+      description: Firewall tools enabled at boot.
+      spec:
+        script: |
+          active=
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            active="$active ufw"
+          fi
+          for u in nftables firewalld netfilter-persistent; do
+            [ "$(systemctl is-enabled "$u.service" 2>/dev/null)" = enabled ] && active="$active $u"
+          done
+          echo "active firewall tools:${active:- none}"
+          set -- $active
+          [ "$#" -eq 1 ]
+
+remediation:
+  manual: |
+    - No firewall: install ufw, allow SSH and the other services that must stay reachable, then
+      enable it:
+      ```
+      apt install ufw
+      ufw allow 22/tcp
+      ufw enable
+      ```
+      Or write `/etc/nftables.conf` (see CB-DEB-NET-006) and run `systemctl enable --now nftables`.
+    - Several tools: keep one, then disable the others, for example `ufw disable`,
+      `systemctl disable --now nftables` or `apt purge iptables-persistent`.
+  effects:
+    restart: none
+    disruption: high
+    lockout_risk: true
+  rollback: |
+    Run `ufw disable`. Installed packages can stay.
+  scripts:
+    - id: enable-ufw
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: ufw(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/ufw/ufw.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - nftables
+    url: https://wiki.debian.org/nftables
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: NIST SP 800-41 Rev. 1 - Guidelines on Firewalls and Firewall Policy
+    url: https://csrc.nist.gov/pubs/sp/800/41/r1/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "4.1.1"
+    relation: looser
+    note: Ours also accepts nftables, firewalld or iptables-persistent instead of ufw.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "4.1.2"
+    relation: looser
+    note: Ours also accepts nftables, firewalld or iptables-persistent instead of ufw.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "4.1.1"
+    relation: looser
+    note: Ours also accepts nftables, firewalld or iptables-persistent instead of ufw.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "4.1.2"
+    relation: looser
+    note: Ours also accepts nftables, firewalld or iptables-persistent instead of ufw.
+threats:
+  - framework: mitre-attack
+    id: T1046
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-284
+related_controls:
+  - id: CB-DEB-NET-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "No firewall reported, fix installs ufw, allows the SSH port, enables it; SSH by key still accepted locally and port 22 reachable from the lab host, other ports blocked; ufw plus nftables.service reported and fix refuses; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "No firewall reported, fix installs ufw, allows the SSH port, enables it; SSH by key still accepted locally and port 22 reachable from the lab host, other ports blocked; ufw plus nftables.service reported and fix refuses; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

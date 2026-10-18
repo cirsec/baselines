@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-011
+title: Forward mail for root to a monitored mailbox
+finding:
+  title: Mail sent to root stays unread on the system
+  description: Alerts from cron, unattended-upgrades, smartd or mdadm reach nobody.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [mail, mta, alerting]
+
+applicability:
+  facts: [mta]
+
+description: |
+  System services send their reports and alerts to the `root` account by mail. A `root:` line in
+  `/etc/aliases` forwards that mail to a person or team mailbox that is actually read.
+rationale: |
+  Failed jobs, disk errors, security update failures and audit alerts are reported by mail. If
+  they stay in `/var/mail/root`, problems and intrusions go unnoticed.
+impact: |
+  Mail for root leaves the system: the destination must be trusted, since reports can contain
+  host names, paths and errors.
+notes: |
+  The Debian installer adds a `root:` alias only when it creates a user account and an MTA is
+  installed; cloud images usually have none. The recipient is site-specific, so the fix is manual.
+
+audit:
+  manual: |
+    Run `grep -E '^[[:space:]]*root[[:space:]]*:' /etc/aliases`. It must return a line with a
+    recipient other than root itself.
+  checks:
+    - id: root-alias
+      engine: shell
+      description: /etc/aliases forwards root to another recipient.
+      spec:
+        script: |
+          o=$(grep -E '^[[:space:]]*root[[:space:]]*:' /etc/aliases 2>/dev/null | tail -n 1)
+          if [ -z "$o" ]; then echo "no root alias in /etc/aliases"; exit 1; fi
+          echo "$o"
+          printf '%s\n' "$o" | sed 's/^[^:]*://' | tr ',' '\n' | sed 's/[[:space:]]//g' | grep -qvx -e root -e ''
+
+remediation:
+  manual: |
+    Add or edit the line `root: <administrator address or account>` in `/etc/aliases`, then run
+    `newaliases`. Send a test with `echo test | mail -s test root` (package `bsd-mailx`).
+  rollback: |
+    Remove the `root:` line from `/etc/aliases` and run `newaliases`.
+
+references:
+  - title: aliases(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/postfix/aliases.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R75)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R75
+    relation: partial
+    note: R75 covers every service account; this control checks root, which receives most system mail.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-5
+    relation: related
+threats:
+  - framework: cwe
+    id: CWE-778
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable on fresh image (no MTA); with an MTA and no root alias the check fails; passes once a root alias is added by hand."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable on fresh image (no MTA); with an MTA and no root alias the check fails; passes once a root alias is added by hand."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

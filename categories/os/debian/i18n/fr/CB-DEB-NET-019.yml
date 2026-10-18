@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-019
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Journaliser les connexions SSH avec assez de détails
+finding:
+  title: Le serveur SSH journalise trop peu pour retracer les connexions
+  description: Sans trace des connexions, et dans les configurations renforcées sans la clé utilisée, une intrusion par SSH ne peut pas être retracée.
+description: |
+  `LogLevel` fixe ce que le serveur OpenSSH écrit dans le journal système. `INFO` enregistre les
+  connexions réussies et échouées ; `VERBOSE` enregistre en plus l'empreinte de la clé utilisée à
+  chaque connexion. Ce contrôle exige `{{ ssh_log_level }}`.
+rationale: |
+  Les journaux SSH sont la principale preuve de qui s'est connecté, d'où et quand. Savoir quelle clé a
+  servi indique quelle personne ou quel automate s'est connecté quand plusieurs clés ouvrent le même
+  compte, et quelle clé révoquer après une fuite. `QUIET`, `FATAL` et `ERROR` masquent complètement
+  les connexions ; les niveaux `DEBUG` peuvent journaliser des données sensibles.
+impact: |
+  `VERBOSE` ajoute environ une ligne par connexion aux journaux.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  recommended_value: "{{ ssh_log_level }}"
+parameters:
+  ssh_log_level: LogLevel attendu du serveur SSH.
+audit:
+  manual: |
+    Lancer `sshd -T | grep '^loglevel '`. La commande doit afficher `loglevel {{ ssh_log_level }}`.
+remediation:
+  manual: |
+    Ajouter `LogLevel {{ ssh_log_level }}` à `/etc/ssh/sshd_config.d/00-cirsec.conf`, vérifier avec
+    `sshd -t`, puis lancer `systemctl reload ssh`.
+  rollback: |
+    Retirer la ligne et lancer `systemctl reload ssh`.

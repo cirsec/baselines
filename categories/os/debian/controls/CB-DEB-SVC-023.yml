@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-023
+title: Disable the CUPS print server and printer discovery
+finding:
+  title: The CUPS print service runs on a system that does not print
+  description: CUPS and cups-browsed parse print jobs and printer announcements, and have had remotely exploitable flaws.
+status: active
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, cups, printing, attack-surface]
+
+description: |
+  CUPS is started by `cups.service`, `cups.socket` and `cups.path`; `cups-browsed.service`
+  discovers network printers and adds them automatically.
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  The print stack parses complex documents and network announcements. Flaws in `cups-browsed`
+  have allowed remote code execution by announcing a malicious printer. Servers rarely print.
+impact: |
+  The system can no longer print, and network printers are no longer discovered. Print servers
+  and desktops that print keep CUPS: the control is only in the server and hardened desktop
+  profiles, and can be excluded in the tailoring file.
+notes: |
+  The socket and path units can start `cupsd` on their own, so they are masked too.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled cups.service cups.socket cups.path cups-browsed.service`. Each must
+    print `masked`, or fail because the unit does not exist.
+  logic: all
+  checks:
+    - id: cups-browsed
+      engine: systemd-unit
+      description: Printer discovery daemon.
+      spec: { unit: cups-browsed.service, state: masked }
+    - id: cups-socket
+      engine: systemd-unit
+      description: CUPS socket activation.
+      spec: { unit: cups.socket, state: masked }
+    - id: cups-path
+      engine: systemd-unit
+      description: CUPS path activation.
+      spec: { unit: cups.path, state: masked }
+    - id: cups
+      engine: systemd-unit
+      description: CUPS scheduler.
+      spec: { unit: cups.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now cups-browsed.service cups.socket cups.path cups.service`, or
+    `apt purge cups cups-daemon cups-browsed` if nothing depends on them.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask cups-browsed.service cups.socket cups.path cups.service` then
+    `systemctl enable --now cups.service cups-browsed.service`.
+  scripts:
+    - id: cups-browsed
+      from_check: cups-browsed
+    - id: cups-socket
+      from_check: cups-socket
+    - id: cups-path
+      from_check: cups-path
+    - id: cups
+      from_check: cups
+
+references:
+  - title: cupsd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/cups-daemon/cupsd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: cups-browsed(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/cups-browsed/cups-browsed.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service and names CUPS; this control covers it.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.14"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.11"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: cwe
+    id: CWE-20
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with cups and cups-browsed installed the checks fail, fix masks the four units, audit passes after reboot; tested with profiles server-hardened and desktop-hardened."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with cups and cups-browsed installed the checks fail, fix masks the four units, audit passes after reboot; tested with profiles server-hardened and desktop-hardened."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

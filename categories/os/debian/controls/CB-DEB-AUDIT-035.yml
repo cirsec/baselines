@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-035
+title: Keep a protected copy of the AIDE database
+finding:
+  title: The AIDE reference database is only stored on the system it protects
+  description: An intruder with root access can update the database to accept their changes, and AIDE will then report nothing.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [aide, integrity]
+
+description: |
+  The AIDE database (`/var/lib/aide/aide.db`) and its configuration are the reference of the
+  integrity check. A copy must be kept where the system cannot write: read-only media, a backup
+  server, or an integrity platform that pulls it. Checks should be run against that copy, or the
+  local database compared with it, and its own checksum recorded.
+rationale: |
+  An integrity check is only as trustworthy as its reference. A database that root can rewrite
+  does not resist an attacker who already has root.
+impact: |
+  Every legitimate update of the database (after upgrades) must also update the protected copy.
+
+audit:
+  manual: |
+    1. Find where the protected copy of `/var/lib/aide/aide.db` is kept, and check that the system
+       cannot modify it.
+    2. Compare it with the local database: `sha512sum /var/lib/aide/aide.db` must match the
+       checksum recorded with the copy, unless a reviewed update has been made since.
+
+remediation:
+  manual: |
+    1. After each reviewed database build or update, copy `/var/lib/aide/aide.db` and
+       `/etc/aide/` to a read-only medium or a backup server the system cannot write to, and record
+       `sha512sum /var/lib/aide/aide.db` with it.
+    2. For a trusted check, run AIDE from the copy, for example
+       `aide --check -c /etc/aide/aide.conf -B 'database_in=file:/mnt/ro/aide.db'`.
+  rollback: |
+    Not applicable.
+
+references:
+  - title: aide.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/aide/aide.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R77)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R77
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1565.001
+  - framework: cwe
+    id: CWE-353
+related_controls:
+  - id: CB-DEB-AUDIT-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

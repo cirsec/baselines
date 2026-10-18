@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-005
+title: Run rsyslog and create its log files with restricted permissions
+finding:
+  title: rsyslog is installed but does not run, or writes logs readable by everyone
+  description: An installed but stopped rsyslog silently loses the text logs and remote copies it should produce; files created with a wide mode leak their content.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [rsyslog, logging]
+
+applicability:
+  facts: [rsyslog]
+  conditions: |
+    Only when rsyslog is installed. Debian 12 and 13 log to the systemd journal by default and do
+    not install rsyslog; installing it is the choice of rsyslog as the logging system.
+
+description: |
+  When rsyslog is the chosen logging system, its service must be enabled and running, and the
+  files it creates must not be readable by other users: the last `$FileCreateMode` in
+  `/etc/rsyslog.conf` and `/etc/rsyslog.d/*.conf` must be `0640` or stricter.
+rationale: |
+  rsyslog is what writes `/var/log/syslog`, `/var/log/auth.log` and forwards messages to a log
+  server. When it is stopped, those files and the remote copy stop without any error. A restrictive
+  creation mode keeps new and rotated log files private to root and the `adm` group.
+impact: |
+  None known. Debian already ships `$FileCreateMode 0640`.
+notes: |
+  The choice between the journal alone and rsyslog is left to the administrator: this control does
+  not install rsyslog. CB-DEB-AUDIT-002 aligns the journal forwarding with that choice.
+
+setting:
+  location: rsyslog.service, /etc/rsyslog.conf, /etc/rsyslog.d/
+  default_value: Enabled, $FileCreateMode 0640
+  recommended_value: Enabled and active, $FileCreateMode 0640 or stricter
+
+audit:
+  manual: |
+    1. Run `systemctl is-enabled rsyslog` and `systemctl is-active rsyslog`. They must print
+       `enabled` and `active`.
+    2. Run `grep -h '^\s*\$FileCreateMode' /etc/rsyslog.conf /etc/rsyslog.d/*.conf | tail -n 1`. The
+       mode must be `0640` or stricter.
+  checks:
+    - id: service
+      engine: systemd-unit
+      description: rsyslog.service is enabled.
+      spec: { unit: rsyslog.service, state: enabled }
+    - id: active
+      engine: shell
+      description: rsyslog.service is running.
+      spec:
+        script: |
+          o=$(systemctl is-active rsyslog 2>/dev/null)
+          echo "rsyslog: ${o:-unknown}"
+          [ "$o" = active ]
+    - id: file-mode
+      engine: shell
+      description: Last $FileCreateMode of the rsyslog configuration.
+      spec:
+        script: |
+          m=$(cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | sed -n 's/^[[:space:]]*\$FileCreateMode[[:space:]]\{1,\}\([0-7]\{3,4\}\).*/\1/p' | tail -n 1)
+          echo "\$FileCreateMode ${m:-unset (rsyslog default 0644)}"
+          [ -n "$m" ] && [ $((0$m & 0137)) -eq 0 ]
+
+remediation:
+  manual: |
+    1. Run `systemctl enable --now rsyslog`.
+    2. Create `/etc/rsyslog.d/60-cirsec.conf` with `$FileCreateMode 0640` and run
+       `systemctl restart rsyslog`.
+  effects:
+    restart: service
+    services: [rsyslog]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/rsyslog.d/60-cirsec.conf` and run `systemctl restart rsyslog`.
+  scripts:
+    - id: service
+      from_check: service
+    - id: file-mode
+      engine: shell
+      content: |
+        f=/etc/rsyslog.d/60-cirsec.conf
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUDIT-005' '$FileCreateMode 0640' >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: rsyslog.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsyslog/rsyslog.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.1"
+    relation: looser
+    note: Ours does not require rsyslog; it applies when rsyslog is installed.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.1"
+    relation: looser
+    note: Ours does not require rsyslog; it applies when rsyslog is installed.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.006
+  - framework: cwe
+    id: CWE-532
+related_controls:
+  - id: CB-DEB-AUDIT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "rsyslog installed for the test: enabled, active, FileCreateMode 0640 pass; a 0644 drop-in fails and the fix restores 0640."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "rsyslog installed for the test: enabled, active, FileCreateMode 0640 pass; a 0644 drop-in fails and the fix restores 0640."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

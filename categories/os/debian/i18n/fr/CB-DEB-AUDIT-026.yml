@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUDIT-026
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer chaque utilisation des programmes setuid et setgid
+finding:
+  title: L'utilisation des programmes privilégiés n'est pas enregistrée
+  description: Les programmes qui s'exécutent avec plus de droits que leur appelant sont la principale voie d'élévation de privilèges et sont utilisés sans trace.
+description: |
+  Une règle auditd par programme setuid ou setgid trouvé sur les systèmes de fichiers locaux qui les
+  autorisent (non montés `nosuid` ou `noexec`), clé `privileged`, dans
+  `/etc/audit/rules.d/60-cirsec-privileged.rules`. Chaque règle enregistre chaque exécution du
+  programme par un utilisateur connecté. La liste est reconstruite à partir du système de fichiers à
+  chaque passage du contrôle ou de la correction.
+rationale: |
+  `passwd`, `su`, `sudo`, `mount`, `chsh` et les programmes semblables s'exécutent en root pour le
+  compte d'un utilisateur. Enregistrer chaque utilisation montre qui s'en est servi et c'est le premier
+  endroit où chercher après une élévation de privilèges.
+impact: |
+  Installer ou retirer un paquet qui livre un programme setuid fait échouer le contrôle jusqu'au
+  prochain passage de la correction. Une fois la configuration d'audit verrouillée (CB-DEB-AUDIT-029),
+  la nouvelle règle n'est chargée qu'au redémarrage suivant.
+notes: |
+  Le parcours couvre les systèmes de fichiers locaux listés par `findmnt --real`. Les programmes sur des systèmes de fichiers réseau ne sont pas couverts.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-privileged.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-privileged.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `privileged`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -S all -F path=<programme> -F perm=x -F auid>=1000 -F auid!=-1 -F key=privileged
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-privileged.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-privileged.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

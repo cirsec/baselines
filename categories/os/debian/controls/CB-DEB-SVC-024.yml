@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-024
+title: Remove the X Window System server from servers
+finding:
+  title: An X Window System server is installed on a server
+  description: A graphical server stack adds a large amount of privileged, rarely needed code.
+status: active
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [packages, x11, attack-surface]
+
+description: |
+  `xserver-common` holds the files shared by every X.Org server (Xorg, Xvfb, Xephyr...). When it
+  is absent, no X server is installed.
+rationale: |
+  An X server is complex software, historically run with root privileges, with a long record of
+  local privilege escalation flaws. A server administered over SSH does not need it.
+impact: |
+  Removes `xserver-common` and every package that depends on it: X servers, and the graphical
+  desktop if one is installed. X client applications forwarded over SSH (`ssh -X`) still work,
+  since they use the X server of the administrator's workstation.
+notes: |
+  The control is only in the hardened server profile; desktops need an X server or Xwayland.
+
+audit:
+  manual: |
+    Run `dpkg-query -W -f='${Status}\n' xserver-common`. It must not print `install ok installed`.
+  checks:
+    - id: xserver-common
+      engine: package
+      description: X.Org server common files.
+      spec: { name: xserver-common, state: absent }
+
+remediation:
+  manual: |
+    Run `apt purge xserver-common` after checking the list of packages apt will remove.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Reinstall the needed X server, for example `apt install xserver-xorg-core`.
+  scripts:
+    - id: xserver-common
+      from_check: xserver-common
+
+references:
+  - title: Xserver(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/xserver-common/Xserver.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R58)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: partial
+    note: R58 asks to install only the packages that are strictly needed; this control covers the X server.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.23"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.21"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1068
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with xserver-common installed the check fails, fix purges it, audit passes after reboot; SSH reachable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with xserver-common installed the check fails, fix purges it, audit passes after reboot; SSH reachable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

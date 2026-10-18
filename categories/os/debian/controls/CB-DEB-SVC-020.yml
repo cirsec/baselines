@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-020
+title: Encrypt SSSD LDAP connections and verify the server certificate
+finding:
+  title: SSSD talks to the LDAP directory without TLS or without checking the server certificate
+  description: Directory traffic, including password binds, can be read or the directory server impersonated.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [sssd, ldap, tls, authentication]
+
+applicability:
+  facts: [sssd-ldap]
+
+description: |
+  When SSSD uses an LDAP directory (`id_provider`, `auth_provider` or `chpass_provider` set to
+  `ldap` in `/etc/sssd/sssd.conf` or `/etc/sssd/conf.d/*.conf`), its connections must be
+  protected by TLS:
+
+  - either every `ldap_uri` uses `ldaps://`, or `ldap_id_use_start_tls = true`;
+  - `ldap_tls_reqcert` must not be `never`, `allow` or `try`. The SSSD default, `hard` (same as
+    `demand`), rejects a server whose certificate cannot be verified.
+rationale: |
+  With the LDAP provider, SSSD checks passwords by binding to the directory with them. Without
+  TLS the passwords and the account data cross the network in clear text; without certificate
+  verification an attacker on the path can impersonate the directory and accept any password.
+impact: |
+  The directory server must present a certificate signed by a CA the client trusts
+  (`ldap_tls_cacert` or the system store). Logins fail if TLS cannot be established.
+notes: |
+  The check reads every SSSD configuration file as a whole, not domain by domain: with several
+  domains, one weak setting fails the control. Without `ldap_uri`, SSSD finds servers through DNS
+  SRV records and uses plain `ldap://`, so StartTLS is then required. The control does not apply
+  when `sssd-ldap` is not installed, or when no domain uses the LDAP provider.
+
+audit:
+  manual: |
+    In `/etc/sssd/sssd.conf` and `/etc/sssd/conf.d/*.conf`, for each domain with an `ldap`
+    provider:
+    1. every `ldap_uri` starts with `ldaps://`, or `ldap_id_use_start_tls = true`;
+    2. `ldap_tls_reqcert` is absent, `demand` or `hard`.
+  checks:
+    - id: ldap-tls
+      engine: shell
+      description: LDAP domains use TLS and require a valid server certificate.
+      spec:
+        script: |
+          cfg=$(cat /etc/sssd/sssd.conf /etc/sssd/conf.d/*.conf 2>/dev/null | sed 's/[#;].*//')
+          [ -n "$cfg" ] || { echo "no SSSD configuration"; exit 2; }
+          p() {
+            printf '%s\n' "$cfg" | grep -Ei "^[[:space:]]*$1[[:space:]]*=" |
+              sed 's/^[^=]*=[[:space:]]*//; s/[[:space:]]*$//'
+          }
+          p '(id|auth|chpass)_provider' | grep -qix ldap || { echo "no domain uses the LDAP provider"; exit 2; }
+          rc=0
+          r=$(p ldap_tls_reqcert | tail -n 1 | tr 'A-Z' 'a-z')
+          case $r in never | allow | try) echo "ldap_tls_reqcert = $r"; rc=1 ;; esac
+          tls=$(p ldap_id_use_start_tls | tail -n 1 | tr 'A-Z' 'a-z')
+          uris=$(p ldap_uri | paste -sd, -)
+          if [ "$tls" != true ] && { [ -z "$uris" ] || printf '%s' "$uris" | grep -qi 'ldap://'; }; then
+            echo "LDAP without TLS: ldap_uri = ${uris:-DNS SRV}, ldap_id_use_start_tls = ${tls:-false}"
+            rc=1
+          fi
+          [ "$rc" = 0 ] && echo "TLS in use, ldap_tls_reqcert = ${r:-hard (default)}"
+          exit "$rc"
+
+remediation:
+  manual: |
+    In each LDAP domain section of the SSSD configuration:
+    ```
+    ldap_uri = ldaps://ldap.example.org
+    ldap_tls_reqcert = demand
+    ldap_tls_cacert = /etc/ssl/certs/ca-certificates.crt
+    ```
+    or keep `ldap://` URIs and add `ldap_id_use_start_tls = true`. Then run
+    `systemctl restart sssd` and check a login on a test session before closing yours.
+  rollback: |
+    Restore the previous SSSD configuration and run `systemctl restart sssd`.
+
+references:
+  - title: sssd-ldap(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sssd-ldap/sssd-ldap.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R67)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R67
+    relation: partial
+    note: R67 asks to protect remote PAM authentication; this control covers SSSD with an LDAP directory.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1040
+  - framework: cwe
+    id: CWE-295
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable without sssd-ldap; ldap:// without StartTLS fails, ldaps:// or StartTLS passes, ldap_tls_reqcert = never fails, AD provider is not applicable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable without sssd-ldap; ldap:// without StartTLS fails, ldaps:// or StartTLS passes, ldap_tls_reqcert = never fails, AD provider is not applicable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

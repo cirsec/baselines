@@ -1,0 +1,192 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-009
+title: Disable IP forwarding unless the system is a router
+finding:
+  title: The system forwards packets between networks
+  description: A host that forwards packets can be used to reach networks that should be separated from the one the attacker is on.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sysctl, network, routing, ipv6]
+
+description: |
+  With IP forwarding on, the kernel routes packets received on one interface to another, like a
+  router. It is controlled by `net.ipv4.ip_forward` (an alias of `net.ipv4.conf.all.forwarding`),
+  `net.ipv4.conf.default.forwarding` for interfaces created later, and
+  `net.ipv6.conf.all.forwarding` / `net.ipv6.conf.default.forwarding` for IPv6. Debian ships
+  forwarding off. This control checks all five values against the `ip_forward` parameter.
+rationale: |
+  A host that is not meant to route should never relay traffic: forwarding lets an attacker who
+  controls one of its networks reach the others through it, bypassing network filtering.
+impact: |
+  Hosts that legitimately route need forwarding: routers, VPN gateways, and hosts running
+  containers or virtual machines with NAT (Docker, libvirt, LXC turn it on at start). On those,
+  set the `ip_forward` parameter to `1` in the tailoring file, and filter forwarded traffic in
+  the firewall (CB-DEB-NET-006).
+notes: |
+  Writing `net.ipv4.ip_forward` also resets several per-interface settings (the kernel documentation
+  calls it special), so the fix writes it first. IPv6 checks only run when the IPv6 stack is
+  present.
+
+setting:
+  location: sysctl `net.ipv4.ip_forward`, `net.ipv4.conf.{all,default}.forwarding`, `net.ipv6.conf.{all,default}.forwarding`, persisted in `/etc/sysctl.d/`
+  default_value: "0"
+  recommended_value: "{{ ip_forward }} (0 except on routers)"
+
+parameters:
+  - name: ip_forward
+    type: integer
+    description: Expected forwarding state, 0 for a host, 1 for a router or container host.
+    default: 0
+    minimum: 0
+    maximum: 1
+
+audit:
+  manual: |
+    Run `sysctl net.ipv4.ip_forward net.ipv4.conf.all.forwarding net.ipv4.conf.default.forwarding net.ipv6.conf.all.forwarding net.ipv6.conf.default.forwarding`.
+    Every value must be `{{ ip_forward }}`. Then check that no file in `/etc/sysctl.d/`,
+    `/run/sysctl.d/`, `/usr/lib/sysctl.d/` or `/etc/sysctl.conf` sets another value.
+  checks:
+    - id: ipv4-ip-forward
+      engine: sysctl
+      description: net.ipv4.ip_forward.
+      spec: { key: net.ipv4.ip_forward, value: "{{ ip_forward }}" }
+    - id: ipv4-all
+      engine: sysctl
+      description: net.ipv4.conf.all.forwarding.
+      spec: { key: net.ipv4.conf.all.forwarding, value: "{{ ip_forward }}" }
+    - id: ipv4-default
+      engine: sysctl
+      description: net.ipv4.conf.default.forwarding.
+      spec: { key: net.ipv4.conf.default.forwarding, value: "{{ ip_forward }}" }
+    - id: ipv6-all
+      engine: sysctl
+      description: net.ipv6.conf.all.forwarding.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.all.forwarding, value: "{{ ip_forward }}" }
+    - id: ipv6-default
+      engine: sysctl
+      description: net.ipv6.conf.default.forwarding.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.default.forwarding, value: "{{ ip_forward }}" }
+
+remediation:
+  manual: |
+    Add to `/etc/sysctl.d/60-cirsec.conf`, `net.ipv4.ip_forward` first:
+    ```
+    net.ipv4.ip_forward = {{ ip_forward }}
+    net.ipv4.conf.all.forwarding = {{ ip_forward }}
+    net.ipv4.conf.default.forwarding = {{ ip_forward }}
+    net.ipv6.conf.all.forwarding = {{ ip_forward }}
+    net.ipv6.conf.default.forwarding = {{ ip_forward }}
+    ```
+    Remove other assignments of these keys, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf` and set the previous values with `sysctl -w`.
+  scripts:
+    - id: ipv4-ip-forward
+      from_check: ipv4-ip-forward
+    - id: ipv4-all
+      from_check: ipv4-all
+    - id: ipv4-default
+      from_check: ipv4-default
+    - id: ipv6-all
+      from_check: ipv6-all
+    - id: ipv6-default
+      from_check: ipv6-default
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: sysctl.d(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/sysctl.d.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R12)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R12
+    relation: partial
+    note: R12 lists many IPv4 settings; this control covers forwarding.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1090
+  - framework: cwe
+    id: CWE-923
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Debian defaults pass; checks for IPv4 and IPv6 run, values kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Debian defaults pass; checks for IPv4 and IPv6 run, values kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

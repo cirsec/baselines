@@ -1,0 +1,182 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-003
+title: Mount /tmp as a separate filesystem with nodev, nosuid and noexec
+finding:
+  title: Programs can be run, or device files and setuid programs used, from /tmp
+  description: Every user can write to /tmp, so it is the usual place to drop and run attack tools, and filling it can fill the root filesystem.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [mount, tmp, tmpfs]
+
+description: |
+  `/tmp` is a separate filesystem mounted with:
+
+  - `nodev`: device files on it are not usable;
+  - `nosuid`: setuid and setgid bits on it are ignored;
+  - `noexec`: programs on it cannot be executed directly.
+
+  On Debian the simplest way is the `tmp.mount` unit of systemd, which mounts a tmpfs (in memory,
+  emptied at each boot). Debian 13 enables it by default with `nodev` and `nosuid`; Debian 12 keeps
+  `/tmp` on the root filesystem and ships the unit as an example in `/usr/share/systemd/`.
+rationale: |
+  `/tmp` is writable by every user and every service. Attackers drop their tools there and run
+  them, and a setuid file or device node placed there by a compromised account can be abused.
+  `noexec`, `nosuid` and `nodev` stop these uses. A separate filesystem also keeps a user or a
+  runaway process that fills `/tmp` from filling the root filesystem.
+impact: |
+  Scripts and binaries in `/tmp` cannot be run directly (`./script`); `sh /tmp/script` still works,
+  so `noexec` is a hurdle, not a barrier. A few installers and build tools that run helpers from
+  `/tmp` fail: point their `TMPDIR` elsewhere. A tmpfs `/tmp` uses memory (up to half of the RAM)
+  and loses its content at reboot.
+notes: |
+  The fix uses `tmp.mount` and a drop-in that adds `noexec`. On Debian 12, `/tmp` becomes a tmpfs at
+  the next reboot only: mounting it on a running system would hide files that programs are using.
+  Files left in the old on-disk `/tmp` are then hidden under the mount. When `/tmp` is a partition
+  declared in `/etc/fstab`, the fix stops and the options must be added by hand.
+
+setting:
+  location: /etc/systemd/system/tmp.mount.d/60-cirsec.conf, or /etc/fstab
+  default_value: "Debian 12: directory of the root filesystem. Debian 13: tmpfs with nodev,nosuid"
+  recommended_value: Separate filesystem (tmpfs) with nodev,nosuid,noexec
+
+audit:
+  manual: |
+    Run `findmnt -kn /tmp`. It must print a line (separate filesystem) whose options contain
+    `nodev`, `nosuid` and `noexec`.
+  checks:
+    - id: mount
+      engine: shell
+      description: /tmp is a mount point and its options include nodev, nosuid and noexec.
+      spec:
+        script: |
+          o=$(findmnt -kn -o SOURCE,FSTYPE,OPTIONS --mountpoint /tmp | tail -n 1)
+          [ -n "$o" ] || { echo "/tmp is not a separate filesystem"; exit 1; }
+          echo "/tmp $o"
+          rc=0
+          for opt in nodev nosuid noexec; do
+            case ,${o##* }, in *,$opt,*) ;; *) echo "missing $opt"; rc=1 ;; esac
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    With a tmpfs (recommended):
+    1. On Debian 12 only: `cp /usr/share/systemd/tmp.mount /etc/systemd/system/` then
+       `systemctl enable tmp.mount`.
+    2. Create `/etc/systemd/system/tmp.mount.d/60-cirsec.conf`:
+       ```
+       [Mount]
+       Options=mode=1777,strictatime,nosuid,nodev,noexec,size=50%%,nr_inodes=1m
+       ```
+    3. Run `systemctl daemon-reload`. If `/tmp` is already a tmpfs, run
+       `mount -o remount,nodev,nosuid,noexec /tmp`; otherwise reboot.
+
+    With a partition declared in `/etc/fstab`: add `nodev,nosuid,noexec` to the options of the
+    `/tmp` line, then run `mount -o remount /tmp`.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/system/tmp.mount.d/60-cirsec.conf` (and, on Debian 12, run
+    `systemctl disable tmp.mount` and delete `/etc/systemd/system/tmp.mount`), run
+    `systemctl daemon-reload` and reboot.
+  scripts:
+    - id: tmp-mount
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: systemd - Using /tmp/ and /var/tmp/ Safely
+    url: https://systemd.io/TEMPORARY_DIRECTORIES/
+    publisher: systemd project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemd.mount(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemd.mount.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: mount(8), Debian manual pages (filesystem-independent mount options)
+    url: https://manpages.debian.org/trixie/mount/mount.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R28)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R28
+    relation: partial
+    note: R28 covers the whole partitioning; this control covers /tmp.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.001
+  - framework: cwe
+    id: CWE-400
+related_controls:
+  - id: CB-DEB-FS-004
+    type: related
+  - id: CB-DEB-FS-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on fresh install (/tmp on the root filesystem); fix copies tmp.mount, /tmp becomes a tmpfs at reboot; fix adds noexec through a tmp.mount drop-in; tmpfs with nodev,nosuid,noexec after reboot; apt-get still installs packages; running a script from /tmp is refused."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on fresh install (tmp.mount without noexec); fix remounts at once; fix adds noexec through a tmp.mount drop-in; tmpfs with nodev,nosuid,noexec after reboot; apt-get still installs packages; running a script from /tmp is refused."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

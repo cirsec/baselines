@@ -1,0 +1,198 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-019
+title: Allow only listed users to schedule jobs with crontab and at
+finding:
+  title: Any local user can schedule jobs with crontab or at
+  description: Scheduled jobs let an intruder persist and run code unattended, even after logging out.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [cron, at, access-control, persistence]
+
+description: |
+  `crontab` and `at` read an allow list and a deny list:
+
+  - `/etc/cron.allow` and `/etc/cron.deny` for `crontab`;
+  - `/etc/at.allow` and `/etc/at.deny` for `at`.
+
+  When the allow file exists, only the users it lists may schedule jobs, and the deny file is
+  ignored. The allow file must exist, belong to root, with group `root` or the group the tool
+  runs as (`crontab` for cron, `daemon` for at), and mode `0640` or stricter. A deny file, if
+  present, must have the same ownership and mode.
+rationale: |
+  An allow list is safer than a deny list: a new account cannot schedule jobs until someone
+  decides it should. Scheduled jobs are a common persistence technique, and restricting who can
+  create them reduces that option for a compromised account.
+impact: |
+  Users who are not listed in the allow file can no longer create or change crontabs or at jobs.
+  Add the accounts that need them (service accounts included) before applying. The fix creates
+  missing allow files with `root` as the only entry.
+notes: |
+  The checks run only for the tools that are installed (facts `cron` and `at`); Debian cloud
+  images install neither. `crontab` and `at` read these files through their setgid group, so a
+  group other than `root` must be `crontab` or `daemon` for them to work.
+
+audit:
+  manual: |
+    1. Run `stat -Lc '%n %U:%G %a' /etc/cron.allow /etc/at.allow`. Each allow file must exist,
+       belong to `root`, with group `root` or `crontab` (cron) / `daemon` (at), and mode `640` or
+       stricter.
+    2. `/etc/cron.deny` and `/etc/at.deny`, if they exist, must meet the same rules.
+  logic: all
+  checks:
+    - id: cron-allow
+      engine: shell
+      description: /etc/cron.allow exists with safe ownership and mode.
+      facts: [cron]
+      spec:
+        script: |
+          f=/etc/cron.allow
+          [ -f "$f" ] || { echo "$f missing"; exit 1; }
+          set -- $(stat -Lc '%U %G %a' "$f")
+          echo "$f $1:$2 $3"
+          [ "$1" = root ] && { [ "$2" = root ] || [ "$2" = crontab ]; } && [ $((0$3 & 0137)) -eq 0 ]
+    - id: cron-deny
+      engine: shell
+      description: /etc/cron.deny is absent or has safe ownership and mode.
+      facts: [cron]
+      spec:
+        script: |
+          f=/etc/cron.deny
+          [ -e "$f" ] || { echo "$f absent"; exit 0; }
+          set -- $(stat -Lc '%U %G %a' "$f")
+          echo "$f $1:$2 $3"
+          [ "$1" = root ] && { [ "$2" = root ] || [ "$2" = crontab ]; } && [ $((0$3 & 0137)) -eq 0 ]
+    - id: at-allow
+      engine: shell
+      description: /etc/at.allow exists with safe ownership and mode.
+      facts: [at]
+      spec:
+        script: |
+          f=/etc/at.allow
+          [ -f "$f" ] || { echo "$f missing"; exit 1; }
+          set -- $(stat -Lc '%U %G %a' "$f")
+          echo "$f $1:$2 $3"
+          [ "$1" = root ] && { [ "$2" = root ] || [ "$2" = daemon ]; } && [ $((0$3 & 0137)) -eq 0 ]
+    - id: at-deny
+      engine: shell
+      description: /etc/at.deny is absent or has safe ownership and mode.
+      facts: [at]
+      spec:
+        script: |
+          f=/etc/at.deny
+          [ -e "$f" ] || { echo "$f absent"; exit 0; }
+          set -- $(stat -Lc '%U %G %a' "$f")
+          echo "$f $1:$2 $3"
+          [ "$1" = root ] && { [ "$2" = root ] || [ "$2" = daemon ]; } && [ $((0$3 & 0137)) -eq 0 ]
+
+remediation:
+  manual: |
+    1. cron: `printf 'root\n' > /etc/cron.allow`, add the other allowed users one per line, then
+       `chown root:crontab /etc/cron.allow` and `chmod 640 /etc/cron.allow`. Apply the same owner
+       and mode to `/etc/cron.deny` if it exists.
+    2. at: same steps for `/etc/at.allow` and `/etc/at.deny` with group `daemon`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/cron.allow` and `/etc/at.allow` (the deny files then apply again).
+  scripts:
+    - id: cron
+      engine: shell
+      facts: [cron]
+      content: |
+        f=/etc/cron.allow
+        if [ ! -e "$f" ]; then
+          cb_backup "$f"
+          printf 'root\n' >"$f"
+          chown root:crontab "$f"
+          chmod 0640 "$f"
+        fi
+        for f in /etc/cron.allow /etc/cron.deny; do
+          [ -e "$f" ] || continue
+          set -- $(stat -Lc '%U %G %a' "$f")
+          [ "$1" = root ] || chown root "$f"
+          [ "$2" = root ] || [ "$2" = crontab ] || chgrp crontab "$f"
+          [ $((0$3 & 0137)) -eq 0 ] || chmod u-x,g-wx,o-rwx "$f"
+        done
+    - id: at
+      engine: shell
+      facts: [at]
+      content: |
+        f=/etc/at.allow
+        if [ ! -e "$f" ]; then
+          cb_backup "$f"
+          printf 'root\n' >"$f"
+          chown root:daemon "$f"
+          chmod 0640 "$f"
+        fi
+        for f in /etc/at.allow /etc/at.deny; do
+          [ -e "$f" ] || continue
+          set -- $(stat -Lc '%U %G %a' "$f")
+          [ "$1" = root ] || chown root "$f"
+          [ "$2" = root ] || [ "$2" = daemon ] || chgrp daemon "$f"
+          [ $((0$3 & 0137)) -eq 0 ] || chmod u-x,g-wx,o-rwx "$f"
+        done
+
+references:
+  - title: crontab(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/cron/crontab.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: at(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/at/at.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.4.1.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.4.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.4.1.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.4.2.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1053.003
+  - framework: mitre-attack
+    id: T1053.002
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable on fresh image; with cron and at installed the allow files are missing, fix creates them root:crontab and root:daemon 0640, audit passes after reboot; a non-listed user is refused by crontab."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable on fresh image; with cron and at installed the allow files are missing, fix creates them root:crontab and root:daemon 0640, audit passes after reboot; a non-listed user is refused by crontab."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

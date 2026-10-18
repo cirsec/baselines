@@ -1,0 +1,204 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-029
+title: Lock the audit configuration and load every valid rule
+finding:
+  title: The audit rules can be changed or disabled on the running system
+  description: Anyone with root can remove audit rules or turn auditing off without a reboot, and one bad rule stops the loading of all the rules after it.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd]
+
+description: |
+  Three settings close the audit rule set:
+
+  - `-c` at the start of the rules (`/etc/audit/rules.d/01-cirsec-initialize.rules`): if one rule
+    fails to load, `auditctl` reports it and carries on with the next ones;
+  - `-e 2` as the last rule (`/etc/audit/rules.d/99-cirsec-finalize.rules`): once loaded, the
+    configuration is immutable, rules cannot be added or removed and auditing cannot be turned
+    off until the next reboot;
+  - the compiled `/etc/audit/audit.rules` matches the files in `/etc/audit/rules.d/`
+    (`augenrules --check`), so what is on disk is what loads at boot.
+
+  The fix writes both files and loads the rules, which locks the configuration at once.
+rationale: |
+  An intruder with root access first deletes the audit rules (`auditctl -D`) or stops auditing.
+  With an immutable configuration this needs a reboot, which is itself visible. `-c` keeps one
+  wrong rule from silently dropping all the following ones.
+impact: |
+  Changing the audit rules needs a reboot. Fixes of the rule controls CB-DEB-AUDIT-016 to 028 run
+  after this one has locked the configuration write their files and ask for a reboot.
+notes: |
+  This control requires all the rule controls, so `remediate.sh` loads every rule before locking.
+  The check reports `enabled 2` only once the lock is loaded. While the configuration is locked,
+  `augenrules` refuses to rebuild `/etc/audit/audit.rules`: after a rule file changes, the
+  `rules-files` check fails until the next reboot, when auditd rebuilds and loads the rules.
+
+setting:
+  location: /etc/audit/rules.d/01-cirsec-initialize.rules, /etc/audit/rules.d/99-cirsec-finalize.rules
+  default_value: Not set (configuration can be changed at any time)
+  recommended_value: "-c first, -e 2 last, audit.rules up to date"
+
+audit:
+  manual: |
+    1. Run `auditctl -s | grep enabled`. It must print `enabled 2`.
+    2. Run `grep -hx -- '-c' /etc/audit/rules.d/*.rules`. It must print `-c`.
+    3. Run `grep -v '^#' /etc/audit/audit.rules | grep . | tail -n 1`. It must print `-e 2`.
+    4. Run `augenrules --check`. It must report no change.
+  checks:
+    - id: immutable
+      engine: shell
+      description: Audit configuration locked in the kernel.
+      spec:
+        script: |
+          command -v auditctl >/dev/null 2>&1 || { echo "auditctl not found: auditd is not installed"; exit 1; }
+          s=$(auditctl -s 2>/dev/null | sed -n 's/^enabled //p')
+          echo "enabled ${s:-unknown}"
+          [ "$s" = 2 ]
+    - id: rules-files
+      engine: shell
+      description: -c and -e 2 in the rules, compiled rules up to date.
+      spec:
+        script: |
+          command -v augenrules >/dev/null 2>&1 || { echo "augenrules not found: auditd is not installed"; exit 1; }
+          rc=0
+          if grep -hqx -- '-c' /etc/audit/rules.d/*.rules 2>/dev/null; then echo "-c set"; else echo "-c missing"; rc=1; fi
+          l=$(grep -v '^[[:space:]]*#' /etc/audit/audit.rules 2>/dev/null | grep . | tail -n 1)
+          echo "last rule: ${l:-none}"
+          [ "$l" = "-e 2" ] || rc=1
+          o=$(augenrules --check 2>&1)
+          case $o in
+            *"No change"*) echo "audit.rules matches rules.d" ;;
+            *) echo "audit.rules differs from rules.d: $o"; rc=1 ;;
+          esac
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Create `/etc/audit/rules.d/01-cirsec-initialize.rules` containing `-c`.
+    2. Create `/etc/audit/rules.d/99-cirsec-finalize.rules` containing `-e 2`.
+    3. Run `augenrules --load` once all the other rules are in place. The configuration is then
+       locked until the next reboot.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/audit/rules.d/99-cirsec-finalize.rules` and `01-cirsec-initialize.rules`, run
+    `augenrules` and reboot.
+  scripts:
+    - id: finalize
+      engine: shell
+      content: |
+        command -v augenrules >/dev/null 2>&1 || { echo "auditd is not installed" >&2; exit 1; }
+        for x in 01-cirsec-initialize:-c '99-cirsec-finalize:-e 2'; do
+          f=/etc/audit/rules.d/${x%%:*}.rules
+          if [ "$(grep -v '^#' "$f" 2>/dev/null)" != "${x#*:}" ]; then
+            cb_backup "$f"
+            printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUDIT-029' "${x#*:}" >"$f"
+          fi
+          chmod 640 "$f"
+        done
+        if auditctl -s | grep -q '^enabled 2'; then
+          echo "audit rules are already locked: reboot to load changes"
+        else
+          augenrules --load >/dev/null
+        fi
+
+references:
+  - title: auditctl(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/auditctl.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: augenrules(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/augenrules.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R73)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.3.29"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.3.30"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.34"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.35"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.3.36"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+related_controls:
+  - id: CB-DEB-AUDIT-011
+    type: requires
+  - id: CB-DEB-AUDIT-016
+    type: requires
+  - id: CB-DEB-AUDIT-017
+    type: requires
+  - id: CB-DEB-AUDIT-018
+    type: requires
+  - id: CB-DEB-AUDIT-019
+    type: requires
+  - id: CB-DEB-AUDIT-020
+    type: requires
+  - id: CB-DEB-AUDIT-021
+    type: requires
+  - id: CB-DEB-AUDIT-022
+    type: requires
+  - id: CB-DEB-AUDIT-023
+    type: requires
+  - id: CB-DEB-AUDIT-024
+    type: requires
+  - id: CB-DEB-AUDIT-025
+    type: requires
+  - id: CB-DEB-AUDIT-026
+    type: requires
+  - id: CB-DEB-AUDIT-027
+    type: requires
+  - id: CB-DEB-AUDIT-028
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix writes -c and -e 2 and locks (enabled 2); augenrules --check reports no change; locked after reboot; a changed rule file makes rules-files fail until reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix writes -c and -e 2 and locks (enabled 2); augenrules --check reports no change; locked after reboot; a changed rule file makes rules-files fail until reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

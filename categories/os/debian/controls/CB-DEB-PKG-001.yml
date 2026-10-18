@@ -1,0 +1,187 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-001
+title: Bind every APT repository to its signing key
+finding:
+  title: APT repositories are not bound to a signing key or bypass signature checks
+  description: A repository without its own key is trusted with every key known to APT, and options such as trusted=yes disable signature checks entirely.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [apt, repositories, signatures, supply-chain]
+
+description: |
+  APT checks the signature of the `Release` file of each repository. The `Signed-By` option
+  (`[signed-by=...]` in the one-line format, `Signed-By:` field in the deb822 `.sources` format)
+  names the keyring allowed to sign that repository. Without it, any key in
+  `/etc/apt/trusted.gpg.d/` is accepted for every repository.
+
+  Per-source options can also weaken or disable the checks: `trusted=yes`, `allow-insecure=yes`,
+  `allow-weak=yes`, `allow-downgrade-to-insecure=yes`, `check-valid-until=no` and `check-date=no`.
+rationale: |
+  Binding each repository to its own key limits a compromised or malicious third-party key to the
+  repository it was added for: it cannot sign packages that replace Debian ones. Sources that
+  bypass the signature checks let anyone on the network path, or controlling the mirror, install
+  arbitrary packages as root.
+impact: |
+  None for the Debian archive. A third-party repository needs its key stored as a separate file
+  (usually under `/etc/apt/keyrings/`) and referenced from its source entry.
+notes: |
+  Debian 13 and the Debian 12 cloud images use deb822 sources with `Signed-By`. A Debian 12
+  installed with the installer uses one-line entries in `/etc/apt/sources.list` without it; the
+  automated fix adds the Debian archive keyring to entries of `deb.debian.org`,
+  `security.debian.org` and `ftp.<country>.debian.org`. Other repositories, and the bypass
+  options, are left to a human.
+
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/*.list, /etc/apt/sources.list.d/*.sources
+  default_value: Signed-By set on Debian 13 and cloud images, missing on Debian 12 installer sources
+  recommended_value: Signed-By on every entry, no option that disables or weakens signature checks
+
+audit:
+  manual: |
+    Read every enabled entry in `/etc/apt/sources.list`, `/etc/apt/sources.list.d/*.list` and
+    `/etc/apt/sources.list.d/*.sources`:
+    1. each one-line entry has `[signed-by=<keyring>]`, each deb822 stanza a `Signed-By:` field;
+    2. no entry sets `trusted=yes`, `allow-insecure=yes`, `allow-weak=yes`,
+       `allow-downgrade-to-insecure=yes`, `check-valid-until=no` or `check-date=no` (or the
+       matching deb822 fields).
+  checks:
+    - id: sources
+      engine: shell
+      description: Signed-By and signature options of every enabled APT source entry.
+      spec:
+        script: |
+          files=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no APT source file"; exit 2; }
+          # One line per entry: file:line, types, URIs, suites, ;option=value list (lowercase).
+          # shellcheck disable=SC2086
+          awk '
+            function flush() { if (st && en != "no") print src "\t" ty "\t" ur "\t" su "\t" op; st = 0; ty = ur = su = op = en = "" }
+            FNR == 1 { flush(); d = FILENAME ~ /\.sources$/ }
+            !d {
+              sub(/#.*/, ""); if ($1 !~ /^deb(-src)?$/) next
+              l = $0; o = ""; i = index(l, "["); j = index(l, "]")
+              if (i && j > i) { o = substr(l, i + 1, j - i - 1); l = substr(l, 1, i - 1) " " substr(l, j + 1) }
+              split(l, w, " "); gsub(/[ \t]+/, ";", o)
+              print FILENAME ":" FNR "\t" w[1] "\t" w[2] "\t" w[3] "\t;" tolower(o); next
+            }
+            /^#/ { next }
+            /^[ \t]*$/ { flush(); next }
+            /^[ \t]/ { next }
+            {
+              if (!st) { st = 1; src = FILENAME ":" FNR }
+              k = $0; sub(/:.*/, "", k); k = tolower(k); v = $0; sub(/^[^:]*:[ \t]*/, "", v)
+              if (k == "types") ty = v; else if (k == "uris") ur = v; else if (k == "suites") su = v
+              else if (k == "enabled") en = tolower(v)
+              else op = op ";" k "=" tolower(v == "" ? "inline" : v)
+            }
+            END { flush() }' $files | awk -F '\t' '
+            {
+              bad = ""
+              if ($5 !~ /;signed-by=/) bad = bad " no-signed-by"
+              n = split("trusted=yes allow-insecure=yes allow-weak=yes allow-downgrade-to-insecure=yes check-valid-until=no check-date=no", o, " ")
+              for (i = 1; i <= n; i++) if (index($5, ";" o[i])) bad = bad " " o[i]
+              if (bad != "") { print $1 " " $3 ":" bad; rc = 1 } else ok++
+            }
+            END { print ok + 0 " entries bound to a key"; exit rc }'
+
+remediation:
+  manual: |
+    1. For each repository, store its public key in its own file, for example
+       `/etc/apt/keyrings/<vendor>.asc` (Debian keys are in `/usr/share/keyrings/`).
+    2. Reference it from the entry: `deb [signed-by=/etc/apt/keyrings/<vendor>.asc] https://...`
+       in the one-line format, or `Signed-By: /etc/apt/keyrings/<vendor>.asc` in a `.sources`
+       stanza. Debian 13 can convert old entries with `apt modernize-sources`.
+    3. Remove `trusted=yes` and the other options that weaken the checks. A repository that only
+       works with them must be fixed by its owner (signed) or removed.
+    4. Run `apt-get update` and check that it prints no signature warning.
+
+    The automated fix only adds `/usr/share/keyrings/debian-archive-keyring.gpg` to entries of the
+    Debian archive.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the source files from the backup directory printed by `remediate.sh`.
+  scripts:
+    - id: signed-by-debian
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: sources.list(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/sources.list.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: apt-secure(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt-secure.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - DebianRepository/UseThirdParty
+    url: https://wiki.debian.org/DebianRepository/UseThirdParty
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R59)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R59
+    relation: partial
+    note: R59 asks for trusted repositories only; this control enforces that each one is authenticated with its own key.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.1"
+    relation: stricter
+    note: Also rejects per-source options that disable or weaken signature checks.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.1"
+    relation: stricter
+    note: Also rejects per-source options that disable or weaken signature checks.
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: cwe
+    id: CWE-494
+related_controls:
+  - id: CB-DEB-PKG-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on stock cloud images (deb822 with Signed-By); one-line and deb822 entries without Signed-By, trusted=yes (both formats) detected, disabled stanzas skipped; fix adds the Debian keyring, apt-get update works, idempotent, kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on stock cloud images (deb822 with Signed-By); one-line and deb822 entries without Signed-By, trusted=yes (both formats) detected, disabled stanzas skipped; fix adds the Debian keyring, apt-get update works, idempotent, kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

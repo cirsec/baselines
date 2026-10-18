@@ -1,0 +1,275 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-006
+title: Mount separate filesystems with nodev, nosuid and noexec where they are not needed
+finding:
+  title: Separate filesystems are mounted without restrictive options
+  description: Device files, setuid programs or executables can be used from filesystems that should only hold data.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [mount, partitions, fstab]
+
+description: |
+  When these directories are separate filesystems, they are mounted with the options listed in
+  `{{ mount_options }}` (format `directory:option,option`). By default:
+
+  | Directory | Options |
+  |---|---|
+  | `/home`, `/var`, `/opt`, `/srv` | `nodev,nosuid` |
+  | `/var/tmp`, `/var/log`, `/var/log/audit`, `/boot` | `nodev,nosuid,noexec` |
+  | `/usr` | `nodev` |
+
+  The hardened profiles also require `noexec` on `/home`. Every other local filesystem backed by a
+  block device, except `/`, must be mounted with `nodev`. A directory that is not a separate
+  filesystem is skipped; when there is none besides `/`, the control does not apply.
+rationale: |
+  Only `/dev` needs device files, and only system directories need setuid programs or executables.
+  `nodev` stops a device node created on a data filesystem (or brought on removable media) from
+  giving raw access to disks or memory. `nosuid` stops setuid programs planted there from granting
+  privileges, and `noexec` stops tools dropped there from being run directly.
+impact: |
+  `noexec` on `/home` (hardened profiles) prevents users from running their own scripts and
+  programs directly, including tools installed under `~/.local/bin`. `noexec` on `/boot` and
+  `/var/log` has no known effect on Debian.
+notes: |
+  ANSSI also recommends `noexec` on `/var`. It is left out: dpkg runs package maintainer scripts
+  from `/var/lib/dpkg/info/`, so package installation and upgrades fail with it. Container engines
+  that store images under `/var/lib` need `exec` as well.
+
+setting:
+  location: /etc/fstab
+  default_value: Options chosen at installation (usually defaults)
+  recommended_value: "{{ mount_options }}; nodev on every other local filesystem except /"
+
+parameters:
+  - name: mount_options
+    type: list
+    description: Required options per mount point, as directory:option,option.
+    default:
+      - /home:nodev,nosuid
+      - /var:nodev,nosuid
+      - /var/tmp:nodev,nosuid,noexec
+      - /var/log:nodev,nosuid,noexec
+      - /var/log/audit:nodev,nosuid,noexec
+      - /boot:nodev,nosuid,noexec
+      - /opt:nodev,nosuid
+      - /srv:nodev,nosuid
+      - /usr:nodev
+    profile_defaults:
+      server-hardened: &hardened
+        - /home:nodev,nosuid,noexec
+        - /var:nodev,nosuid
+        - /var/tmp:nodev,nosuid,noexec
+        - /var/log:nodev,nosuid,noexec
+        - /var/log/audit:nodev,nosuid,noexec
+        - /boot:nodev,nosuid,noexec
+        - /opt:nodev,nosuid
+        - /srv:nodev,nosuid
+        - /usr:nodev
+      desktop-hardened: *hardened
+
+audit:
+  manual: |
+    1. Run `findmnt -kn -o TARGET,SOURCE,OPTIONS`.
+    2. For each mounted directory of `{{ mount_options }}`, the options must contain the listed ones.
+    3. Every other line whose source is a `/dev/` device, except `/`, must contain `nodev`.
+  checks:
+    - id: options
+      engine: shell
+      description: Mount options of the listed directories and nodev on other local block-device filesystems.
+      spec:
+        script: |
+          rc=0 seen=
+          for e in $CB_MOUNT_OPTIONS; do
+            p=${e%%:*}
+            o=$(findmnt -kn -o OPTIONS --mountpoint "$p" | tail -n 1)
+            [ -n "$o" ] || continue
+            seen="$seen $p "
+            miss=
+            for opt in $(printf '%s' "${e#*:}" | tr , ' '); do
+              case ,$o, in *,$opt,*) ;; *) miss="$miss $opt" ;; esac
+            done
+            if [ -z "$miss" ]; then echo "$p: ok"; else echo "$p: missing$miss"; rc=1; fi
+          done
+          other=$(findmnt -knr -o TARGET,SOURCE,OPTIONS | awk '$2 ~ "^/dev/" && $1 != "/"')
+          while read -r t s o; do
+            [ -n "$t" ] || continue
+            case $seen in *" $t "*) continue ;; esac
+            seen="$seen $t "
+            case ,$o, in *,nodev,*) echo "$t: ok" ;; *) echo "$t: missing nodev"; rc=1 ;; esac
+          done <<EOF
+          $other
+          EOF
+          [ -n "$seen" ] || { echo "no separate filesystem besides /"; exit 2; }
+          exit $rc
+
+remediation:
+  manual: |
+    For each reported directory:
+    1. Add the missing options to the fourth field of its line in `/etc/fstab` (for a mount made by
+       a systemd `.mount` unit, to its `Options=`).
+    2. Run `systemctl daemon-reload` and `mount -o remount <directory>`.
+    3. Check with `findmnt -kn <directory>`, and reboot at the next maintenance window to confirm.
+
+    Test `noexec` and `nosuid` first on systems that run software from `/opt`, `/srv` or `/home`.
+
+references:
+  - title: mount(8), Debian manual pages (filesystem-independent mount options)
+    url: https://manpages.debian.org/trixie/mount/mount.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: fstab(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/mount/fstab.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R28)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R28
+    relation: partial
+    note: Ours leaves out noexec on /var (breaks dpkg) and noexec on /home outside the hardened profiles.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.3.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.3.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.4.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.4.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.5.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.5.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.5.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.6.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.6.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.6.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.7.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.7.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.7.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.3.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.3.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.4.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.4.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.5.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.5.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.5.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.6.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.6.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.6.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.7.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.7.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.7.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.001
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-DEB-FS-005
+    type: related
+  - id: CB-DEB-FS-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on fresh install (/boot/efi without nodev); not applicable with /boot/efi unmounted; loop-mounted /var/tmp fails without options and passes after remount with nodev,nosuid,noexec."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on fresh install (/boot/efi without nodev); not applicable with /boot/efi unmounted; loop-mounted /var/tmp fails without options and passes after remount with nodev,nosuid,noexec."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

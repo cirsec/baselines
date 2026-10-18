@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-003
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller les sessions GNOME après un court délai d'inactivité
+finding:
+  title: Les utilisateurs peuvent allonger ou désactiver le verrouillage d'inactivité de GNOME
+  description: Une session GNOME laissée sans surveillance reste utilisable par toute personne devant l'écran aussi longtemps que l'utilisateur l'a choisi.
+description: |
+  Deux clés GNOME déterminent quand une session inactive est verrouillée :
+
+  - `org.gnome.desktop.session idle-delay` : secondes d'inactivité avant que la session soit
+    considérée inactive et que l'écran s'éteigne ;
+  - `org.gnome.desktop.screensaver lock-delay` : secondes entre l'extinction de l'écran et le
+    verrouillage.
+
+  Les deux sont définies dans la base dconf système `local` et verrouillées. Le verrouillage
+  lui-même nécessite `lock-enabled`, défini par CB-DEB-DESK-009.
+rationale: |
+  Une session ouverte sur une machine laissée sans surveillance donne ses accès à n'importe quel
+  passant. Verrouiller après un court délai réduit cette fenêtre, et verrouiller les clés empêche
+  les utilisateurs de le désactiver.
+impact: |
+  Les sessions se verrouillent après {{ idle_delay }} secondes d'inactivité, plus
+  {{ lock_delay }} secondes. Les utilisateurs ne peuvent pas modifier ces délais. Les
+  présentations et visioconférences suspendent le délai d'inactivité pendant leur durée.
+notes: |
+  Les valeurs par défaut de Debian sont déjà 300 et 0 secondes, mais les utilisateurs peuvent les
+  modifier. Le contrôle attend exactement les valeurs configurées. `dconf read` en root lit la
+  base système, qui l'emporte sur les valeurs des utilisateurs pour les clés verrouillées.
+setting:
+  location: /etc/dconf/db/local.d/, clés /org/gnome/desktop/session/idle-delay et /org/gnome/desktop/screensaver/lock-delay
+  recommended_value: "idle-delay=uint32 {{ idle_delay }}, lock-delay=uint32 {{ lock_delay }}, verrouillées"
+parameters:
+  idle_delay: Secondes d'inactivité avant l'extinction de l'écran. 0 désactiverait le verrouillage.
+  lock_delay: Secondes entre l'extinction de l'écran et le verrouillage.
+audit:
+  manual: |
+    1. `dconf read /org/gnome/desktop/session/idle-delay` doit afficher `uint32 {{ idle_delay }}`.
+    2. `dconf read /org/gnome/desktop/screensaver/lock-delay` doit afficher `uint32 {{ lock_delay }}`.
+    3. Les deux clés doivent figurer dans un fichier de `/etc/dconf/db/local.d/locks/`.
+remediation:
+  manual: |
+    1. Vérifier que `/etc/dconf/profile/user` contient `user-db:user` et `system-db:local`.
+    2. Créer `/etc/dconf/db/local.d/00-screen-lock` :
+       ```
+       [org/gnome/desktop/session]
+       idle-delay=uint32 {{ idle_delay }}
+
+       [org/gnome/desktop/screensaver]
+       lock-delay=uint32 {{ lock_delay }}
+       ```
+    3. Lister `/org/gnome/desktop/session/idle-delay` et `/org/gnome/desktop/screensaver/lock-delay`
+       dans `/etc/dconf/db/local.d/locks/00-screen-lock`.
+    4. Lancer `dconf update`.
+  rollback: |
+    Supprimer les fichiers écrits dans `/etc/dconf/db/local.d/` et son répertoire `locks/`, puis
+    lancer `dconf update`.

@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-008
+title: Send system logs to a remote log server
+finding:
+  title: System logs are only stored on the system that produced them
+  description: An intruder with root access can erase the local logs, and a lost disk takes the history with it.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [logging, remote, journald, rsyslog]
+
+description: |
+  A copy of the logs must leave the system as they are produced, to a log server or a central
+  collection platform the system cannot modify. On Debian, two ways fit the chosen logging system:
+
+  - with the journal alone, `systemd-journal-upload` (package `systemd-journal-remote`) sends the
+    journal over HTTPS to a `systemd-journal-remote` server;
+  - with rsyslog, an `omfwd` action sends messages over TCP, preferably with TLS
+    (CB-DEB-AUDIT-009).
+rationale: |
+  Remote logs survive the compromise or loss of the system and are the reference when local logs
+  have been altered. They also allow correlating events across systems.
+impact: |
+  Requires a log server and network flows to it. Messages are queued when the server is
+  unreachable; size the queue so a long outage does not fill the disk.
+
+audit:
+  manual: |
+    1. With the journal alone: run `systemctl is-active systemd-journal-upload` and check `URL=` in
+       `systemd-analyze cat-config systemd/journal-upload.conf`.
+    2. With rsyslog: look for an `action(type="omfwd" target=...)` or `@@host` line with
+       `grep -Er 'omfwd|^\s*[^#].*@@?' /etc/rsyslog.conf /etc/rsyslog.d/`.
+    3. Confirm on the log server that recent messages from this system have arrived.
+
+remediation:
+  manual: |
+    1. With the journal alone: install `systemd-journal-remote`, set `URL=https://<server>:19532`
+       and the client certificate in `/etc/systemd/journal-upload.conf.d/`, then run
+       `systemctl enable --now systemd-journal-upload`.
+    2. With rsyslog: add to `/etc/rsyslog.d/60-remote.conf`:
+       ```
+       *.* action(type="omfwd" target="<server>" port="6514" protocol="tcp"
+                  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+                  queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on"
+                  action.resumeRetryCount="-1")
+       ```
+       then run `systemctl restart rsyslog`.
+  rollback: |
+    Disable `systemd-journal-upload`, or remove the forwarding file and restart rsyslog.
+
+references:
+  - title: systemd-journal-upload.service(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd-journal-remote/systemd-journal-upload.service.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: rsyslog.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/rsyslog/rsyslog.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(2)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.1.2.5"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.1.2.5"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+related_controls:
+  - id: CB-DEB-AUDIT-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-009
+title: Run a Debian release that still receives security updates
+finding:
+  title: The Debian release is no longer supported
+  description: No security fix is published any more for this release, so new vulnerabilities stay open for good.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [updates, lifecycle]
+
+description: |
+  The Debian security team supports each stable release for about three years, until about one
+  year after the next stable release. The Debian LTS team then extends security support to five
+  years in total, for the most used architectures and packages. After that, no security update is
+  published. The testing and unstable distributions get no security support either.
+rationale: |
+  An unsupported release accumulates known, public, unfixed vulnerabilities. No configuration
+  hardening compensates for that.
+impact: |
+  Upgrading to the next stable release needs planning and testing of the hosted applications.
+notes: |
+  On 2026-10-18: Debian 12 "bookworm" is in LTS (regular security support ended in June 2026, LTS
+  until June 2028); Debian 13 "trixie" has regular security support. Update the
+  `supported_versions` parameter as releases reach end of life (see the Debian releases and LTS
+  pages), and plan upgrades before the date rather than after.
+
+setting:
+  location: /etc/os-release
+  recommended_value: "One of the supported versions: {{ supported_versions }}"
+
+parameters:
+  - name: supported_versions
+    type: list
+    description: Debian major versions accepted as supported. Hardened profiles only accept releases under regular security support, not LTS.
+    default: ["12", "13"]
+    profile_defaults:
+      server-hardened: ["13"]
+      desktop-hardened: ["13"]
+
+audit:
+  manual: |
+    Run `cat /etc/debian_version` and compare with the dates on https://www.debian.org/releases/
+    and https://wiki.debian.org/LTS. The release must still be supported, and must not be testing
+    or unstable (`/etc/debian_version` ending in `/sid`).
+  checks:
+    - id: release
+      engine: shell
+      description: Major version from /etc/os-release, against the supported list.
+      spec:
+        script: |
+          v=$( (. /etc/os-release && printf '%s' "${VERSION_ID:-}") 2>/dev/null)
+          d=$(cat /etc/debian_version 2>/dev/null)
+          echo "debian_version $d, VERSION_ID ${v:-none}, supported: $CB_SUPPORTED_VERSIONS"
+          case $d in */sid) exit 1 ;; esac
+          for s in $CB_SUPPORTED_VERSIONS; do
+            [ "$s" = "${v%%.*}" ] && exit 0
+          done
+          exit 1
+
+remediation:
+  manual: |
+    Upgrade to a supported stable release, following the upgrade chapter of the release notes of
+    the target release (one release at a time). Move systems running testing or unstable to a
+    stable release.
+
+references:
+  - title: Debian Releases
+    url: https://www.debian.org/releases/
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - LTS
+    url: https://wiki.debian.org/LTS
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Security FAQ
+    url: https://www.debian.org/security/faq
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-22
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1104
+related_controls:
+  - id: CB-DEB-PKG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes with the default list; fails when the list excludes the running version."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes with the default list; fails when the list excludes the running version."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-032
+title: Install the AIDE file integrity checker
+finding:
+  title: No file integrity checker is installed
+  description: Changes to system binaries and configuration files, such as a replaced program or a planted backdoor, go unnoticed.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [aide, integrity]
+
+description: |
+  AIDE (Advanced Intrusion Detection Environment) records the checksums and attributes of
+  system files in a database, then compares the files with it. Debian splits it into `aide`
+  (the program) and `aide-common` (configuration in `/etc/aide/`, `aideinit`, daily check).
+  Neither is installed by default.
+rationale: |
+  An integrity checker is the simplest way to detect that files which should never change
+  (binaries, libraries, configuration) have been modified, whether by an intruder or by mistake.
+impact: |
+  Installing AIDE alone does nothing until its database is built (CB-DEB-AUDIT-034).
+notes: |
+  The fix installs without recommended packages: `aide` recommends a mail transport agent, which
+  `apt-get` would otherwise install (exim4). Reports of the daily check are written to
+  `/var/log/aide/`; install and configure a mail transport if they must be mailed.
+
+setting:
+  location: aide and aide-common packages
+  default_value: Not installed
+  recommended_value: Installed
+
+audit:
+  manual: |
+    Run `dpkg-query -W -f='${Package} ${Status}\n' aide aide-common`. Both must end with `installed`.
+  checks:
+    - id: aide
+      engine: package
+      description: aide is installed.
+      spec: { name: aide, state: installed }
+    - id: aide-common
+      engine: package
+      description: aide-common is installed.
+      spec: { name: aide-common, state: installed }
+
+remediation:
+  manual: |
+    Run `apt-get install --no-install-recommends aide aide-common`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `apt-get purge aide aide-common`.
+  scripts:
+    - id: install
+      engine: shell
+      content: |
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends aide aide-common
+
+references:
+  - title: aide(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/aide/aide.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R76)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R76
+    relation: partial
+    note: R76 asks to seal files and check them; this control installs the tool, CB-DEB-AUDIT-034 builds and checks the seals.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.3.1"
+    relation: partial
+    note: The database initialisation is in CB-DEB-AUDIT-034.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.3.1"
+    relation: partial
+    note: The database initialisation is in CB-DEB-AUDIT-034.
+threats:
+  - framework: mitre-attack
+    id: T1036.005
+  - framework: cwe
+    id: CWE-353
+related_controls:
+  - id: CB-DEB-AUDIT-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix installs aide and aide-common without recommends (no MTA pulled); kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix installs aide and aide-common without recommends (no MTA pulled); kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

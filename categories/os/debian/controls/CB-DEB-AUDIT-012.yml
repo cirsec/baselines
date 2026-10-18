@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-012
+title: Enable auditing from boot with a large enough backlog
+finding:
+  title: Processes started before auditd are not audited
+  description: Programs started early in the boot, and events lost when the audit queue overflows, leave no audit record.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [auditd, boot, grub]
+
+description: |
+  Two kernel command line parameters:
+
+  - `audit=1` turns auditing on as soon as the kernel starts, so every process gets an audit
+    context, including those started before `auditd`;
+  - `audit_backlog_limit={{ backlog_limit }}` sizes the kernel queue of records waiting for
+    `auditd`. The default of 64 overflows during boot, and records are then lost.
+
+  The fix adds both to `GRUB_CMDLINE_LINUX` through `/etc/default/grub.d/60-cirsec-audit.cfg` and
+  regenerates the GRUB configuration. They apply at the next boot.
+rationale: |
+  An attacker who gets code to run early in the boot, or who floods the audit queue, escapes
+  auditing. Turning it on at boot and sizing the queue closes both gaps.
+impact: |
+  A reboot is needed. The backlog uses kernel memory only when records pile up.
+notes: |
+  The check reads the running command line (`/proc/cmdline`) and, when GRUB is the boot loader,
+  the generated `/boot/grub/grub.cfg`. Right after the fix the first check fails until the reboot.
+
+setting:
+  location: /etc/default/grub.d/60-cirsec-audit.cfg, kernel command line
+  default_value: Not set (auditing starts with auditd, backlog 64)
+  recommended_value: "audit=1 audit_backlog_limit={{ backlog_limit }} or more"
+
+parameters:
+  - name: backlog_limit
+    type: integer
+    description: Minimum size of the kernel audit backlog queue (audit_backlog_limit).
+    unit: records
+    default: 8192
+    minimum: 8192
+    maximum: 1048576
+
+audit:
+  manual: |
+    1. Run `cat /proc/cmdline`. It must contain `audit=1` and `audit_backlog_limit=` with a value of
+       at least {{ backlog_limit }}.
+    2. Run `grep -E '^\s*linux' /boot/grub/grub.cfg`. Every line must contain the same two
+       parameters, so they survive the next reboot.
+  checks:
+    - id: running
+      engine: shell
+      description: Parameters of the running kernel.
+      spec:
+        script: |
+          c=$(cat /proc/cmdline)
+          b=$(printf '%s\n' "$c" | tr ' ' '\n' | sed -n 's/^audit_backlog_limit=//p' | tail -n 1)
+          a=$(printf '%s\n' "$c" | tr ' ' '\n' | sed -n 's/^audit=//p' | tail -n 1)
+          echo "audit=${a:-unset} audit_backlog_limit=${b:-unset}"
+          [ "$a" = 1 ] && [ -n "$b" ] && [ "$b" -ge "$CB_BACKLOG_LIMIT" ]
+    - id: grub
+      engine: shell
+      description: Parameters in every kernel entry of /boot/grub/grub.cfg.
+      facts: [grub]
+      spec:
+        script: |
+          n=0 bad=0
+          while IFS= read -r l; do
+            [ -n "$l" ] || continue
+            n=$((n + 1))
+            b=$(printf '%s\n' $l | sed -n 's/^audit_backlog_limit=//p' | tail -n 1)
+            case " $l " in *" audit=1 "*) ;; *) b= ;; esac
+            if [ -z "$b" ] || [ "$b" -lt "$CB_BACKLOG_LIMIT" ]; then bad=$((bad + 1)); fi
+          done <<EOF
+          $(grep -E '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg 2>/dev/null)
+          EOF
+          echo "$n kernel entries, $bad without audit=1 audit_backlog_limit>=$CB_BACKLOG_LIMIT"
+          [ "$n" -gt 0 ] && [ "$bad" = 0 ]
+
+remediation:
+  manual: |
+    1. Create `/etc/default/grub.d/60-cirsec-audit.cfg` with:
+       ```
+       GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX audit=1 audit_backlog_limit={{ backlog_limit }}"
+       ```
+    2. Run `update-grub`, then reboot.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/default/grub.d/60-cirsec-audit.cfg`, run `update-grub` and reboot.
+  scripts:
+    - id: grub
+      engine: shell
+      facts: [grub]
+      content: |
+        f=/etc/default/grub.d/60-cirsec-audit.cfg
+        mkdir -p /etc/default/grub.d
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUDIT-012' \
+          "GRUB_CMDLINE_LINUX=\"\$GRUB_CMDLINE_LINUX audit=1 audit_backlog_limit=$CB_BACKLOG_LIMIT\"" >"$f"
+        cb_backup /boot/grub/grub.cfg
+        update-grub 2>&1
+
+references:
+  - title: The kernel's command-line parameters (audit, audit_backlog_limit)
+    url: https://docs.kernel.org/admin-guide/kernel-parameters.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: update-grub(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/grub2-common/update-grub.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-14(1)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+related_controls:
+  - id: CB-DEB-AUDIT-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix writes grub.d drop-in and runs update-grub; running check passes after reboot with audit=1 audit_backlog_limit=8192."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install; fix writes grub.d drop-in and runs update-grub; running check passes after reboot with audit=1 audit_backlog_limit=8192."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

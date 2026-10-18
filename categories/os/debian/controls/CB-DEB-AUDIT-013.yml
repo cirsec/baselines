@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUDIT-013
+title: Keep audit logs instead of rotating them away
+finding:
+  title: Old audit logs are deleted automatically
+  description: auditd rotates its logs and deletes the oldest one, so a busy system or a deliberate flood erases the audit history.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, retention]
+
+description: |
+  `/etc/audit/auditd.conf` decides what auditd does when its log reaches `max_log_file`
+  megabytes. Debian ships `max_log_file_action = ROTATE` with `num_logs = 5`: the oldest file is
+  deleted at each rotation. This control requires:
+
+  - `max_log_file` of at least {{ max_log_file }} MB;
+  - `max_log_file_action = keep_logs`: auditd rotates the file but never deletes old ones.
+
+  Archiving or removing old audit logs then becomes a deliberate task of the administrator, and
+  running out of space is handled by CB-DEB-AUDIT-014.
+rationale: |
+  The audit log is evidence. Automatic deletion lets an attacker push the records of their
+  actions out of the history by generating noise.
+impact: |
+  Audit logs accumulate in `/var/log/audit/` until they are archived. Plan the space, ideally a
+  dedicated partition (CB-DEB-AUDIT-014 reacts when it runs low).
+
+setting:
+  location: /etc/audit/auditd.conf
+  default_value: max_log_file = 8, max_log_file_action = ROTATE
+  recommended_value: "max_log_file >= {{ max_log_file }}, max_log_file_action = keep_logs"
+
+parameters:
+  - name: max_log_file
+    type: integer
+    description: Minimum size of one audit log file before rotation.
+    unit: MB
+    default: 8
+    minimum: 1
+    maximum: 4096
+
+audit:
+  manual: |
+    Run `grep -Ei '^\s*max_log_file(_action)?\s*=' /etc/audit/auditd.conf`. `max_log_file` must be
+    at least {{ max_log_file }} and `max_log_file_action` must be `keep_logs`.
+  checks:
+    - id: retention
+      engine: shell
+      description: max_log_file and max_log_file_action in auditd.conf.
+      spec:
+        script: |
+          f=/etc/audit/auditd.conf
+          [ -r "$f" ] || { echo "$f not found: auditd is not installed"; exit 1; }
+          get() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/p" "$f" | tail -n 1; }
+          s=$(get max_log_file) a=$(get max_log_file_action | tr 'A-Z' 'a-z')
+          echo "max_log_file=${s:-unset} max_log_file_action=${a:-unset}"
+          case $s in '' | *[!0-9]*) exit 1 ;; esac
+          [ "$s" -ge "$CB_MAX_LOG_FILE" ] && [ "$a" = keep_logs ]
+
+remediation:
+  manual: |
+    In `/etc/audit/auditd.conf`, set `max_log_file = {{ max_log_file }}` (or more) and
+    `max_log_file_action = keep_logs`, then run `systemctl restart auditd`.
+  effects:
+    restart: service
+    services: [auditd]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Set `max_log_file_action = ROTATE` back in `/etc/audit/auditd.conf` and restart auditd.
+  scripts:
+    - id: auditd-conf
+      engine: shell
+      content: |
+        f=/etc/audit/auditd.conf
+        [ -f "$f" ] || { echo "$f not found: auditd is not installed" >&2; exit 1; }
+        cb_backup "$f"
+        set_kv() {
+          sed -i "/^[[:space:]]*$1[[:space:]]*=/d" "$f"
+          printf '%s = %s\n' "$1" "$2" >>"$f"
+        }
+        s=$(sed -n 's/^[[:space:]]*max_log_file[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' "$f" | tail -n 1)
+        if [ -z "$s" ] || [ "$s" -lt "$CB_MAX_LOG_FILE" ]; then set_kv max_log_file "$CB_MAX_LOG_FILE"; fi
+        set_kv max_log_file_action keep_logs
+
+references:
+  - title: auditd.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/auditd/auditd.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-4
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "6.2.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "6.2.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+  - framework: cwe
+    id: CWE-779
+related_controls:
+  - id: CB-DEB-AUDIT-011
+    type: requires
+  - id: CB-DEB-AUDIT-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install (ROTATE); fix sets keep_logs, auditd restarted; second run idempotent; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: "Fails on fresh install (ROTATE); fix sets keep_logs, auditd restarted; second run idempotent; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

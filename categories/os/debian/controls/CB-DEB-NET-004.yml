@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-004
+title: Disable the Bluetooth service
+finding:
+  title: The Bluetooth service can be started
+  description: Bluetooth accepts connections from devices in radio range, outside any network control.
+status: active
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [bluetooth, wireless, service]
+
+description: |
+  On Debian, Bluetooth is handled by `bluetoothd` from the `bluez` package, run by
+  `bluetooth.service`. When the package is installed, the service starts as soon as an adapter
+  is present. This control requires the service to be masked, or `bluez` to be absent.
+rationale: |
+  Bluetooth stacks have had remotely exploitable flaws reachable without pairing (BlueBorne,
+  BleedingTooth). A server never needs Bluetooth, and a hardened workstation should not expose a
+  radio interface that can be reached from a nearby room or car park.
+impact: |
+  Bluetooth keyboards, mice, headsets and file transfer stop working.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled bluetooth.service`. It must print `masked`, or fail because the unit
+    does not exist (`bluez` not installed).
+  checks:
+    - id: service
+      engine: systemd-unit
+      description: State of bluetooth.service.
+      spec: { unit: bluetooth.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now bluetooth.service`, or remove the package with `apt purge bluez` when
+    nothing depends on it.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask bluetooth.service` and `systemctl start bluetooth.service`.
+  scripts:
+    - id: mask
+      from_check: service
+
+references:
+  - title: Debian Wiki - Bluetooth
+    url: https://wiki.debian.org/BluetoothUser
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-18
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.1.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1011.001
+  - framework: cwe
+    id: CWE-1188
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Check passes without bluez; with bluez installed the service is reported enabled, then masked by the generated fix."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Check passes without bluez; with bluez installed the service is reported enabled, then masked by the generated fix."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

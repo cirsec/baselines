@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-DESK-009
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller la session au démarrage de l'économiseur d'écran et à la mise en veille
+finding:
+  title: Les utilisateurs peuvent désactiver le verrouillage de l'écran, y compris à la mise en veille et à la fermeture du capot
+  description: Un portable fermé ou mis en veille avec une session déverrouillée reprend directement dans cette session pour qui l'ouvre.
+description: |
+  - GNOME verrouille l'écran quand il s'éteint et avant la mise en veille (fermeture du capot,
+    touche de veille, veille sur inactivité) quand `org.gnome.desktop.screensaver lock-enabled`
+    vaut `true`, et permet le verrouillage tant que `org.gnome.desktop.lockdown
+    disable-lock-screen` vaut `false`. Les deux clés sont définies dans la base dconf système
+    `local` et verrouillées.
+  - KDE Plasma verrouille à la reprise quand `LockOnResume` ne vaut pas false dans le groupe
+    `[Daemon]` de `kscreenlockerrc` ; le fichier système `/etc/xdg/kscreenlockerrc` doit marquer
+    le groupe immuable (`[Daemon][$i]`).
+rationale: |
+  Les machines nomades sont surtout laissées en veille, pas inactives. Si la session n'est pas
+  verrouillée à la mise en veille, quiconque récupère le portable reprend la session ouverte de
+  l'utilisateur sans mot de passe, et le verrouillage d'inactivité ne se déclenche jamais.
+impact: |
+  Les utilisateurs saisissent leur mot de passe à la reprise. Ils ne peuvent pas désactiver le
+  verrouillage de l'écran.
+notes: |
+  Ce sont les valeurs par défaut de Debian, mais les utilisateurs peuvent les modifier tant que
+  les clés ne sont pas verrouillées. Avec Xfce, vérifier à la main que `xfce4-power-manager`
+  verrouille l'écran à la mise en veille (réglage `lock-screen-suspend-hibernate`). Le contrôle
+  KDE a été écrit d'après la documentation de KDE et n'a pas été testé en laboratoire ; il n'a pas
+  de correctif automatique.
+setting:
+  location: /etc/dconf/db/local.d/ (GNOME) ; /etc/xdg/kscreenlockerrc (KDE)
+  recommended_value: "lock-enabled=true et disable-lock-screen=false, verrouillées ; KDE [Daemon][$i] LockOnResume=true"
+audit:
+  manual: |
+    1. GNOME : `dconf read /org/gnome/desktop/screensaver/lock-enabled` doit afficher `true` et
+       `dconf read /org/gnome/desktop/lockdown/disable-lock-screen` doit afficher `false` ; les
+       deux clés doivent figurer dans `/etc/dconf/db/local.d/locks/`.
+    2. KDE Plasma : `/etc/xdg/kscreenlockerrc` doit avoir un groupe `[Daemon][$i]` qui ne contient
+       pas `LockOnResume=false`.
+remediation:
+  manual: |
+    1. GNOME : vérifier que `/etc/dconf/profile/user` contient `user-db:user` et
+       `system-db:local`, puis créer `/etc/dconf/db/local.d/00-lock-screen` :
+       ```
+       [org/gnome/desktop/screensaver]
+       lock-enabled=true
+
+       [org/gnome/desktop/lockdown]
+       disable-lock-screen=false
+       ```
+       lister les deux clés dans `/etc/dconf/db/local.d/locks/00-lock-screen` et lancer
+       `dconf update`.
+    2. KDE Plasma : ajouter `LockOnResume=true` au groupe `[Daemon][$i]` de
+       `/etc/xdg/kscreenlockerrc` (voir CB-DEB-DESK-008).
+  rollback: |
+    Supprimer les fichiers écrits dans `/etc/dconf/db/local.d/` et son répertoire `locks/`, puis
+    lancer `dconf update`.

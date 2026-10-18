@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-013
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les réponses ARP et ignorer l'ARP gratuit
+finding:
+  title: Le noyau répond aux messages ARP et les accepte au-delà de ce dont le réseau local a besoin
+  description: Un traitement ARP permissif aide un attaquant du réseau local à cartographier l'hôte et à empoisonner sa table de voisins.
+description: |
+  Ces réglages du noyau limitent l'influence des hôtes IPv4 du même lien sur le système via ARP :
+
+  - `arp_filter = 1` : ne répondre à une requête ARP que sur l'interface par laquelle la réponse serait
+    routée ;
+  - `arp_ignore = 2` : ne répondre que si l'adresse demandée est configurée sur l'interface de
+    réception et que l'émetteur est dans le même sous-réseau ;
+  - `drop_gratuitous_arp = 1` : ignorer les annonces ARP non sollicitées ;
+  - `shared_media = 0` (`all` et `default`) : ne pas envoyer de redirections ICMP entre sous-réseaux
+    partageant le même lien.
+rationale: |
+  ARP n'a pas d'authentification. Répondre sur toutes les interfaces divulgue les adresses de l'hôte
+  d'un réseau à l'autre, et accepter l'ARP gratuit permet à n'importe qui sur le lien de rediriger le
+  trafic de l'hôte vers sa propre machine (empoisonnement ARP).
+impact: |
+  Ignorer l'ARP gratuit retarde la reprise d'une adresse IP virtuelle par son secours (VRRP,
+  keepalived, Pacemaker) jusqu'à l'expiration de l'entrée de voisinage, y compris pour la passerelle
+  par défaut. `arp_ignore = 2` casse les hôtes qui répondent pour des adresses d'autres sous-réseaux
+  sur une même interface. C'est pourquoi le contrôle est limité aux profils renforcés.
+notes: |
+  L'ANSSI liste ces réglages pour tout hôte ; ils sont ici réservés aux profils renforcés à cause de
+  leurs effets sur les architectures à haute disponibilité.
+setting:
+  location: sysctl `net.ipv4.conf.all.{arp_filter,arp_ignore,drop_gratuitous_arp}`, `net.ipv4.conf.{all,default}.shared_media`, persistés dans `/etc/sysctl.d/`
+  recommended_value: 1, 2, 1, 0
+audit:
+  manual: |
+    Lancer `sysctl net.ipv4.conf.all.arp_filter net.ipv4.conf.all.arp_ignore net.ipv4.conf.all.drop_gratuitous_arp net.ipv4.conf.all.shared_media net.ipv4.conf.default.shared_media`.
+    Les valeurs doivent être `1`, `2`, `1`, `0` et `0`. Vérifier qu'aucun fichier sysctl ne fixe
+    d'autres valeurs.
+remediation:
+  manual: |
+    Ajouter à `/etc/sysctl.d/60-cirsec.conf` :
+    ```
+    net.ipv4.conf.all.arp_filter = 1
+    net.ipv4.conf.all.arp_ignore = 2
+    net.ipv4.conf.all.drop_gratuitous_arp = 1
+    net.ipv4.conf.all.shared_media = 0
+    net.ipv4.conf.default.shared_media = 0
+    ```
+    retirer les autres affectations, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf` et remettre les anciennes valeurs avec `sysctl -w`.

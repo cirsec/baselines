@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-011
+title: Keep system programs and libraries owned by root and not writable by others
+finding:
+  title: System programs or libraries can be changed by a non-root account
+  description: A user or service that can write to a system program or library runs code as every user who calls it, root included.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [permissions, binaries, libraries]
+
+description: |
+  In the system program and library directories (`/usr/bin`, `/usr/sbin`, `/usr/lib`,
+  `/usr/lib64`, `/usr/libexec`, `/usr/local/bin`, `/usr/local/sbin`, `/usr/local/lib`, and
+  `/bin`, `/sbin`, `/lib`, `/lib64` when they are real directories):
+
+  - every directory belongs to `root:root` and is not writable by group or others;
+  - every file belongs to `root` and is not writable by group or others.
+
+  Files may belong to another group: Debian ships setgid helpers owned by groups such as
+  `shadow`, `_ssh` or `messagebus`.
+rationale: |
+  Programs in these directories run as root through services, cron, sudo and package scripts, and
+  libraries are loaded into every process. Write access for anyone but root lets that account
+  replace them and gain root, or persist unnoticed.
+impact: |
+  None on a standard system, where packages install everything as root. Software installed by
+  hand under `/usr/local` by a regular user must be given to root.
+notes: |
+  A deviation here usually means software installed outside the package manager, or tampering.
+  The fix is therefore manual: find the cause before changing the owner, because `chown` also
+  clears setuid and setgid bits.
+
+audit:
+  manual: |
+    Run, for each of the directories above that exists and is not a symbolic link:
+    ```
+    find <dir> -xdev \( -type d \( ! -user root -o ! -group root -o -perm /022 \) \) -o \( ! -type d ! -type l \( ! -user root -o -perm /022 \) \) -print
+    ```
+    The command must print nothing.
+  checks:
+    - id: system-dirs
+      engine: shell
+      description: Owner, group and write bits of directories and files in system program and library directories.
+      spec:
+        script: |
+          out=$(for d in /usr/bin /usr/sbin /usr/lib /usr/lib64 /usr/libexec /usr/local/bin /usr/local/sbin /usr/local/lib /bin /sbin /lib /lib64; do
+            [ -d "$d" ] && [ ! -L "$d" ] || continue
+            find "$d" -xdev \( \( -type d \( ! -user root -o ! -group root -o -perm /022 \) \) -o \
+              \( ! -type d ! -type l \( ! -user root -o -perm /022 \) \) \) -print 2>/dev/null
+          done | sort -u)
+          [ -z "$out" ] && { echo "system programs and libraries belong to root and are not writable by others"; exit 0; }
+          echo "$(printf '%s\n' "$out" | wc -l) item(s):"
+          printf '%s\n' "$out" | head -n 20 | while IFS= read -r f; do stat -c '%A %U:%G %n' "$f"; done
+          exit 1
+
+remediation:
+  manual: |
+    For each reported item:
+    1. Find its package with `dpkg -S <path>` and check it with `dpkg --verify <package>`. A
+       changed file from a package is a possible compromise: investigate first, then reinstall the
+       package with `apt-get install --reinstall <package>`.
+    2. For files installed by hand, run `chown root <path>` (then restore any setuid or setgid
+       bit that was intended) and `chmod go-w <path>`; for directories, `chown root:root <dir>`
+       and `chmod go-w <dir>`.
+
+references:
+  - title: file-hierarchy(7), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/file-hierarchy.7.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: dpkg(1), Debian manual pages (--verify)
+    url: https://manpages.debian.org/trixie/dpkg/dpkg.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers system programs and libraries.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5(6)
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1574.006
+  - framework: mitre-attack
+    id: T1554
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-DEB-FS-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on fresh install; group-writable file owned by nobody in /usr/local/bin detected."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on fresh install; group-writable file owned by nobody in /usr/local/bin detected."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

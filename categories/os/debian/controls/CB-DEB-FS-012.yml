@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-012
+title: Encrypt the disks holding the system and data
+finding:
+  title: File systems or swap are stored unencrypted on disk
+  description: Anyone holding the disk or the device, lost, stolen or discarded, can read its data and change the system offline.
+status: active
+profiles: [desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [encryption, luks, physical-access]
+
+description: |
+  With LUKS (dm-crypt), each partition or LVM volume group is encrypted with a key unlocked at
+  boot, by a passphrase, a TPM or a key server. The Debian installer sets it up with the
+  "Guided - use entire disk and set up encrypted LVM" partitioning method. Only `/boot` and the
+  EFI system partition stay in clear text.
+rationale: |
+  Laptops and workstations are lost and stolen, and disks leave with returned or discarded
+  hardware. Without encryption, the data, the password hashes and the keys on the disk can be
+  read, and the system can be modified offline (for example to plant a backdoor) without any
+  trace.
+impact: |
+  A passphrase must be typed at every boot, unless a TPM or network unlock is set up, which makes
+  unattended reboots harder. Encrypting an existing system requires a reinstallation or an
+  offline conversion. Performance cost is negligible on CPUs with AES instructions.
+notes: |
+  The check covers every mounted ext2/3/4, XFS, Btrfs, F2FS and JFS file system except `/boot`
+  and below, and every swap partition or swap file; zram swap is in memory and skipped. A device
+  that is not a block device (ZFS dataset, network file system) makes the check report an error,
+  to be reviewed by hand.
+
+setting:
+  location: Disk layout, /etc/crypttab
+  default_value: Unencrypted unless chosen in the installer
+  recommended_value: Every file system except /boot, and swap, on a dm-crypt device
+
+audit:
+  manual: |
+    Run `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS`. Every mounted file system except `/boot` and
+    `/boot/efi`, and every swap, must sit below a device of type `crypt`.
+  checks:
+    - id: crypt
+      engine: shell
+      description: dm-crypt below each mounted disk file system and swap.
+      spec:
+        script: |
+          rc=0 n=0
+          list=$(findmnt -rn -o SOURCE,TARGET -t ext2,ext3,ext4,xfs,btrfs,f2fs,jfs
+                 swapon --noheadings --show=NAME,TYPE 2>/dev/null | while read -r name type; do
+                   case $type in
+                     partition) echo "$name swap" ;;
+                     file) echo "$(findmnt -n -o SOURCE -T "$name") swap:$name" ;;
+                   esac
+                 done)
+          while read -r src target; do
+            [ -n "$src" ] || continue
+            case $target in /boot | /boot/*) continue ;; esac
+            case $src in /dev/zram*) continue ;; esac
+            dev=${src%%\[*}
+            n=$((n + 1))
+            if ! t=$(lsblk -nso TYPE "$dev" 2>/dev/null); then
+              echo "$target on $src: not a block device, check by hand"
+              [ "$rc" = 1 ] || rc=3
+            elif ! printf '%s\n' "$t" | grep -qx crypt; then
+              echo "$target on $src: not encrypted"
+              rc=1
+            fi
+          done <<EOF
+          $list
+          EOF
+          [ "$rc" = 0 ] && echo "$n file systems and swaps, all on dm-crypt"
+          exit "$rc"
+
+remediation:
+  manual: |
+    Encryption cannot be added safely to a running system by a script.
+
+    1. For a new system, choose "Guided - use entire disk and set up encrypted LVM" in the Debian
+       installer, or create LUKS2 volumes with `cryptsetup luksFormat` and list them in
+       `/etc/crypttab`.
+    2. For an existing system, back up the data, reinstall with encryption and restore; or
+       convert offline with `cryptsetup reencrypt --encrypt` from a live system, after a full
+       backup.
+    3. Encrypt swap as well (inside the encrypted LVM, or with a random key in `/etc/crypttab`).
+    4. Keep a recovery passphrase in a safe place, separate from the device.
+
+references:
+  - title: crypttab(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/cryptsetup/crypttab.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: cryptsetup(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/cryptsetup-bin/cryptsetup.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Cryptsetup and LUKS on Debian (README.Debian)
+    url: https://cryptsetup-team.pages.debian.net/cryptsetup/README.Debian.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28(1)
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1005
+  - framework: mitre-attack
+    id: T1200
+  - framework: cwe
+    id: CWE-311
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted, a plain loop mount is reported."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted, a plain loop mount is reported."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
