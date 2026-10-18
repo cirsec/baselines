@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-003
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder actives les vérifications de signature, de fraîcheur et TLS d'APT
+finding:
+  title: APT est configuré pour accepter des dépôts non signés, faiblement signés, périmés ou non vérifiés
+  description: Des options globales d'APT désactivent les vérifications qui empêchent d'utiliser un dépôt altéré ou rejoué.
+description: |
+  Ces options d'APT, définies dans `/etc/apt/apt.conf` ou `/etc/apt/apt.conf.d/`, affaiblissent
+  les vérifications faites par APT sur chaque dépôt :
+
+  - `Acquire::AllowInsecureRepositories` : utiliser des dépôts sans fichier `Release` signé ;
+  - `Acquire::AllowWeakRepositories` : accepter des signatures faites avec des algorithmes
+    faibles (SHA-1) ;
+  - `Acquire::AllowDowngradeToInsecureRepositories` : accepter un dépôt qui était signé et ne
+    l'est plus ;
+  - `APT::Get::AllowUnauthenticated` : installer des paquets qui ne peuvent pas être authentifiés ;
+  - `Acquire::Check-Date` et `Acquire::Check-Valid-Until` à false : accepter des fichiers
+    `Release` datés dans le futur ou expirés ;
+  - `Acquire::https::Verify-Peer` et `Acquire::https::Verify-Host` à false, globalement ou pour un
+    hôte : accepter n'importe quel certificat TLS.
+
+  Les valeurs par défaut d'APT sont sûres ; le contrôle vérifie que rien ne les remplace.
+rationale: |
+  Les vérifications de signature rendent inoffensifs un miroir ou un réseau compromis. Si elles
+  sont désactivées, ou si des métadonnées expirées sont acceptées, un attaquant peut installer des
+  paquets arbitraires en root, ou rejouer d'anciennes métadonnées signées pour que des versions
+  vulnérables connues restent installées.
+impact: |
+  Aucun pour l'archive Debian. Un dépôt qui ne fonctionne qu'avec l'une de ces options doit être
+  corrigé (signé, daté correctement, doté d'un certificat valide) ou retiré.
+setting:
+  location: /etc/apt/apt.conf, /etc/apt/apt.conf.d/
+  recommended_value: Toutes les vérifications actives, écrites explicitement dans /etc/apt/apt.conf.d/99cirsec-apt-security
+audit:
+  manual: |
+    Lancer `apt-config dump` et vérifier qu'il n'affiche ni
+    `Acquire::AllowInsecureRepositories`, `Acquire::AllowWeakRepositories`,
+    `Acquire::AllowDowngradeToInsecureRepositories` ou `APT::Get::AllowUnauthenticated` à
+    `1`/`true`/`yes`, ni `Acquire::Check-Date`, `Acquire::Check-Valid-Until`,
+    `Acquire::https::Verify-Peer` ou `Acquire::https::Verify-Host` (y compris sous
+    `Acquire::https::<hôte>::`) à `0`/`false`/`no`.
+remediation:
+  manual: |
+    1. Trouver où chaque option est définie avec `grep -riE 'Allow(Insecure|Weak|DowngradeToInsecure|Unauthenticated)|Check-(Date|Valid-Until)|Verify-(Peer|Host)' /etc/apt/apt.conf /etc/apt/apt.conf.d/`.
+    2. Supprimer ces lignes.
+    3. Si souhaité, écrire explicitement les valeurs sûres dans
+       `/etc/apt/apt.conf.d/99cirsec-apt-security`, lu après les autres fichiers du dossier.
+       `/etc/apt/apt.conf` est lu en dernier et l'emporte sur lui.
+    4. Lancer `apt-get update` et vérifier qu'aucune erreur n'apparaît.
+
+    La correction automatique écrit `99cirsec-apt-security` et commente les lignes concernées de
+    `/etc/apt/apt.conf`. Les lignes `Verify-Peer`/`Verify-Host` propres à un hôte doivent être
+    supprimées à la main.
+  rollback: |
+    Supprimer `/etc/apt/apt.conf.d/99cirsec-apt-security` et restaurer `/etc/apt/apt.conf` depuis
+    le dossier de sauvegarde affiché par `remediate.sh`.

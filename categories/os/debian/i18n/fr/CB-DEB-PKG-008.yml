@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-008
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne laisser aucune mise à jour de sécurité en attente
+finding:
+  title: Des mises à jour de sécurité sont disponibles mais pas installées
+  description: Des paquets dont les correctifs de sécurité sont publiés restent installés dans leur version vulnérable.
+description: |
+  `apt-get -s dist-upgrade` simule une mise à niveau à partir des listes de paquets locales et
+  indique, pour chaque paquet, la version et l'origine de la mise à jour. Celles qui viennent de
+  la suite de sécurité Debian corrigent des vulnérabilités. Le résultat n'est pas plus frais que
+  les listes de paquets, rafraîchies par `apt-get update` ou `apt-daily.timer`.
+rationale: |
+  Une mise à jour de sécurité disponible signifie que la vulnérabilité est publique et qu'un
+  correctif existe : c'est le moment où l'exploitation est la plus probable. Rechercher les mises
+  à jour de sécurité en attente repère les systèmes où les mises à jour automatiques sont
+  désactivées, cassées, ou bloquées par un paquet gelé ou un changement de dépendances.
+impact: |
+  Aucun pour la vérification, qui ne modifie rien. L'installation des mises à jour redémarre les
+  services concernés.
+notes: |
+  La vérification échoue s'il reste des mises à jour de sécurité, et si les listes de paquets ont
+  plus de `{{ max_lists_age }}` jours, car des listes périmées cachent des mises à jour en
+  attente. Les autres mises à jour en attente (version intermédiaire, backports) sont seulement
+  listées dans la preuve. La vérification ne lance pas `apt-get update` : rafraîchir les listes
+  d'abord pour une réponse à jour.
+parameters:
+  max_lists_age: Âge maximal de la liste de paquets la plus récente avant que la vérification échoue.
+audit:
+  manual: |
+    1. Lancer `apt-get update`.
+    2. Lancer `apt-get -s dist-upgrade | grep '^Inst' | grep -i security`. La commande ne doit rien afficher.
+remediation:
+  manual: |
+    Lancer `apt-get update` puis `apt-get dist-upgrade` (ou `unattended-upgrade` pour les seules
+    mises à jour de sécurité), pendant une fenêtre de maintenance si les services ne doivent pas
+    redémarrer. Redémarrer quand le noyau, la libc ou systemd ont été mis à jour
+    (`/run/reboot-required` existe). Si un paquet est gelé (`apt-mark showhold`), comprendre
+    pourquoi avant de le libérer.

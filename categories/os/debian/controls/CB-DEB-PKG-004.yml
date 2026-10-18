@@ -1,0 +1,205 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-004
+title: Restrict write access to APT keys and repository lists
+finding:
+  title: Non-root users can change the APT keys or repository lists
+  description: Whoever can write these files chooses which repositories and signing keys APT trusts, and so which code runs as root.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apt, repositories, permissions, supply-chain]
+
+description: |
+  APT trusts the keyrings in `/etc/apt/trusted.gpg.d/`, `/etc/apt/keyrings/`,
+  `/usr/share/keyrings/` (and the legacy `/etc/apt/trusted.gpg`), and downloads from the
+  repositories listed in `/etc/apt/sources.list` and `/etc/apt/sources.list.d/`. These
+  directories should be `root:root` mode `0755` and their files `root:root` mode `0644` or
+  stricter.
+rationale: |
+  A user able to add a key or a source entry can make APT install a package of their choice, with
+  maintainer scripts running as root, at the next update. Only root may change them. Reading them
+  is harmless: keys are public and APT's unprivileged `_apt` user needs to read them.
+impact: |
+  None known. Debian ships these files with these permissions.
+notes: |
+  On Debian 13, the files in `/usr/share/keyrings/` named `*.gpg` are symbolic links to `*.pgp`
+  files. The check follows links and checks their target.
+
+setting:
+  location: /etc/apt/trusted.gpg.d, /etc/apt/keyrings, /usr/share/keyrings, /etc/apt/sources.list, /etc/apt/sources.list.d
+  default_value: "root:root, 0755 for directories and 0644 for files"
+  recommended_value: "root:root, 0755 or stricter for directories, 0644 or stricter for files"
+
+audit:
+  manual: |
+    1. `stat -c '%U:%G %a %n' /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings /etc/apt/sources.list.d`
+       shows `root:root` and `755` or stricter.
+    2. `stat -L -c '%U:%G %a %n' /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d/* /etc/apt/keyrings/* /usr/share/keyrings/* /etc/apt/sources.list /etc/apt/sources.list.d/*`
+       shows `root:root` and `644` or stricter for every existing file.
+  checks:
+    - id: trusted-gpg-d
+      engine: file-perms
+      description: The /etc/apt/trusted.gpg.d directory.
+      spec: { path: /etc/apt/trusted.gpg.d, owner: root, group: root, mode: "0755" }
+    - id: etc-keyrings
+      engine: file-perms
+      description: The /etc/apt/keyrings directory.
+      spec: { path: /etc/apt/keyrings, owner: root, group: root, mode: "0755" }
+    - id: usr-share-keyrings
+      engine: file-perms
+      description: The /usr/share/keyrings directory.
+      spec: { path: /usr/share/keyrings, owner: root, group: root, mode: "0755" }
+    - id: key-files
+      engine: shell
+      description: Every keyring file APT can use, following symbolic links.
+      spec:
+        script: |
+          d="/etc/apt/trusted.gpg /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings"
+          # shellcheck disable=SC2086
+          bad=$(find -L $d -maxdepth 1 -type f \( ! -user root -o ! -group root -o -perm /7133 \) \
+                -exec stat -L -c '%n %U:%G %a' {} + 2>/dev/null)
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          echo "$(find -L $d -maxdepth 1 -type f 2>/dev/null | wc -l) key files root:root 644 or stricter"
+    - id: sources-list
+      engine: file-perms
+      description: The /etc/apt/sources.list file.
+      spec: { path: /etc/apt/sources.list, owner: root, group: root, mode: "0644" }
+    - id: sources-list-d
+      engine: file-perms
+      description: The /etc/apt/sources.list.d directory.
+      spec: { path: /etc/apt/sources.list.d, owner: root, group: root, mode: "0755" }
+    - id: sources-list-d-files
+      engine: file-perms
+      description: Files in /etc/apt/sources.list.d.
+      spec: { path: "/etc/apt/sources.list.d/*", owner: root, group: root, mode: "0644" }
+
+remediation:
+  manual: |
+    1. `chown root:root /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings /etc/apt/sources.list.d`
+       and `chmod go-w` on them.
+    2. For each key file and source file: `chown root:root <file>` and `chmod 644 <file>` (or stricter).
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the previous owner and mode with `chown` and `chmod`. Nothing else depends on them.
+  scripts:
+    - id: trusted-gpg-d
+      from_check: trusted-gpg-d
+    - id: etc-keyrings
+      from_check: etc-keyrings
+    - id: usr-share-keyrings
+      from_check: usr-share-keyrings
+    - id: key-files
+      engine: shell
+      content: |
+        find -L /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d /etc/apt/keyrings /usr/share/keyrings \
+          -maxdepth 1 -type f \( ! -user root -o ! -group root -o -perm /7133 \) 2>/dev/null |
+          while IFS= read -r f; do
+            chown root:root "$f" && chmod u-xs,go-wxs,o-t "$f" || exit 1
+          done
+    - id: sources-list
+      from_check: sources-list
+    - id: sources-list-d
+      from_check: sources-list-d
+    - id: sources-list-d-files
+      from_check: sources-list-d-files
+
+references:
+  - title: apt-secure(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/apt-secure.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: sources.list(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/apt/sources.list.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - DebianRepository/UseThirdParty
+    url: https://wiki.debian.org/DebianRepository/UseThirdParty
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.4"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.7"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.8"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.2.1.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.8"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.2.1.9"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-DEB-PKG-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on stock (Debian 13 keyring symlinks followed); writable keyring, foreign owner and group-writable sources.list.d detected and fixed; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on stock (Debian 13 keyring symlinks followed); writable keyring, foreign owner and group-writable sources.list.d detected and fixed; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

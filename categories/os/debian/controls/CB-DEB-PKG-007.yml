@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-007
+title: Install security updates automatically
+finding:
+  title: Security updates are not installed automatically
+  description: Fixes wait for a human to apply them, often for weeks, while the vulnerabilities they close are public.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apt, updates, unattended-upgrades]
+
+description: |
+  `unattended-upgrades` installs available updates without human action. Two systemd timers drive
+  it: `apt-daily.timer` refreshes the package lists and `apt-daily-upgrade.timer` installs the
+  updates, when `APT::Periodic::Update-Package-Lists` and `APT::Periodic::Unattended-Upgrade` are
+  not `0`. Which updates are installed is set by `Unattended-Upgrade::Origins-Pattern`; Debian's
+  default includes the security suite.
+rationale: |
+  Most compromises exploit vulnerabilities for which a fix already exists. Installing security
+  fixes daily and automatically closes that window without depending on a manual process. Debian
+  security updates are minimal backported fixes, designed to be installed without review.
+impact: |
+  Services are restarted by their package when updated, which can cause a short interruption. The
+  system is not rebooted (`Unattended-Upgrade::Automatic-Reboot` is false by default), so kernel
+  and libc fixes still need a planned reboot. Organisations that deploy updates with a central
+  patch management tool can exclude this control in their tailoring file and document it.
+notes: |
+  Installed and enabled by default on the Debian 12 and 13 cloud images. A Debian installer setup
+  installs it only when chosen during installation.
+
+setting:
+  location: /etc/apt/apt.conf.d/20auto-upgrades, /etc/apt/apt.conf.d/50unattended-upgrades
+  default_value: Enabled on cloud images, depends on the installer choice otherwise
+  recommended_value: unattended-upgrades installed, both APT::Periodic options set to 1, security origin allowed, timers enabled
+
+audit:
+  manual: |
+    1. `dpkg -s unattended-upgrades` shows `Status: install ok installed`.
+    2. `apt-config dump APT::Periodic` shows `Update-Package-Lists` and `Unattended-Upgrade` set
+       to `1` (or another non-zero value).
+    3. `apt-config dump Unattended-Upgrade::Origins-Pattern` contains `label=Debian-Security` or
+       a `-security` codename.
+    4. `systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer` prints `enabled` twice.
+    5. `unattended-upgrade --dry-run --debug` lists the security origin among the allowed ones.
+  checks:
+    - id: package
+      engine: package
+      description: unattended-upgrades package.
+      spec: { name: unattended-upgrades, state: installed }
+    - id: periodic
+      engine: shell
+      description: APT::Periodic options, as merged by apt-config.
+      spec:
+        script: |
+          eval "$(apt-config shell L APT::Periodic::Update-Package-Lists U APT::Periodic::Unattended-Upgrade)" || exit 3
+          echo "Update-Package-Lists=${L:-unset} Unattended-Upgrade=${U:-unset}"
+          case ${L:-0}:${U:-0} in 0:* | *:0 | false:* | *:false | no:* | *:no) exit 1 ;; esac
+    - id: origins
+      engine: shell
+      description: Origins allowed to unattended-upgrades.
+      spec:
+        script: |
+          o=$(apt-config dump Unattended-Upgrade::Origins-Pattern Unattended-Upgrade::Allowed-Origins 2>/dev/null | grep -E '::(Origins-Pattern|Allowed-Origins):: ')
+          printf '%s\n' "$o" | grep -Ei 'Debian-Security|-security' || { echo "no security origin allowed"; exit 1; }
+    - id: lists-timer
+      engine: systemd-unit
+      description: Timer that refreshes the package lists.
+      spec: { unit: apt-daily.timer, state: enabled }
+    - id: upgrade-timer
+      engine: systemd-unit
+      description: Timer that installs the updates.
+      spec: { unit: apt-daily-upgrade.timer, state: enabled }
+
+remediation:
+  manual: |
+    1. `apt-get install unattended-upgrades`.
+    2. Write `/etc/apt/apt.conf.d/20auto-upgrades` with
+       `APT::Periodic::Update-Package-Lists "1";` and `APT::Periodic::Unattended-Upgrade "1";`
+       (this is what `dpkg-reconfigure -plow unattended-upgrades` does), and remove any later
+       setting to `0`.
+    3. If `Unattended-Upgrade::Origins-Pattern` was customised, add back
+       `"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";` in
+       `/etc/apt/apt.conf.d/50unattended-upgrades`.
+    4. `systemctl enable --now apt-daily.timer apt-daily-upgrade.timer`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Set both `APT::Periodic` options to `0` in `/etc/apt/apt.conf.d/20auto-upgrades`, or purge
+    `unattended-upgrades`.
+  scripts:
+    - id: package
+      from_check: package
+    - id: periodic
+      engine: shell
+      content: |
+        f=/etc/apt/apt.conf.d/20auto-upgrades
+        cb_backup "$f"
+        printf '%s\n' 'APT::Periodic::Update-Package-Lists "1";' 'APT::Periodic::Unattended-Upgrade "1";' >"$f"
+    - id: lists-timer
+      from_check: lists-timer
+    - id: upgrade-timer
+      from_check: upgrade-timer
+
+references:
+  - title: unattended-upgrade(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/unattended-upgrades/unattended-upgrade.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - UnattendedUpgrades
+    url: https://wiki.debian.org/UnattendedUpgrades
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: The Debian Administrator's Handbook - Automatic upgrades
+    url: https://www.debian.org/doc/manuals/debian-handbook/sect.regular-upgrades.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R61)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: partial
+    note: R61 asks for a regular and reactive security update process; this control automates the Debian part of it.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2(5)
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-DEB-PKG-006
+    type: requires
+  - id: CB-DEB-PKG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on stock; purged package, missing 20auto-upgrades and disabled upgrade timer detected; fix reinstalls, rewrites 20auto-upgrades and enables the timer; kept after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on stock; purged package, missing 20auto-upgrades and disabled upgrade timer detected; fix reinstalls, rewrites 20auto-upgrades and enables the timer; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

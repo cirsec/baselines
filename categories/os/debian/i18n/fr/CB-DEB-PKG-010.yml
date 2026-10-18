@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-010
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'installer que les paquets nécessaires au système
+finding:
+  title: Des paquets sans usage sur ce système sont installés
+  description: Chaque paquet inutile ajoute du code qui peut être vulnérable, des services qui peuvent être exposés et des mises à jour à suivre.
+description: |
+  Une installation minimale ne contient que ce que le rôle du système exige : pas
+  d'environnement graphique sur un serveur, pas de compilateur ni d'outil de débogage sur un hôte
+  de production, pas d'outil installé « au cas où ». Debian y aide en permettant de ne choisir
+  aucune tâche dans l'installateur, et en suivant les paquets installés seulement comme
+  dépendances pour que `apt-get autoremove` puisse les retirer.
+rationale: |
+  Chaque paquet est de la surface d'attaque : ses vulnérabilités, ses services et ses binaires
+  setuid. Les compilateurs, débogueurs et outils réseau aident aussi un attaquant qui a pris pied
+  sur le système. Moins de paquets, c'est aussi moins de mises à jour et une revue plus simple.
+impact: |
+  Retirer un paquet dont une application dépend la casse. Faire une revue avant de retirer, et
+  tester d'abord sur un système hors production.
+audit:
+  manual: |
+    1. Lister les paquets installés volontairement avec `apt-mark showmanual`, et vérifier que
+       chacun est nécessaire au rôle du système.
+    2. Lancer `apt-get -s autoremove` : la commande liste les dépendances devenues inutiles.
+    3. Chercher les paquets qui ont rarement leur place sur un serveur : environnement graphique
+       (`dpkg -l 'xserver-xorg*' 'gnome*' 'kde*'`), compilateurs et outils de construction
+       (`gcc`, `make`, `build-essential`), débogueurs (`gdb`, `strace`), outils réseau (`nmap`,
+       `netcat*`, `tcpdump`), interpréteurs inutilisés.
+    4. Vérifier que `apt-config dump APT::Install-Recommends` correspond à la politique de l'organisation.
+remediation:
+  manual: |
+    1. Retirer chaque paquet inutile avec `apt-get purge <paquet>`, après avoir vérifié avec
+       `apt-get -s purge <paquet>` ce qui serait retiré d'autre.
+    2. Lancer `apt-get autoremove --purge` pour retirer les dépendances restantes.
+    3. Pour les nouveaux systèmes, partir d'une installation minimale (aucune tâche choisie dans
+       l'installateur, ou image cloud minimale) et n'ajouter que les paquets du rôle.
+    4. Écrire la liste des paquets attendus pour chaque rôle, pour repérer les écarts.

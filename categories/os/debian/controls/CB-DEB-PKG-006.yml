@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-PKG-006
+title: Configure the Debian security repository
+finding:
+  title: The Debian security repository is not configured
+  description: Security fixes are published in a separate suite; without it the system never receives them.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [apt, repositories, updates]
+
+description: |
+  The Debian security team publishes fixes in the `<codename>-security` suite (for example
+  `trixie-security`), served from `security.debian.org/debian-security` and
+  `deb.debian.org/debian-security`. Each Debian release needs an enabled `deb` entry for this
+  suite, or for an internal mirror of it.
+rationale: |
+  Fixes for vulnerabilities reach the main suite only with point releases, weeks or months later.
+  Without the security suite, a system stays exposed to every published vulnerability in the
+  meantime, even if updates are applied every day.
+impact: |
+  None known. The system must reach the security mirror or an internal copy of it.
+
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/
+  default_value: Configured
+  recommended_value: An enabled deb entry for the <codename>-security suite
+
+audit:
+  manual: |
+    Run `apt-cache policy | grep -- '-security'`. It must list the `<codename>-security` suite of
+    the installed release (`. /etc/os-release; echo "$VERSION_CODENAME"`).
+  checks:
+    - id: security-suite
+      engine: shell
+      description: Enabled deb entries for the security suite of the installed release.
+      spec:
+        script: |
+          c=$( (. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}") 2>/dev/null)
+          [ -n "$c" ] || { echo "VERSION_CODENAME unknown in /etc/os-release"; exit 3; }
+          files=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no APT source file"; exit 1; }
+          # One line per entry: file:line, types, URIs, suites, ;option=value list (lowercase).
+          # shellcheck disable=SC2086
+          awk '
+            function flush() { if (st && en != "no") print src "\t" ty "\t" ur "\t" su "\t" op; st = 0; ty = ur = su = op = en = "" }
+            FNR == 1 { flush(); d = FILENAME ~ /\.sources$/ }
+            !d {
+              sub(/#.*/, ""); if ($1 !~ /^deb(-src)?$/) next
+              l = $0; o = ""; i = index(l, "["); j = index(l, "]")
+              if (i && j > i) { o = substr(l, i + 1, j - i - 1); l = substr(l, 1, i - 1) " " substr(l, j + 1) }
+              split(l, w, " "); gsub(/[ \t]+/, ";", o)
+              print FILENAME ":" FNR "\t" w[1] "\t" w[2] "\t" w[3] "\t;" tolower(o); next
+            }
+            /^#/ { next }
+            /^[ \t]*$/ { flush(); next }
+            /^[ \t]/ { next }
+            {
+              if (!st) { st = 1; src = FILENAME ":" FNR }
+              k = $0; sub(/:.*/, "", k); k = tolower(k); v = $0; sub(/^[^:]*:[ \t]*/, "", v)
+              if (k == "types") ty = v; else if (k == "uris") ur = v; else if (k == "suites") su = v
+              else if (k == "enabled") en = tolower(v)
+              else op = op ";" k "=" tolower(v == "" ? "inline" : v)
+            }
+            END { flush() }' $files | awk -F '\t' -v s="$c-security" '
+            {
+              nt = split($2, t, " "); ns = split($4, w, " "); deb = 0
+              for (i = 1; i <= nt; i++) if (t[i] == "deb") deb = 1
+              for (i = 1; i <= ns; i++) if (deb && w[i] == s) { print $1 " " $3 " " s; found = 1 }
+            }
+            END { if (!found) print "no enabled deb entry for " s; exit !found }'
+
+remediation:
+  manual: |
+    Add the security suite, for example in `/etc/apt/sources.list.d/debian-security.sources`
+    (replace `trixie` with the codename of the installed release, or the URI with an internal
+    mirror):
+
+    ```
+    Types: deb
+    URIs: https://security.debian.org/debian-security
+    Suites: trixie-security
+    Components: main
+    Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+    ```
+
+    Use the same components as the main entry (`contrib`, `non-free`, `non-free-firmware`), then
+    run `apt-get update`.
+
+references:
+  - title: Debian Security FAQ
+    url: https://www.debian.org/security/faq
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - SourcesList
+    url: https://wiki.debian.org/SourcesList
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R61)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: partial
+    note: R61 asks for regular security updates; receiving them first needs the security suite.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-DEB-PKG-007
+    type: related
+  - id: CB-DEB-PKG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes on stock (mirror+file security entry); fails when the security stanza is disabled."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes on stock (mirror+file security entry); fails when the security stanza is disabled."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

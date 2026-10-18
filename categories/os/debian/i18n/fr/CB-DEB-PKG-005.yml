@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-PKG-005
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux identifiants des dépôts APT
+finding:
+  title: Les identifiants des dépôts APT sont lisibles ou modifiables par d'autres utilisateurs
+  description: Les utilisateurs locaux peuvent lire les identifiants et mots de passe des dépôts privés ou des proxys, ou les remplacer.
+description: |
+  `/etc/apt/auth.conf` et les fichiers `.conf` de `/etc/apt/auth.conf.d/` contiennent des
+  identifiants et mots de passe pour des dépôts privés et des proxys, dans un format proche de
+  netrc. APT les lit en root avant d'abandonner ses privilèges : ils peuvent donc être en
+  `root:root` mode `0600`. Le dossier lui-même doit être en `root:root` mode `0755` ou plus strict.
+rationale: |
+  Ces identifiants donnent souvent accès à des dépôts commerciaux ou internes, parfois partagés
+  par tout un parc. Un fichier lisible les livre à tous les utilisateurs locaux ; un dossier
+  modifiable permet à un utilisateur d'en ajouter ou d'en changer.
+impact: |
+  Aucun connu. Le dossier est vide sur une installation par défaut ; les vérifications des
+  fichiers ne s'appliquent que s'ils existent.
+setting:
+  location: /etc/apt/auth.conf, /etc/apt/auth.conf.d
+  recommended_value: "Dossier root:root 0755 ou plus strict, fichiers root:root 0600 ou plus strict"
+audit:
+  manual: |
+    1. `stat -c '%U:%G %a' /etc/apt/auth.conf.d` affiche `root:root` et `755` ou plus strict.
+    2. `stat -c '%U:%G %a %n' /etc/apt/auth.conf /etc/apt/auth.conf.d/*` affiche `root:root` et
+       `600` ou plus strict pour chaque fichier existant.
+remediation:
+  manual: |
+    Lancer `chown root:root /etc/apt/auth.conf.d`, `chmod 755 /etc/apt/auth.conf.d`, puis pour
+    chaque fichier d'identifiants `chown root:root <fichier>` et `chmod 600 <fichier>`. Changer les
+    mots de passe si les fichiers étaient lisibles par d'autres utilisateurs.
+  rollback: |
+    Remettre le propriétaire et le mode précédents avec `chown` et `chmod`.
