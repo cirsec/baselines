@@ -14,9 +14,9 @@ n_pass=0 n_fail=0 n_error=0 n_manual=0 n_review=0 n_na=0 n_excluded=0 n_fixable=
 
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
   e=$(printf '\033')
-  c_ok="$e[32m" c_ko="$e[31m" c_wa="$e[33m" c_ac="$e[36m" c_mu="$e[2m" c_b="$e[1m" c_0="$e[0m"
+  c_ok="${e}[32m" c_ko="${e}[31m" c_wa="${e}[33m" c_ac="${e}[36m" c_mu="${e}[2m" c_b="${e}[1m" c_0="${e}[0m"
 else
-  c_ok= c_ko= c_wa= c_ac= c_mu= c_b= c_0=
+  c_ok='' c_ko='' c_wa='' c_ac='' c_mu='' c_b='' c_0=''
 fi
 
 # cb_report ID STATUS SEVERITY FIXABLE(0|1) TITLE MANUAL CHECK_OUTPUT

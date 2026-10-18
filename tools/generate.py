@@ -504,7 +504,7 @@ def remediate_script(std: Standard, profile: str, controls: list[Control], tailo
 {header}
 set -u
 dir=$(dirname "$0")/controls
-apply= rc=0 services= reboot= session=
+apply='' rc=0 services='' reboot='' session=''
 [ "${{1:-}}" = --apply ] && apply=--apply
 if [ -n "$apply" ] && [ "$(id -u)" != 0 ]; then
   echo "--apply needs root" >&2
