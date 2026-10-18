@@ -41,6 +41,7 @@ import tailor  # noqa: E402
 import validate  # noqa: E402
 
 LIB = (Path(__file__).resolve().parent / "lib" / "cirsec.sh").read_text(encoding="utf-8")
+REPORT = (Path(__file__).resolve().parent / "lib" / "report.sh").read_text(encoding="utf-8")
 GENERATED_STATUSES = {"active"}
 q = shlex.quote
 
@@ -59,6 +60,23 @@ def _expected(spec: dict) -> str:
     if isinstance(value, list):
         return q("\n".join(render_text(v) for v in value))
     return q(render_text(value))
+
+
+def expected_text(engine: str, spec: dict) -> str:
+    """What a check wants, in one line, for reports: '>= 1', 'installed', 'mode <= 0640'."""
+    if "value" in spec:
+        value = spec["value"]
+        value = ", ".join(map(render_text, value)) if isinstance(value, list) else render_text(value)
+        text = f"{spec.get('operator', '==')} {value}"
+    elif "state" in spec:
+        text = spec["state"]
+    elif engine == "file-content":
+        text = f"{spec.get('expect', 'match')} {spec['pattern']}"
+    elif engine == "osquery":
+        text = spec.get("expect", "rows")
+    else:
+        text = ", ".join(f"{k} {'<= ' if k == 'mode' else ''}{spec[k]}" for k in ("owner", "group", "mode") if spec.get(k))
+    return " ".join(str(text).splitlines())
 
 
 def _op(spec: dict) -> str:
@@ -336,8 +354,10 @@ def control_script(ctl: Control, params: dict, header: str) -> str:
     calls = []
     for c in checks:
         name = fn_name("cb_check", c["id"])
-        out.append(function(name, check_snippet(c["engine"], resolve_value(c.get("spec") or {}, params))))
-        calls.append(f"cb_try {q(c['id'])} {scope_args(c)} {name}")
+        spec = resolve_value(c.get("spec") or {}, params)
+        out.append(function(name, check_snippet(c["engine"], spec)))
+        expected = expected_text(c["engine"], spec)
+        calls.append(f"cb_try {q(c['id'])} {scope_args(c)} {name}" + (f" {q(expected)}" if expected else ""))
     out.append(function("cb_run_checks", "\n".join(calls) or ":"))
 
     calls = []
@@ -396,16 +416,37 @@ def fix_enabled(ctl: Control, tailoring: dict) -> bool:
 
 
 def audit_script(std: Standard, profile: str, controls: list[Control], params: dict, tailoring: dict, header: str) -> str:
-    rows = [f"run {q(c.id)} {q(json.dumps(params[c.id], sort_keys=True))}" for c in controls]
+    rows = []
+    for c in controls:
+        d = c.data
+        fixable = "1" if (d.get("remediation") or {}).get("scripts") and fix_enabled(c, tailoring) else "0"
+        manual = resolve_value(((d.get("audit") or {}).get("manual") or "").strip(), params[c.id])
+        rows.append(f"run {q(c.id)} {q(json.dumps(params[c.id], sort_keys=True))} "
+                    f"{q((d.get('risk') or {}).get('severity', 'info'))} {fixable} {q(d.get('title', ''))} {q(manual)}")
     rows += [f"excluded {q(e['control'])} {q(e['reason'])}" for e in tailoring.get("exclude") or []]
     meta = {"standard": std.id, "version": std.data.get("version"), "profile": profile}
     return f"""#!/bin/sh
 # Audit {std.id} {meta['version']}, profile {profile}: runs every check, prints a result JSON
-# (schema/result.schema.json) on stdout. Exit 0 when nothing fails, 1 otherwise.
+# (schema/result.schema.json) and a readable report on stderr. On a terminal, the JSON goes
+# to ./cirsec-result-<host>-<date>.json instead of stdout. Exit 0 when nothing fails, 1 otherwise.
+# Usage: audit.sh [-v | --verbose]
 {header}
 set -u
 dir=$(dirname "$0")/controls
 rc=0 sep=
+
+{REPORT.rstrip()}
+
+case ${{1:-}} in
+  -v | --verbose) CB_VERBOSE=1 ;;
+  "") ;;
+  *) echo "usage: $0 [-v | --verbose]" >&2; exit 64 ;;
+esac
+json_file=
+if [ -t 1 ]; then
+  json_file=cirsec-result-$(hostname)-$(date +%Y%m%d-%H%M%S).json
+  exec >"$json_file"
+fi
 
 json() {{ printf '"%s"' "$(printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | tr -d '\\000-\\037')"; }}
 
@@ -415,17 +456,22 @@ run() {{
   case $status in fail | error) rc=1 ;; esac
   printf '%s{{"control":%s,"status":%s,"parameters":%s,"checks":[' "$sep" "$(json "$1")" "$(json "$status")" "$2"
   csep=
-  printf '%s\\n' "$out" | awk -F '\\t' '$1 == "check"' | while IFS="$(printf '\\t')" read -r _ id st ev; do
-    printf '%s{{"id":%s,"status":%s,"evidence":{{"observed":%s}}}}' "$csep" "$(json "$id")" "$(json "$st")" "$(json "$ev")"
-    csep=,
-  done
+  printf '%s\\n' "$out" | awk -F '\\t' '$1 == "check" {{ print $2; print $3; print $4; print $5 }}' |
+    while read -r id && read -r st && read -r ev && read -r ex; do
+      exj=
+      [ -z "$ex" ] || exj=",\\"expected\\":$(json "$ex")"
+      printf '%s{{"id":%s,"status":%s,"evidence":{{"observed":%s%s}}}}' "$csep" "$(json "$id")" "$(json "$st")" "$(json "$ev")" "$exj"
+      csep=,
+    done
   printf ']}}'
   sep=,
+  cb_report "$1" "$status" "$3" "$4" "$5" "$6" "$out"
 }}
 
 excluded() {{
   printf '%s{{"control":%s,"status":"excluded","message":%s}}' "$sep" "$(json "$1")" "$(json "$2")"
   sep=,
+  cb_report_excluded
 }}
 
 printf '{{"format":"cirsec-baselines-result","standard":%s,"version":%s,"profile":%s,' \\
@@ -437,6 +483,7 @@ printf '"scanner":{{"name":"cirsec-audit.sh","version":%s}},"started":%s,"result
   {q(json.dumps(meta['version']))} "$(json "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
 {chr(10).join(rows)}
 printf '],"finished":%s}}\\n' "$(json "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+cb_report_print {q(std.id)} {q(str(meta['version']))} {q(profile)} "$json_file"
 exit "$rc"
 """
 

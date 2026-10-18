@@ -392,7 +392,7 @@ python tools/generate.py --standard debian --tailoring acme-servers.yml --out ge
 | Output | Use |
 |--------|-----|
 | `controls/<ID>.sh` | One self-contained POSIX sh script per control. `check` prints one line per check and exits `0` pass, `1` fail, `2` not applicable, `3` error, `4` manual or review. `fix` is a dry run, `fix --apply` applies. |
-| `audit.sh` | Runs every check, prints a [result JSON](#tailoring-and-scan-results). Exit `1` if anything fails. |
+| `audit.sh` | Runs every check, prints a [result JSON](#tailoring-and-scan-results) on stdout and a readable report on stderr: summary and score, failures by severity with observed and expected values, errors, what to check by hand (`audit.manual`), next commands. On a terminal the JSON goes to `./cirsec-result-<host>-<date>.json` instead. Colors on a terminal only, never with `NO_COLOR`. `--verbose` lists every entry. Exit `1` if anything fails. |
 | `remediate.sh` | Runs every enabled fix in dependency order (`related_controls: requires`), dry run unless `--apply`. Backs up changed files under `/var/backups/cirsec/<date>/`, restarts each service from `effects` once at the end, says when a reboot or new login is needed. |
 | `ansible/` | `site.yml` and a role running the same control scripts: one task pair (check, fix) per control, tagged with the control ID, `cirsec_<standard>_<id>_enabled` per control, handlers from `effects`, `--check` mode supported. |
 

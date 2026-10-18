@@ -110,6 +110,11 @@ def test_audit_output_matches_result_schema(lab, tmp_path):
     assert status["CB-LAB-FILE-001"] == "fail"
     assert status["CB-LAB-FILE-002"] == "excluded"
     assert result["results"][0]["parameters"] == {"target": "/nonexistent/flag"}
+    sys_checks = {c["id"]: c for c in next(c for c in result["results"] if c["control"] == "CB-LAB-SYS-001")["checks"]}
+    assert sys_checks["auth-tries"]["evidence"]["expected"] == "<= 4"
+    # Readable report on stderr, without colors when stderr is not a terminal.
+    assert "✘ CB-LAB-FILE-001" in r.stderr and "1 excluded" in r.stderr
+    assert "\033" not in r.stderr
 
 
 def test_remediate_dry_run_and_lockout_default(lab, tmp_path):

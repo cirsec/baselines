@@ -93,7 +93,8 @@ cb_restore() {
   if [ -e "$_b" ]; then cp -p "$_b" "$1"; elif [ -e "$_b.absent" ]; then rm -f "$1"; fi
 }
 
-# cb_try ID "VERSIONS" "FACTS" FUNCTION -> prints "check<TAB>id<TAB>status<TAB>evidence".
+# cb_try ID "VERSIONS" "FACTS" FUNCTION ["EXPECTED"]
+# -> prints "check<TAB>id<TAB>status<TAB>evidence<TAB>expected".
 cb_try() {
   cb_scope "$2" "$3"
   _r=$?
@@ -108,7 +109,7 @@ cb_try() {
     2) _s=not_applicable ;;
     *) _s=error; CB_E=$((CB_E + 1)) ;;
   esac
-  printf 'check\t%s\t%s\t%s\n' "$1" "$_s" "$(cb_oneline "$_out")"
+  printf 'check\t%s\t%s\t%s\t%s\n' "$1" "$_s" "$(cb_oneline "$_out")" "${5:-}"
 }
 
 # cb_fixit ID "VERSIONS" "FACTS" CHECK_FUNCTION FIX_FUNCTION

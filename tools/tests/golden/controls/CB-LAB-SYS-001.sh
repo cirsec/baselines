@@ -101,14 +101,14 @@ cb_check_no_suid_tmp() {
 }
 
 cb_run_checks() {
-  cb_try forward '' '' cb_check_forward
-  cb_try auth-tries '' '' cb_check_auth_tries
-  cb_try telnet '' '' cb_check_telnet
-  cb_try avahi '' '' cb_check_avahi
-  cb_try shadow '' '' cb_check_shadow
-  cb_try lock '' has_tmp cb_check_lock
-  cb_try no-nopasswd '' '' cb_check_no_nopasswd
-  cb_try no-suid-tmp '' '' cb_check_no_suid_tmp
+  cb_try forward '' '' cb_check_forward '== 0'
+  cb_try auth-tries '' '' cb_check_auth_tries '<= 4'
+  cb_try telnet '' '' cb_check_telnet absent
+  cb_try avahi '' '' cb_check_avahi masked
+  cb_try shadow '' '' cb_check_shadow 'owner root, group shadow, mode <= 0640'
+  cb_try lock '' has_tmp cb_check_lock '== true'
+  cb_try no-nopasswd '' '' cb_check_no_nopasswd 'no_match NOPASSWD'
+  cb_try no-suid-tmp '' '' cb_check_no_suid_tmp no_rows
 }
 
 cb_fix_forward() {
