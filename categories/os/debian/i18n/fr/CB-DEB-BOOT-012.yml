@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-012
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès à la configuration du chargeur de démarrage
+finding:
+  title: Les utilisateurs peuvent lire la configuration du chargeur de démarrage
+  description: La configuration GRUB peut contenir l'empreinte du mot de passe de démarrage et révèle les paramètres de démarrage du système.
+description: |
+  `/boot/grub/grub.cfg` est la configuration que GRUB lit au démarrage. Il est généré par
+  `update-grub` et contient toutes les entrées de démarrage, les lignes de commande du noyau et,
+  quand il existe, l'empreinte PBKDF2 du mot de passe de démarrage.
+rationale: |
+  Une empreinte de mot de passe lisible peut être attaquée hors ligne. Réserver le fichier à root
+  cache aussi les paramètres de démarrage aux utilisateurs locaux, qui ne savent plus quelles
+  protections sont actives.
+impact: |
+  Aucun connu. GRUB lit le fichier avant le démarrage du système, et `update-grub` conserve le mode
+  restreint quand il régénère le fichier.
+setting:
+  location: /boot/grub/grub.cfg
+  recommended_value: "root:root, mode 0600 ou plus strict"
+audit:
+  manual: |
+    Lancer `stat -c '%U:%G %a' /boot/grub/grub.cfg`. La commande doit afficher `root:root` et un mode `600` ou plus strict.
+remediation:
+  manual: |
+    Lancer `chown root:root /boot/grub/grub.cfg` et `chmod 600 /boot/grub/grub.cfg`.
+  rollback: |
+    Lancer `chmod 644 /boot/grub/grub.cfg`.

@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-010
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne garder aucun profil AppArmor en mode complain
+finding:
+  title: Certains profils AppArmor journalisent les violations au lieu de les bloquer
+  description: Un profil en mode complain ne confine rien ; le programme qu'il couvre tourne comme s'il n'avait pas de profil.
+description: |
+  Chaque profil AppArmor chargé fonctionne dans un mode. En mode `enforce`, les accès hors profil
+  sont bloqués et journalisés. En mode `complain`, ils sont seulement journalisés. Les profils
+  marqués `unconfined` sont un troisième cas : ils ne restreignent pas le programme mais lui
+  attachent des droits précis (Debian 13 en livre beaucoup pour la médiation des espaces de noms
+  utilisateur), et ne sont pas concernés ici.
+rationale: |
+  Le mode complain sert à écrire et tester des profils. Un profil laissé en mode complain en
+  production donne une fausse impression de confinement : le programme n'est pas restreint du tout.
+impact: |
+  Passer un profil en mode enforce peut casser le programme qu'il couvre si le profil est incomplet.
+  Debian 13 livre volontairement plusieurs profils en mode complain ; les passer en enforce un par
+  un, en surveillant les refus dans les journaux (`journalctl -k | grep apparmor`).
+audit:
+  manual: |
+    Lancer `aa-status --complaining`. La commande doit afficher `0`.
+    `aa-status` liste par nom les profils en mode complain.
+remediation:
+  manual: |
+    1. Lister les profils en mode complain : `aa-status`.
+    2. Pour chacun, installer `apparmor-utils` et lancer `aa-enforce /etc/apparmor.d/<profil>`.
+    3. Surveiller les refus avec `journalctl -k | grep apparmor` et corriger ou annuler le profil.
+  rollback: |
+    Remettre un profil en mode complain avec `aa-complain /etc/apparmor.d/<profil>`.

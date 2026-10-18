@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-BOOT-011
+title: Protect the boot loader configuration with a password
+finding:
+  title: Anyone at the console can edit the boot entries
+  description: Editing the kernel command line at boot (for example adding init=/bin/sh) gives a root shell without any password.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [grub, boot, physical-access]
+
+applicability:
+  facts: [grub]
+
+description: |
+  GRUB can require a superuser name and password before anyone edits a boot entry or opens the
+  GRUB command line. The password is stored as a PBKDF2 hash in the GRUB configuration.
+  Marking the normal boot entries `--unrestricted` keeps unattended boots working: the password
+  is only asked to change them.
+rationale: |
+  Whoever reaches the console (physically, through a hypervisor console or a remote management
+  card) can otherwise edit the kernel command line, boot into single-user mode or a shell, and
+  bypass every account and audit control of the system.
+impact: |
+  Editing boot entries or using the GRUB shell during an incident needs the GRUB password. Store
+  it with the other break-glass secrets. Boots without changes are not affected.
+notes: |
+  Full disk encryption is the stronger protection against offline attacks. The GRUB password
+  does not protect against booting another medium; restrict that in the firmware settings.
+
+setting:
+  location: "`/etc/grub.d/40_custom` (or another file in `/etc/grub.d/`), compiled into `/boot/grub/grub.cfg`"
+  default_value: No password
+  recommended_value: A superuser and a PBKDF2 password hash
+
+audit:
+  manual: |
+    In `/boot/grub/grub.cfg`, check that a `set superusers=` line and a `password_pbkdf2` line exist.
+  checks:
+    - id: superusers
+      engine: file-content
+      description: A GRUB superuser is declared.
+      spec: { path: /boot/grub/grub.cfg, pattern: "^\\s*set\\s+superusers=" }
+    - id: password
+      engine: file-content
+      description: The superuser has a PBKDF2 password.
+      spec: { path: /boot/grub/grub.cfg, pattern: "^\\s*password_pbkdf2\\s+" }
+
+remediation:
+  manual: |
+    1. Generate a hash: `grub-mkpasswd-pbkdf2`.
+    2. Append to `/etc/grub.d/40_custom`:
+       ```
+       set superusers="root"
+       password_pbkdf2 root grub.pbkdf2.sha512.10000.<hash>
+       ```
+    3. To keep normal boots unattended, add `--unrestricted` to the `CLASS=` line of
+       `/etc/grub.d/10_linux`, or to each `menuentry` you want bootable without a password.
+    4. Run `update-grub`, then reboot once from the console to confirm the default entry still boots.
+  rollback: |
+    Remove the two lines from `/etc/grub.d/40_custom` and run `update-grub`.
+
+references:
+  - title: grub-mkpasswd-pbkdf2(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/grub-common/grub-mkpasswd-pbkdf2.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: GNU GRUB Manual - Authentication and authorisation
+    url: https://www.gnu.org/software/grub/manual/grub/html_node/Authentication-and-authorisation.html
+    publisher: GNU Project
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R5)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R5
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.4.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.4.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1542
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64, BIOS boot
+    notes: Manual procedure applied (pbkdf2 hash, --unrestricted); check passes; unattended reboot works.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: Manual procedure applied (pbkdf2 hash, --unrestricted); check passes; unattended reboot works.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

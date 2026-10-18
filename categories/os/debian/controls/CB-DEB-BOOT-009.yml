@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-BOOT-009
+title: Stop unconfined unprivileged processes from switching AppArmor profiles
+finding:
+  title: Unprivileged unconfined processes can move to a more permissive AppArmor profile
+  description: A process with no profile can use aa-exec or change_profile to pick a profile that grants rights it should not have.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [apparmor, mac, sysctl]
+
+applicability:
+  versions: ["13"]
+  conditions: |
+    The sysctl only exists in kernels that carry the AppArmor unprivileged restriction
+    feature. The Debian 12 kernel does not have it.
+
+description: |
+  `kernel.apparmor_restrict_unprivileged_unconfined` turns on the AppArmor restrictions for
+  processes that are both unprivileged and unconfined (running without any profile). With `1`,
+  such a process cannot use `change_profile` (for example through `aa-exec`) to move itself to
+  another profile.
+rationale: |
+  Some AppArmor profiles grant rights that unconfined processes do not have by default, such as
+  creating user namespaces. Without this restriction, any local process could switch to such a
+  profile and use those rights, which bypasses the policy.
+impact: |
+  Unprivileged users can no longer run programs under a chosen profile with `aa-exec`.
+  Programs launched normally get their profile attached as usual.
+
+setting:
+  location: sysctl `kernel.apparmor_restrict_unprivileged_unconfined`, persisted in `/etc/sysctl.d/`
+  default_value: "0"
+  recommended_value: "1"
+
+audit:
+  manual: |
+    Run `sysctl kernel.apparmor_restrict_unprivileged_unconfined`. The value must be `1`.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.apparmor_restrict_unprivileged_unconfined.
+      spec: { key: kernel.apparmor_restrict_unprivileged_unconfined, value: 1 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing
+    `kernel.apparmor_restrict_unprivileged_unconfined = 1`, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run
+    `sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: AppArmor wiki - unprivileged unconfined restriction
+    url: https://gitlab.com/apparmor/apparmor/-/wikis/unprivileged_unconfined_restriction
+    publisher: AppArmor project
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.3.1.4"
+    relation: related
+    note: The Debian 12 kernel does not provide the setting.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.3.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548
+related_controls:
+  - id: CB-DEB-BOOT-008
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64, BIOS boot
+    notes: Fails on a fresh install (0); generated fix sets 1; kept after reboot. Debian 12 reports not_applicable as expected.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
