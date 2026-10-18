@@ -1,0 +1,202 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-015
+title: Use only strong ciphers, MACs and key exchange algorithms in the SSH server
+finding:
+  title: The SSH server accepts weak or outdated cryptographic algorithms
+  description: Weak algorithms let an attacker who records or intercepts SSH sessions decrypt or tamper with them, now or later.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [ssh, cryptography, network]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  The OpenSSH server negotiates three families of algorithms with each client, set by
+  `Ciphers`, `MACs` and `KexAlgorithms` in `sshd_config`. This control requires every algorithm
+  the server offers to be in an allow list:
+
+  - ciphers: ChaCha20-Poly1305, AES-GCM, AES-CTR;
+  - MACs: HMAC-SHA2-256/512, preferably in encrypt-then-MAC (`-etm`) mode;
+  - key exchange: hybrid post-quantum (`mlkem768x25519-sha256`, `sntrup761x25519-sha512`),
+    Curve25519, NIST ECDH, and Diffie-Hellman groups of at least 2048 bits with SHA-2.
+
+  The first key exchange algorithm offered must be a hybrid post-quantum one.
+rationale: |
+  CBC ciphers, RC4, 3DES, SHA-1 and MD5 based MACs, 64-bit tag UMAC and SHA-1 Diffie-Hellman are
+  broken or too weak for long-term protection; UMAC is kept out to stay with
+  the widely reviewed HMAC-SHA2 constructions. Sessions recorded today can be decrypted later by a
+  quantum computer unless the key exchange is post-quantum, which is why it must be preferred.
+impact: |
+  Old clients and network equipment that only support removed algorithms cannot connect anymore
+  (for example `hmac-sha1` or `diffie-hellman-group14-sha1`). Check the clients, automation tools
+  and SFTP libraries in use before applying.
+notes: |
+  Debian 12 (OpenSSH 9.2) and 13 (OpenSSH 10.0) already exclude weak ciphers and put a
+  post-quantum key exchange first, but both still offer SHA-1 and UMAC MACs. The fix writes the
+  three lists in `/etc/ssh/sshd_config.d/00-cirsec.conf`, keeping only the algorithms the installed
+  OpenSSH supports (`ssh -Q`), so `mlkem768x25519-sha256` is only set on Debian 13.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf (`Ciphers`, `MACs`, `KexAlgorithms`)
+  default_value: OpenSSH defaults, including hmac-sha1 and umac-64 MACs
+  recommended_value: Only the allowed algorithms, post-quantum key exchange first
+
+audit:
+  manual: |
+    Run `sshd -T | grep -E '^(ciphers|macs|kexalgorithms) '` and check that:
+    1. ciphers are among `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`,
+       `aes128-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`;
+    2. MACs are among `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`,
+       `hmac-sha2-512`, `hmac-sha2-256`;
+    3. key exchange algorithms are among `mlkem768x25519-sha256`, `sntrup761x25519-sha512`
+       (with or without `@openssh.com`), `curve25519-sha256` (with or without `@libssh.org`),
+       `ecdh-sha2-nistp256/384/521`, `diffie-hellman-group-exchange-sha256`,
+       `diffie-hellman-group14-sha256`, `diffie-hellman-group16-sha512`,
+       `diffie-hellman-group18-sha512`, and the first one is `mlkem768x25519-sha256` or
+       `sntrup761x25519-sha512`.
+  checks:
+    - id: ciphers
+      engine: sshd-config
+      description: Effective Ciphers list.
+      spec:
+        key: ciphers
+        operator: match
+        value: '^((chacha20-poly1305@openssh\.com|aes(128|256)-gcm@openssh\.com|aes(128|192|256)-ctr)(,|$))+$'
+    - id: macs
+      engine: sshd-config
+      description: Effective MACs list.
+      spec:
+        key: macs
+        operator: match
+        value: '^(hmac-sha2-(256|512)(-etm@openssh\.com)?(,|$))+$'
+    - id: kex
+      engine: sshd-config
+      description: Effective KexAlgorithms list.
+      spec:
+        key: kexalgorithms
+        operator: match
+        value: '^((mlkem768x25519-sha256|sntrup761x25519-sha512(@openssh\.com)?|curve25519-sha256(@libssh\.org)?|ecdh-sha2-nistp(256|384|521)|diffie-hellman-group-exchange-sha256|diffie-hellman-group14-sha256|diffie-hellman-group(16|18)-sha512)(,|$))+$'
+    - id: kex-post-quantum
+      engine: sshd-config
+      description: First key exchange algorithm is a hybrid post-quantum one.
+      spec:
+        key: kexalgorithms
+        operator: match
+        value: '^(mlkem768x25519-sha256|sntrup761x25519-sha512(@openssh\.com)?)(,|$)'
+
+remediation:
+  manual: |
+    Create `/etc/ssh/sshd_config.d/00-cirsec.conf` (mode 0600) with the lists below, removing the
+    algorithms that `ssh -Q cipher`, `ssh -Q mac` or `ssh -Q kex` does not print:
+    ```
+    Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+    MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+    KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256
+    ```
+    Check with `sshd -t`, then run `systemctl reload ssh`. Keep an open session until a new
+    connection succeeds.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Remove the three lines from `/etc/ssh/sshd_config.d/00-cirsec.conf` and run `systemctl reload ssh`.
+  scripts:
+    - id: algorithms
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: sshd_config(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/openssh-server/sshd_config.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ssh(1), Debian manual pages (ssh -Q)
+    url: https://manpages.debian.org/trixie/openssh-client/ssh.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: OpenSSH - Post-Quantum Cryptography
+    url: https://www.openssh.com/pq.html
+    publisher: OpenSSH
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-13
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.6"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.12"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.15"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.23"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.14"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.17"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-327
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "fix.sh writes the lists filtered with ssh -Q; SSH by key accepted before and after the fix and after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "fix.sh writes the lists filtered with ssh -Q; SSH by key accepted before and after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

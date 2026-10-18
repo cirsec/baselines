@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-005
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner un et un seul pare-feu local
+finding:
+  title: Aucun pare-feu local n'est actif, ou plusieurs outils se disputent les mêmes règles
+  description: Sans pare-feu local, tout service en écoute est joignable depuis le réseau ; avec plusieurs, les règles s'écrasent d'une façon que personne n'a prévue.
+description: |
+  Le noyau Linux filtre les paquets avec netfilter. Sur Debian, ses règles sont gérées par l'un de ces
+  outils, chacun lancé au démarrage par son propre service :
+
+  - `ufw`, une interface simple, actif quand `ufw status` affiche `Status: active` ;
+  - `nftables`, règles chargées depuis `/etc/nftables.conf` par `nftables.service` ;
+  - `firewalld` ;
+  - `iptables-persistent`, règles restaurées par `netfilter-persistent.service`.
+
+  Ce contrôle exige qu'un seul d'entre eux soit activé. Sa politique par défaut est traitée par
+  CB-DEB-NET-006.
+rationale: |
+  Un pare-feu local limite les services joignables depuis le réseau à ceux qui doivent l'être, même
+  quand un paquet démarre un nouveau service ou qu'un service écoute par erreur sur toutes les adresses.
+  Deux outils de pare-feu vident ou réordonnent les règles l'un de l'autre au rechargement, ce qui
+  laisse l'hôte grand ouvert ou inaccessible après un redémarrage.
+impact: |
+  La correction automatique installe et active ufw quand aucun pare-feu n'est actif. Elle autorise
+  d'abord les ports SSH, mais ufw bloque ensuite toute autre connexion entrante : les services comme
+  les serveurs web ou de bases de données deviennent injoignables tant qu'ils ne sont pas autorisés
+  avec `ufw allow <port>/<protocole>`. Elle est désactivée par défaut ; lister les services en écoute
+  avec `ss -tulpn` et les autoriser avant de l'activer.
+notes: |
+  Debian 13 privilégie nftables et les CIS Benchmarks privilégient ufw ; les deux sont acceptés. Sur
+  Debian, ufw écrit ses règles via iptables-nft, donc `nft list ruleset` les affiche aussi : cela ne
+  compte pas comme un second pare-feu tant que `nftables.service` n'est pas activé. Docker et libvirt
+  ajoutent leurs propres règles à côté du pare-feu local ; elles ne sont pas comptées.
+audit:
+  manual: |
+    1. `ufw status` (si installé) : `Status: active` compte pour un.
+    2. `systemctl is-enabled nftables.service firewalld.service netfilter-persistent.service` :
+       chaque `enabled` compte pour un.
+    Le total doit être exactement un.
+remediation:
+  manual: |
+    - Aucun pare-feu : installer ufw, autoriser SSH et les autres services qui doivent rester
+      joignables, puis l'activer :
+      ```
+      apt install ufw
+      ufw allow 22/tcp
+      ufw enable
+      ```
+      Ou écrire `/etc/nftables.conf` (voir CB-DEB-NET-006) et lancer `systemctl enable --now nftables`.
+    - Plusieurs outils : en garder un, puis désactiver les autres, par exemple `ufw disable`,
+      `systemctl disable --now nftables` ou `apt purge iptables-persistent`.
+  rollback: |
+    Lancer `ufw disable`. Les paquets installés peuvent rester.

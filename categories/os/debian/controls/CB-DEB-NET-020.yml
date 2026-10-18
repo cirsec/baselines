@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-020
+title: Show the legal warning banner before SSH authentication
+finding:
+  title: The SSH server shows no warning before authentication
+  description: Without a warning, users connecting over SSH are not told that access is restricted and monitored.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [ssh, banner, legal]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  The `Banner` option of the OpenSSH server names a file whose content is sent to the client
+  before authentication. This control requires it to point to `{{ ssh_banner }}`, the network
+  login warning whose content is covered by CB-DEB-AUTH-001.
+rationale: |
+  A warning shown before login states that access is reserved to authorized users and may be
+  monitored. In many jurisdictions it supports legal action against intruders and the use of
+  monitoring records.
+impact: |
+  The banner is printed by interactive clients before the password or key prompt. Some old
+  automation tools treat any pre-authentication output as an error.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  default_value: none
+  recommended_value: "{{ ssh_banner }}"
+
+parameters:
+  - name: ssh_banner
+    type: string
+    description: File sent by the SSH server before authentication.
+    default: /etc/issue.net
+
+audit:
+  manual: |
+    Run `sshd -T | grep '^banner '`. It must print `banner {{ ssh_banner }}`, and that file must
+    contain the organization's warning text.
+  checks:
+    - id: banner
+      engine: sshd-config
+      description: Banner.
+      spec: { key: banner, value: "{{ ssh_banner }}" }
+
+remediation:
+  manual: |
+    Add `Banner {{ ssh_banner }}` to `/etc/ssh/sshd_config.d/00-cirsec.conf`, check with
+    `sshd -t`, then run `systemctl reload ssh`. Write the warning text in the file (see
+    CB-DEB-AUTH-001).
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: none
+    lockout_risk: true
+  rollback: |
+    Remove the line and run `systemctl reload ssh`.
+  scripts:
+    - id: banner
+      from_check: banner
+
+references:
+  - title: sshd_config(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/openssh-server/sshd_config.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.1.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.1.6"
+    relation: equivalent
+related_controls:
+  - id: CB-DEB-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated fix sets Banner /etc/issue.net; SSH by key still accepted after the fix and after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated fix sets Banner /etc/issue.net; SSH by key still accepted after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

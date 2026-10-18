@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-001
+title: Decide whether IPv6 is used, and disable or secure it accordingly
+finding:
+  title: IPv6 is active without a decision to use it
+  description: An IPv6 stack nobody planned for is often left unfiltered and unmonitored, next to a hardened IPv4 configuration.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: manual
+tags: [ipv6, network]
+
+description: |
+  Debian enables IPv6 by default: every interface gets a link-local address, and a global address
+  as soon as a router advertises a prefix. Each system must have a recorded decision: either IPv6
+  is used, and it is configured and filtered like IPv4, or it is not, and the stack is disabled.
+rationale: |
+  Firewall rules, monitoring and hardening are often written for IPv4 only. An IPv6 stack left on
+  by default gives an attacker on the local network a second, less watched path to the system
+  (router advertisements, link-local services).
+impact: |
+  Disabling IPv6 breaks software that expects `::1` or IPv6 sockets. Check local services after the
+  change.
+notes: |
+  The IPv6 sysctl controls of this standard only apply when the IPv6 stack is present, through the
+  `ipv6` fact.
+
+audit:
+  manual: |
+    1. Find whether IPv6 is enabled: `test -d /proc/sys/net/ipv6 && sysctl net.ipv6.conf.all.disable_ipv6`
+       (`0` means enabled), and list addresses with `ip -6 address`.
+    2. Check the system documentation for a decision on IPv6 for this host.
+    3. If IPv6 is used, check that the firewall also filters IPv6 (`ufw status verbose` with
+       `IPV6=yes` in `/etc/default/ufw`, or an `inet`/`ip6` table in `nft list ruleset`).
+
+remediation:
+  manual: |
+    - If IPv6 is not used, add `ipv6.disable=1` to `GRUB_CMDLINE_LINUX` in `/etc/default/grub`,
+      run `update-grub` and reboot. Without access to the boot loader, set
+      `net.ipv6.conf.all.disable_ipv6 = 1` and `net.ipv6.conf.default.disable_ipv6 = 1` in
+      `/etc/sysctl.d/60-cirsec.conf` instead.
+    - If IPv6 is used, apply the IPv6 controls of this standard and filter IPv6 in the firewall.
+    - Record the decision in the system documentation.
+  rollback: |
+    Remove `ipv6.disable=1` or the `disable_ipv6` lines, then reboot.
+
+references:
+  - title: Linux kernel documentation - IP Sysctl (disable_ipv6)
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R13)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R13
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.1.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-DEB-NET-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

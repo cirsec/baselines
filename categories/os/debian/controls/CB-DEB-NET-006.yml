@@ -1,0 +1,223 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-006
+title: Drop incoming and forwarded traffic by default, with SSH allowed
+finding:
+  title: The host firewall accepts incoming or forwarded traffic that no rule allows
+  description: A firewall whose default policy accepts traffic only blocks what someone thought of in advance.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [firewall, ufw, nftables, network, ssh]
+
+description: |
+  The default policy of a firewall applies to packets that match no rule. This control requires
+  the policy for incoming and forwarded packets to drop or reject them, while the SSH ports used by
+  `sshd` stay allowed so that administrators keep access:
+
+  - with ufw: `Default: deny (incoming)` and `deny`, `reject` or `disabled (routed)` in
+    `ufw status verbose`, and a rule allowing each SSH port;
+  - with nftables (when `nftables.service` is enabled and ufw is not active): a base chain on the
+    `input` hook and one on the `forward` hook with `policy drop`, and an `accept` rule for each
+    SSH port.
+rationale: |
+  Default deny turns the firewall into an allow list: a service started by mistake, or a new one
+  installed by a package, is not reachable until someone decides it should be. Dropping forwarded
+  packets keeps the host from relaying traffic between networks. Checking that SSH is allowed
+  avoids a policy that locks administrators out at the next reload.
+impact: |
+  Incoming connections to services without an allow rule are dropped. Containers and virtual
+  machines that rely on forwarding through the host (Docker, libvirt) manage their own forward
+  rules; check them after the change.
+notes: |
+  The automatic fix only handles ufw: it adds an allow rule for each SSH port that has none, then
+  sets the incoming and routed defaults to deny. nftables rulesets are written by hand.
+  The SSH rule check looks for the port number in an accept rule of `nft list ruleset`; complex
+  rulesets (sets, maps, jumps) may need a manual review.
+
+audit:
+  manual: |
+    - ufw: `ufw status verbose` shows `deny (incoming)` and `deny`, `reject` or `disabled (routed)`,
+      and `ufw status` lists an `ALLOW` or `LIMIT` rule for each port of `sshd -T | grep '^port '`.
+    - nftables: `nft list ruleset` has a chain with `hook input` and `policy drop`, a chain with
+      `hook forward` and `policy drop`, and a rule accepting `tcp dport` for each SSH port.
+  checks:
+    - id: ufw-defaults
+      engine: shell
+      description: ufw default policies for incoming and routed traffic.
+      facts: [ufw]
+      spec:
+        script: |
+          ufw status 2>/dev/null | grep -q '^Status: active' || { echo 'ufw is not active'; exit 2; }
+          d=$(ufw status verbose 2>/dev/null | sed -n 's/^Default: //p')
+          echo "$d"
+          printf '%s' "$d" | grep -Eq '(deny|reject) \(incoming\)' &&
+            printf '%s' "$d" | grep -Eq '(deny|reject|disabled) \(routed\)'
+    - id: ufw-ssh
+      engine: shell
+      description: ufw rule allowing each SSH port.
+      facts: [ufw, openssh-server]
+      spec:
+        script: |
+          s=$(ufw status 2>/dev/null)
+          printf '%s\n' "$s" | grep -q '^Status: active' || { echo 'ufw is not active'; exit 2; }
+          ports=$(PATH="$PATH:/usr/sbin" sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+          [ -n "$ports" ] || exit 3
+          rc=0
+          for p in $ports; do
+            if printf '%s\n' "$s" | grep -Eq "^($p(/tcp)?|OpenSSH)[[:space:]]+(ALLOW|LIMIT)"; then
+              echo "SSH port $p allowed"
+            else
+              echo "SSH port $p not allowed"; rc=1
+            fi
+          done
+          exit "$rc"
+    - id: nft-defaults
+      engine: shell
+      description: nftables input and forward base chains with policy drop.
+      facts: [nftables]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] || { echo 'nftables.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          r=$(nft list ruleset 2>/dev/null) || exit 3
+          rc=0
+          for h in input forward; do
+            if printf '%s\n' "$r" | grep -Eq "hook $h .*policy drop"; then echo "$h: policy drop"; else echo "$h: no chain with policy drop"; rc=1; fi
+          done
+          exit "$rc"
+    - id: nft-ssh
+      engine: shell
+      description: nftables accept rule for each SSH port.
+      facts: [nftables, openssh-server]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] || { echo 'nftables.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          r=$(nft list ruleset 2>/dev/null) || exit 3
+          ports=$(PATH="$PATH:/usr/sbin" sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+          [ -n "$ports" ] || exit 3
+          rc=0
+          for p in $ports; do
+            if printf '%s\n' "$r" | grep -E 'tcp dport .*accept' | grep -Eq "(^|[^0-9])$p([^0-9]|$)"; then
+              echo "SSH port $p accepted"
+            else
+              echo "SSH port $p not accepted"; rc=1
+            fi
+          done
+          exit "$rc"
+
+remediation:
+  manual: |
+    - ufw: allow SSH first, then set the defaults:
+      ```
+      ufw allow 22/tcp
+      ufw default deny incoming
+      ufw default deny routed
+      ```
+    - nftables: write `/etc/nftables.conf` with, at least:
+      ```
+      table inet filter {
+        chain input {
+          type filter hook input priority filter; policy drop;
+          ct state established,related accept
+          iif lo accept
+          meta l4proto { icmp, ipv6-icmp } accept
+          tcp dport 22 accept
+        }
+        chain forward {
+          type filter hook forward priority filter; policy drop;
+        }
+      }
+      ```
+      Check it with `nft -c -f /etc/nftables.conf`, then run `systemctl reload nftables` from a
+      console, or with a scheduled rollback, in case the SSH rule is wrong.
+  effects:
+    restart: none
+    disruption: high
+    lockout_risk: true
+  rollback: |
+    ufw: `ufw default allow incoming` and `ufw default allow routed` (or restore the backed up
+    `/etc/default/ufw` and run `ufw reload`). nftables: restore the previous `/etc/nftables.conf`
+    and reload.
+  scripts:
+    - id: ufw-policy
+      engine: shell
+      facts: [ufw]
+      file: fix.sh
+
+references:
+  - title: ufw(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/ufw/ufw.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: nft(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/nftables/nft.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - nftables
+    url: https://wiki.debian.org/nftables
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: NIST SP 800-41 Rev. 1 - Guidelines on Firewalls and Firewall Policy
+    url: https://csrc.nist.gov/pubs/sp/800/41/r1/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "4.1.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "4.1.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "4.1.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "4.1.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1046
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-284
+related_controls:
+  - id: CB-DEB-NET-005
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "ufw defaults and SSH rule checked before and after the fix; nftables checks tested with accept, drop without SSH rule and drop with SSH rule rulesets; SSH by key works after fix and reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "ufw defaults and SSH rule checked before and after the fix; nftables checks tested with accept, drop without SSH rule and drop with SSH rule rulesets; SSH by key works after fix and reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
