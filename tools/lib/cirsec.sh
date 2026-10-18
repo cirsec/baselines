@@ -204,6 +204,15 @@ cb_main() {
         [ "$_r" -eq 2 ] && exit 0
         exit 1
       fi
+      # A compliant control is left alone, so handwritten fixes do not rerun.
+      if [ "$CB_ASSESSMENT" != manual ]; then
+        CB_P=0 CB_F=0 CB_E=0
+        cb_run_checks >/dev/null 2>&1
+        if [ "$(cb_status)" = pass ]; then
+          printf 'control\t%s\tcompliant\n' "$CB_CONTROL"
+          exit 0
+        fi
+      fi
       cb_run_fixes
       exit "$CB_RC"
       ;;
