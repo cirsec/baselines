@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-005
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les serveurs d'accès à la messagerie IMAP et POP3 que le système ne fournit pas
+finding:
+  title: Un serveur IMAP ou POP3 peut tourner sur un système qui n'héberge pas de boîtes aux lettres
+  description: Un serveur d'accès à la messagerie accepte des mots de passe depuis le réseau et expose le courrier stocké.
+description: |
+  Les serveurs IMAP et POP3 permettent aux clients de messagerie de lire les boîtes stockées sur
+  le système. Debian fournit Dovecot (`dovecot.service` et `dovecot.socket`) et Cyrus
+  (`cyrus-imapd.service`).
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  Ces serveurs authentifient les utilisateurs avec leur mot de passe : ils sont une cible pour
+  le cassage de mots de passe, et une faille expose toutes les boîtes du système.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer. L'envoi de courrier par l'agent de
+  transfert local n'est pas concerné. Les serveurs de messagerie doivent exclure ce contrôle dans
+  leur fichier de personnalisation.
+notes: |
+  Une unité inexistante est considérée conforme, donc supprimer le paquet est une correction tout
+  aussi valable.
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `dovecot.service`, `dovecot.socket`, `cyrus-imapd.service`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si le paquet n'est
+    pas utile du tout, le supprimer plutôt : `apt purge dovecot-core cyrus-imapd cyrus-common`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

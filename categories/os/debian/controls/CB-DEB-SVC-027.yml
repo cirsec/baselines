@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-027
+title: Remove the NFS client utilities when no NFS share is mounted
+finding:
+  title: NFS client utilities are installed on a system that mounts no NFS share
+  description: The NFS client stack adds setuid helpers and RPC daemons that are not needed.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [packages, nfs, attack-surface]
+
+description: |
+  `nfs-common` provides the NFS client tools: the `mount.nfs` setuid helper, `rpc.statd` (NFSv3
+  locking), `rpc.gssd` and `rpc.idmapd`. It is only needed to mount NFS shares.
+rationale: |
+  Unneeded software is extra code to patch. `mount.nfs` runs with root privileges, and
+  `rpc.statd` listens for RPC requests when it is started.
+impact: |
+  NFS shares can no longer be mounted. Removing `nfs-common` also removes `nfs-kernel-server` if it
+  is installed. Systems that mount NFS shares must exclude this control in their tailoring file.
+notes: |
+  Not installed on Debian cloud images; often pulled in by full server installs. The NFS server
+  and rpcbind are handled by CB-DEB-SVC-003.
+
+audit:
+  manual: |
+    Run `dpkg-query -W -f='${Status}\n' nfs-common`. It must not print `install ok installed`.
+  checks:
+    - id: nfs-common
+      engine: package
+      description: NFS client utilities.
+      spec: { name: nfs-common, state: absent }
+
+remediation:
+  manual: |
+    Check that `findmnt -t nfs,nfs4` lists nothing and that no NFS entry remains in `/etc/fstab`,
+    then run `apt purge nfs-common`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `apt install nfs-common`.
+  scripts:
+    - id: nfs-common
+      from_check: nfs-common
+
+references:
+  - title: nfs(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/nfs-common/nfs.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R58)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: partial
+    note: R58 asks to install only the packages that are strictly needed; this control covers nfs-common.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1210
+related_controls:
+  - id: CB-DEB-SVC-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with nfs-common installed the check fails, fix purges it (after CB-DEB-SVC-003 removed the NFS server), audit passes after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with nfs-common installed the check fails, fix purges it (after CB-DEB-SVC-003 removed the NFS server), audit passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

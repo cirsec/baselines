@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-016
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer chrony avec des sources de temps, le faire tourner sans privilèges et le garder actif
+finding:
+  title: chrony n'a pas de source de temps, tourne en root ou ne tourne pas
+  description: L'horloge n'est pas synchronisée, ou le démon NTP analyse le trafic réseau avec tous les privilèges.
+description: |
+  chrony lit ses sources (lignes `server`, `pool` ou `peer`) dans `/etc/chrony/chrony.conf` et dans
+  les fichiers inclus par la configuration Debian par défaut : `/etc/chrony/conf.d/*.conf` et
+  `/etc/chrony/sources.d/*.sources`. Après son démarrage, `chronyd` abandonne les privilèges root
+  pour l'utilisateur `_chrony`, sauf si la directive `user` ou l'option `-u` en décident autrement.
+  Le service `chrony.service` doit être activé et en cours d'exécution.
+rationale: |
+  Sans source, l'horloge dérive. chronyd analyse des paquets venant du réseau ; le faire tourner
+  avec un utilisateur non privilégié limite ce qu'une faille dans ce code peut atteindre. Un démon
+  arrêté laisse l'horloge non synchronisée.
+impact: |
+  Aucun connu avec les valeurs Debian par défaut, qui utilisent le pool NTP Debian et
+  l'utilisateur `_chrony`.
+notes: |
+  Les sources dépendent du site : la correction se contente d'activer et de démarrer le service ;
+  ajouter des sources et retirer un réglage `user root` sont des actions manuelles.
+audit:
+  manual: |
+    1. `grep -E '^[[:space:]]*(server|pool|peer)[[:space:]]' /etc/chrony/chrony.conf
+       /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources` doit lister des sources approuvées.
+    2. `ps -C chronyd -o user=` doit afficher `_chrony`.
+    3. `systemctl is-enabled chrony` doit afficher `enabled` et `systemctl is-active chrony` `active`.
+remediation:
+  manual: |
+    1. Ajouter des sources approuvées dans `/etc/chrony/sources.d/local.sources`, une par ligne, par
+       exemple `server ntp1.example.org iburst`, puis lancer `chronyc reload sources`.
+    2. Retirer toute directive `user` autre que `user _chrony` de la configuration chrony et toute
+       option `-u` de `DAEMON_OPTS` dans `/etc/default/chrony`.
+    3. Lancer `systemctl enable --now chrony`.
+  rollback: |
+    Lancer `systemctl disable --now chrony`.

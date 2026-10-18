@@ -1,0 +1,194 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-007
+title: Remove telnet, rsh and talk servers and disable inetd super-servers
+finding:
+  title: Clear-text remote access servers or an inetd super-server are present
+  description: telnet and rsh send passwords and whole sessions in clear text; inetd starts such servers on demand.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [services, telnet, rsh, talk, inetd, attack-surface]
+
+description: |
+  The historical remote access servers are started by an inetd super-server, not by systemd units
+  of their own:
+
+  - telnet servers: `telnetd`, `inetutils-telnetd`, `telnetd-ssl`;
+  - rsh, rlogin and rexec servers: `rsh-server`, `rsh-redone-server` (Debian 12 only);
+  - talk servers: `talkd`, `inetutils-talkd`.
+
+  The control requires these packages to be absent, and the super-servers that would launch them
+  (`xinetd.service`, `inetd.service` from `openbsd-inetd`, `inetutils-inetd.service`) to be masked
+  or not installed.
+rationale: |
+  telnet and rsh carry passwords and every keystroke in clear text, and rsh trusts the client's
+  address and user name. SSH replaces all of them. A super-server accepts connections for every
+  service listed in its configuration, which makes it easy to expose one by mistake.
+impact: |
+  Removes the listed server packages. Masking an inetd super-server stops every service it
+  launches; check `/etc/inetd.conf` and `/etc/xinetd.d/` before applying.
+notes: |
+  `telnetd` is a transitional package that pulls in `inetutils-telnetd`; both are checked. SSH
+  access is not affected.
+
+audit:
+  manual: |
+    1. `dpkg-query -W -f='${Status}\n' telnetd inetutils-telnetd telnetd-ssl rsh-server
+       rsh-redone-server talkd inetutils-talkd` must not show any `install ok installed`.
+    2. `systemctl is-enabled xinetd.service inetd.service inetutils-inetd.service` must print
+       `masked` or fail because the unit does not exist.
+  logic: all
+  checks:
+    - id: telnetd
+      engine: package
+      description: telnetd transitional package.
+      spec: { name: telnetd, state: absent }
+    - id: inetutils-telnetd
+      engine: package
+      description: GNU inetutils telnet server.
+      spec: { name: inetutils-telnetd, state: absent }
+    - id: telnetd-ssl
+      engine: package
+      description: telnet server with SSL.
+      spec: { name: telnetd-ssl, state: absent }
+    - id: rsh-server
+      engine: package
+      description: rsh, rlogin and rexec servers.
+      spec: { name: rsh-server, state: absent }
+    - id: rsh-redone-server
+      engine: package
+      description: rsh-redone rsh and rlogin servers.
+      spec: { name: rsh-redone-server, state: absent }
+    - id: talkd
+      engine: package
+      description: talk server.
+      spec: { name: talkd, state: absent }
+    - id: inetutils-talkd
+      engine: package
+      description: GNU inetutils talk server.
+      spec: { name: inetutils-talkd, state: absent }
+    - id: xinetd
+      engine: systemd-unit
+      description: xinetd super-server.
+      spec: { unit: xinetd.service, state: masked }
+    - id: openbsd-inetd
+      engine: systemd-unit
+      description: OpenBSD inetd super-server.
+      spec: { unit: inetd.service, state: masked }
+    - id: inetutils-inetd
+      engine: systemd-unit
+      description: GNU inetutils inetd super-server.
+      spec: { unit: inetutils-inetd.service, state: masked }
+
+remediation:
+  manual: |
+    1. Run `apt purge telnetd inetutils-telnetd telnetd-ssl rsh-server rsh-redone-server talkd
+       inetutils-talkd`.
+    2. Run `systemctl mask --now <unit>` for each installed super-server, or remove its package
+       (`apt purge xinetd openbsd-inetd inetutils-inetd`) when nothing else depends on it.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Reinstall the needed package with `apt install`, and `systemctl unmask` the super-server.
+  scripts:
+    - id: telnetd
+      from_check: telnetd
+    - id: inetutils-telnetd
+      from_check: inetutils-telnetd
+    - id: telnetd-ssl
+      from_check: telnetd-ssl
+    - id: rsh-server
+      from_check: rsh-server
+    - id: rsh-redone-server
+      from_check: rsh-redone-server
+    - id: talkd
+      from_check: talkd
+    - id: inetutils-talkd
+      from_check: inetutils-talkd
+    - id: xinetd
+      from_check: xinetd
+    - id: openbsd-inetd
+      from_check: openbsd-inetd
+    - id: inetutils-inetd
+      from_check: inetutils-inetd
+
+references:
+  - title: telnetd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/inetutils-telnetd/telnetd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: inetd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/openbsd-inetd/inetd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: xinetd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/xinetd/xinetd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service and names telnet, rsh and inetd; this control covers them.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.19"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.22"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.16"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.20"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: mitre-attack
+    id: T1021
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with telnetd, talkd (and rsh-server on 12) installed through openbsd-inetd the checks fail, fix purges the servers and masks inetd, audit passes after reboot; SSH reachable."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with telnetd, talkd (and rsh-server on 12) installed through openbsd-inetd the checks fail, fix purges the servers and masks inetd, audit passes after reboot; SSH reachable."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

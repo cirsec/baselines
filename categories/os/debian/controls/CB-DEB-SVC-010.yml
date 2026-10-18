@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-010
+title: Restrict the mail transfer agent to local delivery
+finding:
+  title: The mail transfer agent accepts connections from the network
+  description: An MTA listening on external interfaces can be abused as a relay or attacked remotely.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, mail, mta, attack-surface]
+
+applicability:
+  facts: [mta]
+
+description: |
+  Most systems only need a mail transfer agent (MTA) to send local notifications (cron output,
+  security alerts) to an administrator. Such an MTA must listen on the loopback interface only,
+  on the SMTP ports 25, 465 and 587.
+
+  On Debian the MTA is usually exim4 (`dc_local_interfaces` in
+  `/etc/exim4/update-exim4.conf.conf`) or Postfix (`inet_interfaces` in `/etc/postfix/main.cf`).
+  Sendmail, harder to configure safely, must not be installed.
+rationale: |
+  An MTA reachable from the network can be turned into an open relay for spam or phishing, and
+  exposes a complex parser to remote attackers. Local notifications work just as well through
+  the loopback interface.
+impact: |
+  The system no longer receives mail from other hosts. Mail servers and relays must exclude this
+  control in their tailoring file. Removing `sendmail-bin` also removes packages that depend on
+  it; install exim4 or Postfix first if the system must still send mail.
+notes: |
+  The control applies only when an MTA is installed (`/usr/sbin/sendmail` exists). Debian's exim4
+  default configuration already listens on loopback only. The fix restarts exim4 or Postfix
+  itself, and only when it changed their configuration.
+
+audit:
+  manual: |
+    1. Run `ss -Hltn`. No socket on port 25, 465 or 587 may be bound to an address other than
+       `127.0.0.0/8` or `::1`.
+    2. Run `dpkg-query -W -f='${Status}\n' sendmail-bin`. It must not print `install ok installed`.
+  logic: all
+  checks:
+    - id: loopback-only
+      engine: shell
+      description: SMTP ports are bound to loopback addresses only.
+      spec:
+        script: |
+          command -v ss >/dev/null 2>&1 || { echo "ss not found"; exit 3; }
+          o=$(ss -Hltn 2>/dev/null | awk '{ print $4 }' | grep -E ':(25|465|587)$' |
+            grep -Ev '^(127\.[0-9.]+(%[a-z0-9]+)?|\[::1\]|\[::ffff:127\.[0-9.]+\]):')
+          if [ -n "$o" ]; then
+            echo "SMTP listening on:" $o
+            exit 1
+          fi
+          echo "no SMTP port bound outside loopback"
+    - id: sendmail
+      engine: package
+      description: Sendmail MTA package.
+      spec: { name: sendmail-bin, state: absent }
+
+remediation:
+  manual: |
+    - exim4: set `dc_local_interfaces='127.0.0.1 ; ::1'` in `/etc/exim4/update-exim4.conf.conf`,
+      then run `update-exim4.conf` and `systemctl restart exim4`.
+    - Postfix: run `postconf -e 'inet_interfaces = loopback-only'` then `systemctl restart postfix`.
+    - Sendmail: install exim4 or Postfix, then `apt purge sendmail-bin`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore the configuration file from the backup directory, then run `update-exim4.conf` and
+    restart the MTA.
+  scripts:
+    - id: loopback-only
+      engine: shell
+      file: fix.sh
+    - id: sendmail
+      from_check: sendmail
+
+references:
+  - title: update-exim4.conf(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/exim4-config/update-exim4.conf.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: postconf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/postfix/postconf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Debian Wiki - Exim
+    url: https://wiki.debian.org/Exim
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62, R74)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R74
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: Covers the removal of Sendmail only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.2"
+    relation: stricter
+    note: Also requires Sendmail to be absent.
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.22"
+    relation: stricter
+    note: Also requires Sendmail to be absent.
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1090
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable on fresh image (no MTA); Postfix on 12 and exim4 on 13 listening on all interfaces fail, fix binds them to loopback, audit passes after reboot; second remediate leaves the MTA untouched."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable on fresh image (no MTA); Postfix on 12 and exim4 on 13 listening on all interfaces fail, fix binds them to loopback, audit passes after reboot; second remediate leaves the MTA untouched."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

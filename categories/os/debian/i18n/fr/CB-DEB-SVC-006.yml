@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-006
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'agent SNMP et le récepteur de traps quand ils ne sont pas utilisés
+finding:
+  title: Un agent SNMP ou un récepteur de traps peut tourner sur un système qui n'est pas supervisé par SNMP
+  description: SNMP v1 et v2c s'authentifient avec une communauté transmise en clair et révèlent des informations détaillées sur le système.
+description: |
+  Net-SNMP fournit l'agent `snmpd`, qui répond aux requêtes de supervision sur le port UDP 161, et
+  le récepteur de traps `snmptrapd` (`snmptrapd.service` et `snmptrapd.socket`) sur le port UDP 162.
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  En SNMPv1 et v2c, quiconque intercepte ou devine la communauté lit la liste des processus, la
+  configuration réseau et les logiciels installés, et peut modifier des paramètres si l'écriture
+  est autorisée. L'agent est aussi du code joignable à distance.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer. Les outils clients `snmpget`/`snmpwalk`
+  ne sont pas concernés. Les systèmes supervisés par SNMP doivent exclure ce contrôle dans leur
+  fichier de personnalisation et utiliser SNMPv3 avec authentification et chiffrement.
+notes: |
+  Une unité inexistante est considérée conforme, donc supprimer le paquet est une correction tout
+  aussi valable.
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `snmpd.service`, `snmptrapd.service`, `snmptrapd.socket`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si les paquets ne sont
+    pas utiles du tout, les supprimer plutôt : `apt purge snmpd snmptrapd`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

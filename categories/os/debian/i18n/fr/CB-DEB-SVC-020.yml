@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-020
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Chiffrer les connexions LDAP de SSSD et vérifier le certificat du serveur
+finding:
+  title: SSSD dialogue avec l'annuaire LDAP sans TLS ou sans vérifier le certificat du serveur
+  description: Le trafic d'annuaire, y compris les authentifications par mot de passe, peut être lu, ou l'annuaire usurpé.
+description: |
+  Quand SSSD utilise un annuaire LDAP (`id_provider`, `auth_provider` ou `chpass_provider` à
+  `ldap` dans `/etc/sssd/sssd.conf` ou `/etc/sssd/conf.d/*.conf`), ses connexions doivent être
+  protégées par TLS :
+
+  - soit chaque `ldap_uri` utilise `ldaps://`, soit `ldap_id_use_start_tls = true` ;
+  - `ldap_tls_reqcert` ne doit pas valoir `never`, `allow` ou `try`. La valeur par défaut de SSSD,
+    `hard` (équivalente à `demand`), rejette un serveur dont le certificat ne peut pas être vérifié.
+rationale: |
+  Avec le fournisseur LDAP, SSSD vérifie les mots de passe en s'authentifiant auprès de l'annuaire
+  avec eux. Sans TLS, les mots de passe et les données de comptes circulent en clair ; sans
+  vérification du certificat, un attaquant sur le chemin peut se faire passer pour l'annuaire et
+  accepter n'importe quel mot de passe.
+impact: |
+  Le serveur d'annuaire doit présenter un certificat signé par une autorité à laquelle le client
+  fait confiance (`ldap_tls_cacert` ou le magasin système). Les connexions échouent si TLS ne peut
+  pas être établi.
+notes: |
+  La vérification lit tous les fichiers de configuration SSSD d'un bloc, pas domaine par domaine :
+  avec plusieurs domaines, un seul réglage faible fait échouer le contrôle. Sans `ldap_uri`, SSSD
+  trouve les serveurs par enregistrements DNS SRV et utilise `ldap://` en clair : StartTLS est
+  alors requis. Le contrôle ne s'applique pas quand `sssd-ldap` n'est pas installé, ou quand aucun
+  domaine n'utilise le fournisseur LDAP.
+audit:
+  manual: |
+    Dans `/etc/sssd/sssd.conf` et `/etc/sssd/conf.d/*.conf`, pour chaque domaine avec un fournisseur
+    `ldap` :
+    1. chaque `ldap_uri` commence par `ldaps://`, ou `ldap_id_use_start_tls = true` ;
+    2. `ldap_tls_reqcert` est absent, `demand` ou `hard`.
+remediation:
+  manual: |
+    Dans chaque section de domaine LDAP de la configuration SSSD :
+    ```
+    ldap_uri = ldaps://ldap.example.org
+    ldap_tls_reqcert = demand
+    ldap_tls_cacert = /etc/ssl/certs/ca-certificates.crt
+    ```
+    ou garder des URI `ldap://` et ajouter `ldap_id_use_start_tls = true`. Lancer ensuite
+    `systemctl restart sssd` et tester une connexion dans une autre session avant de fermer la sienne.
+  rollback: |
+    Restaurer la configuration SSSD précédente et lancer `systemctl restart sssd`.

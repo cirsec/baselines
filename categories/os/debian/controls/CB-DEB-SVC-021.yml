@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-021
+title: Disable the autofs automounter
+finding:
+  title: The autofs automounter can mount file systems on demand
+  description: Removable media or network shares get mounted whenever someone accesses a path.
+status: draft
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, autofs, removable-media]
+
+description: |
+  `autofs` mounts file systems (local devices, NFS or SMB shares) when a path under its maps is
+  accessed, and unmounts them when idle.
+
+  The control passes when `autofs.service` is masked or not installed at all.
+rationale: |
+  Automatic mounting of removable media lets anyone with physical access bring in files or
+  malicious file system images; automatic network mounts reach shares that the administrator may
+  not expect.
+impact: |
+  File systems listed in the autofs maps are no longer mounted on demand: mount them through
+  `/etc/fstab` instead. Systems that rely on autofs, such as home directories on NFS, must exclude
+  this control in their tailoring file.
+notes: |
+  The control is in the server profile and in the hardened desktop profile: on standard
+  desktops, on-demand mounts are an expected feature.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled autofs.service`. It must print `masked`, or fail because the unit does
+    not exist.
+  checks:
+    - id: autofs
+      engine: systemd-unit
+      description: autofs automounter.
+      spec: { unit: autofs.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now autofs.service`, or `apt purge autofs` if the package is not needed.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask autofs.service` then `systemctl enable --now autofs.service`.
+  scripts:
+    - id: autofs
+      from_check: autofs
+
+references:
+  - title: autofs(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/autofs/autofs.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers autofs.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1091
+  - framework: mitre-attack
+    id: T1200
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with autofs installed the check fails, fix masks, audit passes after reboot; tested with profiles server-hardened and desktop-hardened."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with autofs installed the check fails, fix masks, audit passes after reboot; tested with profiles server-hardened and desktop-hardened."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

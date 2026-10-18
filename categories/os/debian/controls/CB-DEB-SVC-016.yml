@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-016
+title: Configure chrony with time sources, run it unprivileged and keep it running
+finding:
+  title: chrony has no time source, runs as root or is not running
+  description: The clock is not synchronized, or the NTP daemon parses network traffic with full privileges.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [time, ntp, chrony]
+
+applicability:
+  facts: [chrony]
+
+description: |
+  chrony reads its sources (`server`, `pool` or `peer` lines) from `/etc/chrony/chrony.conf` and
+  the files included by Debian's default configuration: `/etc/chrony/conf.d/*.conf` and
+  `/etc/chrony/sources.d/*.sources`. After start-up, `chronyd` drops root privileges to the
+  `_chrony` user unless the `user` directive or the `-u` option says otherwise. The service
+  `chrony.service` must be enabled and running.
+rationale: |
+  Without a source the clock drifts. chronyd parses packets from the network; running it as an
+  unprivileged user limits what a flaw in that code can reach. A stopped daemon leaves the clock
+  unsynchronized.
+impact: |
+  None known with the Debian defaults, which use the Debian NTP pool and the `_chrony` user.
+notes: |
+  The sources are site-specific, so the fix only enables and starts the service; adding sources
+  and removing a `user root` setting are manual.
+
+audit:
+  manual: |
+    1. `grep -E '^[[:space:]]*(server|pool|peer)[[:space:]]' /etc/chrony/chrony.conf
+       /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources` must list approved sources.
+    2. `ps -C chronyd -o user=` must print `_chrony`.
+    3. `systemctl is-enabled chrony` must print `enabled` and `systemctl is-active chrony` `active`.
+  logic: all
+  checks:
+    - id: sources
+      engine: shell
+      description: chrony has at least one server, pool or peer source.
+      spec:
+        script: |
+          o=$(grep -hEs '^[[:space:]]*(server|pool|peer)[[:space:]]' /etc/chrony/chrony.conf \
+            /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources | head -n 5)
+          if [ -z "$o" ]; then echo "no server, pool or peer directive"; exit 1; fi
+          printf '%s\n' "$o"
+    - id: user
+      engine: shell
+      description: chronyd runs as _chrony.
+      spec:
+        script: |
+          u=$(ps -C chronyd -o user= 2>/dev/null | sort -u | tr -d ' ' | tr '\n' ' ')
+          echo "chronyd user: ${u:-not running}"
+          [ "$u" = "_chrony " ]
+    - id: enabled
+      engine: systemd-unit
+      description: chrony is enabled.
+      spec: { unit: chrony.service, state: enabled }
+    - id: active
+      engine: shell
+      description: chrony is running.
+      spec:
+        script: systemctl is-active chrony.service || exit 1
+
+remediation:
+  manual: |
+    1. Add approved sources in `/etc/chrony/sources.d/local.sources`, one per line, for example
+       `server ntp1.example.org iburst`, then run `chronyc reload sources`.
+    2. Remove any `user` directive other than `user _chrony` from the chrony configuration and any
+       `-u` option from `DAEMON_OPTS` in `/etc/default/chrony`.
+    3. Run `systemctl enable --now chrony`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now chrony`.
+  scripts:
+    - id: enabled
+      from_check: enabled
+
+references:
+  - title: chrony.conf(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/chrony/chrony.conf.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: chronyd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/chrony/chronyd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-8(1)
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.3.3.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.3.3.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.006
+related_controls:
+  - id: CB-DEB-SVC-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Not applicable without chrony; with chrony installed and disabled the enabled, active and user checks fail, fix enables and starts it, audit passes after reboot."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Not applicable without chrony; with chrony installed and disabled the enabled, active and user checks fail, fix enables and starts it, audit passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

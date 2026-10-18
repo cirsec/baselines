@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-025
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Cloisonner les services avec les options de sandboxing de systemd
+finding:
+  title: Les services exposés au réseau tournent avec tous les privilèges que systemd donne par défaut
+  description: Un service compromis peut lire et modifier tout le système au lieu de ses seuls fichiers.
+description: |
+  systemd peut cloisonner chaque service avec des options dans son unité ou dans un fichier
+  complémentaire (`systemctl edit <unité>`) : un utilisateur dédié ou dynamique (`User=`,
+  `DynamicUser=`), une vue en lecture seule du système (`ProtectSystem=strict`, `ProtectHome=`,
+  `ReadWritePaths=`), un `/tmp` et des périphériques privés (`PrivateTmp=`, `PrivateDevices=`),
+  aucun gain de privilèges (`NoNewPrivileges=`, `CapabilityBoundingSet=`), et des filtres sur le
+  noyau et les appels système (`ProtectKernelTunables=`, `RestrictAddressFamilies=`,
+  `SystemCallFilter=`...).
+
+  `systemd-analyze security` note chaque service de 0 (cloisonné) à 10 (non cloisonné) et le
+  qualifie de `OK`, `MEDIUM`, `EXPOSED` ou `UNSAFE`.
+rationale: |
+  La plupart des démons n'ont besoin que de quelques répertoires, capacités et appels système. Les
+  cloisonner limite ce qu'un attaquant gagne en en exploitant un : pas d'accès aux données des
+  autres services, pas de réglage du noyau, pas de nouveaux privilèges. C'est le cloisonnement que
+  l'ANSSI demande pour chaque service.
+impact: |
+  Des options trop strictes font échouer un service au démarrage ou en fonctionnement (impossible
+  d'écrire ses fichiers, d'ouvrir un socket). Chaque modification doit être testée sur le service
+  et placée dans un fichier complémentaire pour que les mises à jour de paquets ne l'écrasent pas.
+notes: |
+  La vérification liste les services que `systemd-analyze security` qualifie d'`UNSAFE`, avec leur
+  note ; elle réussit toujours, le contrôle se termine donc en `review`. Une personne décide quels
+  services exposés au réseau cloisonner en premier. Beaucoup de services Debian ont déjà des unités
+  durcies (par exemple `systemd-resolved`, `chrony`) ; OpenSSH reste largement non cloisonné par
+  conception, puisqu'il doit ouvrir des sessions.
+audit:
+  manual: |
+    1. Lancer `systemd-analyze security` et noter les services qualifiés d'`UNSAFE` ou d'`EXPOSED`.
+    2. Pour chaque service qui écoute sur le réseau ou analyse des données non fiables, vérifier qu'un
+       fichier complémentaire sous `/etc/systemd/system/<unité>.d/` définit les options de
+       sandboxing qu'il supporte, et que `systemd-analyze security <unité>` montre une note améliorée.
+remediation:
+  manual: |
+    Pour chaque service à cloisonner, lancer `systemctl edit <unité>` et ajouter les options qu'il
+    tolère, par exemple :
+    ```
+    [Service]
+    ProtectSystem=strict
+    ReadWritePaths=/var/lib/<service>
+    ProtectHome=yes
+    PrivateTmp=yes
+    PrivateDevices=yes
+    NoNewPrivileges=yes
+    ProtectKernelTunables=yes
+    ProtectKernelModules=yes
+    ProtectControlGroups=yes
+    RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+    ```
+    Redémarrer le service, vérifier qu'il fonctionne et ses journaux (`journalctl -u <unité>`), puis
+    comparer `systemd-analyze security <unité>`.
+  rollback: |
+    Lancer `systemctl revert <unité>` pour supprimer les fichiers complémentaires, puis redémarrer le service.

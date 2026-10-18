@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-004
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les serveurs d'annuaire LDAP et NIS que le système ne fournit pas
+finding:
+  title: Un serveur d'annuaire LDAP ou NIS peut tourner sur un système qui n'en fournit pas
+  description: Un serveur d'annuaire oublié peut divulguer des données de comptes ou laisser un attaquant publier des comptes.
+description: |
+  Serveurs d'annuaire fournis par Debian :
+
+  - OpenLDAP : `slapd` ;
+  - NIS : `ypserv`, avec ses compagnons `yppasswdd` (changement de mot de passe) et `ypxfrd`
+    (transfert des tables).
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  Un serveur d'annuaire détient des données de comptes et de groupes auxquelles d'autres systèmes
+  font confiance. NIS envoie les empreintes de mots de passe à tout client qui les demande, sans
+  réelle authentification ; un serveur OpenLDAP laissé sans surveillance peut exposer ces données
+  ou en accepter la modification.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer. Les clients LDAP et NIS ne sont pas
+  concernés. Les serveurs d'annuaire doivent exclure ce contrôle dans leur fichier de
+  personnalisation.
+notes: |
+  Une unité inexistante est considérée conforme. Sur Debian 12, `slapd` ne fournit qu'un script
+  d'init System V ; systemd masque quand même l'unité `slapd.service` générée.
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `slapd.service`, `ypserv.service`, `yppasswdd.service`,
+    `ypxfrd.service`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si le paquet n'est
+    pas utile du tout, le supprimer plutôt : `apt purge slapd ypserv`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

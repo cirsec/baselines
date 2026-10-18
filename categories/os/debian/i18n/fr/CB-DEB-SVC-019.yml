@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-019
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que les utilisateurs listés à planifier des tâches avec crontab et at
+finding:
+  title: Tout utilisateur local peut planifier des tâches avec crontab ou at
+  description: Les tâches planifiées permettent à un intrus de persister et d'exécuter du code sans surveillance, même après sa déconnexion.
+description: |
+  `crontab` et `at` lisent une liste d'autorisation et une liste d'interdiction :
+
+  - `/etc/cron.allow` et `/etc/cron.deny` pour `crontab` ;
+  - `/etc/at.allow` et `/etc/at.deny` pour `at`.
+
+  Quand le fichier d'autorisation existe, seuls les utilisateurs qu'il liste peuvent planifier des
+  tâches, et le fichier d'interdiction est ignoré. Le fichier d'autorisation doit exister,
+  appartenir à root, avec le groupe `root` ou le groupe sous lequel tourne l'outil (`crontab` pour
+  cron, `daemon` pour at), et un mode `0640` ou plus strict. Un fichier d'interdiction, s'il
+  existe, doit avoir le même propriétaire et le même mode.
+rationale: |
+  Une liste d'autorisation est plus sûre qu'une liste d'interdiction : un nouveau compte ne peut
+  pas planifier de tâches tant que quelqu'un n'en a pas décidé ainsi. Les tâches planifiées sont
+  une technique de persistance courante, et restreindre qui peut en créer réduit cette option pour
+  un compte compromis.
+impact: |
+  Les utilisateurs absents du fichier d'autorisation ne peuvent plus créer ni modifier de crontab
+  ou de tâche at. Ajouter les comptes qui en ont besoin (y compris les comptes de service) avant
+  d'appliquer. La correction crée les fichiers d'autorisation manquants avec `root` comme seule entrée.
+notes: |
+  Les vérifications ne tournent que pour les outils installés (facts `cron` et `at`) ; les images
+  cloud Debian n'installent ni l'un ni l'autre. `crontab` et `at` lisent ces fichiers via leur
+  groupe setgid : un groupe autre que `root` doit donc être `crontab` ou `daemon` pour qu'ils
+  fonctionnent.
+audit:
+  manual: |
+    1. Lancer `stat -Lc '%n %U:%G %a' /etc/cron.allow /etc/at.allow`. Chaque fichier d'autorisation
+       doit exister, appartenir à `root`, avec le groupe `root` ou `crontab` (cron) / `daemon` (at), et
+       un mode `640` ou plus strict.
+    2. `/etc/cron.deny` et `/etc/at.deny`, s'ils existent, doivent respecter les mêmes règles.
+remediation:
+  manual: |
+    1. cron : `printf 'root\n' > /etc/cron.allow`, ajouter les autres utilisateurs autorisés un par
+       ligne, puis `chown root:crontab /etc/cron.allow` et `chmod 640 /etc/cron.allow`. Appliquer le
+       même propriétaire et le même mode à `/etc/cron.deny` s'il existe.
+    2. at : mêmes étapes pour `/etc/at.allow` et `/etc/at.deny` avec le groupe `daemon`.
+  rollback: |
+    Supprimer `/etc/cron.allow` et `/etc/at.allow` (les fichiers d'interdiction s'appliquent alors à nouveau).

@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-006
+title: Disable the SNMP agent and trap receiver when they are not used
+finding:
+  title: An SNMP agent or trap receiver can run on a system that is not monitored through SNMP
+  description: SNMP versions 1 and 2c authenticate with a clear-text community string and reveal detailed system information.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, snmp, attack-surface]
+
+description: |
+  Net-SNMP provides the agent `snmpd`, which answers monitoring queries on UDP port 161, and the
+  trap receiver `snmptrapd` (`snmptrapd.service` and `snmptrapd.socket`) on UDP port 162.
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  With SNMPv1 and v2c, anyone who sniffs or guesses the community string reads the process list,
+  network configuration and installed software, and may change settings if write access is
+  configured. The agent is also remotely reachable code.
+impact: |
+  Masking a unit stops it and prevents it from starting again. The `snmpget`/`snmpwalk` client
+  tools are not affected. Systems monitored through SNMP must exclude this control in their
+  tailoring file and use SNMPv3 with authentication and encryption.
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid fix.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `snmpd.service`, `snmptrapd.service`, `snmptrapd.socket`.
+  logic: all
+  checks:
+    - id: snmpd
+      engine: systemd-unit
+      description: SNMP agent.
+      spec: { unit: snmpd.service, state: masked }
+    - id: snmptrapd
+      engine: systemd-unit
+      description: SNMP trap receiver.
+      spec: { unit: snmptrapd.service, state: masked }
+    - id: snmptrapd-socket
+      engine: systemd-unit
+      description: SNMP trap receiver socket activation.
+      spec: { unit: snmptrapd.socket, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the packages are not
+    needed at all, remove them instead: `apt purge snmpd snmptrapd`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: snmpd
+      from_check: snmpd
+    - id: snmptrapd-socket
+      from_check: snmptrapd-socket
+    - id: snmptrapd
+      from_check: snmptrapd
+
+references:
+  - title: snmpd(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/snmpd/snmpd.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemctl(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemctl.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers SNMP.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "2.1.18"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "2.1.15"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1082
+  - framework: mitre-attack
+    id: T1210
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with snmpd and snmptrapd installed the checks fail, fix masks, audit passes after reboot; snmpd still purges cleanly."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with snmpd and snmptrapd installed the checks fail, fix masks, audit passes after reboot; snmpd still purges cleanly."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

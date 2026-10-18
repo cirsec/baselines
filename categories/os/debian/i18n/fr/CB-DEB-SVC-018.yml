@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-SVC-018
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la crontab système et les répertoires cron à root
+finding:
+  title: Les utilisateurs peuvent lire les tâches cron du système
+  description: La crontab système et les répertoires cron révèlent quels scripts tournent en root et quand.
+description: |
+  Les tâches cron du système se trouvent dans `/etc/crontab`, `/etc/cron.d/` et les répertoires
+  `/etc/cron.hourly`, `cron.daily`, `cron.weekly`, `cron.monthly` et `cron.yearly`. Ils doivent
+  appartenir à `root:root`, avec le mode `0600` pour le fichier et `0700` pour les répertoires, ou
+  plus strict.
+rationale: |
+  Ces tâches tournent en root. Les lire indique à un attaquant quels scripts viser et quand ils
+  s'exécutent ; une tâche ou un répertoire modifiable est un chemin direct vers root.
+impact: |
+  Les utilisateurs ne peuvent plus lister les tâches cron du système. cron tourne en root et n'est
+  pas affecté.
+notes: |
+  Debian installe ces chemins avec les modes `0644` et `0755` : le contrôle échoue donc sur une
+  installation neuve de cron. Un répertoire absent (`/etc/cron.yearly` n'est pas créé par toutes
+  les versions) rend sa vérification non applicable.
+setting:
+  location: /etc/crontab, /etc/cron.d, /etc/cron.hourly, /etc/cron.daily, /etc/cron.weekly, /etc/cron.monthly, /etc/cron.yearly
+  recommended_value: "root:root, 0600 (fichier) et 0700 (répertoires) ou plus strict"
+audit:
+  manual: |
+    Lancer `stat -Lc '%n %U:%G %a' /etc/crontab /etc/cron.d /etc/cron.hourly /etc/cron.daily
+    /etc/cron.weekly /etc/cron.monthly /etc/cron.yearly`. Chacun doit être `root:root`, avec le mode
+    `600` pour `/etc/crontab` et `700` pour les répertoires, ou plus strict.
+remediation:
+  manual: |
+    Lancer `chown root:root /etc/crontab /etc/cron.d /etc/cron.hourly /etc/cron.daily
+    /etc/cron.weekly /etc/cron.monthly /etc/cron.yearly`, `chmod 600 /etc/crontab` et
+    `chmod 700 /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly
+    /etc/cron.yearly`.
+  rollback: |
+    Lancer `chmod 644 /etc/crontab` et `chmod 755` sur les répertoires.

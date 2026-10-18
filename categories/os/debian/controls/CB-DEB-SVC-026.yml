@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-SVC-026
+title: Disable the kdump kernel crash dump service
+finding:
+  title: Kernel crash dumps are collected on the system
+  description: A crash dump is a copy of memory that can hold keys, passwords and sensitive data.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [services, kdump, kernel, data-exposure]
+
+description: |
+  `kdump-tools` loads a capture kernel at boot (`kdump-tools.service`). When the main kernel
+  crashes, the capture kernel saves its memory to `/var/crash`.
+
+  The control passes when `kdump-tools.service` is masked or not installed at all.
+rationale: |
+  The dump holds everything that was in memory: secrets of running services, session keys,
+  documents. It stays on disk after the reboot and can be copied by anyone who gets access to
+  `/var/crash` or to backups. Kernel crash analysis is rarely needed in production.
+impact: |
+  Kernel crashes leave no dump to analyse. The memory reserved by the `crashkernel=` boot
+  parameter stays reserved until the parameter is removed (`apt purge kdump-tools`, then
+  `update-grub` and a reboot).
+notes: |
+  `kdump-tools` is not installed by default. Systems where kernel developers or support need
+  dumps should exclude this control in their tailoring file and protect `/var/crash` instead.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled kdump-tools.service`. It must print `masked`, or fail because the unit
+    does not exist.
+  checks:
+    - id: kdump-tools
+      engine: systemd-unit
+      description: kdump capture kernel loader.
+      spec: { unit: kdump-tools.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now kdump-tools.service`. To also free the reserved memory, run
+    `apt purge kdump-tools`, then `update-grub`, and reboot.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask kdump-tools.service` then `systemctl enable --now kdump-tools.service`.
+  scripts:
+    - id: kdump-tools
+      from_check: kdump-tools
+
+references:
+  - title: kdump-tools(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/kdump-tools/kdump-tools.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: kdump-config(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/kdump-tools/kdump-config.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers kdump.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1003
+  - framework: cwe
+    id: CWE-528
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fresh image passes; with kdump-tools installed the check fails, fix masks the service, audit passes after reboot; kdump-tools still purges cleanly."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fresh image passes; with kdump-tools installed the check fails, fix masks the service, audit passes after reboot; kdump-tools still purges cleanly."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18
