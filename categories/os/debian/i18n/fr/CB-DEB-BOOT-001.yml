@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-001
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer la randomisation complète de l'espace d'adressage
+finding:
+  title: La disposition mémoire des processus est prévisible
+  description: Sans randomisation complète, un attaquant qui exploite un bug mémoire peut deviner où se trouvent le code et les données.
+description: |
+  Le sysctl `kernel.randomize_va_space` pilote la randomisation de l'espace d'adressage (ASLR).
+  Avec la valeur `2`, le noyau rend aléatoires les positions de la pile, de la page VDSO, des
+  zones de mémoire partagée et du segment de données (tas) de chaque processus.
+rationale: |
+  La plupart des exploits de corruption mémoire doivent connaître l'adresse du code ou des
+  données visés. Randomiser la disposition à chaque exécution transforme un exploit fiable en
+  pari, et complique fortement la programmation orientée retour (ROP).
+impact: |
+  Aucun connu. `2` est la valeur par défaut du noyau et de Debian.
+notes: |
+  `1` randomise tout sauf le tas, `0` désactive l'ASLR. Un programme qui a besoin de l'ASLR
+  désactivée pour du débogage peut être lancé avec `setarch -R` plutôt que de changer le réglage système.
+setting:
+  location: sysctl `kernel.randomize_va_space`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "2"
+audit:
+  manual: |
+    Lancer `sysctl kernel.randomize_va_space`. La valeur doit être `2`.
+    Vérifier ensuite qu'aucun fichier de `/etc/sysctl.conf`, `/etc/sysctl.d/`, `/run/sysctl.d/`
+    ou `/usr/lib/sysctl.d/` ne lui donne une autre valeur.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `kernel.randomize_va_space = 2`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl --system`.
