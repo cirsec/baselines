@@ -233,7 +233,7 @@ parameters:
     maximum: 365
 ```
 
-Resolution order for a value: user override, then `profile_defaults[<profile>]`, then `default`. `minimum`, `maximum` and `allowed` bound what users may set. `allowed` is required for `type: enum`.
+Resolution order for a value: user override, then `profile_defaults[<profile>]`, then `profile_defaults` of each profile it `extends` (nearest first), then `default`. `minimum`, `maximum` and `allowed` bound what users may set. `allowed` is required for `type: enum`.
 
 ---
 
