@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-001
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Afficher un avertissement légal avant la connexion, sans détail sur le système
+finding:
+  title: L'invite de connexion affiche la version du système et aucun avertissement légal
+  description: La bannière aide un attaquant à identifier le système et ne rappelle pas que l'accès est restreint.
+description: |
+  `/etc/issue` est affiché avant les connexions sur la console locale et `/etc/issue.net` avant
+  les connexions réseau des services qui l'utilisent. Sur Debian, les deux contiennent le nom et la
+  version de la distribution, et `/etc/issue` utilise aussi des séquences (`\s`, `\r`, `\v`,
+  `\m`) qui affichent le nom, la version et l'architecture du noyau.
+rationale: |
+  Une bannière indiquant que l'accès est restreint et surveillé facilite les poursuites contre les
+  intrus dans de nombreux pays. Les détails de version aident un attaquant à choisir ses exploits
+  sans même interagir avec le système.
+impact: |
+  Aucun connu. Les administrateurs obtiennent la version avec `uname -a` après connexion.
+notes: |
+  Le serveur SSH n'affiche une bannière que si son option `Banner` est définie ; c'est traité avec
+  les autres réglages SSH.
+setting:
+  location: /etc/issue, /etc/issue.net
+  recommended_value: "{{ banner_text }}"
+parameters:
+  banner_text: Texte de l'avertissement légal. Il ne doit nommer ni le système ni sa version.
+audit:
+  manual: |
+    1. Lire `/etc/issue` et `/etc/issue.net`. Les deux doivent contenir un avertissement et aucun nom ni version de système.
+    2. Aucun des deux ne doit contenir les séquences `\m`, `\r`, `\s` ou `\v`.
+remediation:
+  manual: |
+    Remplacer le contenu de `/etc/issue` et `/etc/issue.net` par le texte d'avertissement :
+    "{{ banner_text }}"
+  rollback: |
+    Restaurer les fichiers depuis la sauvegarde, ou réécrire `Debian GNU/Linux \n \l` dans `/etc/issue`.

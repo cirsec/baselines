@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-009
+title: Write sudo rules with least privilege
+finding:
+  title: sudo rules give broader rights than the tasks need
+  description: Rules with negations, wildcards, shells or editors let users escape to a full root shell.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [sudo, privilege-escalation, least-privilege]
+
+applicability:
+  facts: [sudo]
+
+description: |
+  Good sudo rules grant precise commands to a dedicated group:
+
+  - administrators are members of a group dedicated to sudo, and rules name that group;
+  - commands run as an unprivileged target user whenever root is not needed (`(appuser)`);
+  - rules list full command paths with their arguments, and no negations (`!`), since
+    negations are easy to bypass by copying or renaming the binary;
+  - programs that can start other programs (editors, pagers, interpreters) get `NOEXEC`, or are
+    replaced by `sudoedit` for editing files.
+rationale: |
+  Many programs can spawn a shell: an editor launched as root, `less`, `find -exec`, or a
+  scripting language. A rule that allows them is effectively `ALL`. Negated rules and wildcards
+  look restrictive but are bypassed with a renamed copy or an extra argument.
+impact: |
+  Rewriting broad rules takes an inventory of what each administrator really needs. Users who
+  edit files as root switch to `sudoedit`.
+
+audit:
+  manual: |
+    Read every rule with `sudo -ll -U <user>` for each member of an administrative group, and
+    `/etc/sudoers` plus `/etc/sudoers.d/`. Check that:
+    1. rules target a dedicated group (`%group`), not individual users;
+    2. no command list contains `!` (negation);
+    3. commands are given with absolute paths and explicit arguments, without bare `*`;
+    4. editors, pagers and interpreters are not allowed, or carry `NOEXEC:`; file edits use `sudoedit`;
+    5. commands that do not need root run as a dedicated user.
+
+remediation:
+  manual: |
+    1. Create a group per administrative role and use `%group` in rules.
+    2. Replace `ALL` and negated lists with explicit commands and arguments.
+    3. Replace `vi /etc/file` style rules with `sudoedit /etc/file`, and add `NOEXEC:` to rules
+       for programs that can run other programs.
+    4. Validate with `visudo -c` before closing the root session used for the change.
+
+references:
+  - title: sudoers(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sudo/sudoers.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R38 to R44)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R38
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R40
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R41
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R42
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R43
+    relation: equivalent
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R44
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1548.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

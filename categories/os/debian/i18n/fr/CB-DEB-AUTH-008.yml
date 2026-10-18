@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-008
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la commande su à un groupe vide
+finding:
+  title: Tout utilisateur qui connaît le mot de passe d'un compte peut en prendre l'identité avec su
+  description: su contourne les règles et les journaux de sudo, et permet à quiconque a deviné ou volé un mot de passe de devenir cet utilisateur.
+description: |
+  `su` permet de prendre l'identité d'un autre utilisateur, root par défaut, après avoir saisi le
+  mot de passe de cet utilisateur. Le module `pam_wheel` peut le réserver aux membres d'un groupe.
+  En désignant un groupe vide, seul root peut utiliser `su` ; les administrateurs utilisent `sudo`.
+rationale: |
+  L'administration par `su` exige un mot de passe root partagé et ne laisse aucune trace de qui a
+  lancé quelle commande. La restreindre fait passer toutes les actions privilégiées par sudo, avec
+  des règles et des journaux par utilisateur, et empêche de deviner des mots de passe via `su`.
+impact: |
+  Les utilisateurs ne peuvent plus lancer `su` ni `su - autreutilisateur`. Utiliser `sudo -i` ou
+  `sudo -u autreutilisateur -i`. Root peut toujours utiliser `su` vers n'importe quel compte.
+parameters:
+  su_group: Nom du groupe autorisé à utiliser su. Il doit rester vide.
+audit:
+  manual: |
+    1. `/etc/pam.d/su` doit contenir une ligne active
+       `auth required pam_wheel.so use_uid group={{ su_group }}`.
+    2. Lancer `getent group {{ su_group }}`. Le groupe doit exister et n'avoir aucun membre.
+remediation:
+  manual: |
+    1. Créer le groupe : `groupadd {{ su_group }}`.
+    2. Ajouter dans `/etc/pam.d/su`, avant la ligne `@include common-auth` :
+       `auth required pam_wheel.so use_uid group={{ su_group }}`
+  rollback: |
+    Retirer la ligne de `/etc/pam.d/su`.

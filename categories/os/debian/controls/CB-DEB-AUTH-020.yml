@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-020
+title: Close idle shell sessions automatically
+finding:
+  title: Idle shell sessions stay open forever
+  description: A forgotten terminal, often with a root shell, can be used by anyone who reaches it.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [accounts, session, timeout]
+
+description: |
+  When the read-only `TMOUT` variable is set, bash and dash close an interactive shell that
+  waited that many seconds for input. Setting it in `/etc/profile.d/` applies it to the login
+  shells of every user, and `readonly` stops users from removing it.
+rationale: |
+  Open terminals left on a console, in a jump host session or in a forgotten SSH connection are
+  an easy way to reuse someone's access, sometimes with root privileges.
+impact: |
+  Idle interactive shells exit after {{ tmout }} seconds. Long-running commands are not
+  affected, but a shell waiting at the prompt is closed: use `tmux` or `screen` for sessions
+  that must stay open.
+
+setting:
+  location: /etc/profile.d/60-cirsec-tmout.sh
+  default_value: Not set
+  recommended_value: "TMOUT={{ tmout }}, readonly"
+
+parameters:
+  - name: tmout
+    type: integer
+    description: Idle time before an interactive shell exits.
+    unit: seconds
+    default: 900
+    profile_defaults:
+      server-hardened: 600
+      desktop-hardened: 600
+    minimum: 60
+    maximum: 3600
+
+audit:
+  manual: |
+    Run `su -s /bin/sh -l nobody -c 'echo $TMOUT'`. It must print a value between 1 and {{ tmout }}.
+  checks:
+    - id: login-shell
+      engine: shell
+      description: TMOUT in a login shell.
+      spec:
+        script: |
+          t=$(su -s /bin/sh -l nobody -c 'printf %s "${TMOUT:-}"' 2>/dev/null) || exit 3
+          echo "TMOUT=${t:-unset}"
+          [ -n "$t" ] && [ "$t" -ge 1 ] && [ "$t" -le "$CB_TMOUT" ]
+
+remediation:
+  manual: |
+    Create `/etc/profile.d/60-cirsec-tmout.sh`:
+    ```
+    TMOUT={{ tmout }}
+    readonly TMOUT
+    export TMOUT
+    ```
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/profile.d/60-cirsec-tmout.sh`.
+  scripts:
+    - id: profile
+      engine: shell
+      content: |
+        f=/etc/profile.d/60-cirsec-tmout.sh
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUTH-020' "TMOUT=$CB_TMOUT" 'readonly TMOUT' 'export TMOUT' >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: bash(1), Debian manual pages (TMOUT)
+    url: https://manpages.debian.org/trixie/bash/bash.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R32)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R32
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.3.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.3.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

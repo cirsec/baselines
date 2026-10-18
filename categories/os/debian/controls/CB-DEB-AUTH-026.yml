@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-026
+title: Store every password hash in shadow and leave no account without a password
+finding:
+  title: An account has its password hash in /etc/passwd, or an empty password
+  description: /etc/passwd is readable by every user; an empty password field opens the account to anyone.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [accounts, password, shadow]
+
+description: |
+  `/etc/passwd` is world-readable and must only contain `x` in the password field; the hashes
+  belong in `/etc/shadow`, readable by root and the `shadow` group only. In `/etc/shadow`, each
+  password field holds a hash, or `!`/`*` for locked accounts, but is never empty.
+rationale: |
+  A hash left in `/etc/passwd` can be copied and cracked by any local user. An empty password
+  field lets anyone log in to the account where empty passwords are accepted.
+impact: |
+  None for a standard system.
+
+audit:
+  manual: |
+    1. `awk -F: '$2 != "x"' /etc/passwd` prints nothing.
+    2. `awk -F: '$2 == ""' /etc/shadow` prints nothing.
+  checks:
+    - id: shadowed
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$2 != "x" {print $1}' /etc/passwd | tr '\n' ' ')
+          echo "not shadowed: ${u:-none}"
+          [ -z "$u" ]
+    - id: not-empty
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$2 == "" {print $1}' /etc/shadow | tr '\n' ' ')
+          echo "empty password: ${u:-none}"
+          [ -z "$u" ]
+
+remediation:
+  manual: |
+    1. Run `pwconv` to move any hash from `/etc/passwd` to `/etc/shadow`.
+    2. Lock each account with an empty password (`passwd -l <user>`) or give it one (`passwd <user>`).
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore `/etc/passwd` and `/etc/shadow` from the backup.
+  scripts:
+    - id: fix
+      engine: shell
+      content: |
+        cb_backup /etc/passwd
+        cb_backup /etc/shadow
+        pwconv
+        for u in $(awk -F: '$2 == "" {print $1}' /etc/shadow); do passwd -l "$u" >/dev/null; done
+
+references:
+  - title: shadow(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/shadow.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R68)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R68
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1003.008
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

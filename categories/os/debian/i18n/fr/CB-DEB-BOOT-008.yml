@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-BOOT-008
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Installer et activer AppArmor
+finding:
+  title: Le contrôle d'accès obligatoire AppArmor n'est pas actif
+  description: Sans contrôle d'accès obligatoire, un service compromis garde tous les droits de son utilisateur Unix.
+description: |
+  AppArmor est le système de contrôle d'accès obligatoire (MAC) de Debian. Il confine les
+  programmes avec des profils qui listent les fichiers, capacités et accès réseau autorisés, en plus
+  des permissions Unix classiques. Il faut le paquet `apparmor` (analyseur et profils) et le module
+  de sécurité AppArmor actif dans le noyau en cours d'exécution.
+rationale: |
+  Les permissions Unix ne dépendent que de l'utilisateur sous lequel tourne un programme. Un service
+  compromis confiné par un profil AppArmor ne peut ni lire ni écrire en dehors de ce que son profil
+  autorise, même en root, ce qui limite ce qu'un attaquant peut faire après l'avoir exploité.
+impact: |
+  Aucun connu sur une installation par défaut : Debian active AppArmor depuis Debian 10, et ses
+  profils sont écrits pour ne pas casser les programmes empaquetés.
+notes: |
+  AppArmor est activé par défaut par le noyau Debian. S'il a été désactivé par `apparmor=0` ou un
+  paramètre noyau `security=` / `lsm=`, retirer ce paramètre de `GRUB_CMDLINE_LINUX` dans
+  `/etc/default/grub`, lancer `update-grub` et redémarrer.
+setting:
+  location: Paquet `apparmor` ; modules de sécurité du noyau (`/sys/kernel/security/lsm`)
+  recommended_value: Installé et actif
+audit:
+  manual: |
+    1. Lancer `dpkg -s apparmor`. Le paquet doit être installé.
+    2. Lancer `aa-enabled`. La commande doit afficher `Yes`.
+remediation:
+  manual: |
+    1. Installer le paquet : `apt install apparmor`.
+    2. Si `aa-enabled` indique toujours qu'il est désactivé, retirer `apparmor=0`, `security=` ou
+       `lsm=` de la ligne de commande noyau dans `/etc/default/grub`, lancer `update-grub` et redémarrer.
+  rollback: |
+    AppArmor peut être désactivé pour un démarrage avec le paramètre noyau `apparmor=0`.

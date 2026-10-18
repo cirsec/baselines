@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-015
+title: Apply the password aging policy to existing accounts
+finding:
+  title: Existing accounts keep passwords that never expire
+  description: Changing login.defs only affects new accounts; existing ones keep their old aging settings.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [password, accounts]
+
+description: |
+  Each account has its own aging fields in `/etc/shadow` (minimum and maximum age, warning
+  period, inactivity period, date of last change), copied from the defaults when it was created.
+  This control applies the policy of CB-DEB-AUTH-014 to every existing account that has a
+  password, and checks that no last change date lies in the future.
+rationale: |
+  Without this step, the aging policy only protects accounts created after it was set. A last
+  change date in the future would postpone expiry indefinitely.
+impact: |
+  An account whose password is older than {{ max_days }} days is asked to change it at its next
+  password login, and is disabled {{ inactive_days }} days later. SSH key logins of such an
+  account are also refused until the password is changed: check service and automation accounts
+  before applying.
+
+parameters:
+  - name: max_days
+    type: integer
+    description: Maximum password age in days.
+    unit: days
+    default: 365
+    minimum: 1
+    maximum: 99999
+  - name: min_days
+    type: integer
+    description: Minimum days between password changes.
+    unit: days
+    default: 0
+    profile_defaults:
+      server-hardened: 1
+      desktop-hardened: 1
+    minimum: 0
+    maximum: 7
+  - name: inactive_days
+    type: integer
+    description: Days after password expiry before the account is disabled.
+    unit: days
+    default: 45
+    minimum: 0
+    maximum: 365
+
+audit:
+  manual: |
+    For every account with a password hash in `/etc/shadow` (field 2 starting with `$`), check
+    with `chage -l <user>`: maximum <= {{ max_days }}, minimum >= {{ min_days }}, warning >= 7,
+    inactive between 0 and {{ inactive_days }}, and a last change date that is not in the future.
+  checks:
+    - id: accounts
+      engine: shell
+      description: Aging fields of every account with a password.
+      spec:
+        script: |
+          today=$(( $(date +%s) / 86400 ))
+          bad=$(awk -F: -v max="$CB_MAX_DAYS" -v min="$CB_MIN_DAYS" -v inact="$CB_INACTIVE_DAYS" -v today="$today" '
+            $2 ~ /^\$/ {
+              r = ""
+              if ($5 == "" || $5 > max) r = r " max=" $5
+              if ($4 == "" || $4 < min) r = r " min=" $4
+              if ($6 == "" || $6 < 7) r = r " warn=" $6
+              if ($7 == "" || $7 < 0 || $7 > inact) r = r " inactive=" $7
+              if ($3 != "" && $3 > today) r = r " last_change_in_future"
+              if (r != "") print $1 ":" r
+            }' /etc/shadow)
+          [ -z "$bad" ] && { echo "all accounts follow the policy"; exit 0; }
+          printf '%s\n' "$bad"
+          exit 1
+
+remediation:
+  manual: |
+    For each account with a password: `chage --maxdays {{ max_days }} --mindays {{ min_days }}
+    --warndays 7 --inactive {{ inactive_days }} <user>`. Fix last change dates in the future with
+    `chage --lastday <YYYY-MM-DD> <user>`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Restore `/etc/shadow` from the backup, or reset each account with `chage`.
+  scripts:
+    - id: chage
+      engine: shell
+      content: |
+        cb_backup /etc/shadow
+        awk -F: '$2 ~ /^\$/ {print $1}' /etc/shadow | while read -r u; do
+          chage --maxdays "$CB_MAX_DAYS" --mindays "$CB_MIN_DAYS" --warndays 7 --inactive "$CB_INACTIVE_DAYS" "$u"
+        done
+
+references:
+  - title: chage(1), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/chage.1.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: shadow(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/shadow.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.1.1"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.1.5"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.1.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.1.1"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.1.5"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.1.6"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+related_controls:
+  - id: CB-DEB-AUTH-014
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

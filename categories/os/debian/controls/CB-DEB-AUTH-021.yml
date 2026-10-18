@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-021
+title: Do not list nologin as a valid shell
+finding:
+  title: nologin is declared as a valid login shell
+  description: Programs that only allow accounts with a valid shell (FTP servers, chsh) treat no-login accounts as normal ones.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [accounts, shells]
+
+description: |
+  `/etc/shells` lists the valid login shells. Some programs, like `chsh` and FTP servers, use it
+  to decide whether an account may log in. `nologin` exists precisely to refuse logins and must
+  not appear there.
+rationale: |
+  Listing `nologin` makes service accounts look like regular users to programs that rely on
+  `/etc/shells`, which can open them to FTP logins or let users switch to it and back.
+impact: |
+  None known. Debian does not list it by default.
+
+audit:
+  manual: |
+    Run `grep nologin /etc/shells`. There must be no match.
+  checks:
+    - id: shells
+      engine: file-content
+      spec: { path: /etc/shells, pattern: "nologin", expect: no_match }
+
+remediation:
+  manual: |
+    Remove the `nologin` lines from `/etc/shells`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: remove
+      engine: shell
+      content: |
+        cb_backup /etc/shells
+        sed -i '/nologin/d' /etc/shells
+
+references:
+  - title: shells(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/manpages/shells.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.4.3.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.4.3.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

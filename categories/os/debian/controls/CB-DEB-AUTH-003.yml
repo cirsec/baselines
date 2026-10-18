@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-003
+title: Protect the login banner files from modification
+finding:
+  title: Login banner files can be changed by non-root users
+  description: Someone who can rewrite the banners can remove the legal notice or plant misleading instructions for users.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login, permissions]
+
+description: |
+  `/etc/issue`, `/etc/issue.net` and `/etc/motd` are shown to users before or after login. They
+  must be owned by root and writable only by root.
+rationale: |
+  A writable banner lets an attacker remove the legal warning, or display fake instructions that
+  trick users into running commands or giving out credentials.
+impact: |
+  None known. These are the Debian defaults.
+
+setting:
+  location: /etc/issue, /etc/issue.net, /etc/motd
+  default_value: "root:root 0644"
+  recommended_value: "root:root, mode 0644 or stricter"
+
+audit:
+  manual: |
+    Run `stat -c '%n %U:%G %a' /etc/issue /etc/issue.net /etc/motd`.
+    Each file must be `root:root` with mode `644` or stricter.
+  checks:
+    - id: issue
+      engine: file-perms
+      spec: { path: /etc/issue, owner: root, group: root, mode: "0644" }
+    - id: issue-net
+      engine: file-perms
+      spec: { path: /etc/issue.net, owner: root, group: root, mode: "0644" }
+    - id: motd
+      engine: file-perms
+      spec: { path: /etc/motd, owner: root, group: root, mode: "0644" }
+
+remediation:
+  manual: |
+    Run `chown root:root /etc/issue /etc/issue.net /etc/motd` and
+    `chmod 644 /etc/issue /etc/issue.net /etc/motd`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: issue
+      from_check: issue
+    - id: issue-net
+      from_check: issue-net
+    - id: motd
+      from_check: motd
+
+references:
+  - title: issue(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/manpages/issue.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers the login banners.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.6"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.7"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.6.8"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.6"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.7"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.6.8"
+    relation: partial
+threats:
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-020
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Fermer automatiquement les shells inactifs
+finding:
+  title: Les shells inactifs restent ouverts indéfiniment
+  description: Un terminal oublié, souvent avec un shell root, peut être utilisé par quiconque y accède.
+description: |
+  Quand la variable en lecture seule `TMOUT` est définie, bash et dash ferment un shell interactif
+  resté ce nombre de secondes sans saisie. La définir dans `/etc/profile.d/` l'applique aux shells
+  de connexion de tous les utilisateurs, et `readonly` empêche de la retirer.
+rationale: |
+  Les terminaux laissés ouverts sur une console, dans une session de rebond ou une connexion SSH
+  oubliée permettent facilement de réutiliser l'accès de quelqu'un, parfois avec les privilèges root.
+impact: |
+  Les shells interactifs inactifs se ferment après {{ tmout }} secondes. Les commandes longues ne
+  sont pas touchées, mais un shell qui attend à l'invite est fermé : utiliser `tmux` ou `screen`
+  pour les sessions qui doivent rester ouvertes.
+setting:
+  location: /etc/profile.d/60-cirsec-tmout.sh
+  recommended_value: "TMOUT={{ tmout }}, en lecture seule"
+parameters:
+  tmout: Durée d'inactivité avant la fermeture d'un shell interactif.
+audit:
+  manual: |
+    Lancer `su -s /bin/sh -l nobody -c 'echo $TMOUT'`. La valeur affichée doit être entre 1 et {{ tmout }}.
+remediation:
+  manual: |
+    Créer `/etc/profile.d/60-cirsec-tmout.sh` :
+    ```
+    TMOUT={{ tmout }}
+    readonly TMOUT
+    export TMOUT
+    ```
+  rollback: |
+    Supprimer `/etc/profile.d/60-cirsec-tmout.sh`.

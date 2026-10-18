@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-013
+title: Refuse empty passwords and hash passwords with a strong algorithm in pam_unix
+finding:
+  title: pam_unix accepts accounts with an empty password
+  description: An account whose password field is empty can be logged into without any password.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [pam, password]
+
+description: |
+  `pam_unix` checks local passwords against `/etc/shadow`. Two options matter here:
+
+  - `nullok` lets accounts with an empty password field authenticate with no password. Debian
+    sets it in the default `unix` profile;
+  - the hashing method used when a password is changed (`yescrypt` on Debian 12 and 13, or
+    `sha512`). Older methods (`md5`, `bigcrypt`, DES) are fast to crack.
+rationale: |
+  An empty password field, created by mistake or by a tool, becomes an open account as long as
+  `nullok` is present. A weak hashing method lets an attacker who copies `/etc/shadow` recover
+  passwords quickly.
+impact: |
+  Accounts with an empty password can no longer log in with a password. Give them a password, or
+  lock them with `passwd -l`.
+notes: |
+  The packaged `unix` profile is replaced by a copy without `nullok`, so package upgrades do not
+  bring the option back. Passwords keep their current hash until they are changed.
+
+setting:
+  location: /usr/share/pam-configs/cirsec_unix
+  default_value: nullok, yescrypt
+  recommended_value: No nullok, yescrypt or sha512
+
+audit:
+  manual: |
+    1. No `pam_unix.so` line in `/etc/pam.d/common-auth` or `/etc/pam.d/common-password` contains `nullok`.
+    2. The `pam_unix.so` line of `/etc/pam.d/common-password` contains `yescrypt` or `sha512`.
+  checks:
+    - id: no-nullok-auth
+      engine: file-content
+      spec: { path: /etc/pam.d/common-auth, pattern: "pam_unix\\.so.*\\bnullok\\b", expect: no_match }
+    - id: no-nullok-password
+      engine: file-content
+      spec: { path: /etc/pam.d/common-password, pattern: "pam_unix\\.so.*\\bnullok\\b", expect: no_match }
+    - id: strong-hash
+      engine: file-content
+      spec: { path: /etc/pam.d/common-password, pattern: "^\\s*password\\s+.*pam_unix\\.so.*\\b(yescrypt|sha512)\\b" }
+
+remediation:
+  manual: |
+    1. Lock or set a password for every account with an empty field: `awk -F: '$2==""' /etc/shadow`.
+    2. Copy `/usr/share/pam-configs/unix` to `/usr/share/pam-configs/cirsec_unix`, remove every
+       `nullok`, change `Name:` and make sure the `Password:` lines carry `yescrypt`.
+    3. Run `pam-auth-update --enable cirsec_unix --disable unix`.
+    4. Check that a new login still works before closing your session.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Run `pam-auth-update --enable unix --remove cirsec_unix` and delete the profile file.
+  scripts:
+    - id: profile
+      engine: shell
+      content: |
+        p=/usr/share/pam-configs/cirsec_unix
+        sed -e 's/^Name: .*/Name: CIRSEC - Unix authentication without nullok/' \
+            -e 's/[[:space:]]nullok\b//g' /usr/share/pam-configs/unix >"$p"
+        grep -q yescrypt "$p" || grep -q sha512 "$p" || sed -i 's/\(pam_unix\.so obscure\)/\1 yescrypt/' "$p"
+        for f in /etc/pam.d/common-auth /etc/pam.d/common-password /etc/pam.d/common-account /etc/pam.d/common-session; do cb_backup "$f"; done
+        DEBIAN_FRONTEND=noninteractive pam-auth-update --enable cirsec_unix --disable unix
+
+references:
+  - title: pam_unix(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpam-runtime/pam_unix.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: pam-auth-update(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/libpam-runtime/pam-auth-update.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R68)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R68
+    relation: partial
+    note: R68 is about protecting stored passwords; this control covers the hashing method.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+  - framework: cwe
+    id: CWE-916
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: nullok removed through the cirsec_unix profile; login with password still works (pamtester).
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: nullok removed through the cirsec_unix profile; login with password still works (pamtester).
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

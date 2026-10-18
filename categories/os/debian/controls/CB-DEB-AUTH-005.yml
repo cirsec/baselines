@@ -1,0 +1,183 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-005
+title: Configure sudo to use a pseudo-terminal, a log file and a short credential cache
+finding:
+  title: sudo defaults allow terminal hijacking, keep no local log or cache credentials too long
+  description: Commands run with sudo can escape to the user's terminal, leave traces only in syslog, and a forgotten session stays privileged.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sudo, privilege-escalation, logging]
+
+applicability:
+  facts: [sudo]
+
+description: |
+  Three sudo defaults, set with `Defaults` lines in `/etc/sudoers` or `/etc/sudoers.d/`:
+
+  - `use_pty`: run each command in a new pseudo-terminal, so it cannot inject input into the
+    user's terminal after sudo exits;
+  - `logfile`: write every sudo command to a dedicated file, in addition to syslog;
+  - `timestamp_timeout`: how many minutes a successful authentication is cached before sudo asks
+    for the password again.
+rationale: |
+  Without `use_pty`, a malicious program run through sudo can keep running in the background and
+  push keystrokes into the user's shell. A dedicated log file keeps a readable record of
+  privileged commands even if syslog is lost or flooded. A short cache limits how long an
+  unattended terminal can run privileged commands without a password.
+impact: |
+  Some interactive programs behave differently in a pseudo-terminal (rare). Users type their
+  password again after {{ timestamp_timeout }} minutes of not using sudo.
+notes: |
+  Debian already sets `use_pty` in `/etc/sudoers` and caches credentials for 15 minutes. The
+  effective values are read with `sudo -V` as root, which merges every sudoers file.
+
+setting:
+  location: /etc/sudoers.d/60-cirsec
+  default_value: use_pty, no log file, 15 minutes
+  recommended_value: "use_pty, logfile={{ log_file }}, timestamp_timeout at most {{ timestamp_timeout }}"
+
+parameters:
+  - name: log_file
+    type: string
+    description: Path of the sudo log file.
+    default: /var/log/sudo.log
+  - name: timestamp_timeout
+    type: integer
+    description: Maximum number of minutes sudo caches credentials.
+    unit: minutes
+    default: 15
+    profile_defaults:
+      server-hardened: 5
+      desktop-hardened: 5
+    minimum: 0
+    maximum: 15
+
+audit:
+  manual: |
+    Run `sudo -V` as root and check that:
+    1. it prints `Always run commands in a pseudo-tty`;
+    2. `Path to log file:` is set;
+    3. `Authentication timestamp timeout:` is at most {{ timestamp_timeout }} minutes.
+  checks:
+    - id: use-pty
+      engine: shell
+      description: sudo runs commands in a pseudo-terminal.
+      spec:
+        script: |
+          sudo -V 2>/dev/null | grep -q 'Always run commands in a pseudo-tty' || { echo "use_pty not set"; exit 1; }
+          echo "use_pty set"
+    - id: logfile
+      engine: shell
+      description: sudo writes to a log file.
+      spec:
+        script: |
+          f=$(sudo -V 2>/dev/null | sed -n 's/^Path to log file: //p')
+          echo "logfile=${f:-none}"
+          [ -n "$f" ]
+    - id: timeout
+      engine: shell
+      description: sudo credential cache lifetime.
+      spec:
+        script: |
+          t=$(sudo -V 2>/dev/null | sed -n 's/^Authentication timestamp timeout: \([0-9-]*\).*/\1/p')
+          echo "timestamp_timeout=${t:-unknown} minutes"
+          [ -n "$t" ] || exit 3
+          [ "$t" -ge 0 ] && [ "$t" -le "$CB_TIMESTAMP_TIMEOUT" ]
+
+remediation:
+  manual: |
+    Create `/etc/sudoers.d/60-cirsec` with `visudo -f /etc/sudoers.d/60-cirsec`:
+    ```
+    Defaults use_pty
+    Defaults logfile="{{ log_file }}"
+    Defaults timestamp_timeout={{ timestamp_timeout }}
+    ```
+    Remove any `timestamp_timeout` with a higher value from other sudoers files.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/sudoers.d/60-cirsec`.
+  scripts:
+    - id: dropin
+      engine: shell
+      content: |
+        f=/etc/sudoers.d/60-cirsec
+        t=$(mktemp)
+        printf '%s\n' '# Written by CIRSEC Baselines CB-DEB-AUTH-005' 'Defaults use_pty' \
+          "Defaults logfile=\"$CB_LOG_FILE\"" "Defaults timestamp_timeout=$CB_TIMESTAMP_TIMEOUT" >"$t"
+        if ! visudo -cqf "$t"; then rm -f "$t"; echo "invalid sudoers drop-in" >&2; exit 1; fi
+        cb_backup "$f"
+        install -m 0440 -o root -g root "$t" "$f"
+        rm -f "$t"
+
+references:
+  - title: sudoers(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/sudo/sudoers.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R39)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R39
+    relation: partial
+    note: R39 lists several sudo directives; this control covers use_pty, logging and the cache.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.3"
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.6"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.3"
+    relation: partial
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.6"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1548.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

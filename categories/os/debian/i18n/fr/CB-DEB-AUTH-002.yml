@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-002
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas afficher de détails système dans le message du jour
+finding:
+  title: Le message du jour affiche la version du noyau à chaque connexion
+  description: Chaque session, y compris celle d'un compte compromis, apprend la version exacte du noyau.
+description: |
+  Après la connexion, `pam_motd` affiche `/etc/motd` et la sortie des scripts exécutables de
+  `/etc/update-motd.d/`. Debian fournit `10-uname`, qui affiche le nom, la version et
+  l'architecture du noyau.
+rationale: |
+  La version du noyau indique à un attaquant qui a obtenu un shell quels exploits d'élévation de
+  privilèges locaux s'appliquent. Inutile de la montrer à chaque utilisateur à chaque connexion.
+impact: |
+  Les utilisateurs ne voient plus la version du noyau à la connexion. Ils peuvent toujours lancer `uname -a`.
+setting:
+  location: /etc/motd, /etc/update-motd.d/10-uname
+  recommended_value: 10-uname non exécutable, /etc/motd sans détail sur le système
+audit:
+  manual: |
+    1. `/etc/motd` ne doit contenir ni les séquences `\m`, `\r`, `\s`, `\v` ni le nom du système.
+    2. `/etc/update-motd.d/10-uname` ne doit pas être exécutable (`ls -l`).
+remediation:
+  manual: |
+    1. Lancer `chmod 644 /etc/update-motd.d/10-uname`.
+    2. Retirer de `/etc/motd` les noms, versions et séquences d'échappement.
+  rollback: |
+    Lancer `chmod 755 /etc/update-motd.d/10-uname`.

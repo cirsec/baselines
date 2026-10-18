@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-026
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Stocker toutes les empreintes dans shadow et ne laisser aucun compte sans mot de passe
+finding:
+  title: Un compte a son empreinte de mot de passe dans /etc/passwd, ou un mot de passe vide
+  description: /etc/passwd est lisible par tous les utilisateurs ; un champ mot de passe vide ouvre le compte à n'importe qui.
+description: |
+  `/etc/passwd` est lisible par tous et ne doit contenir que `x` dans le champ mot de passe ; les
+  empreintes vont dans `/etc/shadow`, lisible uniquement par root et le groupe `shadow`. Dans
+  `/etc/shadow`, chaque champ mot de passe contient une empreinte, ou `!`/`*` pour les comptes
+  verrouillés, mais n'est jamais vide.
+rationale: |
+  Une empreinte laissée dans `/etc/passwd` peut être copiée et cassée par n'importe quel utilisateur
+  local. Un champ vide permet à n'importe qui de se connecter là où les mots de passe vides sont acceptés.
+impact: |
+  Aucun pour un système standard.
+audit:
+  manual: |
+    1. `awk -F: '$2 != "x"' /etc/passwd` n'affiche rien.
+    2. `awk -F: '$2 == ""' /etc/shadow` n'affiche rien.
+remediation:
+  manual: |
+    1. Lancer `pwconv` pour déplacer toute empreinte de `/etc/passwd` vers `/etc/shadow`.
+    2. Verrouiller chaque compte au mot de passe vide (`passwd -l <utilisateur>`) ou lui en donner un (`passwd <utilisateur>`).
+  rollback: |
+    Restaurer `/etc/passwd` et `/etc/shadow` depuis la sauvegarde.

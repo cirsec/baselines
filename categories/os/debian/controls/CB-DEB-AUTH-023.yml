@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-023
+title: Disable accounts that are no longer used
+finding:
+  title: Accounts of people or services that left are still active
+  description: Forgotten accounts keep working passwords and keys that nobody monitors.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [accounts, lifecycle]
+
+description: |
+  Every local account must belong to a current person or service. Accounts of people who left
+  or changed role, and of services that were removed, must be locked or deleted.
+rationale: |
+  Unused accounts are attractive to attackers: their owner will not notice a login, and their
+  password or SSH key may have leaked long ago.
+impact: |
+  Requires a periodic review with the people who know who still needs access.
+
+audit:
+  manual: |
+    1. List the interactive accounts: `awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' /etc/passwd`.
+    2. For each, check with its owner or manager that it is still needed. `lastlog` and
+       `last` show the last logins.
+    3. List the service accounts and check that the matching service is still installed.
+
+remediation:
+  manual: |
+    Lock unused accounts with `usermod -L -e 1 <account>` (also expires SSH key logins), and
+    delete them with `userdel -r <account>` once their files have been archived.
+
+references:
+  - title: usermod(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/usermod.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R30)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R30
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

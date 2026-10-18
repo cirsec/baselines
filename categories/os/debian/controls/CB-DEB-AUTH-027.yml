@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-027
+title: Keep the user and group databases consistent
+finding:
+  title: User and group files contain duplicates or dangling references
+  description: Duplicate IDs or names give two accounts the same rights and break accountability.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [accounts, integrity]
+
+description: |
+  The account databases (`/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow`) must be
+  consistent: each user and group name and each UID and GID is unique, every primary group of a
+  user exists, and every `passwd` entry has a `shadow` entry. `pwck -r` and `grpck -r` check
+  these rules without changing anything.
+rationale: |
+  Two accounts with the same UID are the same user for the kernel: files, processes and logs
+  cannot tell them apart. Duplicates and dangling entries are often the trace of a manual edit
+  or of an attacker adding an account.
+impact: |
+  None. The check is read-only; fixes need a human decision.
+
+audit:
+  manual: |
+    1. Run `pwck -r` and `grpck -r`. They must report nothing, apart from missing home
+       directories of system accounts (`lp`, `news`, `www-data`...), which Debian does not create.
+    2. `cut -d: -f3 /etc/passwd | sort | uniq -d` and `cut -d: -f3 /etc/group | sort | uniq -d`
+       print nothing.
+  checks:
+    - id: pwck
+      engine: shell
+      spec:
+        script: |
+          out=$(pwck -r 2>&1 | grep -v -e "directory '.*' does not exist" -e '^pwck: no changes$')
+          echo "${out:-pwck: no problem (missing system homes ignored)}"
+          [ -z "$out" ]
+    - id: grpck
+      engine: shell
+      spec:
+        script: |
+          out=$(grpck -r 2>&1); rc=$?
+          echo "${out:-grpck: no problem}"
+          [ "$rc" -eq 0 ]
+    - id: duplicate-ids
+      engine: shell
+      spec:
+        script: |
+          u=$(cut -d: -f3 /etc/passwd | sort | uniq -d | tr '\n' ' ')
+          g=$(cut -d: -f3 /etc/group | sort | uniq -d | tr '\n' ' ')
+          echo "duplicate UIDs: ${u:-none}; duplicate GIDs: ${g:-none}"
+          [ -z "$u$g" ]
+
+remediation:
+  manual: |
+    Investigate each reported entry: a duplicate UID 0 or an unknown account may be malicious.
+    Fix with `usermod`, `groupmod`, `userdel` and `groupdel`, or interactively with `pwck` and
+    `grpck` (without `-r`).
+
+references:
+  - title: pwck(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/pwck.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: grpck(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/passwd/grpck.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.5"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.6"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.7"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "7.2.8"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.5"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.6"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.7"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "7.2.8"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1136.001
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

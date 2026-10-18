@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-AUTH-004
+title: Install sudo for administrative access
+finding:
+  title: sudo is not installed
+  description: Without sudo, administrators share the root password or log in as root, and their actions cannot be traced to a person.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sudo, privilege-escalation, accountability]
+
+description: |
+  `sudo` lets authorized users run commands as root (or another user) with their own password,
+  according to rules in `/etc/sudoers` and `/etc/sudoers.d/`. Every command is logged with the
+  name of the user who ran it.
+rationale: |
+  Administration through personal accounts and sudo replaces a shared root password, gives each
+  administrator only the rights they need, and leaves an audit trail that names who did what.
+impact: |
+  None known. Debian installs sudo when no root password is set during installation, and the
+  cloud images ship it.
+
+audit:
+  manual: |
+    Run `dpkg -s sudo`. The package must be installed.
+  checks:
+    - id: package
+      engine: package
+      description: The sudo package is installed.
+      spec: { name: sudo, state: installed }
+
+remediation:
+  manual: |
+    Run `apt install sudo`, then grant administrators access by adding them to the `sudo` group.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: install
+      from_check: package
+
+references:
+  - title: sudo(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/sudo/sudo.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R33)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R33
+    relation: partial
+    note: R33 asks for accountable administration; sudo is the means.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "5.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "5.2.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: Generated check, fix and check again for profiles core and server-hardened; state kept after reboot.
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

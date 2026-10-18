@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-AUTH-009
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Écrire les règles sudo selon le moindre privilège
+finding:
+  title: Des règles sudo donnent plus de droits que les tâches n'en demandent
+  description: Les règles avec négations, jokers, shells ou éditeurs permettent d'obtenir un shell root complet.
+description: |
+  De bonnes règles sudo accordent des commandes précises à un groupe dédié :
+
+  - les administrateurs sont membres d'un groupe dédié à sudo, et les règles désignent ce groupe ;
+  - les commandes s'exécutent sous un utilisateur cible non privilégié quand root n'est pas nécessaire (`(appuser)`) ;
+  - les règles listent les commandes avec leur chemin complet et leurs arguments, sans négation (`!`),
+    car une négation se contourne en copiant ou en renommant le binaire ;
+  - les programmes capables d'en lancer d'autres (éditeurs, pagers, interpréteurs) reçoivent
+    `NOEXEC`, ou sont remplacés par `sudoedit` pour éditer des fichiers.
+rationale: |
+  Beaucoup de programmes peuvent lancer un shell : un éditeur en root, `less`, `find -exec` ou un
+  langage de script. Une règle qui les autorise équivaut à `ALL`. Les négations et les jokers ont
+  l'air restrictifs mais se contournent avec une copie renommée ou un argument de plus.
+impact: |
+  Réécrire des règles larges demande de recenser ce dont chaque administrateur a vraiment besoin.
+  Les utilisateurs qui éditent des fichiers en root passent à `sudoedit`.
+audit:
+  manual: |
+    Lire chaque règle avec `sudo -ll -U <utilisateur>` pour chaque membre d'un groupe
+    d'administration, ainsi que `/etc/sudoers` et `/etc/sudoers.d/`. Vérifier que :
+    1. les règles visent un groupe dédié (`%groupe`), pas des utilisateurs individuels ;
+    2. aucune liste de commandes ne contient `!` (négation) ;
+    3. les commandes ont un chemin absolu et des arguments explicites, sans `*` seul ;
+    4. éditeurs, pagers et interpréteurs ne sont pas autorisés, ou portent `NOEXEC:` ; l'édition de fichiers passe par `sudoedit` ;
+    5. les commandes qui n'ont pas besoin de root s'exécutent sous un utilisateur dédié.
+remediation:
+  manual: |
+    1. Créer un groupe par rôle d'administration et utiliser `%groupe` dans les règles.
+    2. Remplacer `ALL` et les listes avec négation par des commandes et arguments explicites.
+    3. Remplacer les règles du type `vi /etc/fichier` par `sudoedit /etc/fichier`, et ajouter
+       `NOEXEC:` aux règles des programmes capables d'en lancer d'autres.
+    4. Valider avec `visudo -c` avant de fermer la session root utilisée pour la modification.
