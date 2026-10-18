@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-016
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver l'authentification SSH à des comptes nominatifs avec des méthodes robustes
+finding:
+  title: Le serveur SSH autorise les connexions root, des méthodes d'authentification faibles ou des essais illimités
+  description: Les connexions root directes, l'authentification par confiance ou sans mot de passe et des limites d'essais généreuses font de SSH une porte d'entrée facile.
+description: |
+  Ce contrôle fixe les options du serveur OpenSSH qui décident qui peut se connecter et comment :
+
+  - `PermitRootLogin no` : les administrateurs se connectent avec leur propre compte, puis utilisent
+    `sudo` ;
+  - `PermitEmptyPasswords no` : les comptes sans mot de passe ne peuvent pas se connecter ;
+  - `HostbasedAuthentication no` et `IgnoreRhosts yes` : aucune confiance fondée sur l'hôte client ou
+    sur les fichiers `.rhosts`/`.shosts` ;
+  - `GSSAPIAuthentication no` : pas de connexion Kerberos/GSSAPI sauf si l'hôte fait partie d'un tel
+    domaine ;
+  - `PermitUserEnvironment no` : les utilisateurs ne peuvent pas passer de variables d'environnement
+    (comme `LD_PRELOAD`) via `~/.ssh/environment` ou `authorized_keys` ;
+  - `UsePAM yes` : les règles de compte et de session de PAM (verrouillage, limites, journalisation)
+    s'appliquent à SSH ;
+  - `MaxAuthTries` au plus {{ ssh_max_auth_tries }} et `LoginGraceTime` entre 1 et
+    {{ ssh_login_grace_time }} secondes.
+rationale: |
+  `root` existe sur tous les systèmes et c'est la première cible des attaques par devinette de mot de
+  passe ; se connecter avec des comptes nominatifs garde aussi la trace de qui a fait quoi. La
+  confiance par hôte, les mots de passe vides et les variables d'environnement fournies par
+  l'utilisateur contournent l'authentification ou les restrictions d'un compte. Des limites d'essais
+  et de délai basses ralentissent la devinette et libèrent vite les connexions non authentifiées.
+impact: |
+  root ne peut plus se connecter en SSH, même avec une clé : créer un compte d'administration
+  nominatif dans le groupe `sudo` et vérifier qu'il peut se connecter avant d'appliquer. Les scripts et
+  outils de sauvegarde qui se connectent en root doivent utiliser un compte dédié. Les hôtes membres
+  d'un domaine Kerberos qui utilisent des connexions GSSAPI doivent garder `GSSAPIAuthentication yes`
+  (exclure cette vérification par adaptation).
+notes: |
+  Debian livre `PermitRootLogin prohibit-password` (root par clé uniquement), `MaxAuthTries 6` et
+  `LoginGraceTime 120`. La correction écrit les options dans `/etc/ssh/sshd_config.d/00-cirsec.conf`,
+  lu en premier et donc prioritaire sur les fichiers suivants. `LoginGraceTime 0` (sans limite) n'est
+  pas corrigé automatiquement. `UsePAM yes` sans authentification par mot de passe laisse quand même
+  PAM vérifier l'expiration et le verrouillage des comptes.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  recommended_value: "PermitRootLogin no, MaxAuthTries <= {{ ssh_max_auth_tries }}, LoginGraceTime <= {{ ssh_login_grace_time }}"
+parameters:
+  ssh_max_auth_tries: Nombre maximal d'essais d'authentification par connexion SSH.
+  ssh_login_grace_time: Délai maximal pour s'authentifier après la connexion.
+audit:
+  manual: |
+    Lancer `sshd -T` et vérifier : `permitrootlogin no`, `permitemptypasswords no`,
+    `hostbasedauthentication no`, `ignorerhosts yes`, `gssapiauthentication no`,
+    `permituserenvironment no`, `usepam yes`, `maxauthtries` au plus {{ ssh_max_auth_tries }},
+    `logingracetime` entre 1 et {{ ssh_login_grace_time }}.
+remediation:
+  manual: |
+    1. S'assurer qu'un compte nominatif du groupe `sudo` peut se connecter en SSH.
+    2. Créer ou modifier `/etc/ssh/sshd_config.d/00-cirsec.conf` :
+       ```
+       PermitRootLogin no
+       PermitEmptyPasswords no
+       HostbasedAuthentication no
+       IgnoreRhosts yes
+       GSSAPIAuthentication no
+       PermitUserEnvironment no
+       UsePAM yes
+       MaxAuthTries {{ ssh_max_auth_tries }}
+       LoginGraceTime {{ ssh_login_grace_time }}
+       ```
+    3. Vérifier avec `sshd -t`, lancer `systemctl reload ssh` et tester une nouvelle connexion avant
+       de fermer la session en cours.
+  rollback: |
+    Retirer les lignes de `/etc/ssh/sshd_config.d/00-cirsec.conf` et lancer `systemctl reload ssh`.

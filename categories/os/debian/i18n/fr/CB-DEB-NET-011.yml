@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-011
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rejeter et journaliser les paquets à adresse source usurpée
+finding:
+  title: Le noyau accepte des paquets dont l'adresse source ne peut pas être authentique, sans les journaliser
+  description: Les paquets usurpés servent à contourner un filtrage par adresse et à masquer l'origine des attaques.
+description: |
+  Ces réglages du noyau traitent les paquets dont l'adresse source est impossible ou suspecte :
+
+  - `rp_filter` (filtrage par chemin inverse) : rejeter un paquet quand la réponse à sa source ne
+    sortirait pas par l'interface d'arrivée (`1`, strict) ou par aucune interface (`2`, souple) ;
+  - `log_martians` : journaliser dans le journal du noyau les paquets aux adresses impossibles
+    (« martiens ») ;
+  - `route_localnet` = `0` : ne jamais router de paquets depuis ou vers `127.0.0.0/8` sur les vraies
+    interfaces ;
+  - `accept_local` = `0` : rejeter les paquets venant de l'extérieur avec comme source l'une des
+    adresses de l'hôte.
+
+  `rp_filter` et `log_martians` sont réglés pour `all` et pour `default` (interfaces créées ensuite).
+rationale: |
+  Le filtrage par chemin inverse est le pendant, sur l'hôte, du filtrage en entrée (RFC 3704) : il
+  rejette la plupart des paquets usurpés avant qu'un service ne les voie, ce qui déjoue les attaques
+  reposant sur des adresses sources de confiance. Journaliser les martiens révèle les erreurs de
+  configuration et les tentatives d'usurpation. Les adresses de boucle locale et les adresses locales
+  ne doivent jamais venir du réseau.
+impact: |
+  Le filtrage strict rejette du trafic légitime sur les hôtes à routage asymétrique (plusieurs
+  interfaces sur des réseaux qui se chevauchent, routage par politique, certains VPN). Mettre le
+  paramètre `rp_filter` à `2` (souple) sur ces hôtes. La journalisation des martiens peut ajouter des
+  lignes au journal du noyau sur les réseaux bruyants.
+notes: |
+  Debian 13 livre `default.rp_filter = 2` et met `rp_filter = 2` sur chaque interface existante via
+  `/usr/lib/sysctl.d/50-default.conf`. Le noyau applique la plus grande des valeurs `all` et de
+  l'interface : ces interfaces restent donc en mode souple tant que leur propre valeur n'est pas
+  changée. ufw, quand il est actif, écrit `log_martians = 0` depuis `/etc/ufw/sysctl.conf` à chaque
+  démarrage ; la correction passe ce fichier à `1`.
+setting:
+  location: sysctl `net.ipv4.conf.{all,default}.rp_filter`, `net.ipv4.conf.{all,default}.log_martians`, `net.ipv4.conf.all.route_localnet`, `net.ipv4.conf.all.accept_local`, persistés dans `/etc/sysctl.d/`
+  recommended_value: "rp_filter {{ rp_filter }}, log_martians 1, route_localnet 0, accept_local 0"
+parameters:
+  rp_filter: Mode de filtrage par chemin inverse, 1 strict, 2 souple pour les hôtes à routage asymétrique.
+audit:
+  manual: |
+    Lancer `sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter net.ipv4.conf.all.log_martians net.ipv4.conf.default.log_martians net.ipv4.conf.all.route_localnet net.ipv4.conf.all.accept_local`.
+    `rp_filter` doit valoir `{{ rp_filter }}`, `log_martians` `1`, les autres `0`. Vérifier qu'aucun
+    fichier sysctl ne fixe d'autres valeurs et, avec ufw, que `/etc/ufw/sysctl.conf` ne fixe pas
+    `log_martians=0`.
+remediation:
+  manual: |
+    1. Ajouter à `/etc/sysctl.d/60-cirsec.conf` :
+       ```
+       net.ipv4.conf.all.rp_filter = {{ rp_filter }}
+       net.ipv4.conf.default.rp_filter = {{ rp_filter }}
+       net.ipv4.conf.all.log_martians = 1
+       net.ipv4.conf.default.log_martians = 1
+       net.ipv4.conf.all.route_localnet = 0
+       net.ipv4.conf.all.accept_local = 0
+       ```
+       retirer les autres affectations, puis lancer `sysctl --system`.
+    2. Avec ufw, passer à `1` les lignes `log_martians` de `/etc/ufw/sysctl.conf`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf`, restaurer `/etc/ufw/sysctl.conf` depuis la
+    sauvegarde et remettre les anciennes valeurs avec `sysctl -w`.

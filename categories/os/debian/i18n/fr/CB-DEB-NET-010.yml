@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-010
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ignorer les redirections ICMP et le routage par la source, et ne pas envoyer de redirections
+finding:
+  title: Le noyau accepte des changements de route ou des consignes de routage venant du réseau
+  description: Les redirections ICMP et le routage par la source permettent à un hôte du réseau local de détourner ou d'orienter le trafic du système.
+description: |
+  Ces réglages du noyau décident si le réseau peut modifier la façon dont le système route son trafic :
+
+  - `accept_redirects` (IPv4 et IPv6) et `secure_redirects` (IPv4, redirections venant des passerelles
+    connues) : les messages ICMP redirect modifient-ils la table de routage ;
+  - `accept_source_route` (IPv4 et IPv6) : les paquets portant leur propre route sont-ils acceptés ;
+  - `send_redirects` (IPv4) : le système envoie-t-il des redirections, ce que seuls les routeurs
+    doivent faire.
+
+  Ce contrôle les met tous à `0`, pour `all` et pour `default` (interfaces créées ensuite).
+rationale: |
+  Un attaquant du réseau local peut envoyer de fausses redirections ICMP pour faire passer le trafic
+  du système par sa machine (homme du milieu). Le routage par la source laisse un paquet choisir son
+  chemin, ce qui peut contourner le filtrage. Un hôte qui envoie des redirections se comporte en
+  routeur et divulgue des informations sur le réseau.
+impact: |
+  Aucun connu pour les hôtes. Les routeurs qui doivent envoyer des redirections excluent ce contrôle,
+  avec CB-DEB-NET-009, par adaptation.
+notes: |
+  Debian livre `accept_redirects`, `secure_redirects` et `send_redirects` activés. ufw, quand il est
+  actif, met aussi les clés `accept_redirects` à `0` depuis `/etc/ufw/sysctl.conf`. Les vérifications
+  IPv6 ne s'exécutent que si la pile IPv6 est présente.
+setting:
+  location: sysctl `net.ipv4.conf.{all,default}.{accept_redirects,secure_redirects,accept_source_route,send_redirects}`, `net.ipv6.conf.{all,default}.{accept_redirects,accept_source_route}`, persistés dans `/etc/sysctl.d/`
+  recommended_value: "0"
+audit:
+  manual: |
+    Lancer `sysctl -a 2>/dev/null | grep -E 'conf\.(all|default)\.(accept_redirects|secure_redirects|accept_source_route|send_redirects) '`.
+    Chaque valeur listée doit être `0`, en IPv4 comme en IPv6. Vérifier ensuite qu'aucun fichier de
+    `/etc/sysctl.d/`, `/run/sysctl.d/`, `/usr/lib/sysctl.d/` ou `/etc/sysctl.conf` ne fixe une autre
+    valeur.
+remediation:
+  manual: |
+    Ajouter à `/etc/sysctl.d/60-cirsec.conf`, pour `all` et `default`, IPv4 et IPv6 :
+    ```
+    net.ipv4.conf.all.accept_redirects = 0
+    net.ipv4.conf.all.secure_redirects = 0
+    net.ipv4.conf.all.send_redirects = 0
+    net.ipv4.conf.all.accept_source_route = 0
+    net.ipv6.conf.all.accept_redirects = 0
+    net.ipv6.conf.all.accept_source_route = 0
+    ```
+    (et les mêmes lignes avec `default`), retirer les autres affectations, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf` et remettre les anciennes valeurs avec `sysctl -w`.

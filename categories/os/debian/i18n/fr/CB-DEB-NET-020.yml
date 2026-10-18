@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-020
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Afficher l'avertissement légal avant l'authentification SSH
+finding:
+  title: Le serveur SSH n'affiche aucun avertissement avant l'authentification
+  description: Sans avertissement, les utilisateurs qui se connectent en SSH ne sont pas informés que l'accès est réservé et surveillé.
+description: |
+  L'option `Banner` du serveur OpenSSH désigne un fichier dont le contenu est envoyé au client avant
+  l'authentification. Ce contrôle exige qu'elle pointe vers `{{ ssh_banner }}`, l'avertissement de
+  connexion réseau dont le contenu est traité par CB-DEB-AUTH-001.
+rationale: |
+  Un avertissement affiché avant la connexion indique que l'accès est réservé aux utilisateurs
+  autorisés et peut être surveillé. Dans de nombreux pays, il appuie les poursuites contre les intrus
+  et l'utilisation des traces de supervision.
+impact: |
+  La bannière est affichée par les clients interactifs avant la demande de mot de passe ou de clé.
+  Certains vieux outils d'automatisation considèrent toute sortie avant l'authentification comme une
+  erreur.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  recommended_value: "{{ ssh_banner }}"
+parameters:
+  ssh_banner: Fichier envoyé par le serveur SSH avant l'authentification.
+audit:
+  manual: |
+    Lancer `sshd -T | grep '^banner '`. La commande doit afficher `banner {{ ssh_banner }}`, et ce
+    fichier doit contenir le texte d'avertissement de l'organisation.
+remediation:
+  manual: |
+    Ajouter `Banner {{ ssh_banner }}` à `/etc/ssh/sshd_config.d/00-cirsec.conf`, vérifier avec
+    `sshd -t`, puis lancer `systemctl reload ssh`. Écrire le texte d'avertissement dans le fichier
+    (voir CB-DEB-AUTH-001).
+  rollback: |
+    Retirer la ligne et lancer `systemctl reload ssh`.

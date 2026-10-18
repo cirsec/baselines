@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-007
+title: Drop outgoing traffic by default
+finding:
+  title: The host firewall lets the system open any outgoing connection
+  description: Malware and intruders on the host can reach any server on the Internet to download tools or send data out.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [firewall, ufw, nftables, network, egress]
+
+description: |
+  Most host firewalls only filter incoming traffic. This control requires the default policy for
+  outgoing packets to drop or reject them, so that the system can only reach the destinations
+  and ports allowed by explicit rules (DNS, NTP, package mirrors, proxies, log collectors...):
+
+  - with ufw: `deny (outgoing)` or `reject (outgoing)` in `ufw status verbose`;
+  - with nftables (when `nftables.service` is enabled and ufw is not active): a base chain on the
+    `output` hook with `policy drop`.
+rationale: |
+  An outgoing allow list stops a compromised service from downloading a second stage, reaching a
+  command and control server or sending data out directly. Blocked attempts also show up in the
+  firewall logs.
+impact: |
+  Every outgoing flow the system needs must be listed beforehand, including DNS, NTP, package
+  updates and replies handled outside connection tracking. A missing rule breaks updates, time
+  synchronization or name resolution. There is no automatic fix for this reason.
+
+audit:
+  manual: |
+    - ufw: `ufw status verbose` shows `deny (outgoing)` or `reject (outgoing)`.
+    - nftables: `nft list ruleset` has a chain with `hook output` and `policy drop`.
+  checks:
+    - id: ufw-outgoing
+      engine: shell
+      description: ufw default policy for outgoing traffic.
+      facts: [ufw]
+      spec:
+        script: |
+          ufw status 2>/dev/null | grep -q '^Status: active' || { echo 'ufw is not active'; exit 2; }
+          d=$(ufw status verbose 2>/dev/null | sed -n 's/^Default: //p')
+          echo "$d"
+          printf '%s' "$d" | grep -Eq '(deny|reject) \(outgoing\)'
+    - id: nft-output
+      engine: shell
+      description: nftables output base chain with policy drop.
+      facts: [nftables]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] || { echo 'nftables.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          r=$(nft list ruleset 2>/dev/null) || exit 3
+          if printf '%s\n' "$r" | grep -Eq 'hook output .*policy drop'; then echo 'output: policy drop'; else echo 'output: no chain with policy drop'; exit 1; fi
+
+remediation:
+  manual: |
+    1. List the outgoing flows the system needs (`ss -tunp` over a typical day, the configured DNS,
+       NTP and package mirrors, proxies, log and backup servers).
+    2. Allow them, then change the default:
+       - ufw: `ufw allow out 53`, `ufw allow out 123/udp`, `ufw allow out to <mirror> port 443 proto tcp`...
+         then `ufw default deny outgoing`;
+       - nftables: add an `output` base chain with `policy drop;`, a rule
+         `ct state established,related accept`, `oif lo accept` and one rule per flow.
+    3. Check name resolution, time synchronization and `apt update` right after the change.
+  rollback: |
+    ufw: `ufw default allow outgoing`. nftables: set the output chain policy back to `accept`
+    and reload.
+
+references:
+  - title: ufw(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/ufw/ufw.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: nft(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/nftables/nft.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: NIST SP 800-41 Rev. 1 - Guidelines on Firewalls and Firewall Policy
+    url: https://csrc.nist.gov/pubs/sp/800/41/r1/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: partial
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "4.1.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "4.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1105
+  - framework: mitre-attack
+    id: T1041
+  - framework: cwe
+    id: CWE-284
+related_controls:
+  - id: CB-DEB-NET-005
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "ufw outgoing allow reported, deny passes; nftables output policy drop passes; SSH still accepted with outgoing deny."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "ufw outgoing allow reported, deny passes; nftables output policy drop passes; SSH still accepted with outgoing deny."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

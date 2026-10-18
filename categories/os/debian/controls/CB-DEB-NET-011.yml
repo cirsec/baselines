@@ -1,0 +1,223 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-NET-011
+title: Drop and log packets with spoofed source addresses
+finding:
+  title: The kernel accepts packets whose source address cannot be genuine, without logging them
+  description: Spoofed packets are used to bypass address-based filtering and to hide the origin of attacks.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sysctl, network, spoofing, logging]
+
+description: |
+  These kernel settings handle packets whose source address is impossible or suspicious:
+
+  - `rp_filter` (reverse path filtering): drop a packet when the reply to its source would not
+    leave through the interface it came in on (`1`, strict) or through any interface (`2`, loose);
+  - `log_martians`: log packets with impossible addresses ("martians") to the kernel log;
+  - `route_localnet` = `0`: never route packets from or to `127.0.0.0/8` on real interfaces;
+  - `accept_local` = `0`: drop packets arriving from outside with one of the host's own addresses
+    as source.
+
+  `rp_filter` and `log_martians` are set for `all` and for `default` (interfaces created later).
+rationale: |
+  Reverse path filtering is the host side of ingress filtering (RFC 3704): it drops most spoofed
+  packets before any service sees them, which defeats attacks that rely on trusted source
+  addresses. Logging martians shows misconfigurations and spoofing attempts. Loopback and local
+  source addresses must never come from the network.
+impact: |
+  Strict reverse path filtering drops legitimate traffic on hosts with asymmetric routing (several
+  interfaces on overlapping networks, policy routing, some VPNs). Set the `rp_filter` parameter to
+  `2` (loose) on such hosts. Martian logging can add kernel log lines on noisy networks.
+notes: |
+  Debian 13 ships `default.rp_filter = 2` and sets `rp_filter = 2` on every existing interface
+  through `/usr/lib/sysctl.d/50-default.conf`. The kernel applies the higher of the `all` and
+  per-interface values, so those interfaces stay in loose mode until their own value is changed.
+  ufw, when active, writes `log_martians = 0` from `/etc/ufw/sysctl.conf` at each start; the fix
+  changes that file to `1`.
+
+setting:
+  location: sysctl `net.ipv4.conf.{all,default}.rp_filter`, `net.ipv4.conf.{all,default}.log_martians`, `net.ipv4.conf.all.route_localnet`, `net.ipv4.conf.all.accept_local`, persisted in `/etc/sysctl.d/`
+  default_value: rp_filter 0 (Debian 12) or 2 (Debian 13), log_martians 0
+  recommended_value: "rp_filter {{ rp_filter }}, log_martians 1, route_localnet 0, accept_local 0"
+
+parameters:
+  - name: rp_filter
+    type: integer
+    description: Reverse path filtering mode, 1 strict, 2 loose for hosts with asymmetric routing.
+    default: 1
+    minimum: 1
+    maximum: 2
+
+audit:
+  manual: |
+    Run `sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter net.ipv4.conf.all.log_martians net.ipv4.conf.default.log_martians net.ipv4.conf.all.route_localnet net.ipv4.conf.all.accept_local`.
+    `rp_filter` must be `{{ rp_filter }}`, `log_martians` `1`, the others `0`. Check that no sysctl
+    file sets other values, and, with ufw, that `/etc/ufw/sysctl.conf` does not set `log_martians=0`.
+  checks:
+    - id: all-rp-filter
+      engine: sysctl
+      description: net.ipv4.conf.all.rp_filter.
+      spec: { key: net.ipv4.conf.all.rp_filter, value: "{{ rp_filter }}" }
+    - id: default-rp-filter
+      engine: sysctl
+      description: net.ipv4.conf.default.rp_filter.
+      spec: { key: net.ipv4.conf.default.rp_filter, value: "{{ rp_filter }}" }
+    - id: all-log-martians
+      engine: sysctl
+      description: net.ipv4.conf.all.log_martians.
+      spec: { key: net.ipv4.conf.all.log_martians, value: 1 }
+    - id: default-log-martians
+      engine: sysctl
+      description: net.ipv4.conf.default.log_martians.
+      spec: { key: net.ipv4.conf.default.log_martians, value: 1 }
+    - id: route-localnet
+      engine: sysctl
+      description: net.ipv4.conf.all.route_localnet.
+      spec: { key: net.ipv4.conf.all.route_localnet, value: 0 }
+    - id: accept-local
+      engine: sysctl
+      description: net.ipv4.conf.all.accept_local.
+      spec: { key: net.ipv4.conf.all.accept_local, value: 0 }
+    - id: ufw-log-martians
+      engine: file-content
+      description: ufw does not turn martian logging off when it starts.
+      facts: [ufw]
+      spec:
+        path: /etc/ufw/sysctl.conf
+        pattern: '^\s*net/ipv4/conf/(all|default)/log_martians\s*=\s*0'
+        expect: no_match
+
+remediation:
+  manual: |
+    1. Add to `/etc/sysctl.d/60-cirsec.conf`:
+       ```
+       net.ipv4.conf.all.rp_filter = {{ rp_filter }}
+       net.ipv4.conf.default.rp_filter = {{ rp_filter }}
+       net.ipv4.conf.all.log_martians = 1
+       net.ipv4.conf.default.log_martians = 1
+       net.ipv4.conf.all.route_localnet = 0
+       net.ipv4.conf.all.accept_local = 0
+       ```
+       remove other assignments, then run `sysctl --system`.
+    2. With ufw, set the `log_martians` lines of `/etc/ufw/sysctl.conf` to `1`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf`, restore `/etc/ufw/sysctl.conf` from the
+    backup, and set the previous values with `sysctl -w`.
+  scripts:
+    - id: all-rp-filter
+      from_check: all-rp-filter
+    - id: default-rp-filter
+      from_check: default-rp-filter
+    - id: all-log-martians
+      from_check: all-log-martians
+    - id: default-log-martians
+      from_check: default-log-martians
+    - id: route-localnet
+      from_check: route-localnet
+    - id: accept-local
+      from_check: accept-local
+    - id: ufw-log-martians
+      engine: shell
+      facts: [ufw]
+      content: |
+        f=/etc/ufw/sysctl.conf
+        [ -f "$f" ] || exit 0
+        grep -Eq '^[[:space:]]*net/ipv4/conf/(all|default)/log_martians[[:space:]]*=[[:space:]]*0' "$f" || exit 0
+        cb_backup "$f"
+        sed -i -E 's#^([[:space:]]*net/ipv4/conf/(all|default)/log_martians[[:space:]]*=[[:space:]]*)0#\11#' "$f"
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: RFC 3704 - Ingress Filtering for Multihomed Networks
+    url: https://www.rfc-editor.org/rfc/rfc3704
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R12)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R12
+    relation: partial
+    note: R12 lists many IPv4 settings; this control covers anti-spoofing ones. ANSSI does not ask for log_martians.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.12"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.13"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.16"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "3.3.1.17"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.12"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.13"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.16"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.17"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "3.3.1.19"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-290
+related_controls:
+  - id: CB-DEB-NET-005
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 921, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Generated sysctl fixes plus the ufw sysctl.conf fix; log_martians stays 1 after reboot with ufw active."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 931, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Generated sysctl fixes plus the ufw sysctl.conf fix; log_martians stays 1 after reboot with ufw active."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

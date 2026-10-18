@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-NET-017
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les connexions SSH et fermer les sessions mortes
+finding:
+  title: Le serveur SSH garde les sessions mortes ouvertes et accepte de nombreuses connexions non authentifiées simultanées
+  description: Des nombres de connexions et de sessions sans limite permettent à un seul client d'épuiser le serveur SSH, et les sessions mortes restent ouvertes pour qui prend le contrôle du chemin réseau.
+description: |
+  Ces options du serveur OpenSSH limitent les ressources par client et détectent les connexions
+  mortes :
+
+  - `ClientAliveInterval` (1 à {{ ssh_client_alive_interval }} secondes) et `ClientAliveCountMax`
+    (1 à {{ ssh_client_alive_count_max }}) : le serveur vérifie que le client répond toujours, et
+    ferme la session après `ClientAliveCountMax` vérifications sans réponse ;
+  - `MaxStartups` au plus `10:30:60` : au-delà de 10 connexions non authentifiées, les nouvelles sont
+    refusées avec une probabilité de 30 %, qui monte à 100 % à 60 ;
+  - `MaxSessions` au plus {{ ssh_max_sessions }} : shells, commandes et sous-systèmes multiplexés sur
+    une connexion.
+rationale: |
+  Les sessions dont le client a disparu (portable fermé, réseau coupé) gardent un shell ouvert sur le
+  serveur ; les fermer limite ce qu'un détournement de session ultérieur peut atteindre. Les limites
+  de connexions empêchent un outil de force brute ou une inondation de connexions semi-ouvertes de
+  rendre le serveur injoignable pour les administrateurs.
+impact: |
+  Les sessions des clients qui ne répondent plus pendant plus de {{ ssh_client_alive_interval }} ×
+  {{ ssh_client_alive_count_max }} secondes sont fermées. L'automatisation qui ouvre beaucoup de
+  connexions parallèles ou de sessions multiplexées (pipelining Ansible, `ControlMaster`) peut
+  atteindre les limites ; les relever par adaptation si besoin.
+notes: |
+  La valeur par défaut d'OpenSSH pour `ClientAliveInterval` est `0` (aucune vérification) ; les images
+  cloud Debian mettent `120`. Les sessions shell inactives sont fermées par `TMOUT`
+  (CB-DEB-AUTH-020), pas par ces options, puisqu'un client vivant répond toujours aux vérifications.
+  La correction ne modifie que les options hors bornes, dans `/etc/ssh/sshd_config.d/00-cirsec.conf`.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  recommended_value: "ClientAliveInterval 1-{{ ssh_client_alive_interval }}, ClientAliveCountMax 1-{{ ssh_client_alive_count_max }}, MaxStartups <= 10:30:60, MaxSessions <= {{ ssh_max_sessions }}"
+parameters:
+  ssh_client_alive_interval: Intervalle maximal entre deux vérifications de présence du client.
+  ssh_client_alive_count_max: Nombre maximal de vérifications sans réponse avant la fermeture de la session.
+  ssh_max_sessions: Nombre maximal de sessions par connexion SSH.
+audit:
+  manual: |
+    Lancer `sshd -T | grep -E '^(clientaliveinterval|clientalivecountmax|maxstartups|maxsessions) '`.
+    `clientaliveinterval` doit être entre 1 et {{ ssh_client_alive_interval }}, `clientalivecountmax`
+    entre 1 et {{ ssh_client_alive_count_max }}, chaque champ de `maxstartups` au plus `10:30:60`, et
+    `maxsessions` au plus {{ ssh_max_sessions }}.
+remediation:
+  manual: |
+    Ajouter à `/etc/ssh/sshd_config.d/00-cirsec.conf` :
+    ```
+    ClientAliveInterval {{ ssh_client_alive_interval }}
+    ClientAliveCountMax {{ ssh_client_alive_count_max }}
+    MaxStartups 10:30:60
+    MaxSessions {{ ssh_max_sessions }}
+    ```
+    Vérifier avec `sshd -t`, puis lancer `systemctl reload ssh`.
+  rollback: |
+    Retirer les lignes de `/etc/ssh/sshd_config.d/00-cirsec.conf` et lancer `systemctl reload ssh`.
