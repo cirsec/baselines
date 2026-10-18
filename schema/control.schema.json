@@ -57,7 +57,8 @@
       "description": "When the control applies. Omitted means: all versions of the standard, no prerequisite.",
       "properties": {
         "versions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" }, "description": "Subset of the standard's applies_to versions." },
-        "requires": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "Licenses, editions or features required (e.g. 'Microsoft Entra ID P1')." },
+        "facts": { "$ref": "#/$defs/facts", "description": "Fact keys from _standard.yml that must all be true. Machine-evaluable: a scanner reports not_applicable when one is false." },
+        "requires": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "Human-readable prerequisites a scanner cannot detect (e.g. 'Microsoft Entra ID P1'). Prefer facts when detectable." },
         "conditions": { "type": "string", "description": "Markdown. Other conditions (e.g. 'only if hybrid Exchange is deployed')." }
       }
     },
@@ -80,7 +81,7 @@
 
     "parameters": {
       "type": "array",
-      "description": "Tunable values. Checks and scripts reference them as {{ name }}. Users override them to customize the baseline.",
+      "description": "Tunable values. Text and declarative check specs reference them as {{ name }}. Handwritten code receives them as environment variables CB_<NAME>. Users override them in a tailoring file. Resolution: override, then profile_defaults of the profile, then of each profile it extends, then default.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -121,7 +122,8 @@
               "engine": { "$ref": "#/$defs/slug", "description": "Engine key declared in baselines.yml." },
               "description": { "type": "string" },
               "versions": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description": "Restrict this check to some versions." },
-              "spec": { "type": "object", "description": "Engine-specific payload." }
+              "facts": { "$ref": "#/$defs/facts", "description": "Run this check only when these facts are true (e.g. desktop-gnome vs desktop-kde)." },
+              "spec": { "type": "object", "description": "Engine-specific payload, validated against the engine's spec_schema." }
             }
           }
         }
@@ -132,24 +134,47 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["manual"],
+      "dependentRequired": { "scripts": ["effects"] },
       "properties": {
         "manual": { "type": "string", "minLength": 1, "description": "Markdown. How to fix it." },
-        "requires_restart": { "type": "boolean", "description": "Service or system restart needed." },
-        "rollback": { "type": "string", "description": "Markdown. How to revert." },
+        "effects": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["restart", "disruption"],
+          "description": "What applying the fix does to the running system. Required when scripts are present. Generators use it to group restarts and to disable risky fixes by default.",
+          "properties": {
+            "restart": { "enum": ["none", "service", "session", "reboot"], "description": "service: restart or reload of the listed services. session: users must log in again. reboot: system reboot." },
+            "services": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" }, "description": "Services to restart or reload, when restart is service." },
+            "disruption": { "enum": ["none", "low", "high"], "description": "Expected impact on running workloads and users." },
+            "lockout_risk": { "type": "boolean", "default": false, "description": "The fix can cut off administrative access if prerequisites are not met. Generated artifacts disable such fixes by default." }
+          },
+          "if": { "properties": { "restart": { "const": "service" } } },
+          "then": { "required": ["services"] }
+        },
+        "rollback": { "type": "string", "description": "Markdown. How to revert. Fixes back up what they change, automated rollback is not promised." },
         "scripts": {
           "type": "array",
+          "description": "Automated fixes. Either generated from a check (from_check), or handwritten code for an engine with the script capability (content inline, or file under <standard>/scripts/<ID>/). Code receives parameters as environment variables CB_<NAME>, never through {{ }}.",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "patternProperties": { "^x-": {} },
-            "required": ["id", "engine", "content"],
+            "required": ["id"],
             "properties": {
               "id": { "$ref": "#/$defs/slug" },
-              "engine": { "$ref": "#/$defs/slug", "description": "Engine key declared in baselines.yml." },
               "description": { "type": "string" },
+              "from_check": { "$ref": "#/$defs/slug", "description": "id of a check of this control whose engine has the fix capability. The fix is generated from that check's spec, versions and facts." },
+              "engine": { "$ref": "#/$defs/slug", "description": "Engine key declared in baselines.yml, with the script capability." },
               "versions": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
-              "content": { "type": "string" }
-            }
+              "facts": { "$ref": "#/$defs/facts" },
+              "content": { "type": "string", "minLength": 1, "description": "Inline code. Fine for a few lines." },
+              "file": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "description": "File name under <standard>/scripts/<control ID>/. Use it for anything longer than a few lines so it can be linted." }
+            },
+            "oneOf": [
+              { "required": ["from_check"], "not": { "anyOf": [{ "required": ["engine"] }, { "required": ["content"] }, { "required": ["file"] }, { "required": ["versions"] }, { "required": ["facts"] }] } },
+              { "required": ["engine", "content"], "not": { "anyOf": [{ "required": ["file"] }, { "required": ["from_check"] }] } },
+              { "required": ["engine", "file"], "not": { "anyOf": [{ "required": ["content"] }, { "required": ["from_check"] }] } }
+            ]
           }
         }
       }
@@ -228,6 +253,7 @@
         "properties": {
           "date": { "type": "string", "format": "date" },
           "by": { "type": "string" },
+          "versions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" }, "description": "Standard versions this test covered. An active control with checks must be verified on every version it applies to." },
           "environment": { "type": "string", "description": "e.g. 'M365 E3 tenant', 'Debian 12.7 VM'." },
           "notes": { "type": "string" }
         }
@@ -253,6 +279,7 @@
   ],
   "$defs": {
     "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "facts": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" } },
     "control_id": { "type": "string", "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
     "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$" },
     "person": {

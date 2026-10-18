@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baselines.cirsec.org/schema/tailoring.schema.json",
+  "title": "CIRSEC Baselines - tailoring file",
+  "description": "How an organization adapts a released standard without forking it: pick a profile, override parameters within their bounds, exclude controls with a justification. Kept in the organization's own repository, read by scanners and generators.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": { "^x-": {} },
+  "required": ["standard", "version", "profile"],
+  "properties": {
+    "standard": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "string", "description": "Standard release this tailoring was written for. Tools warn when used with another one." },
+    "profile": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "title": { "type": "string" },
+    "owner": { "type": "string", "description": "Team or person accountable for the deviations." },
+    "parameters": {
+      "type": "object",
+      "description": "Overrides, keyed by control ID then parameter name. Must respect minimum, maximum and allowed.",
+      "propertyNames": { "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
+      "additionalProperties": { "type": "object", "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" } }
+    },
+    "exclude": {
+      "type": "array",
+      "description": "Controls not evaluated nor fixed. Reported as excluded.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["control", "reason"],
+        "properties": {
+          "control": { "type": "string", "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
+          "reason": { "type": "string", "minLength": 1 },
+          "until": { "type": "string", "format": "date", "description": "Review date. Tools warn once it is past." }
+        }
+      }
+    },
+    "include": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
+      "description": "Controls from other profiles of the same standard to add."
+    },
+    "fixes": {
+      "type": "object",
+      "description": "Opt in to fixes disabled by default (lockout_risk), keyed by control ID.",
+      "propertyNames": { "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
+      "additionalProperties": { "type": "boolean" }
+    }
+  }
+}

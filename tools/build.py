@@ -5,7 +5,8 @@ A release contains the controls with status "active" or "deprecated" (draft and
 review controls are left out), their translations, the root metadata, the
 schemas and the content license, plus two generated files:
 
-  bundle.json   everything resolved in one JSON file (controls + translations)
+  bundle.json   everything resolved in one JSON file (controls + translations, parameter
+                values per profile, script files inlined as content)
   index.json    lightweight list of controls, for sites and scanners
 
 Outputs, in --out (default: dist/):
@@ -36,7 +37,10 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SLUG_RE, Control, Repo, Standard, load_yaml_text, parse_semver  # noqa: E402
+from common import (  # noqa: E402
+    ROOT, SLUG_RE, Control, Repo, Standard, control_profiles, load_yaml_text, parse_semver,
+    resolve_parameters, script_path,
+)
 import validate  # noqa: E402
 
 RELEASED_STATUSES = {"active", "deprecated"}
@@ -117,7 +121,8 @@ def translation_payload(ctl: Control) -> tuple[dict, dict]:
 
 
 def build_bundle(repo: Repo, std: Standard, controls: list[Control], release: dict) -> dict:
-    used_engines, used_frameworks = set(), set()
+    used_engines = {(f.get("detect") or {}).get("engine") for f in std.data.get("facts", []) or []}
+    used_frameworks = set()
     items = []
     for ctl in controls:
         d = ctl.data
@@ -126,7 +131,17 @@ def build_bundle(repo: Repo, std: Standard, controls: list[Control], release: di
         used_frameworks.update(m.get("framework") for m in d.get("mappings", []) or [])
         used_frameworks.update(m.get("framework") for m in d.get("threats", []) or [])
         texts, status = translation_payload(ctl)
-        items.append({**d, "translations": texts, "translation_status": status})
+        item = {**d, "translations": texts, "translation_status": status}
+        if d.get("parameters"):
+            item["resolved_parameters"] = {p: resolve_parameters(ctl, p) for p in control_profiles(ctl)}
+        remediation = d.get("remediation") or {}
+        if any("file" in s for s in remediation.get("scripts") or []):
+            scripts = [
+                {**s, "content": script_path(ctl, s["file"]).read_text(encoding="utf-8")} if "file" in s else s
+                for s in remediation["scripts"]
+            ]
+            item["remediation"] = {**remediation, "scripts": scripts}
+        items.append(item)
 
     meta = repo.meta
     return {
@@ -178,12 +193,8 @@ def release_notes(repo: Repo, std: Standard, controls: list[Control], release: d
     active = [c for c in controls if c.data.get("status") == "active"]
     deprecated = [c for c in controls if c.data.get("status") == "deprecated"]
     lines += ["## Summary", "", f"- **{len(active)}** active controls, **{len(deprecated)}** deprecated"]
-    parents = {p.get("key"): p.get("extends") for p in std.data.get("profiles", [])}
-    for prof in parents:
-        chain, cur = set(), prof
-        while cur is not None and cur not in chain:  # profile + every profile it extends
-            chain.add(cur)
-            cur = parents.get(cur)
+    for prof in (p.get("key") for p in std.data.get("profiles", [])):
+        chain = set(std.profile_chain(prof))  # profile + every profile it extends
         n = sum(1 for c in active if chain & set(c.data.get("profiles", [])))
         extra = f" (includes {', '.join(sorted(chain - {prof}))})" if len(chain) > 1 else ""
         lines.append(f"- profile `{prof}`: {n} active control(s){extra}")
@@ -224,7 +235,8 @@ def release_notes(repo: Repo, std: Standard, controls: list[Control], release: d
         "- `cirsec-baselines-*.zip`: controls (YAML), translations, schemas, `bundle.json`, `index.json`",
         "- `*.sha256`: checksum of the archive",
         "",
-        f"Content licensed under {repo.meta.get('licenses', {}).get('content', 'CC-BY-4.0')}. "
+        f"Text licensed under {repo.meta.get('licenses', {}).get('content', 'CC-BY-4.0')}, "
+        f"code under {repo.meta.get('licenses', {}).get('code', 'Apache-2.0')}. "
         "Independent project, not affiliated with or endorsed by any referenced framework publisher.",
         "",
     ]
@@ -237,11 +249,12 @@ def bundle_readme(std: Standard, release: dict) -> str:
         f"Tag `{release['tag']}`, commit `{release['commit']}`.\n\n"
         "- `bundle.json`: every released control with its translations, resolved in one file\n"
         "- `index.json`: lightweight list of controls\n"
-        "- `categories/`: source YAML files (same layout as the repository)\n"
+        "- `categories/`: source YAML files and script files (same layout as the repository)\n"
         "- `schema/`: JSON Schemas for the YAML files\n"
         "- `baselines.yml`: engines, frameworks and locales referenced by controls\n\n"
         "Only controls with status `active` or `deprecated` are included.\n"
-        "Control content is licensed under CC BY 4.0, see `LICENSE-CONTENT`.\n"
+        "Control text is licensed under CC BY 4.0 (`LICENSE-CONTENT`). Code (scripts, script files,\n"
+        "specs of script engines) is licensed under Apache 2.0 (`LICENSE`).\n"
     )
 
 
@@ -300,7 +313,7 @@ def build_standard(repo: Repo, std: Standard, version: str | None, out: Path, *,
     stage.mkdir(parents=True)
 
     # Root files
-    for rel in ("baselines.yml", "LICENSE-CONTENT"):
+    for rel in ("baselines.yml", "LICENSE", "LICENSE-CONTENT"):
         shutil.copy2(root / rel, stage / rel)
     shutil.copytree(root / "schema", stage / "schema")
 
@@ -311,6 +324,9 @@ def build_standard(repo: Repo, std: Standard, version: str | None, out: Path, *,
     shutil.copy2(std.path / "_standard.yml", stage / std_rel / "_standard.yml")
     for c in controls:
         shutil.copy2(c.path, stage / std_rel / "controls" / c.path.name)
+        scripts = std.path / "scripts" / c.id
+        if scripts.is_dir():
+            shutil.copytree(scripts, stage / std_rel / "scripts" / c.id)
         for locale, tr in c.translations.items():
             dst = stage / std_rel / "i18n" / locale / tr.path.name
             dst.parent.mkdir(parents=True, exist_ok=True)

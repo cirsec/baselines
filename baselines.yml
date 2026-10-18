@@ -3,7 +3,7 @@
 # Global settings for CIRSEC Baselines.
 # The folder tree under categories/ is the source of truth for content.
 # This file never lists categories, standards or controls.
-schema_version: 1
+schema_version: 2
 
 project:
   name: CIRSEC Baselines
@@ -11,7 +11,8 @@ project:
   repository: https://github.com/cirsec/baselines
 
 licenses:
-  content: CC-BY-4.0     # categories/** (see LICENSE-CONTENT)
+  content: CC-BY-4.0     # categories/** text (see LICENSE-CONTENT)
+  code: Apache-2.0       # code inside controls: scripts, script files, specs of script engines, and generated artifacts (see LICENSE)
   tooling: Apache-2.0    # schema/, tools/, site (see LICENSE)
 
 locales:
@@ -23,32 +24,57 @@ id_format:
   template: "CB-<STANDARD>-<DOMAIN>-<NNN>"
   example: "CB-M365-AUTH-001"
 
-# Engines usable in audit.checks[].engine and remediation.scripts[].engine.
+# Engines usable in audit.checks[], remediation.scripts[] and standard facts.
+#   capabilities  check  = evaluates a declarative spec
+#                 fix    = the fix can be generated from a check spec (scripts[].from_check)
+#                 script = accepts handwritten code (scripts[].content / file)
+#   spec_schema   JSON Schema every spec of this engine must match
+# Prefer declarative engines. script engines (shell, powershell) are the escape hatch.
 engines:
   - key: graph-api
+    capabilities: [check, fix]
+    spec_schema: schema/engines/graph-api.schema.json
     title: Microsoft Graph API
     description: GET a Graph resource and compare a JSON path to an expected value.
     url: https://learn.microsoft.com/graph/api/overview
   - key: exchange-powershell
+    capabilities: [check]
+    spec_schema: schema/engines/exchange-powershell.schema.json
     title: Exchange Online PowerShell
     description: Run an Exchange Online PowerShell cmdlet and compare a property to an expected value.
   - key: powershell
+    capabilities: [check, script]
+    spec_schema: schema/engines/powershell.schema.json
     title: PowerShell
-    description: Generic PowerShell script, for checks or remediation.
+    description: >-
+      PowerShell script, for checks or remediation. Same exit codes and parameter
+      environment variables as shell.
   - key: shell
+    capabilities: [check, script]
+    spec_schema: schema/engines/shell.schema.json
     title: POSIX shell
-    description: Shell command or script. For checks, exit code 0 means compliant.
+    description: >-
+      POSIX sh script. Check exit codes: 0 pass, 1 fail, 2 not applicable, other error; stdout is
+      the evidence. Parameters arrive as CB_<NAME> environment variables, never through {{ }}.
   - key: osquery
+    capabilities: [check]
+    spec_schema: schema/engines/osquery.schema.json
     title: osquery
     description: osquery SQL query. For checks, a non-empty result means compliant unless the spec says otherwise.
     url: https://osquery.io
   - key: windows-registry
+    capabilities: [check, fix]
+    spec_schema: schema/engines/windows-registry.schema.json
     title: Windows registry
     description: Read a registry value and compare it to an expected value.
   - key: file-content
+    capabilities: [check]
+    spec_schema: schema/engines/file-content.schema.json
     title: File content
     description: Match a regex against a configuration file.
   - key: postmortem
+    capabilities: [check]
+    spec_schema: schema/engines/postmortem.schema.json
     title: postmortem
     description: >-
       Supply-chain scanner. `postmortem harden --json` evaluates a project against the
@@ -56,7 +82,44 @@ engines:
       spec.control names the control, spec.coverage is auto (offline), online or partial,
       spec.flags lists the flags the check needs.
     url: https://github.com/mlab-sh/postmortem
+  # --- Linux declarative engines. A scanner may evaluate them natively or through osquery. ---
+  - key: sysctl
+    capabilities: [check, fix]
+    spec_schema: schema/engines/sysctl.schema.json
+    title: Linux sysctl
+    description: Compare a running kernel parameter. Fix sets it and persists it in /etc/sysctl.d/.
+  - key: package
+    capabilities: [check, fix]
+    spec_schema: schema/engines/package.schema.json
+    title: Debian package
+    description: Whether a package is installed or absent. Fix installs or purges it.
+  - key: systemd-unit
+    capabilities: [check, fix]
+    spec_schema: schema/engines/systemd-unit.schema.json
+    title: systemd unit
+    description: Whether a unit is enabled, disabled or masked. Fix changes and starts or stops it.
+  - key: file-perms
+    capabilities: [check, fix]
+    spec_schema: schema/engines/file-perms.schema.json
+    title: File ownership and mode
+    description: Owner, group and maximum mode of files. Fix runs chown and chmod.
+  - key: sshd-config
+    capabilities: [check, fix]
+    spec_schema: schema/engines/sshd-config.schema.json
+    title: OpenSSH server configuration
+    description: >-
+      Compare the effective value printed by `sshd -T` (not the file: Debian includes
+      sshd_config.d/ first and the first value wins). Fix writes /etc/ssh/sshd_config.d/00-cirsec.conf,
+      validates with `sshd -t`, then reloads ssh.
+    url: https://manpages.debian.org/stable/openssh-server/sshd_config.5.en.html
+  - key: dconf
+    capabilities: [check, fix]
+    spec_schema: schema/engines/dconf.schema.json
+    title: dconf (GNOME)
+    description: Compare a dconf key. Fix writes a system database file under /etc/dconf/db/local.d/, locks the key and runs dconf update.
   - key: demo-sensor
+    capabilities: [check, fix]
+    spec_schema: schema/engines/demo-sensor.schema.json
     title: "[DEMO] Buffet sensor"
     description: Demo engine used by categories/demo. Reads a sensor and compares it to a threshold.
 
@@ -65,6 +128,8 @@ engines:
 #   other kinds                  -> usable in threats
 #   reference_policy id-only     -> only identifiers may appear in this repository
 #   reference_policy id-title    -> identifiers and official titles allowed
+#   display_order                -> sort key of mappings on the site, open public frameworks first.
+#                                   A control mapped only to id-only frameworks gets a warning.
 frameworks:
   - key: cis-m365
     kind: control-framework
@@ -73,13 +138,23 @@ frameworks:
     url: https://www.cisecurity.org/benchmark/microsoft_365
     id_pattern: "^[0-9]+(\\.[0-9]+)*$"
     reference_policy: id-only
-  - key: cis-debian
+    display_order: 90
+  - key: cis-debian-12
     kind: control-framework
-    name: CIS Debian Linux Benchmark
+    name: CIS Debian Linux 12 Benchmark
     publisher: Center for Internet Security
     url: https://www.cisecurity.org/benchmark/debian_linux
     id_pattern: "^[0-9]+(\\.[0-9]+)*$"
     reference_policy: id-only
+    display_order: 90
+  - key: cis-debian-13
+    kind: control-framework
+    name: CIS Debian Linux 13 Benchmark
+    publisher: Center for Internet Security
+    url: https://www.cisecurity.org/benchmark/debian_linux
+    id_pattern: "^[0-9]+(\\.[0-9]+)*$"
+    reference_policy: id-only
+    display_order: 90
   - key: iso27001-2022
     kind: control-framework
     name: ISO/IEC 27001:2022 Annex A
@@ -87,6 +162,7 @@ frameworks:
     url: https://www.iso.org/standard/27001
     id_pattern: "^A\\.[5-8]\\.[0-9]+$"
     reference_policy: id-only
+    display_order: 40
   - key: nist-800-53r5
     kind: control-framework
     name: NIST SP 800-53 Rev. 5
@@ -94,6 +170,7 @@ frameworks:
     url: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
     id_pattern: "^[A-Z]{2}-[0-9]+(\\([0-9]+\\))?$"
     reference_policy: id-title
+    display_order: 20
   - key: cisa-scuba-m365
     kind: control-framework
     name: CISA SCuBA Microsoft 365 Secure Configuration Baselines
@@ -101,6 +178,7 @@ frameworks:
     url: https://www.cisa.gov/resources-tools/services/secure-cloud-business-applications-scuba-project
     id_pattern: "^MS\\.[A-Z]+\\.[0-9]+\\.[0-9]+v[0-9]+$"
     reference_policy: id-title
+    display_order: 30
   - key: anssi-linux
     kind: control-framework
     name: ANSSI - Recommandations de sécurité relatives à un système GNU/Linux
@@ -108,6 +186,7 @@ frameworks:
     url: https://cyber.gouv.fr/publications/recommandations-de-securite-relatives-un-systeme-gnulinux
     id_pattern: "^R[0-9]+$"
     reference_policy: id-title
+    display_order: 10
   - key: mitre-attack
     kind: threat-taxonomy
     name: MITRE ATT&CK
@@ -136,6 +215,7 @@ frameworks:
     publisher: Demo
     id_pattern: "^FC-[0-9]+\\.[0-9]+$"
     reference_policy: id-title
+    display_order: 10
   - key: demo-buffet-threats
     kind: threat-taxonomy
     name: "[DEMO] Buffet Threat Matrix"

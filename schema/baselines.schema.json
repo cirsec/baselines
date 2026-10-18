@@ -7,7 +7,7 @@
   "patternProperties": { "^x-": {} },
   "required": ["schema_version", "project", "licenses", "locales", "id_format", "engines", "frameworks"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -22,10 +22,11 @@
     "licenses": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["content", "tooling"],
+      "required": ["content", "code", "tooling"],
       "properties": {
         "content": { "type": "string", "description": "SPDX identifier for control text." },
-        "tooling": { "type": "string", "description": "SPDX identifier for schemas and code." }
+        "code": { "type": "string", "description": "SPDX identifier for code inside controls (scripts, script files, specs of script engines) and for artifacts generated from them." },
+        "tooling": { "type": "string", "description": "SPDX identifier for schemas and tools." }
       }
     },
     "locales": {
@@ -50,17 +51,26 @@
     "engines": {
       "type": "array",
       "minItems": 1,
-      "description": "Check and remediation engines allowed in controls (audit.checks[].engine, remediation.scripts[].engine).",
+      "description": "Engines usable in audit.checks[], remediation.scripts[] and standard facts. Generators for each output format (bash, Ansible...) live in the tooling, not here.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "patternProperties": { "^x-": {} },
-        "required": ["key", "title", "description"],
+        "required": ["key", "title", "description", "capabilities", "spec_schema"],
         "properties": {
           "key": { "$ref": "#/$defs/slug" },
           "title": { "type": "string" },
           "description": { "type": "string" },
-          "url": { "type": "string", "format": "uri" }
+          "url": { "type": "string", "format": "uri" },
+          "capabilities": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": { "enum": ["check", "fix", "script"] },
+            "description": "check: evaluates a declarative spec. fix: generates the remediation from a check spec (scripts[].from_check). script: accepts handwritten code (scripts[].content or file)."
+          },
+          "spec_schema": {
+            "type": "string", "pattern": "^schema/engines/[a-z0-9-]+\\.schema\\.json$",
+            "description": "Path from the repository root of the JSON Schema that every spec of this engine must match."
+          }
         }
       }
     },
@@ -80,6 +90,7 @@
           "publisher": { "type": "string" },
           "url": { "type": "string", "format": "uri" },
           "id_pattern": { "type": "string", "format": "regex", "description": "Regex every referenced identifier must match." },
+          "display_order": { "type": "integer", "minimum": 0, "description": "Sort key when mappings are displayed, lower first. Open public frameworks come before id-only ones." },
           "reference_policy": {
             "enum": ["id-only", "id-title"],
             "description": "id-only: only identifiers may be written in this repository. id-title: identifiers and official titles are allowed."

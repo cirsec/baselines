@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=../../../../schema/control.schema.json
 #
 # DEMO CONTROL 1 - the "full" example: automated, parameters, profiles,
-# version-specific checks, mappings, threats, verification.
+# version-specific checks, fixes generated from checks (from_check) with effects,
+# mappings, threats, verification per version.
 # File name must be exactly the ID + .yml
 
 # =============================================================================
@@ -108,16 +109,21 @@ remediation:
   manual: |
     Set the thermostat so the core temperature reaches {{ min_temp_c }} °C.
     Throw away any dish that stayed below this temperature for more than 2 hours.
-  requires_restart: false    # does the "system" need a restart?
+  # What applying the fix does to the running "system". Required as soon as there are scripts.
+  effects:
+    restart: none            # none | service (+ services: [...]) | session | reboot
+    disruption: low          # none | low | high
+    lockout_risk: false      # true = generated playbooks/scripts disable this fix by default
   rollback: |
     Set the thermostat back to its previous value.
   scripts:
+    # from_check: no code here. The engine (capability "fix") generates the fix for every
+    # output format from the check's spec, versions and facts. Preferred form.
     - id: set-thermostat
-      engine: demo-sensor
+      from_check: bain-marie-temp
       description: Push the target temperature to every bain-marie.
-      versions: [classic]
-      content: |
-        set bain_marie.*.target_temp {{ min_temp_c }}
+    - id: set-conveyor-plates
+      from_check: conveyor-plate-temp
 
 # =============================================================================
 # SOURCES AND LINKS
@@ -169,12 +175,18 @@ reviewers:                     # experts other than the authors
   - name: Dana Lee             # fictional, GitHub only
     github: demo-dana-lee
 
-# Proof the control was tested in real life.
+# Proof the control was tested in real life. An ACTIVE control with checks must be
+# verified on every version it applies to (here classic AND conveyor).
 verified:
   - date: 2026-10-16
     by: Sn0wAlice
+    versions: [classic]
     environment: Classic buffet, 12 bains-marie
     notes: All checks behaved as expected.
+  - date: 2026-10-16
+    by: Sn0wAlice
+    versions: [conveyor]
+    environment: Sushi belt, 40 heated plates
 
 introduced_in: 1.0.0         # standard version where this control first shipped
 created: 2026-10-01

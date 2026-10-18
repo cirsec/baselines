@@ -13,12 +13,15 @@ Exit code 0 when there is no error (warnings allowed unless --strict), 1 otherwi
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import date
 from pathlib import Path
 
 import yaml
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import SchemaError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
@@ -35,6 +38,7 @@ from common import (  # noqa: E402
     load_yaml,
     parse_semver,
     schema_errors,
+    script_path,
     semver_le,
     semver_lt,
 )
@@ -114,8 +118,8 @@ def _load_standard(std_dir: Path, category: Category, validators, report: Report
     for entry in sorted(std_dir.iterdir()):
         if entry.is_file() and entry.name not in ALLOWED_DOC_FILES | {"_standard.yml"}:
             report.error(entry, "unexpected file in standard folder")
-        elif entry.is_dir() and entry.name not in {"controls", "i18n"}:
-            report.error(entry, "unexpected folder, a standard only holds controls/ and i18n/")
+        elif entry.is_dir() and entry.name not in {"controls", "i18n", "scripts"}:
+            report.error(entry, "unexpected folder, a standard only holds controls/, i18n/ and scripts/")
 
     controls_dir = std_dir / "controls"
     if not controls_dir.is_dir():
@@ -176,6 +180,23 @@ def check_root(repo: Repo, report: Report) -> None:
     locales = meta.get("locales") or {}
     if locales.get("default") not in (locales.get("available") or []):
         report.error(path, "locales.default must be listed in locales.available")
+
+    # Engine spec schemas: present and valid, kept for check_controls.
+    for eng in meta.get("engines", []) or []:
+        rel = eng.get("spec_schema")
+        if not rel:
+            continue
+        spec_file = repo.root / rel
+        if not spec_file.is_file():
+            report.error(path, f"engine {eng.get('key')}: spec_schema {rel} does not exist")
+            continue
+        try:
+            schema = json.loads(spec_file.read_text(encoding="utf-8"))
+            Draft202012Validator.check_schema(schema)
+        except (ValueError, SchemaError) as exc:
+            report.error(spec_file, f"invalid JSON Schema: {str(exc).splitlines()[0]}")
+            continue
+        repo.spec_validators[eng.get("key")] = Draft202012Validator(schema, format_checker=FormatChecker())
 
     for fw in meta.get("frameworks", []) or []:
         pattern = fw.get("id_pattern")
@@ -248,7 +269,26 @@ def check_categories_and_standards(repo: Repo, report: Report) -> None:
                     seen.add(cur)
                     cur = parents.get(cur)
 
+            seen = set()
+            for fact in d.get("facts", []) or []:
+                key, det = fact.get("key"), fact.get("detect") or {}
+                if key in seen:
+                    report.error(f, f"duplicate fact {key!r}")
+                seen.add(key)
+                for msg in check_spec(repo, det.get("engine"), det.get("spec"), "check", f"facts.{key}.detect"):
+                    report.error(f, msg)
+
             _check_i18n_block(repo, f, d, report, std)
+
+
+def check_spec(repo: Repo, engine: str | None, spec, capability: str, where: str) -> list[str]:
+    """Engine declared, able to do `capability`, and spec valid against its spec_schema."""
+    if engine not in repo.engines:
+        return [f"{where}: engine {engine!r} is not declared in baselines.yml"]
+    if not repo.has_capability(engine, capability):
+        return [f"{where}: engine {engine!r} has no {capability!r} capability"]
+    validator = repo.spec_validators.get(engine)
+    return schema_errors(validator, spec or {}, f"{where}: spec") if validator else []
 
 
 def _strings(value):
@@ -351,8 +391,17 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                 if v not in std.versions:
                     report.error(f, f"{where}: version {v!r} not in standard versions {sorted(std.versions)}")
 
-        _check_versions((d.get("applicability") or {}).get("versions"), "applicability.versions")
+        def _check_facts(facts, where):
+            for k in facts or []:
+                if k not in std.facts:
+                    report.error(f, f"{where}: fact {k!r} is not declared in {std.id}/_standard.yml")
+
+        applicability = d.get("applicability") or {}
+        _check_versions(applicability.get("versions"), "applicability.versions")
+        _check_facts(applicability.get("facts"), "applicability.facts")
         audit, remediation = d.get("audit") or {}, d.get("remediation") or {}
+        checks = {c.get("id"): c for c in audit.get("checks") or []}
+        code: list[tuple[str, str]] = []  # (where, text) of handwritten code: no {{ }} allowed
         for group, items in (("audit.checks", audit.get("checks")), ("remediation.scripts", remediation.get("scripts"))):
             ids = set()
             for i, item in enumerate(items or []):
@@ -360,9 +409,35 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                 if item.get("id") in ids:
                     report.error(f, f"{where}: duplicate id {item.get('id')!r}")
                 ids.add(item.get("id"))
-                if item.get("engine") not in engines:
-                    report.error(f, f"{where}: engine {item.get('engine')!r} is not declared in baselines.yml")
                 _check_versions(item.get("versions"), where)
+                _check_facts(item.get("facts"), f"{where}.facts")
+                engine = item.get("engine")
+                if group == "audit.checks":
+                    for msg in check_spec(repo, engine, item.get("spec"), "check", where):
+                        report.error(f, msg)
+                    if repo.has_capability(engine, "script"):
+                        code.extend((where, s) for s in _strings(item.get("spec")))
+                elif "from_check" in item:
+                    src = checks.get(item["from_check"])
+                    if src is None:
+                        report.error(f, f"{where}: from_check {item['from_check']!r} is not a check of this control")
+                    elif not repo.has_capability(src.get("engine"), "fix"):
+                        report.error(f, f"{where}: engine {src.get('engine')!r} of check {item['from_check']!r} has no 'fix' capability")
+                elif engine not in engines:
+                    report.error(f, f"{where}: engine {engine!r} is not declared in baselines.yml")
+                elif not repo.has_capability(engine, "script"):
+                    report.error(f, f"{where}: engine {engine!r} has no 'script' capability, use from_check")
+                elif "content" in item:
+                    code.append((where, item["content"]))
+                elif "file" in item:
+                    sp = script_path(ctl, item["file"])
+                    if not sp.is_file():
+                        report.error(f, f"{where}: file {sp.relative_to(std.path).as_posix()} does not exist")
+                    else:
+                        code.append((where, sp.read_text(encoding="utf-8")))
+        for where, text in code:
+            if PLACEHOLDER_RE.search(text):
+                report.error(f, f"{where}: no {{{{ }}}} in code, read parameters from CB_<NAME> environment variables")
 
         # Parameters and placeholders
         params = check_parameters(ctl, report)
@@ -387,6 +462,23 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                 pattern = fw.get("id_pattern")
                 if pattern and not re.match(pattern, str(m.get("id", ""))):
                     report.error(f, f"{where}: id {m.get('id')!r} does not match {fw['key']} pattern {pattern}")
+
+        mapped = [frameworks.get(m.get("framework")) for m in d.get("mappings", []) or []]
+        if mapped and all(fw and fw.get("reference_policy") == "id-only" for fw in mapped):
+            report.warning(f, "mappings only point to id-only frameworks, add an open one (ANSSI, NIST, CISA...)")
+
+        # Verification: an active control with checks is tested on every version it applies to
+        tested: set[str] = set()
+        for i, v in enumerate(d.get("verified", []) or []):
+            _check_versions(v.get("versions"), f"verified[{i}].versions")
+            tested.update(v.get("versions") or [])
+        if d.get("status") == "active" and d.get("assessment") != "manual":
+            if std.versions:
+                missing = set(applicability.get("versions") or std.versions) - tested
+                if missing:
+                    report.error(f, f"active control not verified on version(s) {sorted(missing)}, add verified[].versions")
+            elif not d.get("verified"):
+                report.error(f, "active control was never verified, add a verified entry")
 
         # People: nobody reviews their own control
         def _who(p):
@@ -425,6 +517,23 @@ def check_controls(repo: Repo, report: Report) -> dict[str, Control]:
                     report.error(f, f"{key} is only allowed when status is deprecated")
 
     return all_ids
+
+
+def check_scripts_layout(repo: Repo, report: Report) -> None:
+    """<standard>/scripts/<ID>/<file>: every folder is a control, every file is referenced."""
+    for std in repo.standards():
+        scripts_dir = std.path / "scripts"
+        if not scripts_dir.is_dir():
+            continue
+        for entry in sorted(scripts_dir.iterdir()):
+            ctl = std.controls.get(entry.name)
+            if not entry.is_dir() or ctl is None:
+                report.error(entry, "scripts/ only holds <control ID>/ folders of this standard")
+                continue
+            used = {s.get("file") for s in (ctl.data.get("remediation") or {}).get("scripts") or []}
+            for f in sorted(entry.iterdir()):
+                if f.name not in used:
+                    report.error(f, f"script file not referenced by {ctl.id} remediation.scripts[].file")
 
 
 def check_relations(repo: Repo, all_ids: dict[str, Control], report: Report) -> None:
@@ -501,6 +610,7 @@ def run(root: Path = ROOT) -> tuple[Repo | None, Report]:
     check_root(repo, report)
     check_categories_and_standards(repo, report)
     all_ids = check_controls(repo, report)
+    check_scripts_layout(repo, report)
     check_relations(repo, all_ids, report)
     check_translations(repo, report)
     return repo, report

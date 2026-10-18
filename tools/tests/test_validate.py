@@ -66,6 +66,23 @@ def test_current_repo_is_valid(repo):
         # translations
         ("i18n/fr/CB-BUF-HYG-001.yml", "locale: fr", "locale: de", r"must equal the folder name 'fr'"),
         ("i18n/fr/CB-BUF-HYG-001.yml", "  min_temp_c: Temp", "  max_temp_c: Temp", r"is not a parameter"),
+        # engine specs and capabilities
+        ("controls/CB-BUF-HYG-001.yml", "sensor: bain_marie.*.core_temp", "sensr: bain_marie", r"spec: .*'sensor' is a required"),
+        ("controls/CB-BUF-HYG-002.yml", "engine: shell", "engine: demo-sensor", r"has no 'script' capability"),
+        # facts
+        ("_standard.yml", "key: cleaning-app", "key: sneeze-guard-rails", r"duplicate fact"),
+        ("_standard.yml", "sensor: cleaning_app.installed", "sensr: x", r"facts.cleaning-app.detect: spec"),
+        ("controls/CB-BUF-GUARD-001.yml", "facts: [sneeze-guard-rails]", "facts: [unicorn]", r"fact 'unicorn' is not declared"),
+        ("controls/CB-BUF-HYG-002.yml", "facts: [cleaning-app]", "facts: [robot]", r"fact 'robot' is not declared"),
+        # remediation
+        ("controls/CB-BUF-HYG-001.yml", "from_check: bain-marie-temp", "from_check: fridge", r"is not a check of this control"),
+        ("controls/CB-BUF-HYG-001.yml", "restart: none            # none", "restart: service            # none", r"'services' is a required"),
+        ("controls/CB-BUF-HYG-002.yml", "  effects:\n    restart: none\n    disruption: none\n", "", r"'effects' is a dependency of 'scripts'"),
+        ("controls/CB-BUF-HYG-002.yml", "file: reminder.sh", "file: gone.sh", r"scripts/CB-BUF-HYG-002/gone.sh does not exist"),
+        ("controls/CB-BUF-HYG-002.yml", "      file: reminder.sh", "      file: reminder.sh\n      content: echo", r"schema: remediation/scripts/0"),
+        # verification
+        ("controls/CB-BUF-HYG-001.yml", "versions: [conveyor]\n    environment: Sushi", "versions: [classic]\n    environment: Sushi", r"not verified on version\(s\) \['conveyor'\]"),
+        ("controls/CB-BUF-ABUSE-002.yml", "versions: [classic, conveyor]", "versions: [classic, vegan]", r"version 'vegan' not in"),
     ],
 )
 def test_rule_is_enforced(buffet, repo, file, old, new, pattern):
@@ -110,3 +127,36 @@ def test_strict_mode_fails_on_warnings(buffet, repo):
     edit(buffet / "controls/CB-BUF-HYG-001.yml", "updated: 2026-10-16", "updated: 2026-10-17")
     assert validate.main(["--root", str(repo)]) == 0
     assert validate.main(["--root", str(repo), "--strict"]) == 1
+
+
+def test_placeholder_forbidden_in_code(buffet, repo):
+    edit(buffet / "scripts/CB-BUF-HYG-002/reminder.sh", '"$CB_INTERVAL_MIN"', '"{{ interval_min }}"')
+    assert_error(repo, r"no \{\{ \}\} in code")
+
+
+def test_from_check_needs_fix_capability(repo):
+    edit(repo / "baselines.yml", "  - key: demo-sensor\n    capabilities: [check, fix]", "  - key: demo-sensor\n    capabilities: [check]")
+    assert_error(repo, r"engine 'demo-sensor' of check 'bain-marie-temp' has no 'fix' capability")
+
+
+def test_engine_spec_schema_must_exist(repo):
+    (repo / "schema/engines/demo-sensor.schema.json").unlink()
+    assert_error(repo, r"spec_schema schema/engines/demo-sensor.schema.json does not exist")
+
+
+def test_unreferenced_script_file(buffet, repo):
+    (buffet / "scripts/CB-BUF-HYG-002/extra.sh").write_text("true\n")
+    assert_error(repo, r"not referenced by CB-BUF-HYG-002")
+
+
+def test_script_folder_of_unknown_control(buffet, repo):
+    (buffet / "scripts/CB-BUF-NOPE-001").mkdir()
+    assert_error(repo, r"scripts/ only holds <control ID>/ folders")
+
+
+def test_id_only_mappings_are_a_warning(repo):
+    edit(repo / "baselines.yml", "    reference_policy: id-title\n    display_order: 10\n  - key: demo-buffet-threats",
+         "    reference_policy: id-only\n    display_order: 10\n  - key: demo-buffet-threats")
+    errors, warnings = run(repo)
+    assert errors == []
+    assert any("only point to id-only frameworks" in w for w in warnings)

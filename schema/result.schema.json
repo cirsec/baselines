@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baselines.cirsec.org/schema/result.schema.json",
+  "title": "CIRSEC Baselines - scan result",
+  "description": "What a scanner outputs after evaluating one standard on one target. Any scanner can produce it, any dashboard can read it.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": { "^x-": {} },
+  "required": ["format", "standard", "version", "profile", "target", "scanner", "started", "results"],
+  "properties": {
+    "format": { "const": "cirsec-baselines-result" },
+    "standard": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "Standard id." },
+    "version": { "type": "string", "description": "Standard release evaluated, e.g. 1.0.0." },
+    "profile": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "tailoring": { "type": "string", "description": "Name or path of the tailoring file used, if any." },
+    "target": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Host name, tenant id, project path..." },
+        "product_version": { "type": "string", "description": "e.g. 12, matched against applies_to versions." },
+        "facts": { "type": "object", "additionalProperties": { "type": "boolean" }, "description": "Detected value of each fact of the standard." }
+      }
+    },
+    "scanner": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "started": { "type": "string", "format": "date-time" },
+    "finished": { "type": "string", "format": "date-time" },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": { "^x-": {} },
+        "required": ["control", "status"],
+        "properties": {
+          "control": { "type": "string", "pattern": "^CB-[A-Z0-9]+-[A-Z0-9]+-[0-9]{3}$" },
+          "status": {
+            "enum": ["pass", "fail", "not_applicable", "error", "manual", "review", "excluded"],
+            "description": "pass/fail: checks evaluated with audit.logic. not_applicable: version or fact does not match. error: a check could not run. manual: assessment manual. review: assessment partial and every check passed, a human must confirm the rest. excluded: removed by the tailoring file."
+          },
+          "parameters": { "type": "object", "description": "Resolved parameter values used for this control." },
+          "message": { "type": "string" },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "status"],
+              "properties": {
+                "id": { "type": "string", "description": "audit.checks[].id." },
+                "status": { "enum": ["pass", "fail", "not_applicable", "error"] },
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "observed": { "description": "Value found on the target." },
+                    "expected": { "description": "Value required, after parameter resolution." },
+                    "source": { "type": "string", "description": "Where it was read: command, file, API resource." }
+                  }
+                },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
