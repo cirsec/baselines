@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-004
+title: Mount /dev/shm with nodev, nosuid and noexec
+finding:
+  title: Programs can be run from the shared memory filesystem
+  description: /dev/shm is writable by every user and lives only in memory, which makes it a convenient place to run attack tools without leaving files on disk.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [mount, shm, tmpfs]
+
+description: |
+  `/dev/shm` is the tmpfs used for POSIX shared memory. systemd mounts it at boot with `nodev` and
+  `nosuid`. This control also requires `noexec`, set through a `/dev/shm` line in `/etc/fstab`
+  that systemd applies at boot.
+rationale: |
+  Every user can write to `/dev/shm`, and its content never reaches the disk. Attackers use it to
+  store and run tools while leaving few traces. `noexec` blocks direct execution, `nosuid` and
+  `nodev` stop setuid files and device nodes placed there from being used.
+impact: |
+  Programs that map executable code from files in `/dev/shm` fail. This is rare (some JIT engines
+  and old database software); check vendor requirements before applying on such systems.
+
+setting:
+  location: /etc/fstab
+  default_value: nodev,nosuid (no noexec)
+  recommended_value: nodev,nosuid,noexec
+
+audit:
+  manual: |
+    Run `findmnt -kn /dev/shm`. Its options must contain `nodev`, `nosuid` and `noexec`.
+  checks:
+    - id: mount
+      engine: shell
+      description: /dev/shm is a mount point and its options include nodev, nosuid and noexec.
+      spec:
+        script: |
+          o=$(findmnt -kn -o SOURCE,FSTYPE,OPTIONS --mountpoint /dev/shm | tail -n 1)
+          [ -n "$o" ] || { echo "/dev/shm is not mounted"; exit 1; }
+          echo "/dev/shm $o"
+          rc=0
+          for opt in nodev nosuid noexec; do
+            case ,${o##* }, in *,$opt,*) ;; *) echo "missing $opt"; rc=1 ;; esac
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    1. If `/etc/fstab` has a `/dev/shm` line, add `nodev,nosuid,noexec` to its options. Otherwise
+       add the line:
+       ```
+       tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0
+       ```
+    2. Run `systemctl daemon-reload` and `mount -o remount,nodev,nosuid,noexec /dev/shm`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the `/dev/shm` line from `/etc/fstab` (or restore the copy saved in the backup
+    directory), run `systemctl daemon-reload` and `mount -o remount,exec /dev/shm`.
+  scripts:
+    - id: fstab
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: fstab(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/mount/fstab.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: systemd-fstab-generator(8), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/systemd-fstab-generator.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: mount(8), Debian manual pages (filesystem-independent mount options)
+    url: https://manpages.debian.org/trixie/mount/mount.8.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.2.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.2.2"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.2.3"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.2.4"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.2.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.2.2"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.2.3"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.2.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.001
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-DEB-FS-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on fresh install (no noexec); fix adds an fstab line and remounts; options kept after reboot; second run leaves fstab unchanged."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on fresh install (no noexec); fix adds an fstab line and remounts; options kept after reboot; second run leaves fstab unchanged."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

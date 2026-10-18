@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-009
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne laisser aucun fichier sans propriétaire ou groupe connu
+finding:
+  title: Des fichiers appartiennent à un utilisateur ou un groupe qui n'existe pas
+  description: Un compte créé plus tard avec le même identifiant posséderait ces fichiers sans que personne ne le remarque.
+description: |
+  Tout fichier et répertoire des systèmes de fichiers locaux (ext2/3/4, XFS, Btrfs, JFS, F2FS, FAT,
+  exFAT et tmpfs) appartient à un utilisateur et à un groupe présents dans les bases de comptes.
+rationale: |
+  Les fichiers orphelins viennent en général de comptes supprimés ou d'archives extraites avec leurs
+  identifiants d'origine. Le prochain compte ou groupe créé avec cet identifiant numérique en devient
+  propriétaire et peut les lire ou les modifier. Ils révèlent aussi un nettoyage de comptes
+  incomplet.
+impact: |
+  Aucun : le contrôle ne fait que signaler.
+notes: |
+  Le parcours reste sur chaque système de fichiers (`find -xdev`). Les systèmes de fichiers réseau
+  ne sont pas parcourus : leurs identifiants viennent d'un autre système.
+audit:
+  manual: |
+    Pour chaque système de fichiers local listé par `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, lancer
+    `find <point de montage> -xdev \( -nouser -o -nogroup \)`. La commande ne doit rien afficher.
+remediation:
+  manual: |
+    Pour chaque élément signalé, trouver son origine (`ls -ln`, `dpkg -S`), puis :
+    - le donner à son propriétaire actuel avec `chown <utilisateur>:<groupe> <fichier>` ;
+    - ou le supprimer s'il appartenait à un compte supprimé et n'est plus utile.
+
+    Restaurer les archives avec `tar --no-same-owner` (comportement par défaut hors root) ou corriger
+    le propriétaire juste après l'extraction.

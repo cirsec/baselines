@@ -1,0 +1,166 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-005
+title: Put /home, /var, /var/tmp, /var/log and /var/log/audit on separate filesystems
+finding:
+  title: User data, variable data and logs share the root filesystem
+  description: A user or a service that fills one of these directories fills the whole system, and they cannot get their own mount options.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [mount, partitions]
+
+description: |
+  Each directory of `{{ separate_mounts }}` is the mount point of its own filesystem (partition,
+  LVM logical volume, or bind mount of a dedicated volume), instead of a plain directory of the
+  root filesystem.
+rationale: |
+  Separate filesystems contain disk exhaustion: logs or user files that grow without bound stop at
+  their own volume, and the system keeps running and logging. They are also the only way to give
+  these trees restrictive mount options (`nodev`, `nosuid`, `noexec`, see CB-DEB-FS-006), and they
+  keep audit logs available when other data fills up.
+impact: |
+  Partitioning is chosen at installation. Changing it later means adding disks or shrinking
+  volumes, moving data and editing `/etc/fstab`, with downtime. Volumes that are too small fill up
+  sooner: size them from the expected log and data volumes, and prefer LVM to resize later.
+notes: |
+  Debian cloud images have a single root partition, so this control fails there by design. The
+  Debian installer creates these partitions with the "separate /home, /var and /tmp" recipe, or
+  with a custom LVM layout.
+
+setting:
+  location: /etc/fstab
+  default_value: Single root filesystem
+  recommended_value: "Separate filesystems for: {{ separate_mounts }}"
+
+parameters:
+  - name: separate_mounts
+    type: list
+    description: Directories that must be mount points of their own filesystem.
+    default: [/home, /var, /var/tmp, /var/log, /var/log/audit]
+
+audit:
+  manual: |
+    For each directory of `{{ separate_mounts }}`, run `findmnt -kn <directory>`. It must print a
+    line.
+  checks:
+    - id: mounts
+      engine: shell
+      description: Each listed directory is a mount point.
+      spec:
+        script: |
+          rc=0
+          for p in $CB_SEPARATE_MOUNTS; do
+            o=$(findmnt -kn -o SOURCE,FSTYPE --mountpoint "$p" | tail -n 1)
+            if [ -n "$o" ]; then echo "$p: $o"; else echo "$p: not a separate filesystem"; rc=1; fi
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    At installation, create a partition or LVM logical volume for each directory of
+    `{{ separate_mounts }}`.
+
+    On an installed system, for each missing one:
+    1. Create the volume and its filesystem (for example `lvcreate` then `mkfs.ext4`).
+    2. In single-user mode or with the services that write there stopped, mount it on a temporary
+       directory and copy the data with `cp -a` (or `rsync -aHAX`), keeping owners and modes.
+    3. Add the line to `/etc/fstab` with the options of CB-DEB-FS-006, mount it on the target
+       directory, check, and remove the old copy hidden under the mount point.
+    4. Reboot and check that every service starts.
+
+references:
+  - title: Debian GNU/Linux Installation Guide - Partitioning for Debian
+    url: https://www.debian.org/releases/trixie/amd64/apcs02.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: file-hierarchy(7), Debian manual pages
+    url: https://manpages.debian.org/trixie/systemd/file-hierarchy.7.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R28, R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-18
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R28
+    relation: partial
+    note: R28 also lists /boot, /opt, /srv and /usr; ours requires the five partitions CIS asks for.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5(2)
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1499.001
+  - framework: cwe
+    id: CWE-400
+related_controls:
+  - id: CB-DEB-FS-006
+    type: related
+  - id: CB-DEB-FS-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

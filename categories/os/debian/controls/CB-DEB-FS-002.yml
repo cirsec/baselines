@@ -1,0 +1,170 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-DEB-FS-002
+title: Block USB mass storage and FireWire kernel modules
+finding:
+  title: USB storage devices and FireWire can be used on the system
+  description: Anyone with physical access can copy data to a USB disk, bring in tools, or use FireWire direct memory access.
+status: draft
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel-modules, usb, firewire, modprobe]
+
+description: |
+  `usb-storage` is the driver for USB disks and keys, `firewire-core` the base of the FireWire
+  (IEEE 1394) stack. This control blocks the modules listed in `{{ modules }}`: each one gets an
+  `install <module> /bin/false` rule, so any load attempt fails, and a `blacklist` rule. A module
+  that no installed kernel ships is compliant.
+rationale: |
+  Removable storage is a common way to take data out of a system and to bring malware in.
+  FireWire controllers can read and write host memory directly, which lets a device extract keys
+  or bypass the login. A server rarely needs either.
+impact: |
+  USB disks and keys are no longer usable. Keyboards, mice and other USB devices keep working.
+  On a hardened workstation, use the network or an approved channel to exchange files, or remove
+  `usb-storage` from `{{ modules }}` and control devices with USBGuard instead.
+notes: |
+  Debian cloud kernels do not ship these modules, so the check passes there without any
+  configuration. `uas` (USB Attached SCSI) depends on `usb-storage` and is blocked with it.
+
+setting:
+  location: /etc/modprobe.d/60-cirsec-usb-firewire.conf
+  default_value: USB storage and FireWire modules load when a device is plugged in
+  recommended_value: "install /bin/false and blacklist for: {{ modules }}"
+
+parameters:
+  - name: modules
+    type: list
+    description: Kernel modules to block, as named by modprobe.
+    default: [usb-storage, firewire-core]
+
+audit:
+  manual: |
+    For each module of `{{ modules }}`:
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>'` must show
+       `install <module> /bin/false` and `blacklist <module>` (dashes appear as underscores), or
+       `find /lib/modules -name '<module>.ko*'` must find nothing.
+    2. `grep '^<module> ' /proc/modules` (with underscores) must find nothing.
+  checks:
+    - id: modules
+      engine: shell
+      description: Each listed module is blocked in the modprobe configuration, or not shipped, and not loaded.
+      spec:
+        script: |
+          cfg=$(modprobe --showconfig 2>/dev/null) || exit 3
+          rc=0
+          for m in $CB_MODULES; do
+            n=$(printf '%s' "$m" | tr - _)
+            if grep -q "^$n " /proc/modules; then
+              echo "$m: loaded"; rc=1; continue
+            fi
+            if printf '%s\n' "$cfg" | grep -Eq "^install $n (/usr)?/bin/(false|true)( |\$)" &&
+              printf '%s\n' "$cfg" | grep -qx "blacklist $n"; then
+              echo "$m: blocked"
+            elif [ -z "$(find /lib/modules/ \( -name "$m.ko*" -o -name "$n.ko*" \) 2>/dev/null | head -n 1)" ] &&
+              ! grep -qs "/$n.ko\$\|/$m.ko\$" /lib/modules/*/modules.builtin; then
+              echo "$m: not shipped by any installed kernel"
+            else
+              echo "$m: can be loaded"; rc=1
+            fi
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    1. Create `/etc/modprobe.d/60-cirsec-usb-firewire.conf` with, for each module of `{{ modules }}`:
+       ```
+       install <module> /bin/false
+       blacklist <module>
+       ```
+    2. Unplug the devices and unload the modules with `modprobe -r <module>`, or reboot.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-usb-firewire.conf`. The modules load again when a device is plugged in.
+  scripts:
+    - id: modprobe-conf
+      engine: shell
+      content: |
+        f=/etc/modprobe.d/60-cirsec-usb-firewire.conf
+        cb_backup "$f"
+        {
+          echo '# Written by CIRSEC Baselines CB-DEB-FS-002'
+          for m in $CB_MODULES; do printf 'install %s /bin/false\nblacklist %s\n' "$m" "$m"; done
+        } >"$f"
+        chmod 644 "$f"
+        rc=0
+        for m in $CB_MODULES; do
+          n=$(printf '%s' "$m" | tr - _)
+          grep -q "^$n " /proc/modules || continue
+          modprobe -r "$n" || { echo "$m is in use, it stays loaded until reboot" >&2; rc=1; }
+        done
+        exit $rc
+
+references:
+  - title: modprobe.d(5), Debian manual pages
+    url: https://manpages.debian.org/trixie/kmod/modprobe.d.5.en.html
+    publisher: Debian
+    kind: vendor-doc
+    accessed: 2026-10-18
+  - title: Linux kernel documentation - Using physical DMA provided by OHCI-1394 FireWire controllers for debugging
+    url: https://docs.kernel.org/core-api/debugging-via-ohci1394.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-18
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-7
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.9"
+    relation: equivalent
+  - framework: cis-debian-12
+    framework_version: "2.0.0"
+    id: "1.1.1.10"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.9"
+    relation: equivalent
+  - framework: cis-debian-13
+    framework_version: "1.1.0"
+    id: "1.1.1.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1052.001
+  - framework: mitre-attack
+    id: T1200
+  - framework: mitre-attack
+    id: T1091
+related_controls:
+  - id: CB-DEB-FS-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["12"]
+    environment: Proxmox VM 922, Debian 12 genericcloud image, kernel 6.1.0-54-cloud-amd64
+    notes: "Passes unconfigured (modules not shipped by the cloud kernel); fix writes the modprobe rules, check reports them blocked; server-hardened profile."
+  - date: 2026-10-18
+    by: Sn0wAlice
+    versions: ["13"]
+    environment: Proxmox VM 932, Debian 13 genericcloud image, kernel 6.12.113+deb13-cloud-amd64
+    notes: "Passes unconfigured (modules not shipped by the cloud kernel); fix writes the modprobe rules, check reports them blocked; server-hardened profile."
+introduced_in: 0.1.0
+created: 2026-10-18
+updated: 2026-10-18

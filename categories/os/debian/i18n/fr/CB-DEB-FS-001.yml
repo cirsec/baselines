@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-001
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les modules noyau des systèmes de fichiers inutilisés
+finding:
+  title: Le noyau peut charger des modules de systèmes de fichiers rarement utilisés
+  description: Tout utilisateur capable de rattacher une image disque ou un support amovible peut faire analyser par le noyau un code de système de fichiers ancien et peu audité.
+description: |
+  Le noyau charge un module de système de fichiers à la demande, la première fois qu'un système de
+  fichiers de ce type est monté. Ce contrôle bloque durablement les modules de `{{ modules }}` :
+  chacun reçoit une règle `install <module> /bin/false`, qui fait échouer tout chargement, et une
+  règle `blacklist`, pour qu'il ne soit jamais choisi via les alias matériels. Un module livré par
+  aucun noyau installé est conforme.
+
+  La liste du socle contient des systèmes de fichiers sans usage sur un serveur ou un poste Debian
+  (cramfs, freevxfs, hfs, hfsplus, jffs2). Les profils renforcés ajoutent overlay, squashfs et udf.
+rationale: |
+  Les pilotes de systèmes de fichiers analysent des structures complexes sur disque. Les moins
+  utilisés sont peu relus, et des images forgées ont plusieurs fois mené à des corruptions de la
+  mémoire du noyau et à des élévations de privilèges. Les montages automatiques du bureau, udisks
+  et les périphériques loop permettent à un utilisateur non privilégié d'atteindre ce code avec une
+  clé USB ou une image téléchargée. Un module impossible à charger supprime cette surface d'attaque.
+impact: |
+  Les supports utilisant un système de fichiers bloqué ne peuvent plus être montés. Dans les profils
+  renforcés, cela inclut `overlay` (Docker, Podman et autres moteurs de conteneurs), `squashfs`
+  (paquets snap, images live) et `udf` (DVD et certains supports USB). Retirer un module de
+  `{{ modules }}` dans le fichier d'adaptation quand le système en a besoin.
+notes: |
+  Les noyaux cloud de Debian ne livrent ni cramfs, ni freevxfs, ni hfs, ni hfsplus, ni jffs2 : la
+  liste du socle y est conforme sans configuration. Les noyaux génériques (`linux-image-amd64`) les
+  livrent.
+
+  Examiner les autres modules de systèmes de fichiers de la même façon :
+  `ls /lib/modules/$(uname -r)/kernel/fs` liste ce que le noyau peut charger, et ceux que le système
+  ne monte jamais peuvent être ajoutés à `{{ modules }}`.
+setting:
+  location: /etc/modprobe.d/60-cirsec-filesystems.conf
+  recommended_value: "install /bin/false et blacklist pour : {{ modules }}"
+parameters:
+  modules: Modules noyau à bloquer, avec leur nom modprobe.
+audit:
+  manual: |
+    Pour chaque module de `{{ modules }}` :
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>'` doit afficher
+       `install <module> /bin/false` et `blacklist <module>` (les tirets apparaissent en soulignés),
+       ou `find /lib/modules -name '<module>.ko*'` ne doit rien trouver.
+    2. `grep '^<module> ' /proc/modules` ne doit rien trouver.
+remediation:
+  manual: |
+    1. Créer `/etc/modprobe.d/60-cirsec-filesystems.conf` avec, pour chaque module de `{{ modules }}` :
+       ```
+       install <module> /bin/false
+       blacklist <module>
+       ```
+    2. Décharger les modules chargés avec `modprobe -r <module>`. Un module utilisé (système de
+       fichiers monté) reste chargé jusqu'à son démontage ou au redémarrage.
+  rollback: |
+    Supprimer `/etc/modprobe.d/60-cirsec-filesystems.conf`. Les modules se chargent de nouveau à la demande.

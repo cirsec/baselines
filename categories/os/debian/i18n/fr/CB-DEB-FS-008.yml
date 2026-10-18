@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-DEB-FS-008
+locale: fr
+source_updated: 2026-10-18
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne laisser aucun fichier modifiable par tous, et poser le sticky bit sur les répertoires modifiables par tous
+finding:
+  title: Des fichiers sont modifiables par tous, ou des répertoires partagés permettent aux utilisateurs de supprimer les fichiers des autres
+  description: N'importe quel compte local ou service compromis peut modifier un fichier accessible en écriture à tous, ou remplacer le fichier d'un autre utilisateur dans un répertoire partagé.
+description: |
+  Sur les systèmes de fichiers locaux (ext2/3/4, XFS, Btrfs, JFS, F2FS, FAT, exFAT et tmpfs) :
+
+  - aucun fichier ordinaire n'est accessible en écriture aux autres ;
+  - tout répertoire accessible en écriture aux autres a le sticky bit (`t`), pour que seul le
+    propriétaire d'un fichier puisse le supprimer ou le renommer, comme sur `/tmp`.
+
+  Les systèmes de fichiers réseau et les pseudo-systèmes de fichiers du noyau (`/proc`, `/sys`,
+  `/dev`) ne sont pas parcourus.
+rationale: |
+  Un fichier modifiable par tous peut être changé par n'importe quel compte ou service : quand c'est
+  un script, une configuration ou des données lues par un processus privilégié, cela mène à de
+  l'exécution de code ou à de la falsification. Sans sticky bit, n'importe quel utilisateur peut
+  supprimer ou remplacer les fichiers des autres dans un répertoire partagé, et piéger les
+  programmes qui y utilisent des noms prévisibles.
+impact: |
+  Retirer l'écriture aux autres peut casser une application mal empaquetée qui en dépend. Corriger
+  ces cas avec un groupe dédié. Ajouter le sticky bit à un répertoire partagé empêche seulement les
+  utilisateurs de supprimer les fichiers des autres.
+notes: |
+  Un système Debian 12 ou 13 neuf ne présente aucun écart. Le parcours reste sur chaque système de
+  fichiers (`find -xdev`) et prend quelques secondes sur un système courant, davantage sur un
+  serveur de fichiers.
+audit:
+  manual: |
+    Pour chaque système de fichiers local listé par `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, lancer :
+    ```
+    find <point de montage> -xdev \( -type f -perm -0002 -o -type d -perm -0002 ! -perm -1000 \)
+    ```
+    La commande ne doit rien afficher.
+remediation:
+  manual: |
+    Pour chaque élément signalé :
+    - répertoire : lancer `chmod +t <répertoire>`, ou `chmod o-w <répertoire>` s'il n'a pas à être
+      partagé ;
+    - fichier : trouver le paquet ou l'application qui le possède (`dpkg -S <fichier>`) et pourquoi
+      il est modifiable, puis lancer `chmod o-w <fichier>`, et donner l'accès par un groupe si
+      certains utilisateurs en ont encore besoin.
+
+    La correction automatique ajoute seulement le sticky bit aux répertoires ; les fichiers restent à
+    examiner.
+  rollback: |
+    Lancer `chmod -t <répertoire>` sur les répertoires listés par l'audit avant la correction.
