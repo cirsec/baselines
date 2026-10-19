@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-019
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Définir un umask restrictif par défaut pour les sessions
+finding:
+  title: Les nouveaux fichiers sont lisibles par tous les utilisateurs locaux par défaut
+  description: Avec le umask par défaut d'Ubuntu, les documents, exports et journaux créés par les utilisateurs et par root sont lisibles par tous.
+description: |
+  Le umask retire des bits de permission à chaque fichier et répertoire créé par un processus. Les
+  sessions Ubuntu reçoivent `022` (fichiers en `644`, lisibles par tous), et `pam_umask` avec
+  `USERGROUPS_ENAB yes` donne même `002` aux utilisateurs ordinaires qui ont leur propre groupe. Ce contrôle
+  définit `{{ umask }}` depuis `/etc/profile.d/`, ce qui s'applique aux shells de connexion de tous
+  les utilisateurs, root compris.
+rationale: |
+  Utilisateurs et administrateurs créent régulièrement des fichiers sensibles (exports, dumps,
+  copies de configuration) dans leur répertoire personnel ou dans `/tmp`. Un umask restrictif les
+  garde privés, sauf ouverture volontaire.
+impact: |
+  Les fichiers créés dans les répertoires partagés ne sont plus lisibles par les autres
+  utilisateurs. Les équipes qui partagent des fichiers via un groupe commun ont besoin de
+  `chmod g+r` ou d'un répertoire de groupe avec setgid.
+notes: |
+  Les services lancés par systemd ne lisent pas `/etc/profile` ; définir leur umask avec `UMask=` dans leur unité.
+setting:
+  location: /etc/profile.d/60-cirsec-umask.sh
+  recommended_value: "{{ umask }}"
+parameters:
+  umask: Umask par défaut des shells de connexion.
+audit:
+  manual: |
+    Lancer `su -s /bin/sh -l nobody -c umask` et `su -l root -c umask`. Les deux doivent afficher
+    `0{{ umask }}` (ou une valeur plus stricte).
+remediation:
+  manual: |
+    Créer `/etc/profile.d/60-cirsec-umask.sh` contenant `umask {{ umask }}`. Les nouvelles sessions le prennent en compte.
+  rollback: |
+    Supprimer `/etc/profile.d/60-cirsec-umask.sh`.

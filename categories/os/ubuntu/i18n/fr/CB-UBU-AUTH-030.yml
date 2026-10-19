@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-030
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le contenu du message du jour récupéré sur le réseau (motd-news, update-notifier)
+finding:
+  title: Le système contacte des serveurs de Canonical pour construire le message du jour
+  description: La récupération des actualités envoie la version, le noyau, le modèle de processeur et le type de cloud à un serveur externe, et sa réponse est affichée à chaque connexion.
+description: |
+  Deux minuteries mettent à jour des parties du message du jour d'Ubuntu depuis le réseau :
+
+  - `motd-news.timer` (paquet `base-files`) lance `/etc/update-motd.d/50-motd-news --force` deux
+    fois par jour. Il télécharge de courtes actualités depuis `https://motd.ubuntu.com` et les garde
+    dans `/var/cache/motd-news`, affiché à chaque connexion. Son agent HTTP contient la
+    distribution et sa version, la version et l'architecture du noyau, le modèle de processeur et
+    le type de cloud. Il est piloté par `ENABLED` dans `/etc/default/motd-news`.
+  - `update-notifier-motd.timer` et son service (paquet `update-notifier-common`, à partir
+    d'Ubuntu 22.04 sur les serveurs) vérifient chaque semaine si une nouvelle version d'Ubuntu est
+    disponible, et mettent à jour le message affiché par `91-release-upgrade`.
+
+  Ce contrôle définit `ENABLED=0` dans `/etc/default/motd-news` et masque les minuteries et le
+  service `update-notifier-motd`.
+rationale: |
+  La requête d'actualités est une connexion sortante non sollicitée qui décrit le système à un
+  tiers, depuis des serveurs qui ne parlent sinon qu'aux dépôts autorisés. Son contenu, choisi par
+  un serveur externe, est affiché à chaque utilisateur qui se connecte. Les avis de nouvelle version
+  sont inutiles sur un parc géré, où les montées de version sont planifiées centralement.
+impact: |
+  Le message du jour n'affiche plus les actualités d'Ubuntu, ni l'avis de nouvelle version
+  disponible. Le nombre de mises à jour de paquets (`90-updates-available`) et les avis de
+  redémarrage ne changent pas ; les mises à jour de sécurité relèvent des contrôles des paquets.
+notes: |
+  Le script `91-release-upgrade` peut encore chercher une nouvelle version à la connexion d'un
+  utilisateur, via `/usr/lib/ubuntu-release-upgrader/release-upgrade-motd` ; définir
+  `Prompt=never` dans `/etc/update-manager/release-upgrades` pour l'arrêter aussi. Sur les
+  serveurs Ubuntu 20.04, `update-notifier-motd` n'est pas installé et ses vérifications sont
+  conformes.
+setting:
+  location: /etc/default/motd-news ; unités motd-news.timer, update-notifier-motd.timer, update-notifier-motd.service
+  recommended_value: ENABLED=0, minuteries et service masqués
+audit:
+  manual: |
+    1. `grep ENABLED /etc/default/motd-news` affiche `ENABLED=0`.
+    2. `systemctl is-enabled motd-news.timer update-notifier-motd.timer update-notifier-motd.service`
+       affiche `masked` pour chaque unité présente.
+remediation:
+  manual: |
+    1. Dans `/etc/default/motd-news`, définir `ENABLED=0`.
+    2. Lancer `systemctl mask --now motd-news.timer update-notifier-motd.timer update-notifier-motd.service`.
+  rollback: |
+    Remettre `ENABLED=1` dans `/etc/default/motd-news`, puis lancer `systemctl unmask` et
+    `systemctl enable --now` pour `motd-news.timer` et `update-notifier-motd.timer`, et
+    `systemctl unmask update-notifier-motd.service`.

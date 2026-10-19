@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-001
+title: Show a legal warning before login, without system details
+finding:
+  title: The login prompt shows the operating system version and no legal warning
+  description: The banner helps attackers fingerprint the system and gives no legal notice that access is restricted.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login]
+
+description: |
+  `/etc/issue` is printed before local console logins and `/etc/issue.net` before network logins
+  of services that use it. On Ubuntu both contain the distribution name and full version
+  (`Ubuntu 24.04.5 LTS`). The escape sequences `\s`, `\r`, `\v` and `\m`, if added, print the
+  kernel name, release, version and architecture.
+rationale: |
+  A banner that states access is restricted and monitored supports legal action against
+  intruders in many jurisdictions. Version details in the banner help an attacker pick exploits
+  without any interaction with the system.
+impact: |
+  None known. Administrators who want the version still get it from `uname -a` after login.
+notes: |
+  The SSH server only shows a banner when its `Banner` option is set; that is covered with the
+  other SSH settings.
+
+setting:
+  location: /etc/issue, /etc/issue.net
+  default_value: Distribution name and version
+  recommended_value: "{{ banner_text }}"
+
+parameters:
+  - name: banner_text
+    type: string
+    description: Text of the legal warning. It must not name the operating system or its version.
+    default: "Authorized use only. Activity on this system is monitored and recorded."
+
+audit:
+  manual: |
+    1. Read `/etc/issue` and `/etc/issue.net`. Both must contain a warning and no OS name or version.
+    2. Neither file may contain the escape sequences `\m`, `\r`, `\s` or `\v`.
+  checks:
+    - id: issue-present
+      engine: file-content
+      description: /etc/issue has some text.
+      spec: { path: /etc/issue, pattern: "\\w" }
+    - id: issue-no-os
+      engine: file-content
+      description: /etc/issue does not reveal the system.
+      spec: { path: /etc/issue, pattern: "\\\\[mrsv]|Ubuntu|Debian|GNU/Linux", expect: no_match }
+    - id: issue-net-present
+      engine: file-content
+      description: /etc/issue.net has some text.
+      spec: { path: /etc/issue.net, pattern: "\\w" }
+    - id: issue-net-no-os
+      engine: file-content
+      description: /etc/issue.net does not reveal the system.
+      spec: { path: /etc/issue.net, pattern: "\\\\[mrsv]|Ubuntu|Debian|GNU/Linux", expect: no_match }
+
+remediation:
+  manual: |
+    Replace the content of `/etc/issue` and `/etc/issue.net` with the warning text:
+    "{{ banner_text }}"
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the files from the backup, or write `Ubuntu <version> LTS \n \l` back to `/etc/issue`.
+  scripts:
+    - id: write
+      engine: shell
+      content: |
+        for f in /etc/issue /etc/issue.net; do
+          cb_backup "$f"
+          printf '%s\n' "$CB_BANNER_TEXT" >"$f"
+          chmod 644 "$f"
+        done
+
+references:
+  - title: issue(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/issue.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: agetty(8), Ubuntu manual pages (issue file escapes)
+    url: https://manpages.ubuntu.com/manpages/noble/man8/agetty.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1082
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

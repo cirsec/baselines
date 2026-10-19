@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-017
+title: Keep the root PATH free of relative and writable directories
+finding:
+  title: The root login PATH contains a relative or writable directory
+  description: A command name typed as root can resolve to a program planted by another user.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [accounts, root, path]
+
+description: |
+  When root types a command name, the shell searches the directories of `PATH` in order. Each
+  entry must be an absolute path to an existing directory owned by root and not writable by
+  group or others. Empty entries and `.` mean the current directory.
+rationale: |
+  If root's `PATH` includes the current directory or a directory another user can write to, that
+  user can drop a program named like a common command (`ls`, `sudo`) and have root run it.
+impact: |
+  None for the Ubuntu default PATH. Scripts that relied on running programs from the current
+  directory must use `./program`.
+
+audit:
+  manual: |
+    Run `su - root -c 'echo $PATH'`. It must have no empty entry, no `.`, no relative path, and
+    each directory must exist, be owned by root and not be group or world writable.
+  checks:
+    - id: root-path
+      engine: shell
+      description: PATH of a root login shell.
+      spec:
+        script: |
+          p=$(su - root -c 'printf %s "$PATH"' 2>/dev/null) || exit 3
+          echo "PATH=$p"
+          case ":$p:" in *::* | *:.:*) echo "empty or . entry"; exit 1 ;; esac
+          rc=0
+          IFS=:
+          for d in $p; do
+            case $d in /*) ;; *) echo "relative: $d"; rc=1; continue ;; esac
+            [ -d "$d" ] || continue
+            [ "$(stat -L -c %U "$d")" = root ] || { echo "not owned by root: $d"; rc=1; }
+            m=$(stat -L -c %a "$d")
+            [ $(( 0$m & 022 )) -eq 0 ] || { echo "group/world writable: $d ($m)"; rc=1; }
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    Remove empty, `.` and relative entries from the PATH set in `/root/.profile`, `/root/.bashrc`,
+    `/etc/profile` and `/etc/environment`. Fix the owner and mode of any listed directory with
+    `chown root:root` and `chmod go-w`.
+
+references:
+  - title: bash(1), Ubuntu manual pages (PATH)
+    url: https://manpages.ubuntu.com/manpages/noble/man1/bash.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1574.007
+  - framework: cwe
+    id: CWE-427
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

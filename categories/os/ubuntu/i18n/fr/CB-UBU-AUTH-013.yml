@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-013
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Refuser les mots de passe vides et hacher les mots de passe avec un algorithme robuste dans pam_unix
+finding:
+  title: pam_unix accepte les comptes sans mot de passe
+  description: Un compte dont le champ mot de passe est vide peut être utilisé sans aucun mot de passe.
+description: |
+  `pam_unix` vérifie les mots de passe locaux à partir de `/etc/shadow`. Trois options comptent ici :
+
+  - `nullok` permet aux comptes dont le champ mot de passe est vide de s'authentifier sans mot de
+    passe. Ubuntu la met dans le profil `unix` par défaut ;
+  - la méthode de hachage utilisée lors d'un changement de mot de passe : `yescrypt` à partir
+    d'Ubuntu 22.04, `sha512` sur 20.04, dont le `pam_unix` (PAM 1.3.1) ne gère pas yescrypt. Les
+    méthodes anciennes (`md5`, `bigcrypt`, DES) se cassent vite ;
+  - `use_authtok` dans la pile password : `pam_unix` enregistre le nouveau mot de passe accepté par
+    les modules placés avant lui (qualité, historique), au lieu de le redemander sans contrôle.
+rationale: |
+  Un champ mot de passe vide, créé par erreur ou par un outil, devient un compte ouvert tant que
+  `nullok` est présent. Une méthode de hachage faible permet à un attaquant qui copie `/etc/shadow`
+  de retrouver rapidement les mots de passe.
+impact: |
+  Les comptes sans mot de passe ne peuvent plus se connecter par mot de passe. Leur en donner un, ou
+  les verrouiller avec `passwd -l`.
+notes: |
+  Le profil `unix` du paquet est remplacé par une copie sans `nullok`, pour que les mises à jour du
+  paquet ne remettent pas l'option. Les mots de passe gardent leur empreinte actuelle jusqu'à leur
+  prochain changement.
+
+  `pam-auth-update` n'écrit `use_authtok` sur la ligne password de `pam_unix.so` que si un autre
+  module password passe avant lui. Sur un système par défaut, `pam_unix` est le premier et l'option
+  est absente : elle apparaît dès que `pam_pwquality` (CB-UBU-AUTH-010) ou `pam_pwhistory`
+  (CB-UBU-AUTH-012) est activé. L'ajouter à la main quand `pam_unix` est le premier empêcherait les
+  changements de mot de passe.
+setting:
+  location: /usr/share/pam-configs/cirsec_unix
+  recommended_value: Pas de nullok, yescrypt ou sha512, use_authtok
+audit:
+  manual: |
+    1. Aucune ligne `pam_unix.so` de `/etc/pam.d/common-auth` ou `/etc/pam.d/common-password` ne contient `nullok`.
+    2. La ligne `pam_unix.so` de `/etc/pam.d/common-password` contient `yescrypt` ou `sha512`, et
+       `use_authtok`.
+remediation:
+  manual: |
+    1. Verrouiller ou donner un mot de passe à chaque compte au champ vide : `awk -F: '$2==""' /etc/shadow`.
+    2. Copier `/usr/share/pam-configs/unix` vers `/usr/share/pam-configs/cirsec_unix`, retirer chaque
+       `nullok`, changer `Name:` et vérifier que les lignes `Password:` portent `yescrypt` (`sha512`
+       sur 20.04).
+    3. Lancer `pam-auth-update --enable cirsec_unix --disable unix`. Sur Ubuntu 20.04 et 22.04, dont
+       `pam-auth-update` n'a pas `--disable`, lancer
+       `pam-auth-update --enable cirsec_unix --remove unix`, puis ajouter une ligne `unix` à
+       `/var/lib/pam/seen` pour que les exécutions suivantes ne réactivent pas le profil.
+    4. Activer un module de qualité ou d'historique des mots de passe (CB-UBU-AUTH-010,
+       CB-UBU-AUTH-012) pour que `use_authtok` soit écrit sur la ligne password de `pam_unix.so`.
+    5. Vérifier qu'une nouvelle connexion fonctionne avant de fermer la session.
+  rollback: |
+    Lancer `pam-auth-update --enable unix --remove cirsec_unix` et supprimer le fichier de profil.

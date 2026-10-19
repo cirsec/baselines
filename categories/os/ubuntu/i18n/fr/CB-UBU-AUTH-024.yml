@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-024
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Donner à chaque service son propre compte dédié
+finding:
+  title: Plusieurs services partagent un compte, ou tournent sous le compte d'une personne
+  description: La compromission d'un service donne accès aux fichiers et aux secrets de tous les autres qui tournent sous le même utilisateur.
+description: |
+  Chaque service tourne sous son propre compte système, utilisé par rien d'autre : ni partagé avec
+  un autre service, ni le compte d'une personne, ni `root` sauf si le service en a vraiment besoin.
+rationale: |
+  Les permissions Unix séparent des utilisateurs, pas des programmes. Les services qui partagent
+  un compte peuvent lire et modifier les fichiers, les clés et la mémoire les uns des autres : le
+  plus faible les expose tous.
+impact: |
+  Séparer des services qui partageaient un compte demande de nouveaux comptes, une nouvelle
+  propriété des fichiers et parfois de nouvelles appartenances à des groupes.
+audit:
+  manual: |
+    1. Lister les services en cours et leurs utilisateurs : `ps -eo user,comm --sort=user` et
+       `systemctl show -p User --value <unité>` pour chaque unité de service.
+    2. Vérifier qu'aucun compte ne fait tourner deux services sans rapport, qu'aucun service ne
+       tourne sous le compte d'une personne, et que les services lancés en root en ont besoin.
+remediation:
+  manual: |
+    Créer un compte système par service (`adduser --system --group <nom>`), lui donner la propriété
+    de ses seuls fichiers, et définir `User=` et `Group=` dans l'unité du service (ou utiliser `DynamicUser=yes`).

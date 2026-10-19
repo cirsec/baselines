@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-028
+title: Keep the shadow group empty
+finding:
+  title: Users are members of the shadow group
+  description: Members of the shadow group can read every password hash of the system.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [accounts, shadow, password]
+
+description: |
+  `/etc/shadow` is readable by the `shadow` group so that a few setgid programs (such as
+  `unix_chkpwd`) can check passwords. No user needs to be a member of this group.
+rationale: |
+  A user in the `shadow` group can copy every password hash and crack them offline.
+impact: |
+  None for a standard system.
+
+audit:
+  manual: |
+    1. `getent group shadow` shows no member after the last colon.
+    2. `awk -F: -v g="$(getent group shadow | cut -d: -f3)" '$4 == g' /etc/passwd` prints nothing.
+  checks:
+    - id: members
+      engine: shell
+      spec:
+        script: |
+          g=$(getent group shadow) || { echo "no shadow group"; exit 0; }
+          gid=$(printf '%s' "$g" | cut -d: -f3)
+          m=${g##*:}
+          p=$(awk -F: -v g="$gid" '$4 == g {print $1}' /etc/passwd | tr '\n' ' ')
+          echo "members: ${m:-none}; primary group of: ${p:-none}"
+          [ -z "$m$p" ]
+
+remediation:
+  manual: |
+    Remove each member with `gpasswd -d <user> shadow`, and give users whose primary group is
+    `shadow` another primary group with `usermod -g <group> <user>`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  scripts:
+    - id: remove-members
+      engine: shell
+      content: |
+        cb_backup /etc/group
+        cb_backup /etc/gshadow
+        m=$(getent group shadow | cut -d: -f4)
+        for u in $(printf '%s' "$m" | tr ',' ' '); do gpasswd -d "$u" shadow >/dev/null; done
+
+references:
+  - title: shadow(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/shadow.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "7.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "7.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "7.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "7.2.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1003.008
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

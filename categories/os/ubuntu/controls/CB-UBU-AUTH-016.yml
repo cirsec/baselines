@@ -1,0 +1,180 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-016
+title: Keep root the only superuser account and protect its password
+finding:
+  title: Another account has superuser identity, or root has no password protection
+  description: A second UID 0 account is a hidden root backdoor; a root account with an empty password needs no secret.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [accounts, root]
+
+description: |
+  The kernel grants full privileges to UID 0, whatever the account name. Group ID 0 grants
+  access to every file owned by the `root` group. This control checks that:
+
+  - `root` is the only account with UID 0 and the only one with primary GID 0;
+  - `root` is the only group with GID 0;
+  - the `root` account either has a password or is locked (`passwd -S root` shows `P` or `L`).
+rationale: |
+  Attackers who gain root often add a second UID 0 account under an innocent name to keep
+  access. A root account without any password, or with an empty one, can be used by anyone who
+  reaches a login prompt.
+impact: |
+  None for a standard system.
+notes: |
+  Ubuntu locks root (`L`) on every installation and cloud image; administrators use sudo. A
+  root password set later shows `P`. Both are fine.
+
+audit:
+  manual: |
+    1. `awk -F: '$3 == 0' /etc/passwd` lists only `root`.
+    2. `awk -F: '$4 == 0' /etc/passwd` lists only `root` (and `sync`, `shutdown`, `halt` if present).
+    3. `awk -F: '$3 == 0' /etc/group` lists only `root`.
+    4. `passwd -S root` shows `P` or `L` in the second field.
+  checks:
+    - id: uid0
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$3 == 0 {print $1}' /etc/passwd | tr '\n' ' ')
+          echo "UID 0: $u"
+          [ "$u" = "root " ]
+    - id: gid0
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$4 == 0 && $1 !~ /^(root|sync|shutdown|halt|operator)$/ {print $1}' /etc/passwd | tr '\n' ' ')
+          g=$(awk -F: '$3 == 0 {print $1}' /etc/group | tr '\n' ' ')
+          echo "other users with GID 0: ${u:-none}; groups with GID 0: $g"
+          [ -z "$u" ] && [ "$g" = "root " ]
+    - id: root-password
+      engine: shell
+      spec:
+        script: |
+          s=$(passwd -S root | cut -d' ' -f2)
+          echo "root status: $s"
+          [ "$s" = P ] || [ "$s" = L ]
+
+remediation:
+  manual: |
+    1. Investigate any other UID 0 or GID 0 account: it may be a backdoor. Remove it with
+       `userdel`, or give it its own IDs with `usermod -u` and `usermod -g`.
+    2. Set a strong root password with `passwd root`, or lock it with `passwd -l root` if
+       administrators use sudo.
+
+references:
+  - title: passwd(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/passwd.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: passwd(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/passwd.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1136.001
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install (root locked); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install (root locked); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install (root locked); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install (root locked); profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

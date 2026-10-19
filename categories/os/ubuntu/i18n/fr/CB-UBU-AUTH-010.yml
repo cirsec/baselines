@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-010
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer la qualité des mots de passe avec pam_pwquality
+finding:
+  title: Les utilisateurs peuvent choisir des mots de passe courts ou triviaux
+  description: Les mots de passe locaux faibles se devinent vite, en ligne ou à partir d'un fichier shadow volé.
+description: |
+  `pam_pwquality` (paquet `libpam-pwquality`) vérifie chaque nouveau mot de passe défini avec
+  `passwd`. Ses réglages sont dans `/etc/security/pwquality.conf` et `/etc/security/pwquality.conf.d/` :
+
+  - `minlen` : longueur minimale ;
+  - `minclass` : nombre minimal de classes de caractères (minuscules, majuscules, chiffres, autres) ;
+  - `difok` : nombre de caractères qui doivent différer de l'ancien mot de passe ;
+  - `maxrepeat` / `maxsequence` : plus longue suite de caractères identiques ou consécutifs ;
+  - `dictcheck` : refuser les mots du dictionnaire cracklib ;
+  - `enforce_for_root` : appliquer les règles aussi quand root définit un mot de passe ;
+  - `enforcing` : refuser un mot de passe faible au lieu d'afficher seulement un avertissement (1 par défaut).
+rationale: |
+  C'est la longueur qui rend un mot de passe résistant. Les autres règles écartent les motifs
+  essayés en premier par les attaquants (répétitions, suites, mots du dictionnaire, changement d'un
+  seul caractère).
+impact: |
+  Les utilisateurs devront respecter ces règles à leur prochain changement de mot de passe. Les
+  mots de passe existants ne sont pas vérifiés.
+notes: |
+  Sans `libpam-pwquality`, Ubuntu n'applique que la vérification `obscure` intégrée à `pam_unix`,
+  qui est faible. L'installation du paquet active le module dans `/etc/pam.d/common-password` via
+  `pam-auth-update`.
+setting:
+  location: /etc/security/pwquality.conf.d/60-cirsec.conf
+  recommended_value: "minlen >= {{ minlen }}, minclass >= {{ minclass }}, difok >= 2, maxrepeat <= 3, maxsequence <= 3, dictcheck, enforce_for_root, enforcing différent de 0"
+parameters:
+  minlen: Longueur minimale des mots de passe.
+  minclass: Nombre minimal de classes de caractères.
+audit:
+  manual: |
+    1. `dpkg -s libpam-pwquality` doit montrer le paquet installé.
+    2. `/etc/pam.d/common-password` doit contenir une ligne `pam_pwquality.so`.
+    3. La dernière valeur de chaque réglage, dans `/etc/security/pwquality.conf` puis
+       `/etc/security/pwquality.conf.d/*.conf`, doit être : `minlen` >= {{ minlen }},
+       `minclass` >= {{ minclass }}, `difok` >= 2, `maxrepeat` et `maxsequence` entre 1 et 3,
+       `dictcheck` différent de 0, et `enforce_for_root` présent.
+    4. Ni la dernière valeur de `enforcing` dans ces fichiers ni la ligne `pam_pwquality.so` ne
+       vaut `enforcing=0`.
+remediation:
+  manual: |
+    1. Lancer `apt install libpam-pwquality`.
+    2. Créer `/etc/security/pwquality.conf.d/60-cirsec.conf` :
+       ```
+       minlen = {{ minlen }}
+       minclass = {{ minclass }}
+       difok = 2
+       maxrepeat = 3
+       maxsequence = 3
+       dictcheck = 1
+       enforce_for_root
+       enforcing = 1
+       ```
+    3. Retirer toute option `enforcing=0` de la ligne `pam_pwquality.so`.
+  rollback: |
+    Supprimer `/etc/security/pwquality.conf.d/60-cirsec.conf`. Désinstaller le paquet pour retirer le module.

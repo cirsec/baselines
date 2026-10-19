@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-018
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les connexions interactives aux comptes système
+finding:
+  title: Un compte système a un shell de connexion ou un mot de passe non verrouillé
+  description: Les comptes de service sont rarement surveillés ; s'ils acceptent une connexion, ils offrent une entrée facile ou une persistance discrète.
+description: |
+  Les comptes système (UID inférieur à `UID_MIN`, 1000 sur Ubuntu) font tourner des services et
+  possèdent des fichiers. Ils n'ont pas besoin de se connecter. Leur shell doit être
+  `/usr/sbin/nologin` ou `/bin/false`, et leur mot de passe doit être verrouillé. `root`, `sync`,
+  `shutdown` et `halt` font exception.
+rationale: |
+  Un compte système avec un shell valide peut servir à se connecter s'il reçoit un jour un mot de
+  passe ou une clé SSH, et les attaquants aiment ajouter des accès à ces comptes que personne ne vérifie.
+impact: |
+  Les services continuent de fonctionner : ils n'utilisent pas de shell de connexion. Les
+  administrateurs qui ont besoin d'un shell sous un compte de service utilisent
+  `sudo -u <compte> -s /bin/bash`.
+notes: |
+  Seuls les comptes de `/etc/passwd` sont lus ; les annuaires réseau (LDAP, SSSD) sont hors périmètre.
+audit:
+  manual: |
+    1. `awk -F: '$3 < 1000 && $1 !~ /^(root|sync|shutdown|halt)$/ {print $1, $7}' /etc/passwd` :
+       chaque shell doit être `/usr/sbin/nologin`, `/sbin/nologin` ou `/bin/false`.
+    2. Chaque compte ayant un tel shell doit afficher `L` avec `passwd -S`.
+remediation:
+  manual: |
+    1. Pour chaque compte système signalé : `usermod -s /usr/sbin/nologin <compte>`.
+    2. Pour chaque compte sans shell de connexion non verrouillé : `usermod -L <compte>`.
+  rollback: |
+    Restaurer `/etc/passwd` et `/etc/shadow` depuis la sauvegarde.

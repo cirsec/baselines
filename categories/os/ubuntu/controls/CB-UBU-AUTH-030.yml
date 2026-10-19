@@ -1,0 +1,181 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-030
+title: Turn off MOTD content fetched from the network (motd-news, update-notifier)
+finding:
+  title: The system contacts Canonical servers to build the message of the day
+  description: The news fetch sends the release, kernel, CPU model and cloud type to an outside server, and its answer is shown to every user at login.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [motd, privacy, network, services]
+
+description: |
+  Two timers refresh parts of the Ubuntu message of the day from the network:
+
+  - `motd-news.timer` (package `base-files`) runs `/etc/update-motd.d/50-motd-news --force` twice
+    a day. It downloads short news from `https://motd.ubuntu.com` and caches them in
+    `/var/cache/motd-news`, shown at every login. Its HTTP user agent carries the distribution
+    and version, the kernel release and architecture, the CPU model and the cloud type. It is
+    controlled by `ENABLED` in `/etc/default/motd-news`.
+  - `update-notifier-motd.timer` and its service (package `update-notifier-common`, from Ubuntu
+    22.04 on servers) check weekly whether a new Ubuntu release is available, and update the
+    message shown by `91-release-upgrade`.
+
+  This control sets `ENABLED=0` in `/etc/default/motd-news` and masks the timers and the
+  `update-notifier-motd` service.
+rationale: |
+  The news request is an unsolicited outbound connection that describes the system to a third
+  party, from servers that otherwise only talk to approved repositories. Its content, chosen by an
+  outside server, is displayed to every user who logs in. Release upgrade notices are useless on
+  managed systems, where upgrades are planned centrally.
+impact: |
+  The message of the day no longer shows Ubuntu news, nor the notice that a new release is
+  available. Package update counts (`90-updates-available`) and reboot notices are not affected;
+  security updates are covered by the package controls.
+notes: |
+  The `91-release-upgrade` script can still check for a new release when someone logs in, through
+  `/usr/lib/ubuntu-release-upgrader/release-upgrade-motd`; set `Prompt=never` in
+  `/etc/update-manager/release-upgrades` to stop it too. On Ubuntu 20.04 servers,
+  `update-notifier-motd` is not installed and its checks are reported as compliant.
+
+setting:
+  location: /etc/default/motd-news; units motd-news.timer, update-notifier-motd.timer, update-notifier-motd.service
+  default_value: ENABLED=1, timers enabled
+  recommended_value: ENABLED=0, timers and service masked
+
+audit:
+  manual: |
+    1. `grep ENABLED /etc/default/motd-news` shows `ENABLED=0`.
+    2. `systemctl is-enabled motd-news.timer update-notifier-motd.timer update-notifier-motd.service`
+       prints `masked` for each unit that exists.
+  checks:
+    - id: motd-news-config
+      engine: shell
+      description: Effective ENABLED value in /etc/default/motd-news.
+      spec:
+        script: |
+          f=/etc/default/motd-news
+          [ -f "$f" ] || { echo "no $f"; exit 2; }
+          v=$(sed -n 's/^[[:space:]]*ENABLED[[:space:]]*=[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "$f" | tail -n 1)
+          echo "ENABLED=${v:-unset}"
+          [ "$v" = 0 ]
+    - id: motd-news-timer
+      engine: systemd-unit
+      description: The motd-news download timer is masked.
+      spec: { unit: motd-news.timer, state: masked }
+    - id: update-notifier-timer
+      engine: systemd-unit
+      description: The update-notifier-motd timer is masked.
+      spec: { unit: update-notifier-motd.timer, state: masked }
+    - id: update-notifier-service
+      engine: systemd-unit
+      description: The update-notifier-motd service is masked.
+      spec: { unit: update-notifier-motd.service, state: masked }
+
+remediation:
+  manual: |
+    1. In `/etc/default/motd-news`, set `ENABLED=0`.
+    2. Run `systemctl mask --now motd-news.timer update-notifier-motd.timer update-notifier-motd.service`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Set `ENABLED=1` in `/etc/default/motd-news`, then run `systemctl unmask` and
+    `systemctl enable --now` for `motd-news.timer` and `update-notifier-motd.timer`, and
+    `systemctl unmask update-notifier-motd.service`.
+  scripts:
+    - id: motd-news-config
+      engine: shell
+      content: |
+        f=/etc/default/motd-news
+        [ -f "$f" ] || exit 0
+        cb_backup "$f"
+        if grep -Eq '^[[:space:]]*ENABLED[[:space:]]*=' "$f"; then
+          sed -i 's/^[[:space:]]*ENABLED[[:space:]]*=.*/ENABLED=0/' "$f"
+        else
+          printf '%s\n' 'ENABLED=0' >>"$f"
+        fi
+    - id: motd-news-timer
+      from_check: motd-news-timer
+    - id: update-notifier-timer
+      from_check: update-notifier-timer
+    - id: update-notifier-service
+      from_check: update-notifier-service
+
+references:
+  - title: update-motd(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/update-motd.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - pam_motd
+    url: https://documentation.ubuntu.com/server/reference/other-tools/pam-motd/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Canonical legal - MOTD information
+    url: https://canonical.com/legal/motd
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages (mask)
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers the MOTD network timers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.12"
+    relation: stricter
+    note: Ours also turns off the motd-news download.
+threats:
+  - framework: mitre-attack
+    id: T1082
+related_controls:
+  - id: CB-UBU-AUTH-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install (ENABLED=1, motd-news.timer enabled; update-notifier-motd not installed, compliant); fix masks the timer; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install (ENABLED=1, motd-news and update-notifier-motd timers enabled); fix masks the units; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install (ENABLED=1, motd-news and update-notifier-motd timers enabled); fix masks the units; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install (ENABLED=1, motd-news and update-notifier-motd timers enabled); fix masks the units; kept after reboot; fix idempotent."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
