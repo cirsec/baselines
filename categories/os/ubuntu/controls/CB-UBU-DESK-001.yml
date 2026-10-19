@@ -1,0 +1,177 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-001
+title: Disable automatic mounting of removable media in GNOME
+finding:
+  title: GNOME mounts and opens removable media as soon as they are plugged in
+  description: A USB stick or disc plugged into the machine is mounted and opened without any user decision, exposing the file manager and its thumbnailers to crafted content.
+status: draft
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [gnome, dconf, removable-media]
+
+applicability:
+  facts: [desktop-gnome]
+
+description: |
+  GNOME mounts removable media when they are inserted (`org.gnome.desktop.media-handling
+  automount`) and opens a file manager window on them (`automount-open`). Both keys are set to
+  `false` in the system dconf database `local` and locked, so users cannot turn them back on.
+rationale: |
+  Mounting a device parses its file system in the kernel, and opening it runs thumbnailers and
+  indexers on files an attacker controls. Bugs in these parsers have been used to compromise
+  machines from a USB stick. Requiring an explicit action keeps the user in control and leaves
+  time to check the device.
+impact: |
+  Users mount removable media by clicking them in the file manager. Removable media are not
+  opened automatically.
+notes: |
+  The setting only affects GNOME sessions. The dconf profile `/etc/dconf/profile/user` must list
+  `system-db:local`; the fix creates it when it does not exist. On a server without GNOME the
+  control is not applicable.
+
+setting:
+  location: /etc/dconf/db/local.d/, key /org/gnome/desktop/media-handling/automount and automount-open
+  default_value: "true"
+  recommended_value: false, locked
+
+audit:
+  manual: |
+    1. `cat /etc/dconf/profile/user` must contain `system-db:local`.
+    2. `dconf read /org/gnome/desktop/media-handling/automount` and
+       `dconf read /org/gnome/desktop/media-handling/automount-open` must both print `false`.
+    3. Both keys must be listed in a file of `/etc/dconf/db/local.d/locks/`.
+  checks:
+    - id: automount
+      engine: dconf
+      description: GNOME does not mount removable media on insertion.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/media-handling/automount
+        value: "false"
+    - id: automount-open
+      engine: dconf
+      description: GNOME does not open a window for mounted media.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/desktop/media-handling/automount-open
+        value: "false"
+
+remediation:
+  manual: |
+    1. Make sure `/etc/dconf/profile/user` contains:
+       ```
+       user-db:user
+       system-db:local
+       ```
+    2. Create `/etc/dconf/db/local.d/00-media-automount`:
+       ```
+       [org/gnome/desktop/media-handling]
+       automount=false
+       automount-open=false
+       ```
+    3. Create `/etc/dconf/db/local.d/locks/00-media-automount`:
+       ```
+       /org/gnome/desktop/media-handling/automount
+       /org/gnome/desktop/media-handling/automount-open
+       ```
+    4. Run `dconf update`. Users get the new values at their next login.
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete the files written in `/etc/dconf/db/local.d/` and `/etc/dconf/db/local.d/locks/`
+    and run `dconf update`.
+  scripts:
+    - id: automount
+      from_check: automount
+    - id: automount-open
+      from_check: automount-open
+
+references:
+  - title: GNOME System Administration Guide - Lock down specific settings
+    url: https://help.gnome.org/admin/system-admin-guide/stable/dconf-lockdown.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: gsettings-desktop-schemas - org.gnome.desktop.media-handling schema
+    url: https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas/-/blob/master/schemas/org.gnome.desktop.media-handling.gschema.xml.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: dconf(7), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man7/dconf.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.7.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.7.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.7.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.7.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.7.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.7.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1091
+  - framework: mitre-attack
+    id: T1200
+related_controls:
+  - id: CB-UBU-DESK-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 3.36, gdm3), Ubuntu 20.04.6, kernel 5.4.0-216-generic
+    notes: "Generated dconf check and fix (desktop-hardened, server-hardened and core); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 42, gdm3), Ubuntu 22.04.5, kernel 5.15.0-198-generic
+    notes: "Generated dconf check and fix (desktop-hardened, server-hardened and core); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 46, gdm3), Ubuntu 24.04.5, kernel 6.8.0-147-generic
+    notes: "Generated dconf check and fix (desktop-hardened, server-hardened and core); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 50, gdm3), Ubuntu 26.04.1, kernel 7.0.0-38-generic
+    notes: "Generated dconf check and fix (desktop-hardened, server-hardened and core); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

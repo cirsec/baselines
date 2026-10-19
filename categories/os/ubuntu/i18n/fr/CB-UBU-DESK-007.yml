@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-DESK-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Refuser les connexions root sur l'écran de connexion graphique
+finding:
+  title: root peut ouvrir une session graphique
+  description: Une session de bureau complète en root fait tourner un navigateur, un client de messagerie et bien d'autres programmes avec tous les privilèges, sans trace de l'administrateur qui l'a utilisée.
+description: |
+  Les gestionnaires de connexion authentifient les utilisateurs via des services PAM dans
+  `/etc/pam.d/`. Une ligne `auth required pam_succeed_if.so user != root quiet_success` en tête
+  de la pile auth refuse root avant la vérification du mot de passe. Le paquet GDM d'Ubuntu
+  fournit cette ligne dans chaque service ; les autres gestionnaires de connexion pas forcément.
+  Le contrôle vérifie les services de GDM par mot de passe, empreinte digitale et carte à puce
+  (`gdm-smartcard` et ses variantes `gdm-smartcard-*`, choisies par update-alternatives depuis
+  22.04), et les services de connexion de LightDM et SDDM présents.
+rationale: |
+  Une session graphique fait tourner des centaines de processus et analyse du contenu non fiable
+  (pages web, courriels, documents). Tout exécuter en root transforme chaque faille en
+  compromission totale. Les administrateurs doivent se connecter avec leur propre compte et
+  élever leurs privilèges avec sudo, ce qui rend leurs actions imputables.
+impact: |
+  root ne peut pas se connecter en mode graphique. Les administrateurs utilisent leur propre
+  compte et sudo.
+notes: |
+  Les services de connexion automatique (`gdm-autologin`, `lightdm-autologin`, `sddm-autologin`)
+  ne sont pas vérifiés : CB-UBU-DESK-006 interdit la connexion automatique. Le correctif n'ajoute
+  la ligne qu'aux services qui ne l'ont pas et a été testé en retirant la ligne de
+  `gdm-password` ; il n'a pas été testé avec LightDM ni SDDM. Il modifie PAM, il est donc
+  désactivé par défaut.
+setting:
+  location: /etc/pam.d/gdm-password, gdm-fingerprint, gdm-smartcard*, lightdm, sddm
+  recommended_value: auth required pam_succeed_if.so user != root quiet_success
+audit:
+  manual: |
+    Pour chacun des fichiers `/etc/pam.d/gdm-password`, `gdm-fingerprint`, `gdm-smartcard*`,
+    `lightdm` et `sddm` présents, vérifier que la pile auth contient une ligne `pam_succeed_if.so`
+    avec `user != root` et un contrôle `required` ou `requisite` (ou `default=bad`).
+remediation:
+  manual: |
+    Dans chaque service PAM de gestionnaire de connexion signalé par l'audit, ajouter avant la
+    première ligne `auth` :
+    ```
+    auth required pam_succeed_if.so user != root quiet_success
+    ```
+  rollback: |
+    Restaurer les fichiers modifiés de `/etc/pam.d/` depuis le répertoire de sauvegarde.

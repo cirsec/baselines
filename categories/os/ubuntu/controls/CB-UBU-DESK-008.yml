@@ -1,0 +1,194 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-008
+title: Lock idle sessions outside GNOME, through logind and the KDE screen locker
+finding:
+  title: Idle sessions of desktops other than GNOME may never lock
+  description: Without a system-wide idle action or a locked desktop setting, an unattended session stays open for as long as the user decided.
+status: draft
+profiles: [desktop]
+risk:
+  severity: medium
+assessment: automated
+tags: [logind, kde, session-lock]
+
+description: |
+  Two settings lock idle sessions independently of GNOME (covered by CB-UBU-DESK-003):
+
+  - systemd-logind: `IdleAction=lock` with `IdleActionSec` asks every session to lock once the
+    system has been idle that long. Desktops that report idleness to logind (GNOME, KDE Plasma)
+    honor it;
+  - KDE Plasma: the screen locker reads `Autolock`, `Timeout` (minutes) and `Lock` from the
+    `[Daemon]` group of `kscreenlockerrc`. The system file `/etc/xdg/kscreenlockerrc` sets them
+    and marks the group immutable with `[Daemon][$i]`, so user files cannot override them.
+rationale: |
+  An unattended unlocked session gives its access to anyone passing by. The logind idle action
+  is a safety net that does not depend on each desktop's own settings, and the KDE lock keeps
+  users from extending or disabling the delay.
+impact: |
+  Sessions lock after {{ idle_minutes }} minutes without input. Users of KDE Plasma cannot
+  change the lock settings.
+notes: |
+  Xfce has no setting a script can lock reliably: configure `xfce4-screensaver` (lock enabled,
+  delay at most {{ idle_minutes }} minutes) or `light-locker` and check it by hand. The logind
+  setting applies at the next boot (systemd 245 to 255, in Ubuntu 20.04 to 24.04, cannot reload
+  logind, and restarting it ends graphical sessions). The KDE check was written from the KDE
+  documentation and not tested in a lab; it has no automated fix.
+
+setting:
+  location: /etc/systemd/logind.conf.d/60-cirsec.conf; /etc/xdg/kscreenlockerrc
+  default_value: IdleAction=ignore; KDE locks after 5 minutes, user can change it
+  recommended_value: "IdleAction=lock, IdleActionSec at most {{ idle_minutes }} min; KDE [Daemon][$i] Autolock=true, Timeout at most {{ idle_minutes }}"
+
+parameters:
+  - name: idle_minutes
+    type: integer
+    description: Maximum minutes of inactivity before the session locks.
+    unit: minutes
+    default: 15
+    minimum: 1
+    maximum: 15
+
+audit:
+  manual: |
+    1. `systemd-analyze cat-config systemd/logind.conf` must end up with `IdleAction=lock` and
+       `IdleActionSec` at most {{ idle_minutes }} minutes.
+    2. With KDE Plasma, `/etc/xdg/kscreenlockerrc` must contain a `[Daemon][$i]` group with
+       `Autolock` and `Lock` not set to false and `Timeout` at most {{ idle_minutes }}.
+    3. With Xfce, check the screen saver settings of each user.
+  checks:
+    - id: logind
+      engine: shell
+      description: logind locks sessions after the idle delay.
+      spec:
+        script: |
+          conf=$(systemd-analyze cat-config systemd/logind.conf 2>/dev/null) || exit 3
+          a=$(printf '%s\n' "$conf" | sed -n 's/^[[:space:]]*IdleAction[[:space:]]*=[[:space:]]*//p' | tail -n 1)
+          s=$(printf '%s\n' "$conf" | sed -n 's/^[[:space:]]*IdleActionSec[[:space:]]*=[[:space:]]*//p' | tail -n 1)
+          us=$(systemd-analyze timespan "${s:-30min}" 2>/dev/null | awk '/s:/ { print $2; exit }')
+          echo "IdleAction=${a:-ignore} IdleActionSec=${s:-30min (default)}"
+          [ "$a" = lock ] || exit 1
+          [ -n "$us" ] || exit 3
+          [ "$us" -gt 0 ] && [ "$us" -le $((CB_IDLE_MINUTES * 60000000)) ]
+    - id: kde
+      engine: shell
+      description: The KDE screen locker settings are locked and lock within the delay.
+      facts: [desktop-kde]
+      spec:
+        script: |
+          f=/etc/xdg/kscreenlockerrc
+          [ -f "$f" ] || { echo "$f missing"; exit 1; }
+          o=$(awk '/^[ \t]*\[/ { s = ($0 ~ /^[ \t]*\[Daemon\]\[\$i\][ \t]*$/); if (s) imm = 1; next }
+            s && /=/ { k = $0; sub(/[ \t]*=.*/, "", k); v = $0; sub(/^[^=]*=[ \t]*/, "", v); val[k] = v }
+            END { printf "immutable=%d Autolock=%s Lock=%s Timeout=%s\n", imm, val["Autolock"], val["Lock"], val["Timeout"] }' "$f")
+          echo "$o"
+          case $o in *immutable=1*) ;; *) exit 1 ;; esac
+          case $o in *Autolock=false* | *Lock=false*) exit 1 ;; esac
+          t=$(printf '%s' "$o" | sed -n 's/.*Timeout=\([0-9]*\).*/\1/p')
+          [ "${t:-5}" -ge 1 ] && [ "${t:-5}" -le "$CB_IDLE_MINUTES" ]
+
+remediation:
+  manual: |
+    1. Create `/etc/systemd/logind.conf.d/60-cirsec.conf`:
+       ```
+       [Login]
+       IdleAction=lock
+       IdleActionSec={{ idle_minutes }}min
+       ```
+       It applies at the next boot.
+    2. With KDE Plasma, create `/etc/xdg/kscreenlockerrc`:
+       ```
+       [Daemon][$i]
+       Autolock=true
+       Lock=true
+       LockOnResume=true
+       Timeout={{ idle_minutes }}
+       ```
+    3. With Xfce, enable locking in the screen saver settings of each user.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/logind.conf.d/60-cirsec.conf` and `/etc/xdg/kscreenlockerrc`.
+  scripts:
+    - id: logind
+      engine: shell
+      content: |
+        f=/etc/systemd/logind.conf.d/60-cirsec.conf
+        cb_backup "$f"
+        mkdir -p /etc/systemd/logind.conf.d
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-DESK-008' '[Login]' 'IdleAction=lock' \
+          "IdleActionSec=${CB_IDLE_MINUTES}min" >"$f"
+
+references:
+  - title: logind.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/logind.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: KDE Developer - Kiosk, introduction (immutable settings)
+    url: https://develop.kde.org/docs/administration/kiosk/introduction/
+    publisher: KDE
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: kscreenlocker - kscreenlockerrc settings (kscreenlockersettings.kcfg)
+    url: https://invent.kde.org/plasma/kscreenlocker/-/blob/master/settings/kscreenlockersettings.kcfg
+    publisher: KDE
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Xfce documentation - xfce4-screensaver
+    url: https://docs.xfce.org/apps/xfce4-screensaver/start
+    publisher: Xfce
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R32)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R32
+    relation: partial
+    note: Covers graphical sessions outside GNOME; GNOME is CB-UBU-DESK-003.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-11
+    relation: partial
+threats:
+  - framework: cwe
+    id: CWE-613
+related_controls:
+  - id: CB-UBU-DESK-003
+    type: related
+  - id: CB-UBU-DESK-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 3.36, gdm3), Ubuntu 20.04.6, kernel 5.4.0-216-generic
+    notes: "logind check and fix tested (desktop-hardened); IdleAction=lock and IdleActionSec=15min kept after reboot. The KDE check was not tested (no KDE machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 42, gdm3), Ubuntu 22.04.5, kernel 5.15.0-198-generic
+    notes: "logind check and fix tested (desktop-hardened); IdleAction=lock and IdleActionSec=15min kept after reboot. The KDE check was not tested (no KDE machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 46, gdm3), Ubuntu 24.04.5, kernel 6.8.0-147-generic
+    notes: "logind check and fix tested (desktop-hardened); IdleAction=lock and IdleActionSec=15min kept after reboot. The KDE check was not tested (no KDE machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 50, gdm3), Ubuntu 26.04.1, kernel 7.0.0-38-generic
+    notes: "logind check and fix tested (desktop-hardened); IdleAction=lock and IdleActionSec=15min kept after reboot. The KDE check was not tested (no KDE machine), only reported not applicable."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

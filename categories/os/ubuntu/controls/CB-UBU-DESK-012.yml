@@ -1,0 +1,166 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-012
+title: Allow only known USB devices with USBGuard
+finding:
+  title: Any USB device plugged into the machine is accepted
+  description: A malicious keyboard emulator, network adapter or storage device is enabled as soon as it is plugged in.
+status: draft
+profiles: [desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [usb, usbguard, device-control]
+
+applicability:
+  facts: [usb]
+
+description: |
+  USBGuard is a daemon that authorizes each USB device against a rule list
+  (`/etc/usbguard/rules.conf`). On first install, the Ubuntu package writes a rule for every
+  device present, then starts the daemon. With `ImplicitPolicyTarget=block` (the default),
+  devices that match no rule are blocked.
+rationale: |
+  USB attacks rely on the system trusting whatever is plugged in: a "rubber ducky" types
+  commands as a keyboard, a rogue network adapter reroutes traffic, a storage device carries
+  malware. An allow list built from the devices the user actually has stops these attacks on
+  an unattended or lent machine.
+impact: |
+  New USB devices (a different keyboard, a docking station, a phone, a USB stick) are blocked
+  until an administrator allows them with `usbguard allow-device` and adds a rule with
+  `usbguard append-rule` or by regenerating the policy. Devices unplugged at installation time
+  are not in the policy: plug in every regular device before applying the fix.
+notes: |
+  The fix installs the package and enables the service; it is disabled by default because a
+  missing rule can block the only keyboard. The check verifies the daemon configuration and
+  service, not the content of the rule list: review it with `usbguard list-rules`. The control
+  is not applicable when the kernel has no USB support (`/sys/bus/usb` absent, as with some
+  minimal virtual machine kernels), since the daemon cannot start there. The package is in the
+  universe component (0.7.6 on 20.04, 1.1.x from 22.04): without Ubuntu Pro (esm-apps), its
+  security fixes rely on the community (see CB-UBU-PKG-014).
+
+setting:
+  location: /etc/usbguard/rules.conf, /etc/usbguard/usbguard-daemon.conf
+  default_value: Not installed
+  recommended_value: usbguard installed and active, ImplicitPolicyTarget=block, rules from the present devices
+
+audit:
+  manual: |
+    1. `dpkg -s usbguard` shows the package installed.
+    2. `systemctl is-enabled usbguard` prints `enabled` and `systemctl is-active usbguard` prints
+       `active`.
+    3. `/etc/usbguard/usbguard-daemon.conf` sets `ImplicitPolicyTarget=block` and
+       `/etc/usbguard/rules.conf` exists.
+    4. `usbguard list-rules` lists the expected devices.
+  checks:
+    - id: package
+      engine: package
+      description: USBGuard is installed.
+      spec:
+        name: usbguard
+        state: installed
+    - id: service
+      engine: systemd-unit
+      description: The USBGuard daemon starts at boot.
+      spec:
+        unit: usbguard.service
+        state: enabled
+    - id: policy
+      engine: shell
+      description: The daemon runs and blocks devices that match no rule.
+      spec:
+        script: |
+          c=/etc/usbguard/usbguard-daemon.conf
+          [ -f "$c" ] || { echo "$c missing"; exit 1; }
+          t=$(sed -n 's/^[[:space:]]*ImplicitPolicyTarget[[:space:]]*=[[:space:]]*//p' "$c" | tail -n 1)
+          r=$(sed -n 's/^[[:space:]]*RuleFile[[:space:]]*=[[:space:]]*//p' "$c" | tail -n 1)
+          a=$(systemctl is-active usbguard 2>/dev/null)
+          n=$(grep -c '^[[:space:]]*[a-z]' "${r:-/nonexistent}" 2>/dev/null)
+          echo "ImplicitPolicyTarget=${t:-unset} RuleFile=${r:-unset} rules=${n:-none} service=${a:-unknown}"
+          [ "$t" = block ] && [ -n "$r" ] && [ -f "$r" ] && [ "$a" = active ]
+
+remediation:
+  manual: |
+    1. Plug in every USB device used regularly.
+    2. `apt install usbguard`. On first install, the package writes `/etc/usbguard/rules.conf`
+       from the devices present and starts the daemon.
+    3. Check the rules with `usbguard list-rules`, then `systemctl enable --now usbguard`.
+    4. Check that `ImplicitPolicyTarget=block` is set in `/etc/usbguard/usbguard-daemon.conf`.
+  effects:
+    restart: none
+    disruption: high
+    lockout_risk: true
+  rollback: |
+    `systemctl disable --now usbguard` (blocked devices are authorized again when replugged), or
+    `apt purge usbguard`.
+  scripts:
+    - id: package
+      from_check: package
+    - id: service
+      from_check: service
+
+references:
+  - title: usbguard-daemon.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/usbguard-daemon.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: usbguard-rules.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/usbguard-rules.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: usbguard(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/usbguard.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu packages - usbguard (noble, universe)
+    url: https://packages.ubuntu.com/noble/usbguard
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1200
+  - framework: mitre-attack
+    id: T1091
+related_controls:
+  - id: CB-UBU-DESK-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 3.36, gdm3), Ubuntu 20.04.6, kernel 5.4.0-216-generic
+    notes: "Generic kernel with a UHCI controller: package installed from universe, policy generated by the package from present devices (root hub and tablet allowed), daemon active, ImplicitPolicyTarget=block; second remediation compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 42, gdm3), Ubuntu 22.04.5, kernel 5.15.0-198-generic
+    notes: "Generic kernel with a UHCI controller: package installed from universe, policy generated by the package from present devices (root hub and tablet allowed), daemon active, ImplicitPolicyTarget=block; second remediation compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 46, gdm3), Ubuntu 24.04.5, kernel 6.8.0-147-generic
+    notes: "Generic kernel with a UHCI controller: package installed from universe, policy generated by the package from present devices (root hub and tablet allowed), daemon active, ImplicitPolicyTarget=block; second remediation compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 50, gdm3), Ubuntu 26.04.1, kernel 7.0.0-38-generic
+    notes: "Generic kernel with a UHCI controller: package installed from universe, policy generated by the package from present devices (root hub and tablet allowed), daemon active, ImplicitPolicyTarget=block; second remediation compliant; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

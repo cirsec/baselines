@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-011
+title: Remove the Ctrl-Alt-Del shortcut from GNOME
+finding:
+  title: Ctrl-Alt-Del in GNOME opens the power-off and restart dialog
+  description: A key sequence pressed out of habit, or by someone at the console, leads to a restart or power-off of the machine in two clicks.
+status: draft
+profiles: [desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [gnome, dconf, availability]
+
+applicability:
+  facts: [desktop-gnome]
+
+description: |
+  `org.gnome.settings-daemon.plugins.media-keys logout` binds Ctrl-Alt-Del to the log out
+  dialog, which also offers restart and power off. Setting it to `['']` removes the binding;
+  the key is set in the system dconf database `local` and locked.
+rationale: |
+  Ctrl-Alt-Del is pressed by reflex on machines used alongside Windows, and on a shared
+  console it gives anyone a quick path to restarting the machine. Removing the shortcut
+  avoids accidental or opportunistic restarts of the workstation.
+impact: |
+  Users log out or power off from the system menu. Ctrl-Alt-Del does nothing in GNOME.
+notes: |
+  This only concerns the GNOME shortcut. Ctrl-Alt-Del on a text console is handled by systemd
+  (`ctrl-alt-del.target`).
+
+setting:
+  location: /etc/dconf/db/local.d/, key /org/gnome/settings-daemon/plugins/media-keys/logout
+  default_value: "['<Control><Alt>Delete']"
+  recommended_value: "[''], locked"
+
+audit:
+  manual: |
+    1. `dconf read /org/gnome/settings-daemon/plugins/media-keys/logout` must print `['']`.
+    2. The key must be listed in a file of `/etc/dconf/db/local.d/locks/`.
+  checks:
+    - id: logout-key
+      engine: dconf
+      description: No GNOME shortcut opens the log out dialog.
+      facts: [desktop-gnome]
+      spec:
+        key: /org/gnome/settings-daemon/plugins/media-keys/logout
+        value: "['']"
+
+remediation:
+  manual: |
+    1. Make sure `/etc/dconf/profile/user` contains `user-db:user` and `system-db:local`.
+    2. Create `/etc/dconf/db/local.d/00-ctrl-alt-del`:
+       ```
+       [org/gnome/settings-daemon/plugins/media-keys]
+       logout=['']
+       ```
+    3. List `/org/gnome/settings-daemon/plugins/media-keys/logout` in
+       `/etc/dconf/db/local.d/locks/00-ctrl-alt-del` and run `dconf update`.
+  effects:
+    restart: session
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete the files written in `/etc/dconf/db/local.d/` and its `locks/` directory, then run
+    `dconf update`.
+  scripts:
+    - id: logout-key
+      from_check: logout-key
+
+references:
+  - title: gnome-settings-daemon - media-keys schema
+    url: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/blob/master/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: GNOME System Administration Guide - Lock down specific settings
+    url: https://help.gnome.org/admin/system-admin-guide/stable/dconf-lockdown.html.en
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1529
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 3.36, gdm3), Ubuntu 20.04.6, kernel 5.4.0-216-generic
+    notes: "Generated dconf check and fix (desktop-hardened); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 42, gdm3), Ubuntu 22.04.5, kernel 5.15.0-198-generic
+    notes: "Generated dconf check and fix (desktop-hardened); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 46, gdm3), Ubuntu 24.04.5, kernel 6.8.0-147-generic
+    notes: "Generated dconf check and fix (desktop-hardened); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 50, gdm3), Ubuntu 26.04.1, kernel 7.0.0-38-generic
+    notes: "Generated dconf check and fix (desktop-hardened); value and lock confirmed with gsettings get/writable as a user under dbus-run-session (write refused); second remediation reported compliant; state kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
