@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-009
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Utiliser une version d'Ubuntu qui reçoit encore des mises à jour de sécurité
+finding:
+  title: La version d'Ubuntu ne reçoit plus de mises à jour de sécurité
+  description: Plus aucun correctif de sécurité n'est publié pour cette version, ou seulement via Ubuntu Pro ESM qui n'est pas activé ; les nouvelles vulnérabilités restent donc ouvertes pour de bon.
+description: |
+  Chaque version LTS d'Ubuntu reçoit cinq ans de maintenance de sécurité standard pour les paquets
+  des composants main et restricted. L'Expanded Security Maintenance (ESM), incluse dans Ubuntu
+  Pro, la prolonge ensuite de cinq ans (`esm-infra`), et couvre aussi universe (`esm-apps`, voir
+  CB-UBU-PKG-014). Après la période standard, un système ne reçoit les correctifs de sécurité de
+  main que s'il est rattaché à Ubuntu Pro avec `esm-infra` activé. Les versions intermédiaires
+  (`AA.10`) ne sont maintenues que neuf mois.
+rationale: |
+  Une version qui n'est plus maintenue accumule des vulnérabilités connues, publiques et non
+  corrigées. Aucun durcissement de configuration ne compense cela. Une version sortie du support
+  standard semble maintenue (l'archive répond toujours, `apt-get upgrade` ne signale rien) alors
+  que les correctifs ne sont publiés que dans ESM, ce qui rend cet écart facile à manquer.
+impact: |
+  Passer à la version LTS suivante demande de planifier et de tester les applications hébergées.
+  Garder une ancienne version demande un abonnement Ubuntu Pro pour chaque système.
+notes: |
+  Au 2026-10-19 : la maintenance de sécurité standard se termine en avril 2027 pour 22.04, avril
+  2029 pour 24.04 et avril 2031 pour 26.04 ; 20.04 en est sorti en mai 2025 et n'est maintenu
+  qu'avec `esm-infra` (jusqu'en avril 2030). Passer une version de `supported_versions` à
+  `esm_versions` quand son support standard se termine, et la retirer des deux à la fin d'ESM
+  (voir la page du cycle de vie des versions Ubuntu). Planifier les montées de version avant la
+  date plutôt qu'après.
+setting:
+  location: /etc/os-release, état du client Ubuntu Pro
+  recommended_value: "L'une des versions {{ supported_versions }}, ou l'une des versions {{ esm_versions }} avec esm-infra activé"
+parameters:
+  supported_versions: Versions d'Ubuntu (VERSION_ID) sous maintenance de sécurité standard.
+  esm_versions: Versions d'Ubuntu (VERSION_ID) sorties de la maintenance standard et encore couvertes par Ubuntu Pro ESM ; acceptées seulement si esm-infra est activé.
+audit:
+  manual: |
+    1. Lancer `. /etc/os-release; echo "$VERSION_ID"` et comparer avec les dates de
+       https://ubuntu.com/about/release-cycle.
+    2. Pour une version sortie de son support standard, `pro status` doit montrer le système
+       rattaché et `esm-infra` activé.
+remediation:
+  manual: |
+    Passer à une version LTS maintenue avec `do-release-upgrade`, une LTS à la fois, après avoir
+    testé les applications hébergées. D'ici là, rattacher le système à Ubuntu Pro
+    (`pro attach <jeton>`, ou via Landscape ou les images Pro du fournisseur cloud) et lancer
+    `pro enable esm-infra`. Passer les systèmes en version intermédiaire sur une version LTS.

@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-012
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder les snaps rafraîchis automatiquement
+finding:
+  title: Les snaps ne sont pas rafraîchis automatiquement
+  description: Les rafraîchissements automatiques des snaps sont arrêtés ou suspendus pour longtemps ; les snaps gardent leurs vulnérabilités connues pendant que les mises à jour APT sont appliquées.
+description: |
+  Les snaps sont installés et mis à jour par `snapd`, pas par APT : unattended-upgrades n'y touche
+  jamais. snapd interroge le store plusieurs fois par jour (`refresh.timer`) et installe seul les
+  nouvelles révisions. Un administrateur peut repousser ces rafraîchissements :
+
+  - pour tous les snaps, avec `snap refresh --hold[=<durée>]` (option système `refresh.hold`) ;
+  - pour certains snaps, avec `snap refresh --hold[=<durée>] <snap>`.
+
+  Sans durée, la suspension est illimitée. Le contrôle échoue quand une suspension se termine
+  plus de `{{ max_hold_days }}` jours après maintenant, et quand le service `snapd` n'est pas
+  activé.
+rationale: |
+  Les snaps embarquent leurs propres bibliothèques : un correctif d'une bibliothèque Ubuntu
+  n'atteint un snap que quand celui-ci est reconstruit et rafraîchi. LXD, Firefox, Thunderbird et
+  de nombreux agents sont livrés en snap, et certains sont exposés au réseau. Une suspension
+  illimitée, souvent posée une fois pour passer un incident puis oubliée, les laisse vulnérables
+  pour de bon alors que la partie APT du système paraît à jour.
+impact: |
+  Un rafraîchissement redémarre les services du snap concerné (par exemple le démon LXD, pas ses
+  conteneurs). Utiliser `refresh.timer` pour placer les rafraîchissements dans une fenêtre de
+  maintenance, et des suspensions d'au plus `{{ max_hold_days }}` jours pour les repousser,
+  plutôt que des suspensions illimitées.
+notes: |
+  `snapd` est installé sur toutes les versions d'Ubuntu (fact `snapd`) ; les images cloud 20.04
+  et 22.04 livrent le snap `lxd`, Ubuntu Desktop livre Firefox et d'autres applications en snap.
+  Une suspension déjà terminée (par exemple posée pendant la construction d'une image) est
+  conforme. Les snaps installés depuis un fichier local (`--dangerous`, révisions `x1`, `x2`...)
+  ne sont jamais rafraîchis : les lister avec `snap list` et les remplacer par des snaps du store
+  ou les retirer.
+setting:
+  location: options système de snapd (snap get system refresh), suspensions par snap
+  recommended_value: "Aucune suspension qui se termine plus de {{ max_hold_days }} jours après maintenant, snapd.service activé"
+parameters:
+  max_hold_days: Plus longue suspension de rafraîchissement acceptée, comptée à partir de maintenant, pour tous les snaps ou pour un snap.
+audit:
+  manual: |
+    1. `systemctl is-enabled snapd.service` affiche `enabled`.
+    2. `snap refresh --time` n'affiche pas de ligne `hold:`, ou une suspension qui se termine dans
+       au plus `{{ max_hold_days }}` jours.
+    3. `snap list` n'affiche aucun snap avec `held` dans la colonne Notes. Pour un snap suspendu,
+       lire la fin de la suspension dans le champ `hold` de
+       `curl -s --unix-socket /run/snapd.socket http://localhost/v2/snaps` (une suspension
+       illimitée affiche une date environ 300 ans plus tard) ; elle doit être au plus
+       `{{ max_hold_days }}` jours plus tard.
+remediation:
+  manual: |
+    1. `systemctl enable --now snapd.service` s'il a été désactivé.
+    2. Retirer les suspensions longues : `snap refresh --unhold` pour tous les snaps,
+       `snap refresh --unhold <snap>` pour un snap. S'il faut repousser un rafraîchissement,
+       utiliser `snap refresh --hold=<durée>` avec une durée d'au plus `{{ max_hold_days }}` jours.
+    3. Pour éviter les heures ouvrées, définir plutôt une fenêtre, par exemple
+       `snap set system refresh.timer=sat,02:00-04:00`.
+    4. Lancer `snap refresh` pour rattraper le retard, pendant une fenêtre de maintenance si les
+       services des snaps ne doivent pas redémarrer maintenant.
+
+    La correction automatique active `snapd.service` et retire toutes les suspensions, y compris
+    les suspensions bornées ; elle ne lance pas `snap refresh`.
+  rollback: |
+    Suspendre de nouveau les rafraîchissements avec `snap refresh --hold=<durée> [<snap>]`.

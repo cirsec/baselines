@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-014
+title: Receive security updates for every installed package, including universe (Ubuntu Pro esm-apps)
+finding:
+  title: Packages from universe are installed without Ubuntu Pro esm-apps
+  description: The Ubuntu Security Team does not commit to fix the universe packages of this system, so their vulnerabilities can stay open.
+status: draft
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [updates, ubuntu-pro, esm]
+
+description: |
+  Ubuntu standard security maintenance covers the main and restricted components only. Packages
+  of the universe component (and multiverse) get fixes from the community, on a best-effort
+  basis, and many known vulnerabilities in universe stay unfixed. Expanded Security Maintenance
+  for Applications (`esm-apps`), part of Ubuntu Pro, extends Canonical's security maintenance to
+  universe, from the release of an LTS to the end of its ESM period.
+
+  `pro security-status` counts the installed packages per component and shows which Ubuntu Pro
+  services are enabled. The control fails only when packages from universe are installed and
+  `esm-apps` is not enabled. A system with packages from main and restricted only passes without
+  Ubuntu Pro.
+rationale: |
+  Universe holds most of the archive, including common server software (web and
+  database servers, language runtimes, agents). A universe package installed for one need is as
+  exposed as a main package, but without a commitment to fix it. With `esm-apps`, the fixes are
+  published in the `<codename>-apps-security` pocket and installed by unattended-upgrades like
+  the others.
+impact: |
+  Needs an Ubuntu Pro subscription for each system (free for a few personal machines). Without
+  it, remove the universe packages or replace them with packages from main, a vendor repository
+  or a supported snap. The esm-apps repository needs access to `esm.ubuntu.com` (or an internal
+  mirror).
+notes: |
+  The check needs the Ubuntu Pro client (`ubuntu-pro-client`, installed by default on every
+  release) and fresh package lists. A single universe package is enough to fail, for example
+  `qemu-guest-agent` installed on virtual machines. Multiverse packages (not free software)
+  are not counted.
+
+setting:
+  location: Ubuntu Pro client status (pro status, pro security-status)
+  default_value: Not attached to Ubuntu Pro, esm-apps disabled
+  recommended_value: No universe package installed, or esm-apps enabled
+
+audit:
+  manual: |
+    1. Run `pro security-status`. If it reports no package from Universe/Multiverse, or only from
+       multiverse (`pro security-status --format json`, `num_universe_packages` is 0), the control
+       passes.
+    2. Otherwise `pro status` must show the system attached and `esm-apps` enabled.
+       `pro security-status --esm-apps` lists the universe packages concerned.
+  checks:
+    - id: esm-apps
+      engine: shell
+      description: Installed universe packages and the esm-apps service, from pro security-status.
+      spec:
+        script: |
+          command -v pro >/dev/null || { echo "Ubuntu Pro client (pro) is not installed"; exit 3; }
+          j=$(pro security-status --format json 2>/dev/null) || { echo "pro security-status failed"; exit 3; }
+          printf '%s' "$j" | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)["summary"]
+          n = s.get("num_universe_packages", 0) + s.get("num_esm_apps_packages", 0)
+          on = "esm-apps" in s.get("ua", {}).get("enabled_services", [])
+          print("%d packages from universe, attached to Ubuntu Pro: %s, esm-apps %s" % (n, s.get("ua", {}).get("attached"), "enabled" if on else "not enabled"))
+          sys.exit(1 if n and not on else 0)'
+
+remediation:
+  manual: |
+    1. Attach the system to Ubuntu Pro: `pro attach <token>` (token from https://ubuntu.com/pro
+       or the organisation's Ubuntu Pro account), or use an Ubuntu Pro image of the cloud
+       provider, or Landscape.
+    2. Run `pro enable esm-apps` if it is not enabled by the attachment, then `apt-get update` and
+       `apt-get upgrade` to install the pending ESM fixes.
+    3. Without a subscription, remove the universe packages that are not needed
+       (`pro security-status --esm-apps` lists them), and document the remaining ones as an
+       accepted risk in the tailoring file.
+
+    No automated fix: attaching needs the organisation's token, which must not be stored in the
+    baseline.
+
+references:
+  - title: Ubuntu Pro Client - About Expanded Security Maintenance
+    url: https://documentation.ubuntu.com/pro-client/en/latest/explanations/about_esm/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu - Expanded Security Maintenance
+    url: https://ubuntu.com/security/esm
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Pro
+    url: https://ubuntu.com/pro
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: pro(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/pro.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: partial
+    note: Covers the vendor support of every installed package, a prerequisite for flaw remediation.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-22
+    relation: partial
+    note: A universe package without esm-apps has no vendor commitment to security fixes.
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1104
+related_controls:
+  - id: CB-UBU-PKG-009
+    type: related
+  - id: CB-UBU-PKG-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on stock (qemu-guest-agent from universe, not attached to Ubuntu Pro); passes with a shimmed pro security-status reporting esm-apps enabled (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on stock (qemu-guest-agent from universe, not attached to Ubuntu Pro); passes with a shimmed pro security-status reporting esm-apps enabled (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on stock (qemu-guest-agent from universe, not attached to Ubuntu Pro); passes with a shimmed pro security-status reporting esm-apps enabled (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on stock (qemu-guest-agent from universe, not attached to Ubuntu Pro); passes with a shimmed pro security-status reporting esm-apps enabled (no Pro token in the lab)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

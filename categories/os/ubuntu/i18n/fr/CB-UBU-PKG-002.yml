@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-002
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Télécharger les paquets en HTTPS
+finding:
+  title: APT télécharge depuis des dépôts par un protocole non chiffré
+  description: Quiconque se trouve sur le chemin réseau voit quels paquets et versions le système installe, et peut retarder ou bloquer ses mises à jour.
+description: |
+  Chaque entrée de source APT désigne une ou plusieurs URI. La méthode `https` chiffre et
+  authentifie la connexion au miroir ; `http` et `ftp` non. Les entrées en `mirror+file:`
+  désignent une liste locale de miroirs, dont les URI sont aussi vérifiées.
+rationale: |
+  APT vérifie la signature de l'archive Ubuntu quel que soit le transport : HTTP ne permet donc pas
+  de modifier les paquets. Il expose cependant la liste des paquets installés et leurs versions,
+  ce qui indique à un attaquant les vulnérabilités restantes, et permet à un attaquant réseau de
+  servir des métadonnées périmées mais valablement signées jusqu'à leur expiration, ou de bloquer
+  les mises à jour sans bruit. HTTPS supprime ces expositions, et il est indispensable pour les
+  dépôts que leur fournisseur ne signe pas.
+impact: |
+  Le système a besoin du paquet `ca-certificates` et d'un accès HTTPS sortant. Les proxys de cache
+  comme apt-cacher-ng ne peuvent pas mettre en cache un trafic HTTPS qu'ils ne terminent pas :
+  lister leurs URI HTTP dans le paramètre `http_allowed_uris` plutôt qu'affaiblir les autres
+  contrôles.
+notes: |
+  Toutes les versions d'Ubuntu, images cloud comprises, utilisent `http://archive.ubuntu.com` et
+  `http://security.ubuntu.com` (ou `http://<pays>.archive.ubuntu.com` après une installation
+  desktop) : le contrôle échoue par défaut. `archive.ubuntu.com`, `security.ubuntu.com` et
+  `ports.ubuntu.com` servent HTTPS ; la correction automatique les y passe. Les miroirs nationaux
+  (`<pays>.archive.ubuntu.com`) sont tenus par des tiers et ne proposent pas forcément HTTPS avec
+  un certificat valide : ils sont laissés à un humain. Les dépôts Ubuntu Pro (`esm.ubuntu.com`)
+  utilisent déjà HTTPS.
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/*.list, /etc/apt/sources.list.d/*.sources
+  recommended_value: "https (ou une méthode locale comme file:, cdrom:, copy:) pour chaque URI, sauf celles qui commencent par : {{ http_allowed_uris }}"
+parameters:
+  http_allowed_uris: Préfixes d'URI autorisés en HTTP simple, par exemple un proxy apt-cacher-ng local (http://apt-cache.example.org:3142/). Vide signifie aucun.
+audit:
+  manual: |
+    Lancer `grep -rhiE '^[^#]*(http|ftp)://' /etc/apt/sources.list /etc/apt/sources.list.d/`, et
+    lire les fichiers nommés après `mirror+file:` s'il y en a. Chaque URI doit utiliser `https` ou
+    une méthode locale, ou commencer par l'un des préfixes autorisés.
+remediation:
+  manual: |
+    1. Installer `ca-certificates`.
+    2. Dans chaque entrée de source, et dans les listes de miroirs nommées après `mirror+file:`,
+       remplacer `http://` par `https://` quand le miroir sert HTTPS (c'est le cas de
+       `archive.ubuntu.com`, `security.ubuntu.com` et `ports.ubuntu.com`). Sinon, choisir un
+       autre miroir.
+    3. Lancer `apt-get update` et vérifier qu'aucune erreur n'apparaît.
+  rollback: |
+    Restaurer les fichiers de sources depuis le dossier de sauvegarde affiché par `remediate.sh`,
+    ou remplacer de nouveau `https://` par `http://`.

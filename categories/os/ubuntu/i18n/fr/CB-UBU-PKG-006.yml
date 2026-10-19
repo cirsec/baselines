@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-006
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer la poche de sécurité Ubuntu
+finding:
+  title: La poche de sécurité Ubuntu n'est pas configurée
+  description: Les correctifs de sécurité sont publiés dans une poche séparée ; sans elle, le système ne les reçoit jamais.
+description: |
+  L'équipe de sécurité Ubuntu publie ses correctifs dans la poche `<nom de code>-security` (par
+  exemple `noble-security`), servie par `security.ubuntu.com/ubuntu`
+  (`ports.ubuntu.com/ubuntu-ports` pour les autres architectures). Chaque version d'Ubuntu doit
+  avoir une entrée `deb` active pour cette poche, ou pour un miroir interne de celle-ci.
+
+  Sur un système rattaché à Ubuntu Pro, les correctifs de l'Expanded Security Maintenance (ESM)
+  pour les composants main et restricted sont publiés dans la poche
+  `<nom de code>-infra-security` de `esm.ubuntu.com/infra/ubuntu`, que le client Pro ajoute quand
+  le service `esm-infra` est activé. Les systèmes rattachés doivent l'avoir aussi.
+rationale: |
+  Les correctifs arrivent aussi dans la poche `<nom de code>-updates`, mais seule la poche de
+  sécurité garantit de porter chaque correctif de sécurité dès sa publication, et c'est d'elle
+  qu'installe unattended-upgrades. Sans elle, le système reste exposé à chaque vulnérabilité
+  publiée, même si les mises à jour sont appliquées chaque jour. Une fois une version sortie du
+  support standard (20.04 depuis mai 2025), les nouveaux correctifs de main et restricted ne sont
+  plus publiés que dans ESM.
+impact: |
+  Aucun connu. Le système doit joindre le miroir de sécurité (et `esm.ubuntu.com` s'il est
+  rattaché à Ubuntu Pro) ou une copie interne.
+notes: |
+  Configurée par défaut sur toutes les versions (`security.ubuntu.com` dans
+  `/etc/apt/sources.list` sur 20.04 et 22.04, dans `/etc/apt/sources.list.d/ubuntu.sources` sur
+  24.04 et suivantes). La vérification ESM ne s'applique qu'aux systèmes rattachés à Ubuntu Pro
+  (fact `ubuntu-pro`) ; le besoin de rattacher un système relève de CB-UBU-PKG-009 et
+  CB-UBU-PKG-014. La poche `esm-apps` est vérifiée par CB-UBU-PKG-014.
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/
+  recommended_value: Une entrée deb active pour la poche <nom de code>-security, et pour <nom de code>-infra-security si le système est rattaché à Ubuntu Pro
+audit:
+  manual: |
+    1. Lancer `apt-cache policy | grep -- '-security'`. La commande doit lister la poche
+       `<nom de code>-security` de la version installée (`. /etc/os-release; echo "$VERSION_CODENAME"`).
+    2. Si `pro status` montre le système rattaché à Ubuntu Pro, elle doit aussi lister
+       `<nom de code>-infra-security` depuis `esm.ubuntu.com`, et `pro status` doit montrer
+       `esm-infra` activé.
+remediation:
+  manual: |
+    1. Ajouter la poche de sécurité, par exemple dans `/etc/apt/sources.list.d/ubuntu.sources` sur
+       24.04 et suivantes (remplacer `noble` par le nom de code de la version installée, ou l'URI
+       par un miroir interne) :
+
+       ```
+       Types: deb
+       URIs: https://security.ubuntu.com/ubuntu
+       Suites: noble-security
+       Components: main universe restricted multiverse
+       Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+       ```
+
+       Sur 20.04 et 22.04, ajouter à `/etc/apt/sources.list` :
+       `deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse`.
+    2. Sur un système rattaché à Ubuntu Pro, lancer `pro enable esm-infra` : le client Pro écrit
+       l'entrée de source ESM et sa clé.
+    3. Lancer `apt-get update`.

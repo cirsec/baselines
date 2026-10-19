@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-014
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Recevoir les mises à jour de sécurité de chaque paquet installé, universe compris (Ubuntu Pro esm-apps)
+finding:
+  title: Des paquets de universe sont installés sans Ubuntu Pro esm-apps
+  description: L'équipe de sécurité Ubuntu ne s'engage pas à corriger les paquets universe de ce système ; leurs vulnérabilités peuvent rester ouvertes.
+description: |
+  La maintenance de sécurité standard d'Ubuntu ne couvre que les composants main et restricted.
+  Les paquets du composant universe (et multiverse) reçoivent des correctifs de la communauté,
+  sans engagement, et de nombreuses vulnérabilités connues de universe restent non corrigées.
+  L'Expanded Security Maintenance for Applications (`esm-apps`), incluse dans Ubuntu Pro, étend
+  la maintenance de sécurité de Canonical à universe, de la sortie d'une LTS à la fin de sa
+  période ESM.
+
+  `pro security-status` compte les paquets installés par composant et montre les services Ubuntu
+  Pro activés. Le contrôle échoue seulement quand des paquets de universe sont installés et que
+  `esm-apps` n'est pas activé. Un système qui n'a que des paquets de main et restricted est
+  conforme sans Ubuntu Pro.
+rationale: |
+  Universe contient la plus grande partie de l'archive, dont des logiciels serveur courants
+  (serveurs web et de bases de données, environnements d'exécution, agents). Un paquet universe
+  installé pour un besoin est aussi exposé qu'un paquet de main, mais sans engagement de
+  correction. Avec `esm-apps`, les correctifs sont publiés dans la poche
+  `<nom de code>-apps-security` et installés par unattended-upgrades comme les autres.
+impact: |
+  Demande un abonnement Ubuntu Pro pour chaque système (gratuit pour quelques machines
+  personnelles). Sans abonnement, retirer les paquets universe ou les remplacer par des paquets de
+  main, d'un dépôt d'éditeur ou par un snap maintenu. Le dépôt esm-apps demande un accès à
+  `esm.ubuntu.com` (ou à un miroir interne).
+notes: |
+  La vérification demande le client Ubuntu Pro (`ubuntu-pro-client`, installé par défaut sur
+  toutes les versions) et des listes de paquets à jour. Un seul paquet universe suffit à échouer,
+  par exemple `qemu-guest-agent` installé sur des machines virtuelles. Les paquets de multiverse
+  (logiciels non libres) ne sont pas comptés.
+setting:
+  location: état du client Ubuntu Pro (pro status, pro security-status)
+  recommended_value: Aucun paquet de universe installé, ou esm-apps activé
+audit:
+  manual: |
+    1. Lancer `pro security-status`. S'il ne signale aucun paquet de Universe/Multiverse, ou
+       seulement de multiverse (`pro security-status --format json`, `num_universe_packages` vaut
+       0), le contrôle est conforme.
+    2. Sinon `pro status` doit montrer le système rattaché et `esm-apps` activé.
+       `pro security-status --esm-apps` liste les paquets universe concernés.
+remediation:
+  manual: |
+    1. Rattacher le système à Ubuntu Pro : `pro attach <jeton>` (jeton issu de
+       https://ubuntu.com/pro ou du compte Ubuntu Pro de l'organisation), ou utiliser une image
+       Ubuntu Pro du fournisseur cloud, ou Landscape.
+    2. Lancer `pro enable esm-apps` s'il n'est pas activé par le rattachement, puis
+       `apt-get update` et `apt-get upgrade` pour installer les correctifs ESM en attente.
+    3. Sans abonnement, retirer les paquets universe inutiles (`pro security-status --esm-apps`
+       les liste), et documenter les autres comme risque accepté dans le fichier d'adaptation.
+
+    Pas de correction automatique : le rattachement demande le jeton de l'organisation, qui ne
+    doit pas être stocké dans le référentiel.

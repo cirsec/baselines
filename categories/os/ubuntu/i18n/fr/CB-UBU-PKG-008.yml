@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-008
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne laisser aucune mise à jour de sécurité en attente
+finding:
+  title: Des mises à jour de sécurité sont disponibles mais pas installées
+  description: Des paquets dont les correctifs de sécurité sont publiés restent installés dans leur version vulnérable.
+description: |
+  `apt-get -s dist-upgrade` simule une mise à niveau à partir des listes de paquets locales et
+  indique, pour chaque paquet, la version et l'origine de la mise à jour. Celles qui viennent d'une
+  poche de sécurité (`<nom de code>-security`, ou `<nom de code>-infra-security` et
+  `<nom de code>-apps-security` d'Ubuntu Pro ESM) corrigent des vulnérabilités. Le résultat n'est pas plus frais que
+  les listes de paquets, rafraîchies par `apt-get update` ou `apt-daily.timer`.
+rationale: |
+  Une mise à jour de sécurité disponible signifie que la vulnérabilité est publique et qu'un
+  correctif existe : c'est le moment où l'exploitation est la plus probable. Rechercher les mises
+  à jour de sécurité en attente repère les systèmes où les mises à jour automatiques sont
+  désactivées, cassées, ou bloquées par un paquet gelé ou un changement de dépendances.
+impact: |
+  Aucun pour la vérification, qui ne modifie rien. L'installation des mises à jour redémarre les
+  services concernés.
+notes: |
+  La vérification échoue s'il reste des mises à jour de sécurité, et si les listes de paquets ont
+  plus de `{{ max_lists_age }}` jours (fichier `Release` le plus récent ou
+  `/var/lib/apt/periodic/update-success-stamp`), car des listes périmées cachent des mises à jour
+  en attente. Les autres mises à jour en attente (`-updates`, backports) sont seulement listées
+  dans la preuve. La vérification ne lance pas `apt-get update` : rafraîchir les listes d'abord
+  pour une réponse à jour.
+
+  Mises à jour progressives (phased updates) : Ubuntu diffuse certaines mises à jour de
+  `-updates` (SRU) à une part croissante des systèmes, et apt (22.04 et suivantes) les retient
+  sur les autres. Les poches de sécurité ne sont jamais progressives : une mise à jour retenue
+  n'est donc jamais un correctif de sécurité en attente ; les paquets retenus sont seulement
+  comptés dans la preuve. Les mises à jour ESM ne sont visibles que sur les systèmes rattachés à
+  Ubuntu Pro : sur un 20.04 non rattaché, la vérification passe alors que `pro security-status`
+  liste des correctifs ESM qu'il ne peut pas installer. CB-UBU-PKG-009 détecte ce cas.
+parameters:
+  max_lists_age: Âge maximal de la liste de paquets la plus récente avant que la vérification échoue.
+audit:
+  manual: |
+    1. Lancer `apt-get update`.
+    2. Lancer `apt-get -s dist-upgrade | grep '^Inst' | grep -i security`. La commande ne doit rien afficher.
+remediation:
+  manual: |
+    Lancer `apt-get update` puis `apt-get dist-upgrade` (ou `unattended-upgrade` pour les seules
+    mises à jour de sécurité, qui installe aussi les mises à jour ESM sur les systèmes rattachés),
+    pendant une fenêtre de maintenance si les services ne doivent pas redémarrer. Redémarrer quand
+    le noyau, la libc ou systemd ont été mis à jour (`/var/run/reboot-required` existe, voir
+    CB-UBU-PKG-013). Si un paquet est gelé (`apt-mark showhold`), comprendre pourquoi avant de le
+    libérer.
