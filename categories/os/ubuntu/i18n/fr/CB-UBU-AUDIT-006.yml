@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-006
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier quels messages rsyslog écrit et où
+finding:
+  title: Les règles de rsyslog n'ont pas été vérifiées par rapport aux besoins de journalisation du site
+  description: Des messages de sécurité peuvent manquer dans les fichiers conservés, surveillés ou transférés.
+applicability:
+  conditions: |
+    Seulement si rsyslog est installé.
+description: |
+  rsyslog répartit les messages dans des fichiers selon leur origine (facility) et leur priorité,
+  avec les règles de `/etc/rsyslog.conf` et `/etc/rsyslog.d/*.conf`. Ubuntu écrit entre autres
+  `/var/log/syslog`, `/var/log/auth.log` (authentification), `/var/log/kern.log` et
+  `/var/log/user.log`. Le site doit vérifier que les messages dont il a besoin (authentification,
+  usage des privilèges, noyau, erreurs critiques de ses services) arrivent dans des fichiers
+  conservés assez longtemps et surveillés.
+rationale: |
+  Un message écrit nulle part ne peut pas être analysé. Les réglages par défaut sont génériques ;
+  seul l'administrateur sait quels services et quels événements comptent.
+impact: |
+  Aucun connu.
+audit:
+  manual: |
+    1. Lire les règles avec `grep -Ev '^\s*(#|$)' /etc/rsyslog.conf /etc/rsyslog.d/*.conf`.
+    2. Vérifier que `auth,authpriv.*` va dans un fichier dédié (`/var/log/auth.log` sur Ubuntu), que
+       `kern.*` et `*.emerg` sont journalisés, et que les messages des services de ce système
+       arrivent dans un fichier ou sur le serveur de journalisation.
+    3. Vérifier que chaque fichier est tourné (CB-UBU-AUDIT-007) et conservé aussi longtemps que la
+       politique du site l'exige.
+remediation:
+  manual: |
+    Ajouter les règles manquantes dans un fichier de `/etc/rsyslog.d/`, par exemple :
+    ```
+    auth,authpriv.*   /var/log/auth.log
+    kern.*            -/var/log/kern.log
+    *.emerg           :omusrmsg:*
+    ```
+    Puis lancer `systemctl restart rsyslog`.
+  rollback: |
+    Retirer le fichier ajouté et lancer `systemctl restart rsyslog`.

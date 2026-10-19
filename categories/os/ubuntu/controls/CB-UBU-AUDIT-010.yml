@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-010
+title: Give each exposed service its own activity log
+finding:
+  title: Service activity is mixed into general logs or not logged at all
+  description: Without a dedicated log per service, the activity of a web, mail or database service is hard to follow and to keep for the right time.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [logging, services]
+
+description: |
+  Each service that matters to the system (web server, reverse proxy, database, mail, VPN,
+  application) should write its activity (requests, connections, errors, administrative actions)
+  to a log of its own: a dedicated file, a journal namespace or at least its own syslog
+  identifier and facility, readable only by the service account and administrators.
+rationale: |
+  Dedicated logs make investigation of one service practical, allow a retention adapted to its
+  sensitivity, and limit who can read data that only concerns that service.
+impact: |
+  More files to rotate and forward.
+
+audit:
+  manual: |
+    1. List the services that listen on the network with `ss -tulpn` and the main services of the
+       system.
+    2. For each one, find where it logs (its configuration, `journalctl -u <unit>`) and check that
+       its activity is recorded, kept for the required time, rotated and readable only by the
+       service and administrators.
+
+remediation:
+  manual: |
+    Configure each service to log to its own file (for example the access and error logs of a web
+    server) or journal namespace (`LogNamespace=` in the unit), add a logrotate file for it, and
+    include it in the logs sent to the log server.
+  rollback: |
+    Revert the service logging configuration.
+
+references:
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R72)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+  - title: journald.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/journald.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R72
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+threats:
+  - framework: cwe
+    id: CWE-778
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

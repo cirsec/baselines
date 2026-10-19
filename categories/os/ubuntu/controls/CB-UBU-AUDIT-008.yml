@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-008
+title: Send system logs to a remote log server
+finding:
+  title: System logs are only stored on the system that produced them
+  description: An intruder with root access can erase the local logs, and a lost disk takes the history with it.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [logging, remote, journald, rsyslog]
+
+description: |
+  A copy of the logs must leave the system as they are produced, to a log server or a central
+  collection platform the system cannot modify. On Ubuntu, two ways fit the chosen logging system:
+
+  - with the journal alone, `systemd-journal-upload` (package `systemd-journal-remote`) sends the
+    journal over HTTPS to a `systemd-journal-remote` server;
+  - with rsyslog, an `omfwd` action sends messages over TCP, preferably with TLS
+    (CB-UBU-AUDIT-009).
+rationale: |
+  Remote logs survive the compromise or loss of the system and are the reference when local logs
+  have been altered. They also allow correlating events across systems.
+impact: |
+  Requires a log server and network flows to it. Messages are queued when the server is
+  unreachable; size the queue so a long outage does not fill the disk.
+
+audit:
+  manual: |
+    1. With the journal alone: run `systemctl is-active systemd-journal-upload` and check `URL=` in
+       `systemd-analyze cat-config systemd/journal-upload.conf`.
+    2. With rsyslog: look for an `action(type="omfwd" target=...)` or `@@host` line with
+       `grep -Er 'omfwd|^\s*[^#].*@@?' /etc/rsyslog.conf /etc/rsyslog.d/`.
+    3. Confirm on the log server that recent messages from this system have arrived.
+
+remediation:
+  manual: |
+    1. With the journal alone: install `systemd-journal-remote`, set `URL=https://<server>:19532`
+       and the client certificate in `/etc/systemd/journal-upload.conf.d/`, then run
+       `systemctl enable --now systemd-journal-upload`.
+    2. With rsyslog: add to `/etc/rsyslog.d/60-remote.conf`:
+       ```
+       *.* action(type="omfwd" target="<server>" port="6514" protocol="tcp"
+                  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+                  queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on"
+                  action.resumeRetryCount="-1")
+       ```
+       then run `systemctl restart rsyslog`.
+  rollback: |
+    Disable `systemd-journal-upload`, or remove the forwarding file and restart rsyslog.
+
+references:
+  - title: systemd-journal-upload.service(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/systemd-journal-upload.service.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: rsyslog.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/rsyslog.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(2)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.1.1"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.1.2"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.1.3"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.3.6"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.2.1"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.2.2"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.2.3"
+    relation: partial
+    note: CIS asks for the journal upload path when journald is the only logger; ours accepts it or rsyslog forwarding.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.2.6"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.2.5"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.2.5"
+    relation: equivalent
+    note: Ours also accepts the journal upload path when rsyslog is not used.
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+related_controls:
+  - id: CB-UBU-AUDIT-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

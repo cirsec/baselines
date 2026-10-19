@@ -1,0 +1,210 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-034
+title: Build the AIDE database and check file integrity every day
+finding:
+  title: File integrity is never checked
+  description: Without a reference database and a regular check, AIDE cannot report modified system files.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [aide, integrity, systemd]
+
+description: |
+  AIDE needs a reference database, `/var/lib/aide/aide.db`, built with `aideinit` from the
+  current state of the system. `aide-common` then runs a daily check, which compares the files
+  with the database and writes a report to `/var/log/aide/` (and mails it when a mail transport
+  is installed):
+
+  - from Ubuntu 24.04 (AIDE 0.18 and later), with `dailyaidecheck.timer`;
+  - on Ubuntu 20.04 and 22.04 (AIDE 0.16 and 0.17), with the cron job `/etc/cron.daily/aide`,
+    which `CRON_DAILY_RUN=no` in `/etc/default/aide` turns off.
+
+  This control requires the database to exist and the daily check to be enabled.
+rationale: |
+  The database is the trusted reference; the daily check turns it into detection. Without either,
+  an installed AIDE gives a false sense of protection.
+impact: |
+  Building the database reads every covered file: a few minutes and a short burst of disk
+  activity. The daily check does the same. After legitimate changes (upgrades, configuration),
+  review the report and update the database (`aide --update`, then replace `aide.db` with
+  `aide.db.new`).
+notes: |
+  Build the database once the system is in its intended state: run this fix after the other
+  hardening fixes, or rebuild the database afterwards with `aideinit -y -f`, otherwise the first
+  reports list every change made by the hardening.
+
+setting:
+  location: /var/lib/aide/aide.db, dailyaidecheck.timer (20.04 and 22.04 - /etc/cron.daily/aide)
+  default_value: No database; daily check enabled when aide-common is installed
+  recommended_value: Database present, daily check enabled
+
+audit:
+  manual: |
+    1. Run `ls -l /var/lib/aide/aide.db`. The file must exist and not be empty.
+    2. Ubuntu 24.04 and later: run `systemctl is-enabled dailyaidecheck.timer`. It must print
+       `enabled`. Ubuntu 20.04 and 22.04: `/etc/cron.daily/aide` must be executable and
+       `/etc/default/aide` must not set `CRON_DAILY_RUN=no`.
+    3. Read the last report in `/var/log/aide/` and check that differences are explained.
+  checks:
+    - id: database
+      engine: shell
+      description: The AIDE reference database exists.
+      spec:
+        script: |
+          if [ -s /var/lib/aide/aide.db ]; then
+            ls -l /var/lib/aide/aide.db
+          else
+            echo "/var/lib/aide/aide.db missing or empty"
+            exit 1
+          fi
+    - id: timer
+      engine: systemd-unit
+      description: dailyaidecheck.timer is enabled.
+      versions: ["24.04", "26.04"]
+      spec: { unit: dailyaidecheck.timer, state: enabled }
+    - id: cron
+      engine: shell
+      description: The daily AIDE cron job is present and not turned off (AIDE 0.16 and 0.17).
+      versions: ["20.04", "22.04"]
+      spec:
+        script: |
+          [ -x /etc/cron.daily/aide ] || { echo "/etc/cron.daily/aide missing or not executable"; exit 1; }
+          v=$(sed -n 's/^[[:space:]]*CRON_DAILY_RUN=//p' /etc/default/aide 2>/dev/null | tail -n 1 | tr -d "\"'")
+          echo "/etc/cron.daily/aide present, CRON_DAILY_RUN=${v:-yes (default)}"
+          [ "${v:-yes}" = yes ]
+
+remediation:
+  manual: |
+    1. Run `aideinit -y -f` and wait for it to finish (a few minutes).
+    2. Ubuntu 24.04 and later: run `systemctl enable --now dailyaidecheck.timer`. Ubuntu 20.04 and
+       22.04: run `chmod 755 /etc/cron.daily/aide` and set `CRON_DAILY_RUN=yes` (or remove the line)
+       in `/etc/default/aide`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now dailyaidecheck.timer` (20.04 and 22.04: set `CRON_DAILY_RUN=no` in `/etc/default/aide`) and delete `/var/lib/aide/aide.db`.
+  scripts:
+    - id: database
+      engine: shell
+      content: |
+        command -v aideinit >/dev/null 2>&1 || { echo "AIDE is not installed" >&2; exit 1; }
+        # umask 027: aideinit would otherwise create its logs readable by everyone
+        [ -s /var/lib/aide/aide.db ] || (umask 027; aideinit -y -f)
+    - id: timer
+      from_check: timer
+    - id: cron
+      engine: shell
+      versions: ["20.04", "22.04"]
+      content: |
+        [ -f /etc/cron.daily/aide ] || { echo "AIDE is not installed" >&2; exit 1; }
+        chmod 755 /etc/cron.daily/aide
+        if grep -Eq '^[[:space:]]*CRON_DAILY_RUN=' /etc/default/aide 2>/dev/null; then
+          cb_backup /etc/default/aide
+          sed -i 's/^[[:space:]]*CRON_DAILY_RUN=.*/CRON_DAILY_RUN=yes/' /etc/default/aide
+        fi
+
+references:
+  - title: aideinit(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/aideinit.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemd.timer(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/systemd.timer.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R76)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R76
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(1)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.1.1"
+    relation: partial
+    note: The package installation is in CB-UBU-AUDIT-032.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.3.1"
+    relation: partial
+    note: The package installation is in CB-UBU-AUDIT-032.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.3.1"
+    relation: partial
+    note: The package installation is in CB-UBU-AUDIT-032.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.3.1"
+    relation: partial
+    note: The package installation is in CB-UBU-AUDIT-032.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.3.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1036.005
+  - framework: cwe
+    id: CWE-353
+related_controls:
+  - id: CB-UBU-AUDIT-032
+    type: requires
+  - id: CB-UBU-AUDIT-033
+    type: requires
+  - id: CB-UBU-AUDIT-035
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on stock image; aideinit builds aide.db (about 10 min on 1 vCPU), cron.daily/aide present; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on stock image; aideinit builds aide.db (about 10 min on 1 vCPU), cron.daily/aide present; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on stock image; aideinit builds aide.db, dailyaidecheck.timer enabled; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on stock image; aideinit builds aide.db, dailyaidecheck.timer enabled; passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

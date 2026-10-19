@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-015
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Envoyer les événements d'audit vers un serveur distant
+finding:
+  title: Les événements d'audit ne sont stockés que sur le système audité
+  description: Quiconque obtient root sur le système peut effacer ou modifier le journal d'audit, seule copie de la preuve.
+description: |
+  Le greffon `au-remote` d'`audispd-plugins` envoie chaque événement d'audit vers un `auditd` distant
+  qui les écoute (`tcp_listen_port` sur le serveur). Il s'active avec `active = yes` dans
+  `/etc/audit/plugins.d/au-remote.conf`, et le serveur se règle avec `remote_server` dans
+  `/etc/audit/audisp-remote.conf`.
+rationale: |
+  Une copie gardée hors du système ne peut pas être effacée par un intrus devenu root, et permet
+  d'examiner au même endroit les événements de nombreux systèmes.
+impact: |
+  Nécessite un serveur de collecte d'audit et un flux réseau vers lui (TCP 60 par défaut). Régler
+  `network_failure_action` et la file dans `audisp-remote.conf` pour qu'une coupure ne bloque pas le
+  système.
+notes: |
+  Sur Ubuntu 20.04 (auditd 2.8), les greffons sont lancés par `audispd` et leurs fichiers sont dans
+  `/etc/audisp/` : `/etc/audisp/plugins.d/au-remote.conf` et `/etc/audisp/audisp-remote.conf`.
+  À partir de 22.04 (auditd 3), ils sont sous `/etc/audit/`.
+
+  La correction est manuelle : l'adresse du serveur, le port et le transport (Kerberos, ou TCP simple
+  dans un réseau protégé) dépendent du site. Transférer les événements d'audit par rsyslog avec TLS
+  (greffon syslog et CB-UBU-AUDIT-009) est une alternative acceptée ; la noter comme exception dans
+  le fichier d'adaptation (tailoring).
+setting:
+  location: /etc/audit/plugins.d/au-remote.conf, /etc/audit/audisp-remote.conf
+  recommended_value: active = yes, remote_server réglé sur le serveur de collecte d'audit
+audit:
+  manual: |
+    1. Lancer `grep -E '^\s*active' /etc/audit/plugins.d/au-remote.conf`. La commande doit afficher `active = yes`.
+    2. Lancer `grep -E '^\s*remote_server' /etc/audit/audisp-remote.conf`. La valeur doit désigner le serveur.
+    Sur Ubuntu 20.04, lire les mêmes réglages dans `/etc/audisp/plugins.d/au-remote.conf` et
+    `/etc/audisp/audisp-remote.conf`.
+    3. Sur le serveur, vérifier que les événements de ce système arrivent.
+remediation:
+  manual: |
+    1. Régler `remote_server = <serveur>` (et `port`, `transport`) dans `/etc/audit/audisp-remote.conf`.
+    2. Régler `active = yes` dans `/etc/audit/plugins.d/au-remote.conf`.
+    Sur Ubuntu 20.04, modifier `/etc/audisp/audisp-remote.conf` et `/etc/audisp/plugins.d/au-remote.conf`.
+    3. Lancer `systemctl restart auditd`, puis vérifier sur le serveur que les événements arrivent.
+  rollback: |
+    Remettre `active = no` dans `/etc/audit/plugins.d/au-remote.conf` et redémarrer auditd.

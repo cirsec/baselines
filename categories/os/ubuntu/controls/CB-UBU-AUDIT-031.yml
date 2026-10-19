@@ -1,0 +1,279 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-031
+title: Restrict access to the audit configuration and tools
+finding:
+  title: Audit configuration or tools can be changed by users other than root
+  description: Whoever can change the audit rules, the daemon settings or the audit programs can blind or fool the audit system.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, permissions]
+
+description: |
+  - The configuration files `/etc/audit/*.conf`, `/etc/audit/*.rules`,
+    `/etc/audit/rules.d/*.rules` and `/etc/audit/plugins.d/*.conf` (on Ubuntu 20.04, auditd 2.8:
+    `/etc/audisp/*.conf` and `/etc/audisp/plugins.d/*.conf`) must be owned by root:root with mode
+    `0640` or stricter.
+  - The audit tools `auditctl`, `auditd`, `augenrules`, `aureport`, `ausearch` and `autrace` in
+    `/usr/sbin/` must be owned by root:root with mode `0755` or stricter.
+rationale: |
+  Writable rules or settings let a user disable auditing; a writable tool can be replaced by one
+  that hides records. Readable rules tell an attacker what is watched.
+impact: |
+  None known. Ubuntu installs these files with these permissions, except on 20.04 where
+  `audispd-plugins` ships several files of `/etc/audisp/` with mode `0644`; the fix tightens them.
+notes: |
+  `autrace` is no longer shipped by auditd 4 (Ubuntu 26.04); its check is then not applicable.
+
+setting:
+  location: /etc/audit/, /usr/sbin/au*
+  default_value: Configuration root:root 0640, tools root:root 0755
+  recommended_value: Configuration root:root 0640 or stricter, tools root:root 0755 or stricter
+
+audit:
+  manual: |
+    1. Run `stat -c '%n %U:%G %a' /etc/audit/*.conf /etc/audit/*.rules /etc/audit/rules.d/*.rules /etc/audit/plugins.d/*.conf`.
+       Each file must be root:root with mode 0640 or stricter. On Ubuntu 20.04, also check
+       `/etc/audisp/*.conf /etc/audisp/plugins.d/*.conf`.
+    2. Run `stat -c '%n %U:%G %a' /usr/sbin/auditctl /usr/sbin/auditd /usr/sbin/augenrules /usr/sbin/aureport /usr/sbin/ausearch /usr/sbin/autrace`.
+       Each file must be root:root with mode 0755 or stricter.
+  checks:
+    - id: conf
+      engine: file-perms
+      description: Owner, group and mode of /etc/audit/*.conf.
+      spec: { path: "/etc/audit/*.conf", owner: root, group: root, mode: "0640" }
+    - id: rules
+      engine: file-perms
+      description: Owner, group and mode of /etc/audit/*.rules.
+      spec: { path: "/etc/audit/*.rules", owner: root, group: root, mode: "0640" }
+    - id: rules-d
+      engine: file-perms
+      description: Owner, group and mode of /etc/audit/rules.d/*.rules.
+      spec: { path: "/etc/audit/rules.d/*.rules", owner: root, group: root, mode: "0640" }
+    - id: plugins-d
+      engine: file-perms
+      description: Owner, group and mode of /etc/audit/plugins.d/*.conf.
+      spec: { path: "/etc/audit/plugins.d/*.conf", owner: root, group: root, mode: "0640" }
+    - id: audisp
+      engine: file-perms
+      description: Owner, group and mode of /etc/audisp/*.conf (auditd 2.8, Ubuntu 20.04; not applicable when absent).
+      spec: { path: "/etc/audisp/*.conf", owner: root, group: root, mode: "0640" }
+    - id: audisp-plugins-d
+      engine: file-perms
+      description: Owner, group and mode of /etc/audisp/plugins.d/*.conf (auditd 2.8, Ubuntu 20.04; not applicable when absent).
+      spec: { path: "/etc/audisp/plugins.d/*.conf", owner: root, group: root, mode: "0640" }
+    - id: auditctl
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/auditctl.
+      spec: { path: /usr/sbin/auditctl, owner: root, group: root, mode: "0755" }
+    - id: auditd
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/auditd.
+      spec: { path: /usr/sbin/auditd, owner: root, group: root, mode: "0755" }
+    - id: augenrules
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/augenrules.
+      spec: { path: /usr/sbin/augenrules, owner: root, group: root, mode: "0755" }
+    - id: aureport
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/aureport.
+      spec: { path: /usr/sbin/aureport, owner: root, group: root, mode: "0755" }
+    - id: ausearch
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/ausearch.
+      spec: { path: /usr/sbin/ausearch, owner: root, group: root, mode: "0755" }
+    - id: autrace
+      engine: file-perms
+      description: Owner, group and mode of /usr/sbin/autrace.
+      spec: { path: /usr/sbin/autrace, owner: root, group: root, mode: "0755" }
+
+remediation:
+  manual: |
+    Run `chown root:root` and `chmod 640` on the configuration files, and `chown root:root` and
+    `chmod 755` on the tools.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    No rollback needed; these are the Ubuntu defaults.
+  scripts:
+    - id: conf
+      from_check: conf
+    - id: rules
+      from_check: rules
+    - id: rules-d
+      from_check: rules-d
+    - id: plugins-d
+      from_check: plugins-d
+    - id: audisp
+      from_check: audisp
+    - id: audisp-plugins-d
+      from_check: audisp-plugins-d
+    - id: auditctl
+      from_check: auditctl
+    - id: auditd
+      from_check: auditd
+    - id: augenrules
+      from_check: augenrules
+    - id: aureport
+      from_check: aureport
+    - id: ausearch
+      from_check: ausearch
+    - id: autrace
+      from_check: autrace
+
+references:
+  - title: auditctl(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/auditctl.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: auditd.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/auditd.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-UBU-AUDIT-011
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Not applicable before auditd; /etc/audisp files 0644 after install, fix tightens them; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Not applicable before auditd; passes after install; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Not applicable before auditd; passes after install; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Not applicable before auditd; passes after install; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

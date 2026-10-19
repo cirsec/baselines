@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-020
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les changements de droits, de propriétaires et d'attributs étendus des fichiers
+finding:
+  title: Les changements de droits et de propriétaires des fichiers ne sont pas enregistrés
+  description: Un utilisateur peut ouvrir l'accès à des fichiers sensibles ou cacher un programme setuid sans trace.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-perm.rules`, pour les actions des utilisateurs
+  connectés :
+
+  - changements de mode (`chmod`, `fchmod`, `fchmodat`, et `fchmodat2` quand le noyau et auditd le
+    connaissent) ;
+  - changements de propriétaire (`chown`, `fchown`, `lchown`, `fchownat`) ;
+  - changements d'attributs étendus (`setxattr`, `removexattr` et leurs variantes), qui portent aussi
+    les ACL ;
+  - exécutions de `chcon`, `setfacl` et `chacl` (clé `perm_chng`).
+
+  Chaque règle d'appel système existe pour les programmes 64 et 32 bits (clé `perm_mod`).
+rationale: |
+  Les changements de droits permettent de rendre lisible un fichier privé, modifiable par d'autres un
+  script ou setuid un binaire. Les enregistrer rend ces changements visibles et imputables.
+impact: |
+  Les utilisateurs qui changent beaucoup de droits (compilations, rsync) produisent beaucoup d'événements. Les actions des services système (sans session de connexion) ne sont pas enregistrées.
+notes: |
+  `chcon` fait partie de coreutils ; `setfacl` et `chacl` viennent du paquet `acl`, souvent absent. Une règle sur un programme non installé est acceptée et s'applique dès son installation.
+
+  Sur Ubuntu 26.04, `/usr/bin/chcon` est un lien symbolique vers le binaire multi-appel de uutils,
+  partagé par toutes les commandes coreutils. La règle `chcon` se charge mais ne correspond pas à ses
+  exécutions, et une règle sur le binaire réel enregistrerait chaque `ls` ou `cat`. Ce que `chcon`
+  modifie (les attributs étendus `security.*`) reste enregistré par les règles `setxattr` de ce
+  contrôle.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-perm.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-perm.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `perm_chng`, `perm_mod`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -F arch=b64 -S chown,fchown,lchown,fchownat -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -F arch=b32 -S lchown,fchown,chown,fchownat -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=-1 -F key=perm_mod
+    -a always,exit -S all -F path=/usr/bin/chcon -F perm=x -F auid>=1000 -F auid!=-1 -F key=perm_chng
+    -a always,exit -S all -F path=/usr/bin/setfacl -F perm=x -F auid>=1000 -F auid!=-1 -F key=perm_chng
+    -a always,exit -S all -F path=/usr/bin/chacl -F perm=x -F auid>=1000 -F auid!=-1 -F key=perm_chng
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-perm.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-perm.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

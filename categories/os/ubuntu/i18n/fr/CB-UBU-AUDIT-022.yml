@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-022
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les montages et démontages de systèmes de fichiers par les utilisateurs
+finding:
+  title: Les montages de systèmes de fichiers par les utilisateurs ne sont pas enregistrés
+  description: Des supports amovibles ou des partages distants peuvent être montés pour sortir des données sans trace.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-mounts.rules`, clé `mounts` : `mount`, `umount` et
+  `umount2` appelés par des utilisateurs connectés, programmes 64 et 32 bits.
+rationale: |
+  Monter une clé USB ou un partage réseau est un moyen courant de sortir des données d'un système ou
+  d'y introduire des outils. Les événements montrent qui a monté quoi et quand.
+impact: |
+  Aucun connu.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-mounts.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-mounts.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `mounts`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S mount,umount2 -F auid>=1000 -F auid!=-1 -F key=mounts
+    -a always,exit -F arch=b32 -S mount,umount,umount2 -F auid>=1000 -F auid!=-1 -F key=mounts
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-mounts.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-mounts.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner les fichiers journaux avec logrotate
+finding:
+  title: Les fichiers journaux texte ne sont jamais tournés
+  description: Sans logrotate, des fichiers comme /var/log/dpkg.log grossissent sans fin et les anciennes entrées ne sont jamais archivées ni supprimées.
+description: |
+  `logrotate` renomme, compresse et supprime les fichiers journaux texte de `/var/log/` selon
+  `/etc/logrotate.conf` et les fichiers que les paquets déposent dans `/etc/logrotate.d/`. Ubuntu
+  l'installe par défaut et le lance chaque jour avec `logrotate.timer`.
+
+  Ce contrôle exige le paquet `logrotate` et son minuteur activé.
+rationale: |
+  Des journaux jamais tournés finissent par remplir le système de fichiers, ce qui arrête les
+  services qui doivent écrire, ou sont supprimés à la main dans l'urgence. La rotation garde un
+  historique prévisible.
+impact: |
+  Les anciens fichiers tournés sont supprimés après le nombre de rotations prévu par chaque fichier
+  logrotate (4 semaines par défaut dans `/etc/logrotate.conf`). Garder une copie distante si un historique plus long
+  est exigé.
+notes: |
+  Le journal systemd gère sa propre rotation (CB-UBU-AUDIT-001) et auditd celle de ses journaux
+  (CB-UBU-AUDIT-013) ; logrotate s'occupe des autres fichiers texte.
+setting:
+  location: paquet logrotate, logrotate.timer
+  recommended_value: Installé, minuteur activé
+audit:
+  manual: |
+    1. Lancer `dpkg-query -W -f='${Status}\n' logrotate`. La sortie doit se terminer par `installed`.
+    2. Lancer `systemctl is-enabled logrotate.timer`. La commande doit afficher `enabled`.
+    3. Relire `/etc/logrotate.conf` et `/etc/logrotate.d/` par rapport à la politique de conservation du site.
+remediation:
+  manual: |
+    Lancer `apt-get install logrotate`, puis `systemctl enable --now logrotate.timer`.
+  rollback: |
+    Lancer `apt-get purge logrotate`.

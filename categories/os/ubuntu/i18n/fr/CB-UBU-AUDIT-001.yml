@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-001
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder le journal systemd actif, persistant, compressé et de taille bornée
+finding:
+  title: Les journaux système peuvent être perdus au redémarrage ou remplir le disque
+  description: Sans journal persistant et borné, l'historique du système disparaît au redémarrage ou grossit jusqu'à remplir le système de fichiers.
+description: |
+  `systemd-journald` collecte les messages du noyau, des services et des programmes qui utilisent
+  syslog. Ses réglages sont dans `/etc/systemd/journald.conf` et les fichiers de surcharge de
+  `/etc/systemd/journald.conf.d/`. Ce contrôle exige :
+
+  - que le service `systemd-journald` tourne ;
+  - `Storage=persistent`, pour que le journal soit écrit dans `/var/log/journal/` et survive aux
+    redémarrages ;
+  - `Compress=yes` (la valeur par défaut), pour compresser les gros enregistrements ;
+  - un budget de taille explicite : `SystemMaxUse={{ max_use }}` et `SystemKeepFree={{ keep_free }}`.
+    journald supprime les plus anciens fichiers archivés pour rester dans ces limites.
+rationale: |
+  Les journaux sont la première source lors de l'analyse d'un incident. Un journal gardé seulement
+  en mémoire est perdu à chaque redémarrage, ce qu'un intrus déclenche justement pour effacer ses
+  traces. Un budget de taille explicite rend la rotation prévisible et empêche le journal de remplir
+  le système de fichiers.
+impact: |
+  Les fichiers du journal occupent jusqu'à {{ max_use }} sur le système de fichiers de `/var/log`.
+  Les plus anciennes entrées sont supprimées quand le budget est atteint ; garder une copie distante
+  (CB-UBU-AUDIT-008) si un historique plus long est exigé.
+notes: |
+  Sur Ubuntu 20.04 à 26.04 la valeur par défaut est `Storage=auto` et `/var/log/journal/` existe : le
+  journal est déjà persistant. Le contrôle demande un réglage explicite pour que la suppression du
+  répertoire ne bascule pas sans bruit vers un journal en mémoire seulement.
+setting:
+  location: /etc/systemd/journald.conf.d/60-cirsec.conf
+  recommended_value: "Storage=persistent, Compress=yes, SystemMaxUse={{ max_use }}, SystemKeepFree={{ keep_free }}"
+parameters:
+  max_use: Espace disque maximal du journal persistant (syntaxe journald, par exemple 1G ou 500M).
+  keep_free: Espace disque que journald laisse libre sur le système de fichiers de /var/log/journal.
+audit:
+  manual: |
+    1. Lancer `systemctl is-active systemd-journald`. La commande doit afficher `active`.
+    2. Lancer `systemd-analyze cat-config systemd/journald.conf`. La dernière valeur de chaque
+       réglage doit être `Storage=persistent`, `Compress=yes` (ou aucune ligne `Compress=`),
+       `SystemMaxUse={{ max_use }}` et `SystemKeepFree={{ keep_free }}`.
+remediation:
+  manual: |
+    1. Créer `/etc/systemd/journald.conf.d/60-cirsec.conf` avec :
+       ```
+       [Journal]
+       Storage=persistent
+       Compress=yes
+       SystemMaxUse={{ max_use }}
+       SystemKeepFree={{ keep_free }}
+       ```
+    2. Lancer `systemctl restart systemd-journald`.
+  rollback: |
+    Supprimer `/etc/systemd/journald.conf.d/60-cirsec.conf` et lancer `systemctl restart systemd-journald`.

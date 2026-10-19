@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-033
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Contrôler l'intégrité des outils d'audit avec AIDE
+finding:
+  title: Un outil d'audit modifié ne serait pas détecté
+  description: Un attaquant qui remplace auditctl ou auditd peut cacher son activité au journal d'audit sans que le changement soit remarqué.
+description: |
+  Une règle AIDE dans `/etc/aide/aide.conf.d/70_cirsec_audit_tools` couvre chaque outil d'audit
+  (`auditctl`, `auditd`, `augenrules`, `aureport`, `ausearch`, `autrace` dans `/usr/sbin/`) avec
+  droits, inode, nombre de liens, propriétaire, groupe, taille, nombre de blocs, ACL, attributs
+  étendus et une somme SHA-512 (`p+i+n+u+g+s+b+acl+xattrs+sha512`).
+rationale: |
+  Les outils d'audit sont la première cible de qui veut rester caché. Une somme de contrôle
+  cryptographique fait apparaître un outil remplacé ou modifié à la vérification AIDE suivante.
+impact: |
+  Quand le fichier change et qu'une base existe déjà, la correction reconstruit la base AIDE, ce qui
+  prend quelques minutes et accepte l'état actuel de chaque fichier comme nouvelle référence.
+notes: |
+  La configuration AIDE par défaut d'Ubuntu vérifie déjà `/usr/sbin` ; cette règle rend explicites
+  les attributs pour les outils d'audit.
+setting:
+  location: /etc/aide/aide.conf.d/70_cirsec_audit_tools
+  recommended_value: "/usr/sbin/<outil>$ p+i+n+u+g+s+b+acl+xattrs+sha512 pour chaque outil d'audit"
+audit:
+  manual: |
+    Lancer `grep -h '^/usr/sbin/au' /etc/aide/aide.conf /etc/aide/aide.conf.d/*`. auditctl, auditd,
+    augenrules, aureport, ausearch et autrace doivent chacun avoir une règle qui inclut `p`, `i`,
+    `n`, `u`, `g`, `s`, `b`, `acl`, `xattrs` et `sha512`.
+remediation:
+  manual: |
+    1. Créer `/etc/aide/aide.conf.d/70_cirsec_audit_tools` avec une ligne par outil :
+       ```
+       /usr/sbin/auditctl$ p+i+n+u+g+s+b+acl+xattrs+sha512
+       ```
+       (de même pour auditd, augenrules, aureport, ausearch et autrace).
+    2. Lancer `aide --config-check -c /etc/aide/aide.conf`, puis reconstruire la base avec
+       `aideinit -y -f`.
+  rollback: |
+    Supprimer `/etc/aide/aide.conf.d/70_cirsec_audit_tools` et reconstruire la base.
