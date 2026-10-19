@@ -1,0 +1,225 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-012
+title: Prevent reuse of recent passwords
+finding:
+  title: Users can set a password they used before
+  description: Users forced to change a password can switch back to the old one, which may already be known to an attacker.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [pam, password]
+
+description: |
+  `pam_pwhistory` (in `libpam-modules`) keeps the hashes of each user's last passwords in
+  `/etc/security/opasswd` and refuses a new password that matches one of the last `remember`.
+  Ubuntu ships the module but does not enable it; a `pam-auth-update` profile adds it to the
+  password stack, after the quality check and before `pam_unix`.
+rationale: |
+  When a password is changed after a suspected compromise, going back to the previous one undoes
+  the change. Remembering recent passwords also stops users from cycling between two values.
+impact: |
+  Users cannot reuse their last {{ remember }} passwords. The history file grows by one hash per
+  user and change.
+notes: |
+  The options are set on the `pam_pwhistory.so` line, which works on every Ubuntu release.
+  `/etc/security/pwhistory.conf` only exists from Ubuntu 24.04 (PAM 1.5); options on the module
+  line take precedence over it. The history must be kept by `pam_pwhistory` only: the older
+  `remember=` option of `pam_unix` stores it in a different way and must not be used.
+
+setting:
+  location: /usr/share/pam-configs/cirsec_pwhistory
+  default_value: Not enabled
+  recommended_value: "remember={{ remember }}, enforce_for_root, use_authtok"
+
+parameters:
+  - name: remember
+    type: integer
+    description: Number of previous passwords that cannot be reused.
+    default: 24
+    minimum: 5
+    maximum: 400
+
+audit:
+  manual: |
+    `/etc/pam.d/common-password` must contain a `pam_pwhistory.so` line with `remember=` of at
+    least {{ remember }}, `enforce_for_root` and `use_authtok`, placed before `pam_unix.so`.
+    No `pam_unix.so` line of `/etc/pam.d/common-*` has a `remember=` option.
+  checks:
+    - id: module
+      engine: shell
+      description: pam_pwhistory line and its options in common-password.
+      spec:
+        script: |
+          l=$(grep -E '^[[:space:]]*password[[:space:]].*pam_pwhistory\.so' /etc/pam.d/common-password) \
+            || { echo "pam_pwhistory not enabled"; exit 1; }
+          echo "$l"
+          r=$(printf '%s\n' "$l" | sed -n 's/.*remember=\([0-9]*\).*/\1/p')
+          [ "${r:-0}" -ge "$CB_REMEMBER" ] && printf '%s\n' "$l" | grep -q enforce_for_root && printf '%s\n' "$l" | grep -q use_authtok
+    - id: no-unix-remember
+      engine: file-content
+      description: pam_unix does not keep its own password history.
+      spec: { path: "/etc/pam.d/common-*", pattern: "^[^#]*pam_unix\\.so.*\\sremember=", expect: no_match }
+
+remediation:
+  manual: |
+    1. Create `/usr/share/pam-configs/cirsec_pwhistory`:
+       ```
+       Name: CIRSEC - password history (pam_pwhistory)
+       Default: yes
+       Priority: 1000
+       Password-Type: Primary
+       Password:
+               requisite       pam_pwhistory.so remember={{ remember }} enforce_for_root try_first_pass use_authtok
+       ```
+    2. Run `pam-auth-update --enable cirsec_pwhistory`.
+    3. If a `pam_unix.so` line has `remember=`, remove it from the `pam-auth-update` profile that
+       adds it (or from the file edited by hand), then run `pam-auth-update` again.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `pam-auth-update --remove cirsec_pwhistory` and delete the profile file.
+  scripts:
+    - id: configure
+      engine: shell
+      content: |
+        p=/usr/share/pam-configs/cirsec_pwhistory
+        printf '%s\n' 'Name: CIRSEC - password history (pam_pwhistory)' 'Default: yes' 'Priority: 1000' \
+          'Password-Type: Primary' 'Password:' \
+          "	requisite	pam_pwhistory.so remember=$CB_REMEMBER enforce_for_root try_first_pass use_authtok" >"$p"
+        cb_backup /etc/pam.d/common-password
+        DEBIAN_FRONTEND=noninteractive pam-auth-update --enable cirsec_pwhistory
+
+references:
+  - title: pam_pwhistory(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_pwhistory.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: pam-auth-update(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam-auth-update.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.2.4"
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.2.4"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.2.4"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.2.4"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.4.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1110
+related_controls:
+  - id: CB-UBU-AUTH-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Reuse of the previous password rejected with pamtester; no remember on pam_unix; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Reuse of the previous password rejected with pamtester; no remember on pam_unix; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Reuse of the previous password rejected with pamtester; no remember on pam_unix; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Reuse of the previous password rejected with pamtester; no remember on pam_unix; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

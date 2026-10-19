@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-008
+title: Restrict the su command to an empty group
+finding:
+  title: Any user who knows a target password can switch user with su
+  description: su bypasses the sudo rules and logs, and lets anyone who guessed or stole a password become that user.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [su, pam, privilege-escalation]
+
+description: |
+  `su` switches to another user, root by default, after asking for that user's password. The
+  `pam_wheel` module can restrict it to members of one group. Pointing it at an empty group
+  means only root can use `su`; administrators use `sudo` instead.
+rationale: |
+  Administration through `su` needs a shared root password and leaves no trace of who ran which
+  command. Restricting it pushes every privileged action through sudo, with per-user rules and
+  logs, and stops password guessing through `su`.
+impact: |
+  Users can no longer run `su` or `su - otheruser`. Use `sudo -i` or `sudo -u otheruser -i`.
+  Root keeps using `su` to switch to any account.
+
+parameters:
+  - name: su_group
+    type: string
+    description: Name of the group allowed to use su. Keep it empty.
+    default: sugroup
+
+audit:
+  manual: |
+    1. `/etc/pam.d/su` must contain an uncommented
+       `auth required pam_wheel.so use_uid group={{ su_group }}` line.
+    2. Run `getent group {{ su_group }}`. The group must exist and have no members.
+  checks:
+    - id: pam-wheel
+      engine: shell
+      description: pam_wheel restricts su to the configured group.
+      spec:
+        script: |
+          grep -Eq "^[[:space:]]*auth[[:space:]]+required[[:space:]]+pam_wheel\.so([[:space:]].*)?[[:space:]]group=$CB_SU_GROUP([[:space:]]|$)" /etc/pam.d/su \
+            || { echo "no pam_wheel group=$CB_SU_GROUP line"; exit 1; }
+          echo "pam_wheel group=$CB_SU_GROUP"
+    - id: group-empty
+      engine: shell
+      description: The su group exists and is empty.
+      spec:
+        script: |
+          g=$(getent group "$CB_SU_GROUP") || { echo "group $CB_SU_GROUP missing"; exit 1; }
+          m=${g##*:}
+          echo "members: ${m:-none}"
+          [ -z "$m" ]
+
+remediation:
+  manual: |
+    1. Create the group: `groupadd {{ su_group }}`.
+    2. Add to `/etc/pam.d/su`, before the `@include common-auth` line:
+       `auth required pam_wheel.so use_uid group={{ su_group }}`
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/pam.d/su`.
+  scripts:
+    - id: configure
+      engine: shell
+      content: |
+        getent group "$CB_SU_GROUP" >/dev/null || groupadd "$CB_SU_GROUP"
+        f=/etc/pam.d/su
+        if ! grep -Eq "^[[:space:]]*auth[[:space:]]+required[[:space:]]+pam_wheel\.so.*group=$CB_SU_GROUP" "$f"; then
+          cb_backup "$f"
+          sed -i "0,/^@include common-auth/s//auth       required   pam_wheel.so use_uid group=$CB_SU_GROUP\n&/" "$f"
+        fi
+
+references:
+  - title: pam_wheel(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_wheel.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: su(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/su.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R33)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R33
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.2.7"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548
+  - framework: mitre-attack
+    id: T1110
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install as expected; generated fix, check again and second fix idempotent; kept after reboot; profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

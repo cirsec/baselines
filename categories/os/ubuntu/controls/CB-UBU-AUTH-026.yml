@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-026
+title: Store every password hash in shadow and leave no account without a password
+finding:
+  title: An account has its password hash in /etc/passwd, or an empty password
+  description: /etc/passwd is readable by every user; an empty password field opens the account to anyone.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [accounts, password, shadow]
+
+description: |
+  `/etc/passwd` is world-readable and must only contain `x` in the password field; the hashes
+  belong in `/etc/shadow`, readable by root and the `shadow` group only. In `/etc/shadow`, each
+  password field holds a hash, or `!`/`*` for locked accounts, but is never empty.
+rationale: |
+  A hash left in `/etc/passwd` can be copied and cracked by any local user. An empty password
+  field lets anyone log in to the account where empty passwords are accepted.
+impact: |
+  None for a standard system.
+
+audit:
+  manual: |
+    1. `awk -F: '$2 != "x"' /etc/passwd` prints nothing.
+    2. `awk -F: '$2 == ""' /etc/shadow` prints nothing.
+  checks:
+    - id: shadowed
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$2 != "x" {print $1}' /etc/passwd | tr '\n' ' ')
+          echo "not shadowed: ${u:-none}"
+          [ -z "$u" ]
+    - id: not-empty
+      engine: shell
+      spec:
+        script: |
+          u=$(awk -F: '$2 == "" {print $1}' /etc/shadow | tr '\n' ' ')
+          echo "empty password: ${u:-none}"
+          [ -z "$u" ]
+
+remediation:
+  manual: |
+    1. Run `pwconv` to move any hash from `/etc/passwd` to `/etc/shadow`.
+    2. Lock each account with an empty password (`passwd -l <user>`) or give it one (`passwd <user>`).
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore `/etc/passwd` and `/etc/shadow` from the backup.
+  scripts:
+    - id: fix
+      engine: shell
+      content: |
+        cb_backup /etc/passwd
+        cb_backup /etc/shadow
+        pwconv
+        for u in $(awk -F: '$2 == "" {print $1}' /etc/shadow); do passwd -l "$u" >/dev/null; done
+
+references:
+  - title: shadow(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/shadow.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R68)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R68
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "7.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "7.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "7.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "7.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1003.008
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install; profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

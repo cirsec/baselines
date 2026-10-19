@@ -1,0 +1,173 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-002
+title: Keep system details out of the message of the day
+finding:
+  title: The message of the day shows the operating system version and kernel release to every user who logs in
+  description: Every login session, including a compromised account, learns the exact release and kernel to target.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login, motd]
+
+description: |
+  After login, `pam_motd` shows `/etc/motd` and a dynamic message built by running the executable
+  scripts of `/etc/update-motd.d/` with `run-parts`. On Ubuntu, `00-header` prints the full
+  distribution version and the kernel name, release and architecture
+  (`Welcome to Ubuntu 24.04.5 LTS (GNU/Linux 6.8.0-147-generic x86_64)`), and some other scripts
+  can repeat the version (on 20.04, the ESM notice of `91-contract-ua-esm-status`).
+
+  This control runs the dynamic message as `pam_motd` does and checks that its output names
+  neither the running kernel release nor the `Ubuntu <version>` of the system.
+rationale: |
+  The kernel release and the exact distribution version tell an attacker who reached a shell, or
+  who only watches a session, which local privilege escalation exploits apply. There is no need
+  to show them to every user at every login.
+impact: |
+  Users no longer see the welcome line with the version and kernel at login, nor any other
+  script that printed them. They can still run `uname -a` or `lsb_release -a`. The other parts of
+  the message (help links, system load, pending updates) are kept.
+notes: |
+  The fix records the new mode with `dpkg-statoverride`, so a package upgrade (for example of
+  `base-files`, which owns `00-header`) does not make the script executable again. Ubuntu ships no
+  `/etc/motd`; its check only applies when an administrator created one.
+
+setting:
+  location: /etc/motd, /etc/update-motd.d/00-header
+  default_value: 00-header executable, no /etc/motd
+  recommended_value: Scripts that print the version or kernel not executable, /etc/motd without OS details
+
+audit:
+  manual: |
+    1. If `/etc/motd` exists, it must not contain the escape sequences `\m`, `\r`, `\s`, `\v` or
+       `Ubuntu` followed by a version.
+    2. Run `run-parts --lsbsysinit /etc/update-motd.d` as root. The output must not contain the
+       result of `uname -r`, nor `Ubuntu` followed by the `VERSION_ID` of `/etc/os-release`.
+  checks:
+    - id: motd-no-os
+      engine: file-content
+      description: /etc/motd does not reveal the system version (not applicable when absent).
+      spec: { path: /etc/motd, pattern: "\\\\[mrsv]|Ubuntu [0-9]", expect: no_match }
+    - id: dynamic-motd
+      engine: shell
+      description: Output of the dynamic MOTD scripts, as built by pam_motd.
+      spec:
+        script: |
+          [ -d /etc/update-motd.d ] || { echo "no /etc/update-motd.d"; exit 2; }
+          v=$(. /etc/os-release && printf '%s' "$VERSION_ID")
+          k=$(uname -r)
+          hits=$(timeout 120 run-parts --lsbsysinit /etc/update-motd.d 2>/dev/null | grep -F -e "$k" -e "Ubuntu $v")
+          if [ -n "$hits" ]; then printf '%s\n' "$hits" | head -n 3; exit 1; fi
+          echo "no kernel release or Ubuntu $v in the dynamic MOTD"
+
+remediation:
+  manual: |
+    1. For each script of `/etc/update-motd.d/` whose output shows the version or the kernel
+       (`00-header` by default), remove the execute bit in a way that survives upgrades:
+       `dpkg-statoverride --update --add root root 0644 /etc/update-motd.d/00-header`.
+    2. Remove OS names, versions and escape sequences from `/etc/motd`, if it exists.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    For each changed script: `dpkg-statoverride --remove /etc/update-motd.d/<script>` then
+    `chmod 755 /etc/update-motd.d/<script>`.
+  scripts:
+    - id: scripts
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: pam_motd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_motd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: motd(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/motd.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: update-motd(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/update-motd.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - pam_motd
+    url: https://documentation.ubuntu.com/server/reference/other-tools/pam-motd/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: dpkg-statoverride(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/dpkg-statoverride.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also checks the output of the dynamic message of the day scripts.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also checks the output of the dynamic message of the day scripts.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also checks the output of the dynamic message of the day scripts.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.4"
+    relation: partial
+    note: Ours checks what the pam_motd scripts print, not the permissions of the files they read.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.1"
+    relation: stricter
+    note: Ours also checks the output of the dynamic message of the day scripts.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.4"
+    relation: partial
+    note: Ours checks what the pam_motd scripts print, not the permissions of the files they read.
+threats:
+  - framework: mitre-attack
+    id: T1082
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install (00-header prints the version and kernel, the ESM notice repeats Ubuntu 20.04); fix sets both scripts to 0644 through dpkg-statoverride; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install (00-header prints the version and kernel); fix sets it to 0644 through dpkg-statoverride; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install (00-header prints the version and kernel); fix sets it to 0644 through dpkg-statoverride; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install (00-header prints the version and kernel); fix sets it to 0644 through dpkg-statoverride; kept after reboot; fix idempotent."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

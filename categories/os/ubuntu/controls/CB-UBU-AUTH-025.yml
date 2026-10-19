@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-025
+title: Replace default secrets right after installation
+finding:
+  title: Secrets set by the installer, an image or a vendor are still in use
+  description: Default passwords, keys and certificates are known to anyone who has the same image or documentation.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [accounts, secrets, provisioning]
+
+description: |
+  After installation or cloning from an image, every secret that is the same on other systems
+  must be replaced: passwords set by the installer or a template, SSH host keys copied with the
+  image, default application passwords, and self-signed certificates shipped by packages.
+rationale: |
+  Systems built from the same image share their secrets. An attacker who extracts one of them,
+  or reads the vendor documentation, can reuse it everywhere the image was deployed.
+impact: |
+  Regenerating SSH host keys changes their fingerprints: clients must accept the new ones.
+
+audit:
+  manual: |
+    1. Compare the SSH host key fingerprints (`ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub`) with
+       other systems built from the same image. They must differ.
+    2. Check that the passwords of the accounts created by the installer or the image were changed.
+    3. List the applications with default credentials (databases, web consoles) and confirm they
+       were changed.
+
+remediation:
+  manual: |
+    1. Regenerate SSH host keys: `rm /etc/ssh/ssh_host_*` then `dpkg-reconfigure openssh-server`.
+    2. Set new passwords for the accounts created by the image, or lock them.
+    3. Change application default passwords and replace snakeoil certificates
+       (`make-ssl-cert generate-default-snakeoil --force-overwrite`, or real certificates).
+
+references:
+  - title: ssh-keygen(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/ssh-keygen.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R51)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R51
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.001
+  - framework: cwe
+    id: CWE-1392
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

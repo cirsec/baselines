@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-027
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder cohérentes les bases d'utilisateurs et de groupes
+finding:
+  title: Les fichiers d'utilisateurs et de groupes contiennent des doublons ou des références orphelines
+  description: Des identifiants ou des noms en double donnent les mêmes droits à deux comptes et empêchent d'attribuer les actions.
+description: |
+  Les bases de comptes (`/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow`) doivent être
+  cohérentes : chaque nom d'utilisateur et de groupe, chaque UID et chaque GID est unique, chaque
+  groupe principal existe, et chaque entrée de `passwd` a son entrée dans `shadow`. `pwck -r` et
+  `grpck -r` vérifient ces règles sans rien modifier.
+rationale: |
+  Deux comptes de même UID sont le même utilisateur pour le noyau : fichiers, processus et journaux
+  ne peuvent pas les distinguer. Les doublons et entrées orphelines sont souvent la trace d'une
+  modification manuelle ou d'un attaquant qui a ajouté un compte.
+impact: |
+  Aucun. La vérification est en lecture seule ; les corrections demandent une décision humaine.
+audit:
+  manual: |
+    1. Lancer `pwck -r` et `grpck -r`. Ils ne doivent rien signaler, hormis les répertoires
+       personnels absents des comptes système (`lp`, `news`, `www-data`...), qu'Ubuntu ne crée pas.
+    2. `cut -d: -f3 /etc/passwd | sort | uniq -d` et `cut -d: -f3 /etc/group | sort | uniq -d`
+       n'affichent rien.
+remediation:
+  manual: |
+    Examiner chaque entrée signalée : un doublon d'UID 0 ou un compte inconnu peut être malveillant.
+    Corriger avec `usermod`, `groupmod`, `userdel` et `groupdel`, ou en mode interactif avec `pwck`
+    et `grpck` (sans `-r`).

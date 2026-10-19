@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-021
+title: Do not list nologin as a valid shell
+finding:
+  title: nologin is declared as a valid login shell
+  description: Programs that only allow accounts with a valid shell (FTP servers, chsh) treat no-login accounts as normal ones.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [accounts, shells]
+
+description: |
+  `/etc/shells` lists the valid login shells. Some programs, like `chsh` and FTP servers, use it
+  to decide whether an account may log in. `nologin` exists precisely to refuse logins and must
+  not appear there.
+rationale: |
+  Listing `nologin` makes service accounts look like regular users to programs that rely on
+  `/etc/shells`, which can open them to FTP logins or let users switch to it and back.
+impact: |
+  None known. Ubuntu does not list it by default.
+
+audit:
+  manual: |
+    Run `grep nologin /etc/shells`. There must be no match.
+  checks:
+    - id: shells
+      engine: file-content
+      spec: { path: /etc/shells, pattern: "nologin", expect: no_match }
+
+remediation:
+  manual: |
+    Remove the `nologin` lines from `/etc/shells`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: remove
+      engine: shell
+      content: |
+        cb_backup /etc/shells
+        sed -i '/nologin/d' /etc/shells
+
+references:
+  - title: shells(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/shells.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.3.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install; profile server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install; profile server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install; profile server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install; profile server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

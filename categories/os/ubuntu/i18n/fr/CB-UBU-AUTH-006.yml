@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-006
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger un mot de passe pour chaque règle sudo
+finding:
+  title: Certaines règles sudo lancent des commandes sans demander de mot de passe
+  description: Quiconque prend le contrôle d'un tel compte, ou d'une session simplement déverrouillée, obtient root sans connaître aucun secret.
+description: |
+  Une règle sudo marquée `NOPASSWD:` lance des commandes sans demander son mot de passe à l'utilisateur.
+rationale: |
+  La demande de mot de passe est la dernière barrière entre une session volée ou un processus
+  compromis d'un administrateur et le contrôle total du système. Sans elle, l'élévation de
+  privilèges ne demande aucun secret.
+impact: |
+  Les automatisations qui reposent sur sudo sans mot de passe (gestion de configuration, comptes de
+  déploiement) doivent changer d'approche : un compte dédié limité à des commandes précises, lancé
+  depuis un hôte maîtrisé, ou un accès root par clé SSH réservé à cet outil.
+notes: |
+  Les images cloud Ubuntu reçoivent de cloud-init une règle `NOPASSWD:ALL` pour l'utilisateur par
+  défaut, dans `/etc/sudoers.d/90-cloud-init-users`. Donner un mot de passe à cet utilisateur avant
+  de retirer la règle. La syntaxe des règles est la même pour sudo-rs, le `sudo` d'Ubuntu 26.04.
+audit:
+  manual: |
+    Lancer `grep -r NOPASSWD /etc/sudoers /etc/sudoers.d/`. Il ne doit y avoir aucun résultat.
+remediation:
+  manual: |
+    1. Vérifier que chaque utilisateur concerné a un mot de passe (`passwd <utilisateur>`) et peut
+       toujours lancer `sudo -v`.
+    2. Modifier les fichiers avec `visudo` (ou `visudo -f /etc/sudoers.d/<fichier>`) et retirer
+       `NOPASSWD:` de chaque règle.
+  rollback: |
+    Remettre la marque `NOPASSWD:` avec `visudo`.

@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-022
+title: Disable reboot with Ctrl-Alt-Del on the console
+finding:
+  title: Anyone at the console can reboot the system with Ctrl-Alt-Del
+  description: A reboot without logging in interrupts services and can be the first step of a boot-time attack.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [console, physical-access, systemd]
+
+description: |
+  systemd reboots the system when Ctrl-Alt-Del is pressed on a text console, through
+  `ctrl-alt-del.target`. Masking that target turns the key combination into a no-op.
+rationale: |
+  On a server, a reboot should always be a deliberate, authenticated action. The key combination
+  is reachable without logging in from a physical keyboard, a KVM switch or a hypervisor console,
+  sometimes by accident.
+impact: |
+  Ctrl-Alt-Del no longer reboots the system from a text console. Administrators reboot with
+  `systemctl reboot`.
+notes: |
+  Desktops handle the key combination in the graphical session; see the desktop controls.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled ctrl-alt-del.target`. It must print `masked`.
+  checks:
+    - id: masked
+      engine: systemd-unit
+      spec: { unit: ctrl-alt-del.target, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask ctrl-alt-del.target` and `systemctl daemon-reload`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask ctrl-alt-del.target`.
+  scripts:
+    - id: mask
+      from_check: masked
+
+references:
+  - title: systemd.special(7), Ubuntu manual pages (ctrl-alt-del.target)
+    url: https://manpages.ubuntu.com/manpages/noble/man7/systemd.special.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1529
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install; generated fix masks the target, check again and second fix idempotent; profile server-hardened, not rebooted after this fix."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install; generated fix masks the target, check again and second fix idempotent; profile server-hardened, not rebooted after this fix."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install; generated fix masks the target, check again and second fix idempotent; profile server-hardened, not rebooted after this fix."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install; generated fix masks the target, check again and second fix idempotent; profile server-hardened, not rebooted after this fix."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

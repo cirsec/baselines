@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-003
+title: Protect the login banner files from modification
+finding:
+  title: Login banner files can be changed by non-root users
+  description: Someone who can rewrite the banners can remove the legal notice or plant misleading instructions for users.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [banner, login, permissions]
+
+description: |
+  `/etc/issue`, `/etc/issue.net` and `/etc/motd` are shown to users before or after login. They
+  must be owned by root and writable only by root.
+rationale: |
+  A writable banner lets an attacker remove the legal warning, or display fake instructions that
+  trick users into running commands or giving out credentials.
+impact: |
+  None known. These are the Ubuntu defaults when the files exist; Ubuntu ships no `/etc/motd`.
+
+setting:
+  location: /etc/issue, /etc/issue.net, /etc/motd
+  default_value: "root:root 0644"
+  recommended_value: "root:root, mode 0644 or stricter"
+
+audit:
+  manual: |
+    Run `stat -c '%n %U:%G %a' /etc/issue /etc/issue.net /etc/motd`.
+    Each file must be `root:root` with mode `644` or stricter.
+  checks:
+    - id: issue
+      engine: file-perms
+      spec: { path: /etc/issue, owner: root, group: root, mode: "0644" }
+    - id: issue-net
+      engine: file-perms
+      spec: { path: /etc/issue.net, owner: root, group: root, mode: "0644" }
+    - id: motd
+      engine: file-perms
+      spec: { path: /etc/motd, owner: root, group: root, mode: "0644" }
+
+remediation:
+  manual: |
+    Run `chown root:root /etc/issue /etc/issue.net /etc/motd` and
+    `chmod 644 /etc/issue /etc/issue.net /etc/motd`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: issue
+      from_check: issue
+    - id: issue-net
+      from_check: issue-net
+    - id: motd
+      from_check: motd
+
+references:
+  - title: issue(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/issue.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers the login banners.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.6.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.6.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.6"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.7"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.8"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.9"
+    relation: partial
+    note: Ours checks /etc/motd, not the files of the dynamic message of the day.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.6.10"
+    relation: partial
+    note: Ours checks /etc/issue.net, the default SSH banner of CB-UBU-NET-020.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.6"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.7"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.8"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.9"
+    relation: partial
+    note: Ours checks /etc/motd, not the files of the dynamic message of the day.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.6.10"
+    relation: partial
+    note: Ours checks /etc/issue.net, the default SSH banner of CB-UBU-NET-020.
+threats:
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install (/etc/motd absent, not applicable); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install (/etc/motd absent, not applicable); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install (/etc/motd absent, not applicable); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install (/etc/motd absent, not applicable); profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
