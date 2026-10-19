@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-035
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder une copie protégée de la base AIDE
+finding:
+  title: La base de référence AIDE n'est stockée que sur le système qu'elle protège
+  description: Un intrus disposant de root peut mettre à jour la base pour accepter ses changements, et AIDE ne signalera alors plus rien.
+description: |
+  La base AIDE (`/var/lib/aide/aide.db`) et sa configuration sont la référence du contrôle
+  d'intégrité. Une copie doit être gardée là où le système ne peut pas écrire : support en lecture
+  seule, serveur de sauvegarde, ou plateforme d'intégrité qui vient la chercher. Les vérifications
+  doivent être faites avec cette copie, ou la base locale comparée avec elle, et sa propre somme de
+  contrôle enregistrée.
+rationale: |
+  Un contrôle d'intégrité ne vaut que par sa référence. Une base que root peut réécrire ne résiste pas
+  à un attaquant qui a déjà root.
+impact: |
+  Chaque mise à jour légitime de la base (après des mises à jour) doit aussi mettre à jour la copie
+  protégée.
+audit:
+  manual: |
+    1. Trouver où est gardée la copie protégée de `/var/lib/aide/aide.db`, et vérifier que le système
+       ne peut pas la modifier.
+    2. La comparer avec la base locale : `sha512sum /var/lib/aide/aide.db` doit correspondre à la somme
+       enregistrée avec la copie, sauf mise à jour vérifiée depuis.
+remediation:
+  manual: |
+    1. Après chaque construction ou mise à jour vérifiée de la base, copier `/var/lib/aide/aide.db` et
+       `/etc/aide/` sur un support en lecture seule ou un serveur de sauvegarde où le système ne peut
+       pas écrire, et enregistrer `sha512sum /var/lib/aide/aide.db` avec.
+    2. Pour une vérification de confiance, lancer AIDE avec la copie, par exemple
+       `aide --check -c /etc/aide/aide.conf -B 'database_in=file:/mnt/ro/aide.db'`.
+  rollback: |
+    Sans objet.

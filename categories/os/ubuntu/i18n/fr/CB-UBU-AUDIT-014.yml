@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-014
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Décider et configurer ce qui se passe quand le disque d'audit est plein
+finding:
+  title: Le système continue sans enregistrer d'événements d'audit quand l'espace des journaux d'audit est épuisé
+  description: Avec les réglages Ubuntu, auditd se met seulement en pause quand le disque est plein, et les actions continuent sans être enregistrées.
+description: |
+  `/etc/audit/auditd.conf` règle ce que fait auditd quand la partition de `/var/log/audit` se
+  remplit. Ubuntu livre `space_left_action = SYSLOG`, `admin_space_left_action = SUSPEND`,
+  `disk_full_action = SUSPEND` et `disk_error_action = SUSPEND` : l'audit s'arrête, le système
+  continue, et personne n'est prévenu.
+
+  Le paramètre `disk_full_policy` enregistre le choix de l'organisation :
+
+  - `stop-system` (par défaut, l'imputabilité d'abord) : rien ne doit se passer sans être
+    enregistré. Quand la partition est presque pleine (`admin_space_left`) ou pleine, le système
+    passe en mode mono-utilisateur ou s'arrête (`{{ admin_space_left_action }}` /
+    `{{ disk_full_action }}`). Les sessions distantes et les services s'arrêtent jusqu'à ce qu'un
+    administrateur libère de l'espace depuis la console.
+  - `keep-running` (la disponibilité d'abord) : auditd se met en pause (`suspend`) et le système
+    continue de servir. Les actions faites pendant que la partition est pleine ne sont pas enregistrées.
+
+  Dans les deux cas, `space_left_action` doit prévenir quelqu'un tôt (`email`, `exec`, `single` ou
+  `halt` ; correction : `{{ space_left_action }}`), et `disk_error_action` doit valoir `syslog`,
+  `single` ou `halt` (correction : `{{ disk_error_action }}`).
+rationale: |
+  L'imputabilité exige que rien ne se passe sans être enregistré : sur les systèmes qui doivent
+  prouver qui a fait quoi (réglementés, à forte valeur), `stop-system` est le bon choix. Sur les
+  systèmes où une interruption est pire qu'un trou dans la trace d'audit, `keep-running` est
+  acceptable, à condition que l'alerte précoce atteigne quelqu'un. Ce qui n'est jamais acceptable,
+  c'est le réglage Ubuntu, qui arrête l'audit sans prévenir personne.
+impact: |
+  Avec `stop-system`, une partition d'audit pleine arrête les sessions distantes et les services :
+  SSH devient injoignable, la reprise passe par la console. C'est pourquoi la correction est
+  désactivée par défaut dans les artefacts générés (`lockout_risk`) ; l'activer une fois la
+  politique choisie. Avec `keep-running`, le système reste disponible mais la trace d'audit a un
+  trou. Dans les deux cas, surveiller l'espace libre et archiver les journaux d'audit à temps.
+  `email` nécessite un agent de transport de courrier local fonctionnel, sinon seul un message
+  syslog est écrit.
+setting:
+  location: /etc/audit/auditd.conf
+  recommended_value: "space_left_action = {{ space_left_action }}, admin_space_left_action = {{ admin_space_left_action }}, disk_full_action = {{ disk_full_action }}, disk_error_action = {{ disk_error_action }}"
+parameters:
+  disk_full_policy: "stop-system : arrêt ou mode mono-utilisateur quand le disque d'audit est plein (l'imputabilité d'abord). keep-running : mise en pause de l'audit, le système reste disponible (la disponibilité d'abord)."
+  space_left_action: Action quand l'espace libre passe sous space_left.
+  admin_space_left_action: Action quand l'espace libre passe sous admin_space_left, avec la politique stop-system.
+  disk_full_action: Action quand la partition est pleine, avec la politique stop-system.
+  disk_error_action: Action quand l'écriture du journal d'audit échoue.
+audit:
+  manual: |
+    Lancer `grep -Ei '^\s*(space_left|admin_space_left|disk_full|disk_error)_action' /etc/audit/auditd.conf`.
+    `space_left_action` doit valoir email, exec, single ou halt et `disk_error_action` syslog,
+    single ou halt. Avec `disk_full_policy` = `stop-system`, `admin_space_left_action` et
+    `disk_full_action` doivent valoir single ou halt ; avec `keep-running`, suspend est aussi accepté.
+remediation:
+  manual: |
+    1. Choisir la politique, `stop-system` ou `keep-running` (voir la description), et l'inscrire
+       dans le fichier de personnalisation sous `disk_full_policy`.
+    2. Dans `/etc/audit/auditd.conf`, régler `space_left_action = {{ space_left_action }}` et
+       `disk_error_action = {{ disk_error_action }}`.
+    3. Avec `stop-system`, régler `admin_space_left_action = {{ admin_space_left_action }}` et
+       `disk_full_action = {{ disk_full_action }}` ; avec `keep-running`, mettre les deux à `suspend`.
+    4. Lancer `systemctl restart auditd`.
+  rollback: |
+    Remettre les quatre actions à `SYSLOG` / `SUSPEND` dans `/etc/audit/auditd.conf` et redémarrer auditd.

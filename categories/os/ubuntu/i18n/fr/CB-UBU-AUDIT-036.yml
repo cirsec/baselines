@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-036
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les commandes d'administration qui ne sont pas setuid
+finding:
+  title: L'utilisation des commandes d'administration n'est pas enregistrée
+  description: Les commandes qui partitionnent les disques, chargent des profils AppArmor, créent des comptes ou détiennent des clés SSH s'exécutent sans trace de qui s'en est servi.
+description: |
+  Certaines commandes d'administration ne sont ni setuid ni setgid : CB-UBU-AUDIT-026 ne les couvre
+  donc pas, alors que leur utilisation compte dans une enquête. Ce contrôle ajoute une règle auditd
+  par commande de `{{ commands }}`, clé `privileged`, dans
+  `/etc/audit/rules.d/60-cirsec-admin-cmds.rules`. Chaque règle enregistre chaque exécution du
+  programme par un utilisateur connecté. Par défaut :
+
+  - `fdisk` : modification des partitions d'un disque ;
+  - `apparmor_parser` : chargement, remplacement ou retrait de profils AppArmor ;
+  - `useradd` : création de comptes ;
+  - `ssh-agent` : agent qui détient des clés privées pour la session ;
+  - `unix_update` : l'assistant PAM qui change les mots de passe locaux.
+
+  Chaque commande est cherchée dans `/usr/sbin`, `/usr/bin`, `/sbin` et `/bin`, et son chemin réel
+  est utilisé. Les commandes absentes sont ignorées, de même que les commandes setuid ou setgid,
+  déjà auditées par CB-UBU-AUDIT-026 (`ssh-agent` est setgid sur Ubuntu 20.04 et 22.04).
+rationale: |
+  Repartitionner un disque, décharger un profil AppArmor, créer un compte dérobé ou réutiliser un
+  agent SSH transféré sont des étapes d'une intrusion qui ne laissent pas d'autre trace. Enregistrer
+  chaque exécution, avec l'identité de la personne connectée, les garde imputables.
+impact: |
+  Peu d'événements : ces commandes sont rarement lancées. Une fois la configuration d'audit
+  verrouillée (CB-UBU-AUDIT-029), une règle modifiée n'est chargée qu'au redémarrage suivant.
+notes: |
+  Sur les postes de travail, `ssh-agent` est lancé à chaque ouverture de session graphique, ce qui
+  ajoute un événement par session.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-admin-cmds.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-admin-cmds.rules"
+parameters:
+  commands: Noms des commandes d'administration à auditer, cherchées dans /usr/sbin, /usr/bin, /sbin et /bin.
+audit:
+  manual: |
+    1. Pour chaque commande, trouver son chemin réel avec `readlink -f /usr/sbin/<commande>` (ou
+       `/usr/bin/<commande>`), et l'ignorer si `stat -c %A` montre un `s` (CB-UBU-AUDIT-026 la couvre).
+    2. Lancer `auditctl -l` en root. La sortie doit contenir, pour chaque commande restante :
+       ```
+       -a always,exit -S all -F path=<chemin réel> -F perm=x -F auid>=1000 -F auid!=-1 -F key=privileged
+       ```
+    3. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être
+       chargées au démarrage.
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-admin-cmds.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-admin-cmds.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

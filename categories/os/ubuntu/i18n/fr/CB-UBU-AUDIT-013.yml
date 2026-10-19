@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-013
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver les journaux d'audit au lieu de les supprimer par rotation
+finding:
+  title: Les anciens journaux d'audit sont supprimés automatiquement
+  description: auditd fait tourner ses journaux et supprime le plus ancien ; un système chargé ou une saturation volontaire efface l'historique d'audit.
+description: |
+  `/etc/audit/auditd.conf` décide ce que fait auditd quand son journal atteint `max_log_file`
+  mégaoctets. Ubuntu livre `max_log_file_action = ROTATE` avec `num_logs = 5` : le fichier le plus
+  ancien est supprimé à chaque rotation. Ce contrôle exige :
+
+  - `max_log_file` d'au moins {{ max_log_file }} Mo ;
+  - `max_log_file_action = keep_logs` : auditd fait tourner le fichier mais ne supprime jamais les
+    anciens.
+
+  L'archivage ou la suppression des anciens journaux d'audit devient alors une tâche volontaire de
+  l'administrateur, et le manque d'espace est traité par CB-UBU-AUDIT-014.
+rationale: |
+  Le journal d'audit est une preuve. La suppression automatique permet à un attaquant de pousser les
+  traces de ses actions hors de l'historique en générant du bruit.
+impact: |
+  Les journaux d'audit s'accumulent dans `/var/log/audit/` jusqu'à leur archivage. Prévoir l'espace,
+  idéalement une partition dédiée (CB-UBU-AUDIT-014 réagit quand elle se remplit).
+setting:
+  location: /etc/audit/auditd.conf
+  recommended_value: "max_log_file >= {{ max_log_file }}, max_log_file_action = keep_logs"
+parameters:
+  max_log_file: Taille minimale d'un fichier de journal d'audit avant rotation.
+audit:
+  manual: |
+    Lancer `grep -Ei '^\s*max_log_file(_action)?\s*=' /etc/audit/auditd.conf`. `max_log_file` doit
+    valoir au moins {{ max_log_file }} et `max_log_file_action` doit valoir `keep_logs`.
+remediation:
+  manual: |
+    Dans `/etc/audit/auditd.conf`, régler `max_log_file = {{ max_log_file }}` (ou plus) et
+    `max_log_file_action = keep_logs`, puis lancer `systemctl restart auditd`.
+  rollback: |
+    Remettre `max_log_file_action = ROTATE` dans `/etc/audit/auditd.conf` et redémarrer auditd.

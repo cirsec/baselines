@@ -1,0 +1,197 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-030
+title: Restrict access to the audit logs
+finding:
+  title: Audit logs can be read or changed by users other than root
+  description: The audit log records the actions of every user and must not be readable by them, nor writable by anyone but auditd.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, permissions]
+
+description: |
+  auditd writes its logs to `/var/log/audit/`. This control requires:
+
+  - the directory owned by root, mode `0750` or stricter;
+  - every file in it owned by root, mode `0640` or stricter;
+  - every file in it owned by group root or by the `log_group` of `/etc/audit/auditd.conf`
+    (`adm` on Ubuntu), so that only that group can read them.
+rationale: |
+  The audit trail is evidence of what users did. If users can read it they learn what is
+  monitored; if anyone but auditd can write it, it can be falsified.
+impact: |
+  None known. Ubuntu already creates the directory and files with these permissions.
+notes: |
+  The control assumes the default `log_file = /var/log/audit/audit.log`.
+
+setting:
+  location: /var/log/audit/
+  default_value: "Directory root:adm 0750, files root:adm 0640"
+  recommended_value: "Directory root 0750, files root:<log_group> 0640 or stricter"
+
+audit:
+  manual: |
+    1. Run `stat -c '%n %U:%G %a' /var/log/audit /var/log/audit/*`.
+    2. The directory must be owned by root with mode 0750 or stricter; each file owned by root with
+       mode 0640 or stricter, and group root or the `log_group` of `/etc/audit/auditd.conf`.
+  checks:
+    - id: directory
+      engine: file-perms
+      description: Owner and mode of /var/log/audit.
+      spec: { path: /var/log/audit, owner: root, mode: "0750" }
+    - id: files
+      engine: file-perms
+      description: Owner and mode of the audit log files.
+      spec: { path: /var/log/audit/*, owner: root, mode: "0640" }
+    - id: group
+      engine: shell
+      description: Group of the audit log files, compared with log_group.
+      spec:
+        script: |
+          [ -d /var/log/audit ] || exit 2
+          g=$(sed -n 's/^[[:space:]]*log_group[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/audit/auditd.conf 2>/dev/null | tail -n 1)
+          g=${g:-root}
+          bad=$(find /var/log/audit -type f ! -group root ! -group "$g" 2>/dev/null)
+          echo "log_group=$g${bad:+, other group on: $bad}"
+          [ -z "$bad" ]
+
+remediation:
+  manual: |
+    Run `chown root /var/log/audit /var/log/audit/*`, `chmod 750 /var/log/audit`,
+    `chmod 640 /var/log/audit/*` and `chgrp <log_group> /var/log/audit/*`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    No rollback needed; these are the Ubuntu defaults.
+  scripts:
+    - id: directory
+      from_check: directory
+    - id: files
+      from_check: files
+    - id: group
+      engine: shell
+      content: |
+        g=$(sed -n 's/^[[:space:]]*log_group[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/audit/auditd.conf 2>/dev/null | tail -n 1)
+        g=${g:-root}
+        [ -d /var/log/audit ] || exit 0
+        find /var/log/audit -type f ! -group root ! -group "$g" -exec chgrp "$g" {} +
+
+references:
+  - title: auditd.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/auditd.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.4.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+  - framework: cwe
+    id: CWE-732
+related_controls:
+  - id: CB-UBU-AUDIT-011
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Not applicable before auditd; passes after install (root:adm 0750/0640); kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Not applicable before auditd; passes after install (root:adm 0750/0640); kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Not applicable before auditd; passes after install (root:adm 0750/0640); kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Not applicable before auditd; passes after install (root:adm 0750/0640); kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
