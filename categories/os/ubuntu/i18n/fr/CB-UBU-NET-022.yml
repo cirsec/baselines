@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-022
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger la configuration du serveur SSH et les clés d'hôte
+finding:
+  title: La configuration du serveur SSH ou les clés d'hôte sont lisibles ou modifiables par d'autres utilisateurs que root
+  description: Une clé privée d'hôte lisible permet à un attaquant d'usurper le serveur ; une configuration modifiable permet à n'importe qui de l'ouvrir davantage.
+description: |
+  Le serveur OpenSSH lit sa configuration dans `/etc/ssh/sshd_config` et les fichiers de
+  `/etc/ssh/sshd_config.d/`, et prouve son identité avec les clés privées d'hôte
+  `/etc/ssh/ssh_host_*_key`. Ce contrôle exige qu'ils appartiennent tous à `root:root`, la
+  configuration et les clés privées en mode `0600` au plus, le répertoire des fichiers additionnels en
+  `0755` au plus, et les clés publiques en `0644` au plus.
+rationale: |
+  Une copie d'une clé privée d'hôte permet à un attaquant placé sur le chemin réseau de se faire passer
+  pour le serveur sans aucun avertissement côté client, et de récupérer des mots de passe ou de
+  détourner des sessions. Le droit d'écrire la configuration équivaut à un accès root au prochain
+  rechargement. Le droit de la lire indique quels comptes et méthodes sont autorisés, ce qui aide à
+  cibler une attaque.
+impact: |
+  Les utilisateurs autres que root ne peuvent plus lire `sshd_config` ; `sshd -T` exige déjà root.
+notes: |
+  Ubuntu crée les clés privées d'hôte en mode `0600`, et `sshd_config` et le fichier des images cloud
+  `60-cloudimg-settings.conf` en `0644`. Les fichiers écrits
+  par les autres corrections SSH de ce référentiel (`00-cirsec.conf`) sont couverts aussi, c'est
+  pourquoi ce contrôle vient en dernier parmi eux.
+setting:
+  location: /etc/ssh/
+  recommended_value: root:root ; sshd_config et fichiers additionnels 0600, clés privées 0600, clés publiques 0644
+audit:
+  manual: |
+    Lancer `stat -c '%n %U:%G %a' /etc/ssh/sshd_config /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*`.
+    Chaque entrée doit être `root:root` ; `sshd_config`, les fichiers `.conf` additionnels et les clés
+    privées au plus `600`, le répertoire au plus `755`, les fichiers `.pub` au plus `644`.
+remediation:
+  manual: |
+    ```
+    chown root:root /etc/ssh/sshd_config /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*
+    chmod 600 /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*_key
+    chmod go-w /etc/ssh/sshd_config.d
+    chmod 644 /etc/ssh/ssh_host_*_key.pub
+    ```
+  rollback: |
+    Remettre les anciens droits avec `chmod 644 /etc/ssh/sshd_config` (valeur par défaut d'Ubuntu).

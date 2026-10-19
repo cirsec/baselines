@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-009
+title: Run an Ubuntu release that still receives security updates
+finding:
+  title: The Ubuntu release no longer receives security updates
+  description: No security fix is published any more for this release, or only through Ubuntu Pro ESM which is not enabled, so new vulnerabilities stay open for good.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [updates, lifecycle, ubuntu-pro]
+
+description: |
+  Each Ubuntu LTS release gets five years of standard security maintenance for the packages of
+  the main and restricted components. Expanded Security Maintenance (ESM), part of Ubuntu Pro,
+  then extends it for five more years (`esm-infra`), and also covers universe (`esm-apps`, see
+  CB-UBU-PKG-014). After the standard period, a system only receives security fixes for main if
+  it is attached to Ubuntu Pro with `esm-infra` enabled. Interim releases (`YY.10`) are supported
+  for nine months only.
+rationale: |
+  An unsupported release accumulates known, public, unfixed vulnerabilities. No configuration
+  hardening compensates for that. A release past its standard support looks maintained (the
+  archive still answers, `apt-get upgrade` reports nothing) while fixes are published only in
+  ESM, which makes this failure easy to miss.
+impact: |
+  Upgrading to the next LTS release needs planning and testing of the hosted applications.
+  Keeping an older release needs an Ubuntu Pro subscription for each system.
+notes: |
+  On 2026-10-19: standard security maintenance ends in April 2027 for 22.04, April 2029 for
+  24.04 and April 2031 for 26.04; 20.04 left it in May 2025 and is supported only with
+  `esm-infra` (until April 2030). Move a release from `supported_versions` to `esm_versions`
+  when its standard support ends, and remove it from both at the end of ESM (see the Ubuntu
+  release cycle page). Plan upgrades before the date rather than after.
+
+setting:
+  location: /etc/os-release, Ubuntu Pro client status
+  recommended_value: "One of {{ supported_versions }}, or one of {{ esm_versions }} with esm-infra enabled"
+
+parameters:
+  - name: supported_versions
+    type: list
+    description: Ubuntu releases (VERSION_ID) under standard security maintenance.
+    default: ["22.04", "24.04", "26.04"]
+  - name: esm_versions
+    type: list
+    description: Ubuntu releases (VERSION_ID) past standard security maintenance and still covered by Ubuntu Pro ESM; accepted only when esm-infra is enabled.
+    default: ["20.04"]
+
+audit:
+  manual: |
+    1. Run `. /etc/os-release; echo "$VERSION_ID"` and compare with the dates on
+       https://ubuntu.com/about/release-cycle.
+    2. For a release past its standard support, `pro status` must show the system attached and
+       `esm-infra` enabled.
+  checks:
+    - id: release
+      engine: shell
+      description: VERSION_ID from /etc/os-release against the supported lists, and the esm-infra service of the Ubuntu Pro client.
+      spec:
+        script: |
+          v=$( (. /etc/os-release && printf '%s' "${VERSION_ID:-}") 2>/dev/null)
+          echo "VERSION_ID ${v:-none}, standard support: $CB_SUPPORTED_VERSIONS, ESM: $CB_ESM_VERSIONS"
+          for s in $CB_SUPPORTED_VERSIONS; do
+            [ "$s" = "$v" ] && exit 0
+          done
+          for s in $CB_ESM_VERSIONS; do
+            [ "$s" = "$v" ] || continue
+            if pro api u.pro.status.enabled_services.v1 2>/dev/null | grep -Eq '"name": ?"esm-infra"'; then
+              echo "esm-infra enabled"
+              exit 0
+            fi
+            echo "past standard support and esm-infra is not enabled"
+            exit 1
+          done
+          echo "release not supported"
+          exit 1
+
+remediation:
+  manual: |
+    Upgrade to a supported LTS release with `do-release-upgrade`, one LTS at a time, after testing
+    the hosted applications. Until then, attach the system to Ubuntu Pro
+    (`pro attach <token>`, or through Landscape or the cloud provider's Pro images) and run
+    `pro enable esm-infra`. Move systems running an interim release to an LTS release.
+
+references:
+  - title: Ubuntu release cycle
+    url: https://ubuntu.com/about/release-cycle
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu - Expanded Security Maintenance
+    url: https://ubuntu.com/security/esm
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Pro Client - How to enable ESM Infra
+    url: https://documentation.ubuntu.com/pro-client/en/latest/howtoguides/enable_esm_infra/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-22
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1104
+related_controls:
+  - id: CB-UBU-PKG-006
+    type: related
+  - id: CB-UBU-PKG-008
+    type: related
+  - id: CB-UBU-PKG-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on stock (past standard support, not attached to Ubuntu Pro); passes with a shimmed Pro client reporting esm-infra enabled (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes with the default lists; with the release moved to esm_versions, fails without esm-infra and passes with a shimmed Pro client reporting it enabled."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes with the default lists; with the release moved to esm_versions, fails without esm-infra and passes with a shimmed Pro client reporting it enabled."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes with the default lists; with the release moved to esm_versions, fails without esm-infra and passes with a shimmed Pro client reporting it enabled."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

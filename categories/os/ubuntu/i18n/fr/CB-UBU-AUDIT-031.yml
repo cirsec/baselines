@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-031
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès à la configuration et aux outils d'audit
+finding:
+  title: La configuration ou les outils d'audit peuvent être modifiés par d'autres utilisateurs que root
+  description: Qui peut modifier les règles d'audit, les réglages du démon ou les programmes d'audit peut aveugler ou tromper le système d'audit.
+description: |
+  - Les fichiers de configuration `/etc/audit/*.conf`, `/etc/audit/*.rules`,
+    `/etc/audit/rules.d/*.rules` et `/etc/audit/plugins.d/*.conf` (sur Ubuntu 20.04, auditd 2.8 :
+    `/etc/audisp/*.conf` et `/etc/audisp/plugins.d/*.conf`) doivent appartenir à root:root avec un
+    mode `0640` ou plus strict.
+  - Les outils d'audit `auditctl`, `auditd`, `augenrules`, `aureport`, `ausearch` et `autrace` de
+    `/usr/sbin/` doivent appartenir à root:root avec un mode `0755` ou plus strict.
+rationale: |
+  Des règles ou réglages modifiables permettent à un utilisateur de désactiver l'audit ; un outil
+  modifiable peut être remplacé par un autre qui cache des événements. Des règles lisibles indiquent
+  à un attaquant ce qui est surveillé.
+impact: |
+  Aucun connu. Ubuntu installe ces fichiers avec ces droits, sauf sur 20.04 où `audispd-plugins`
+  livre plusieurs fichiers de `/etc/audisp/` en mode `0644` ; la correction les restreint.
+notes: |
+  `autrace` n'est plus livré par auditd 4 (Ubuntu 26.04) ; sa vérification est alors sans objet.
+setting:
+  location: /etc/audit/, /usr/sbin/au*
+  recommended_value: Configuration root:root 0640 ou plus strict, outils root:root 0755 ou plus strict
+audit:
+  manual: |
+    1. Lancer `stat -c '%n %U:%G %a' /etc/audit/*.conf /etc/audit/*.rules /etc/audit/rules.d/*.rules /etc/audit/plugins.d/*.conf`.
+       Chaque fichier doit être root:root avec un mode 0640 ou plus strict. Sur Ubuntu 20.04, vérifier
+       aussi `/etc/audisp/*.conf /etc/audisp/plugins.d/*.conf`.
+    2. Lancer `stat -c '%n %U:%G %a' /usr/sbin/auditctl /usr/sbin/auditd /usr/sbin/augenrules /usr/sbin/aureport /usr/sbin/ausearch /usr/sbin/autrace`.
+       Chaque fichier doit être root:root avec un mode 0755 ou plus strict.
+remediation:
+  manual: |
+    Lancer `chown root:root` et `chmod 640` sur les fichiers de configuration, et `chown root:root`
+    et `chmod 755` sur les outils.
+  rollback: |
+    Aucun retour arrière nécessaire : ce sont les valeurs par défaut d'Ubuntu.

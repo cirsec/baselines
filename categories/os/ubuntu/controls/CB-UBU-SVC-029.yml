@@ -1,0 +1,184 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-029
+title: Do not send usage data to Canonical (popularity-contest, ubuntu-report, ubuntu-insights)
+finding:
+  title: The system can send its package list or hardware details to Canonical
+  description: Inventory data leaves the organization for a third party without a data processing agreement.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [privacy, telemetry, popularity-contest, gdpr]
+
+description: |
+  Three Ubuntu tools can send information about the system to Canonical:
+
+  - `popularity-contest` sends, once a week, the list of installed packages and when they were
+    last used, when `PARTICIPATE="yes"` is set in `/etc/popularity-contest.conf`. It is installed
+    by default on 20.04, through the `ubuntu-standard` metapackage;
+  - `ubuntu-report` (up to 24.04) sends the hardware, release, locale and screen details collected
+    at the first login of Ubuntu Desktop, when the user accepts;
+  - `ubuntu-insights` (from 26.04) replaces it: it collects hardware and usage reports every week
+    and uploads them when the user consented; when the user refused, it still sends an opt-out
+    notice.
+
+  The control requires `PARTICIPATE="no"` when popularity-contest is installed, and
+  `ubuntu-report` and `ubuntu-insights` to be absent.
+rationale: |
+  The package list describes the software stack and its versions, which is useful to an attacker
+  and is part of the organization's information system description. The hardware and usage
+  reports go to a third party without a contract or an assessment under the GDPR. The decision
+  belongs to the organization, not to whoever answers the first-login question.
+impact: |
+  Canonical no longer receives statistics from the system; nothing changes for its users. Removing
+  `ubuntu-report` and `ubuntu-insights` does not remove the desktop metapackages, which only
+  recommend them.
+notes: |
+  popularity-contest is kept installed on 20.04 because removing it also removes the
+  `ubuntu-standard` metapackage; with `PARTICIPATE="no"` its weekly job sends nothing. The fix
+  also sets the debconf answer to `false`, so that a reconfiguration of the package keeps the
+  setting. `ubuntu-insights system-opt-out` stops collection for every user without removing the
+  package, but leaves the decision on each machine: removal is easier to audit. Crash reports
+  (apport, whoopsie) are handled by CB-UBU-BOOT-015, and the network message of the day by
+  CB-UBU-AUTH-030.
+
+setting:
+  location: /etc/popularity-contest.conf; packages ubuntu-report, ubuntu-insights
+  default_value: "Empty file (20.04 cloud image) or PARTICIPATE=\"no\"; ubuntu-report or ubuntu-insights installed on desktops"
+  recommended_value: "PARTICIPATE=\"no\"; ubuntu-report and ubuntu-insights absent"
+
+audit:
+  manual: |
+    1. If popularity-contest is installed (`dpkg-query -W popularity-contest`),
+       `grep PARTICIPATE /etc/popularity-contest.conf` must show `PARTICIPATE="no"`.
+    2. `dpkg-query -W -f='${Status}\n' ubuntu-report ubuntu-insights` must not print
+       `install ok installed`.
+  logic: all
+  checks:
+    - id: popcon
+      engine: shell
+      description: popularity-contest is absent or set to PARTICIPATE="no".
+      spec:
+        script: |
+          if ! dpkg-query -W -f='${Status}' popularity-contest 2>/dev/null | grep -q 'ok installed'; then
+            echo "popularity-contest not installed"
+            exit 0
+          fi
+          v=$(sed -n 's/^[[:space:]]*PARTICIPATE[[:space:]]*=[[:space:]]*//p' /etc/popularity-contest.conf 2>/dev/null | tail -n 1 | tr -d "\"'")
+          echo "PARTICIPATE=${v:-<not set>}"
+          [ "$v" = no ]
+    - id: ubuntu-report
+      engine: package
+      description: Ubuntu hardware and usage report tool.
+      spec: { name: ubuntu-report, state: absent }
+    - id: ubuntu-insights
+      engine: package
+      description: Ubuntu Insights report tool.
+      spec: { name: ubuntu-insights, state: absent }
+
+remediation:
+  manual: |
+    1. popularity-contest: set `PARTICIPATE="no"` in `/etc/popularity-contest.conf`, or run
+       `dpkg-reconfigure popularity-contest` and answer no.
+    2. Run `apt purge ubuntu-report ubuntu-insights`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `dpkg-reconfigure popularity-contest` and answer yes, or reinstall `ubuntu-report` or
+    `ubuntu-insights` with `apt install`.
+  scripts:
+    - id: popcon
+      engine: shell
+      content: |
+        f=/etc/popularity-contest.conf
+        dpkg-query -W -f='${Status}' popularity-contest 2>/dev/null | grep -q 'ok installed' || exit 0
+        grep -qx 'PARTICIPATE="no"' "$f" 2>/dev/null && exit 0
+        echo 'popularity-contest popularity-contest/participate boolean false' | debconf-set-selections
+        cb_backup "$f"
+        if grep -q '^[[:space:]]*PARTICIPATE[[:space:]]*=' "$f" 2>/dev/null; then
+          sed -i 's/^[[:space:]]*PARTICIPATE[[:space:]]*=.*/PARTICIPATE="no"/' "$f"
+        else
+          printf 'PARTICIPATE="no"\n' >>"$f"
+        fi
+    - id: ubuntu-report
+      from_check: ubuntu-report
+    - id: ubuntu-insights
+      from_check: ubuntu-insights
+
+references:
+  - title: popularity-contest(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/popularity-contest.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu popularity contest
+    url: https://popcon.ubuntu.com/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ubuntu-report source repository
+    url: https://github.com/ubuntu/ubuntu-report
+    publisher: Canonical
+    kind: tool
+    accessed: 2026-10-19
+  - title: ubuntu-insights source repository
+    url: https://github.com/ubuntu/ubuntu-insights
+    publisher: Canonical
+    kind: tool
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R58)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: partial
+    note: R58 asks to install only the packages that are strictly needed; this control covers the reporting tools.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: PT-2
+    relation: related
+threats:
+  - framework: cwe
+    id: CWE-359
+related_controls:
+  - id: CB-UBU-BOOT-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image fails (popularity-contest installed, empty configuration); fix sets PARTICIPATE='no' and the debconf answer; PARTICIPATE=yes detected and fixed; audit passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (no reporting tool); popularity-contest installed with PARTICIPATE=yes fails, fix sets PARTICIPATE=no and the debconf answer; audit passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (no reporting tool); PARTICIPATE=yes and ubuntu-report installed both fail, fix sets PARTICIPATE=no and purges ubuntu-report; audit passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (no reporting tool); popularity-contest installed with PARTICIPATE=yes fails, fix sets PARTICIPATE=no and the debconf answer; audit passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

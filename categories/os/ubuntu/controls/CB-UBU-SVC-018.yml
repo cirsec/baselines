@@ -1,0 +1,265 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-018
+title: Restrict the system crontab and cron directories to root
+finding:
+  title: Users can read the system cron jobs
+  description: The system crontab and cron directories reveal which scripts run as root and when.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [cron, permissions]
+
+applicability:
+  facts: [cron]
+
+description: |
+  The system cron jobs live in `/etc/crontab`, `/etc/cron.d/` and the `/etc/cron.hourly`,
+  `cron.daily`, `cron.weekly`, `cron.monthly` and `cron.yearly` directories. They must belong to
+  `root:root`, with mode `0600` for the file and `0700` for the directories, or stricter.
+rationale: |
+  These jobs run as root. Reading them tells an attacker which scripts to target and when they
+  run; a writable job or directory is a direct path to root.
+impact: |
+  Users can no longer list the system cron jobs. cron runs as root and is not affected.
+notes: |
+  Ubuntu ships these paths with mode `0644` and `0755`, so the control fails on a fresh install
+  of cron. A missing directory (`/etc/cron.yearly` is not created by every version) makes its
+  check not applicable.
+
+setting:
+  location: /etc/crontab, /etc/cron.d, /etc/cron.hourly, /etc/cron.daily, /etc/cron.weekly, /etc/cron.monthly, /etc/cron.yearly
+  default_value: "root:root, 0644 (file) and 0755 (directories)"
+  recommended_value: "root:root, 0600 (file) and 0700 (directories) or stricter"
+
+audit:
+  manual: |
+    Run `stat -Lc '%n %U:%G %a' /etc/crontab /etc/cron.d /etc/cron.hourly /etc/cron.daily
+    /etc/cron.weekly /etc/cron.monthly /etc/cron.yearly`. Each must be `root:root`, with mode
+    `600` for `/etc/crontab` and `700` for the directories, or stricter.
+  logic: all
+  checks:
+    - id: crontab
+      engine: file-perms
+      description: /etc/crontab.
+      spec: { path: /etc/crontab, owner: root, group: root, mode: "0600" }
+    - id: cron-hourly
+      engine: file-perms
+      description: /etc/cron.hourly.
+      spec: { path: /etc/cron.hourly, owner: root, group: root, mode: "0700" }
+    - id: cron-daily
+      engine: file-perms
+      description: /etc/cron.daily.
+      spec: { path: /etc/cron.daily, owner: root, group: root, mode: "0700" }
+    - id: cron-weekly
+      engine: file-perms
+      description: /etc/cron.weekly.
+      spec: { path: /etc/cron.weekly, owner: root, group: root, mode: "0700" }
+    - id: cron-monthly
+      engine: file-perms
+      description: /etc/cron.monthly.
+      spec: { path: /etc/cron.monthly, owner: root, group: root, mode: "0700" }
+    - id: cron-yearly
+      engine: file-perms
+      description: /etc/cron.yearly.
+      spec: { path: /etc/cron.yearly, owner: root, group: root, mode: "0700" }
+    - id: cron-d
+      engine: file-perms
+      description: /etc/cron.d.
+      spec: { path: /etc/cron.d, owner: root, group: root, mode: "0700" }
+
+remediation:
+  manual: |
+    Run `chown root:root /etc/crontab /etc/cron.d /etc/cron.hourly /etc/cron.daily
+    /etc/cron.weekly /etc/cron.monthly /etc/cron.yearly`, `chmod 600 /etc/crontab` and
+    `chmod 700 /etc/cron.d /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly
+    /etc/cron.yearly`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `chmod 644 /etc/crontab` and `chmod 755` on the directories.
+  scripts:
+    - id: crontab
+      from_check: crontab
+    - id: cron-hourly
+      from_check: cron-hourly
+    - id: cron-daily
+      from_check: cron-daily
+    - id: cron-weekly
+      from_check: cron-weekly
+    - id: cron-monthly
+      from_check: cron-monthly
+    - id: cron-yearly
+      from_check: cron-yearly
+    - id: cron-d
+      from_check: cron-d
+
+references:
+  - title: cron(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/cron.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers the system cron jobs.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.8"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1053.003
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image fails (0644/0755); fix sets 0600/0700, audit passes, persistent after reboot; /etc/cron.yearly absent, check not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image fails (0644/0755); fix sets 0600/0700, audit passes, persistent after reboot; /etc/cron.yearly absent, check not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image fails (0644/0755); fix sets 0600/0700, audit passes, persistent after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image fails (0644/0755); fix sets 0600/0700, audit passes, persistent after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

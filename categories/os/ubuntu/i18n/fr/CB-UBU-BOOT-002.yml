@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-002
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Masquer les adresses du noyau aux utilisateurs
+finding:
+  title: Des adresses mémoire du noyau sont exposées via /proc et d'autres interfaces
+  description: Une adresse noyau divulguée annule la randomisation du noyau et facilite les exploits d'élévation de privilèges locaux.
+description: |
+  Le sysctl `kernel.kptr_restrict` détermine si les pointeurs noyau affichés via `%pK`
+  (par exemple dans `/proc/kallsyms` et `/proc/modules`) sont visibles. Avec `1`, ils sont
+  masqués pour les utilisateurs sans la capacité `CAP_SYSLOG`. Avec `2`, ils sont masqués pour
+  tout le monde, root compris.
+rationale: |
+  Les exploits noyau ont besoin de l'adresse de structures et de fonctions du noyau. Le noyau
+  randomise sa propre disposition au démarrage, mais un seul pointeur divulgué suffit à annuler
+  cette protection. Masquer les pointeurs supprime une source de fuite facile pour un attaquant local.
+impact: |
+  Avec `2`, les outils de profilage et de traçage lancés en root (`perf`, certains outils eBPF)
+  voient des adresses noyau nulles et ne peuvent plus résoudre les symboles du noyau. Utiliser `1`
+  sur les machines où les administrateurs en ont besoin.
+notes: |
+  Ubuntu livre `1` (`/etc/sysctl.d/10-kernel-hardening.conf`, `/usr/lib/sysctl.d/55-kernel-hardening.conf`
+  en 26.04), qui masque les pointeurs aux seuls utilisateurs non privilégiés : le contrôle échoue avec
+  le paramètre par défaut. La valeur peut être augmentée à chaud, et la baisser ne demande pas non
+  plus de redémarrage.
+setting:
+  location: sysctl `kernel.kptr_restrict`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "Au moins {{ kptr_restrict }}"
+parameters:
+  kptr_restrict: Valeur minimale de kernel.kptr_restrict. 1 masque les pointeurs aux utilisateurs non privilégiés, 2 à tout le monde.
+audit:
+  manual: |
+    Lancer `sysctl kernel.kptr_restrict`. La valeur doit être au moins {{ kptr_restrict }}.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne fixe une valeur plus basse.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `kernel.kptr_restrict = {{ kptr_restrict }}`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl -w kernel.kptr_restrict=1`.

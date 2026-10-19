@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-015
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le signalement automatique des plantages (apport, whoopsie)
+finding:
+  title: Les plantages sont collectés automatiquement et peuvent être envoyés hors de l'organisation
+  description: Apport garde la mémoire des programmes plantés dans ses rapports, et whoopsie peut les envoyer à Canonical.
+description: |
+  Apport est le système de signalement des plantages d'Ubuntu, installé par défaut sur les serveurs
+  et les postes. Quand il tourne, il se déclare gestionnaire des fichiers core du noyau
+  (`kernel.core_pattern` à `|/usr/share/apport/apport ...`) et passe `fs.suid_dumpable` à `2`. Pour
+  chaque plantage d'un programme empaqueté, il écrit dans `/var/crash/` un rapport qui contient le
+  fichier core, la ligne de commande, des informations d'environnement et des journaux. Whoopsie,
+  installé sur les postes de certaines versions, et les unités `apport-autoreport` envoient ces
+  rapports au service de suivi d'erreurs de Canonical ; `apport-forward` reçoit les plantages des
+  conteneurs.
+
+  Ce contrôle fixe `enabled=0` dans `/etc/default/apport`, arrête et masque les unités apport et
+  whoopsie, et vérifie que `kernel.core_pattern` ne pointe plus vers apport.
+rationale: |
+  Les rapports de plantage contiennent la mémoire du processus planté : mots de passe, clés, jetons
+  de session ou données personnelles. Ils restent sur le disque, lisibles par l'utilisateur concerné
+  et les administrateurs, et peuvent être envoyés à un tiers sans contrat de sous-traitance. Tant
+  qu'apport tourne, il écrase aussi les réglages des fichiers core de CB-UBU-BOOT-005 et
+  CB-UBU-BOOT-013.
+impact: |
+  Les plantages ne sont plus enregistrés dans `/var/crash/` ni proposés au signalement. Un bogue peut
+  toujours être signalé à la main avec `ubuntu-bug`, qui n'a pas besoin du service. Sur les postes,
+  les réglages « signalement des problèmes » de GNOME n'ont plus d'effet.
+notes: |
+  Désinstaller le paquet (`apt purge apport`) atteint aussi le but, mais `ubuntu-server` et d'autres
+  métapaquets en dépendent : la désactivation garde l'ensemble de paquets standard intact. À son
+  arrêt, apport remet `kernel.core_pattern = core` et `fs.suid_dumpable = 0`.
+setting:
+  location: /etc/default/apport ; unités apport.service, apport-forward.socket, apport-autoreport.path, apport-autoreport.timer, whoopsie.service, whoopsie.path
+  recommended_value: enabled=0, unités masquées et arrêtées
+audit:
+  manual: |
+    1. Si apport est installé, `grep enabled /etc/default/apport` doit afficher `enabled=0`.
+    2. `systemctl is-enabled` doit afficher `disabled` ou `masked`, et `systemctl is-active` ne doit
+       pas afficher `active`, pour chacune de ces unités qui existe : `apport.service`,
+       `apport-forward.socket`, `apport-autoreport.path`, `apport-autoreport.timer`,
+       `whoopsie.service`, `whoopsie.path`.
+    3. `cat /proc/sys/kernel/core_pattern` ne doit pas commencer par `|/usr/share/apport/`.
+remediation:
+  manual: |
+    1. Dans `/etc/default/apport`, fixer `enabled=0`.
+    2. Arrêter et masquer les unités présentes :
+       `systemctl mask --now apport.service apport-forward.socket apport-autoreport.path apport-autoreport.timer`,
+       et sur les postes `systemctl mask --now whoopsie.service whoopsie.path`.
+    3. Vérifier que `/proc/sys/kernel/core_pattern` ne commence plus par `|/usr/share/apport/`.
+  rollback: |
+    Remettre `enabled=1` dans `/etc/default/apport`, puis `systemctl unmask` et
+    `systemctl enable --now` les unités.

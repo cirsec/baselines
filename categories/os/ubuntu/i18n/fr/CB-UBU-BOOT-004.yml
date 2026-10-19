@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-004
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter ptrace aux processus descendants
+finding:
+  title: N'importe quel processus peut tracer et lire la mémoire des autres processus du même utilisateur
+  description: Un processus compromis peut lire les secrets (clés de l'agent SSH, sessions du navigateur) de tous les autres processus de l'utilisateur.
+description: |
+  Le module de sécurité Yama ajoute le sysctl `kernel.yama.ptrace_scope`, qui restreint l'appel
+  système `ptrace` utilisé par les débogueurs pour inspecter et modifier d'autres processus :
+
+  - `0` : un processus peut tracer tout processus ayant le même identifiant utilisateur.
+  - `1` : un processus ne peut tracer que ses descendants, sauf autorisation explicite de la cible.
+  - `2` : seuls les processus ayant la capacité `CAP_SYS_PTRACE` peuvent utiliser `ptrace`.
+  - `3` : personne ne peut utiliser `ptrace`, et la valeur ne peut plus changer avant le prochain redémarrage.
+rationale: |
+  Avec `0` (valeur par défaut du noyau), un logiciel malveillant qui tourne sous un utilisateur peut
+  s'attacher à son agent SSH, à son gestionnaire de mots de passe ou à son navigateur, et lire
+  clés et jetons de session dans leur mémoire. Limiter `ptrace` aux descendants garde le débogage
+  courant (`gdb ./programme`, `strace commande`) tout en bloquant l'attachement à des processus déjà lancés.
+impact: |
+  Avec `1`, s'attacher à un processus déjà lancé (`gdb -p`, `strace -p`) demande root ou
+  `CAP_SYS_PTRACE`. Avec `2`, toute utilisation de `ptrace` demande des privilèges, ce qui empêche
+  le débogage par les utilisateurs. `3` ne peut pas être annulé sans redémarrage.
+notes: |
+  Ubuntu livre `1` dans `/etc/sysctl.d/10-ptrace.conf` (`/usr/lib/sysctl.d/55-ptrace.conf` en 26.04) :
+  le contrôle passe sur les profils socle, et les profils renforcés montent à `2`.
+setting:
+  location: sysctl `kernel.yama.ptrace_scope`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "Au moins {{ ptrace_scope }}"
+parameters:
+  ptrace_scope: Valeur minimale de kernel.yama.ptrace_scope.
+audit:
+  manual: |
+    Lancer `sysctl kernel.yama.ptrace_scope`. La valeur doit être au moins {{ ptrace_scope }}.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne fixe une valeur plus basse.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `kernel.yama.ptrace_scope = {{ ptrace_scope }}`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl -w kernel.yama.ptrace_scope=1`.
+    Une valeur de 3 ne peut être baissée qu'en redémarrant après avoir retiré la ligne.

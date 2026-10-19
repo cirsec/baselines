@@ -1,0 +1,194 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-015
+title: Disable automatic crash reporting (apport, whoopsie)
+finding:
+  title: Crashes are collected automatically and can be sent outside the organization
+  description: Apport keeps the memory of crashed programs in crash reports, and whoopsie can upload them to Canonical.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [core-dump, apport, privacy, services]
+
+description: |
+  Apport is the crash reporting system of Ubuntu, installed by default on servers and desktops.
+  When it runs, it registers itself as the kernel core dump handler (`kernel.core_pattern` set to
+  `|/usr/share/apport/apport ...`) and turns `fs.suid_dumpable` to `2`. For every crash of a
+  packaged program it writes a report to `/var/crash/` that holds the core dump, the command
+  line, environment details and logs. Whoopsie, installed on desktops of some releases, and the
+  `apport-autoreport` units upload these reports to Canonical's error tracker; `apport-forward`
+  receives crash data from containers.
+
+  This control sets `enabled=0` in `/etc/default/apport`, stops and masks the apport and whoopsie
+  units, and checks that `kernel.core_pattern` no longer points to apport.
+rationale: |
+  Crash reports contain the memory of the process that crashed: passwords, keys, session tokens
+  or personal data. They are stored on disk with broad readability for the user who crashed and
+  for administrators, and can be uploaded to a third party without a data processing agreement.
+  While apport runs, it also overrides the core dump settings of CB-UBU-BOOT-005 and
+  CB-UBU-BOOT-013.
+impact: |
+  Crashes are no longer recorded in `/var/crash/` and no longer offered for reporting. Bugs can
+  still be reported by hand with `ubuntu-bug`, which does not need the service. On desktops, the
+  "problem reporting" settings of GNOME have no effect anymore.
+notes: |
+  Removing the package (`apt purge apport`) also meets the goal, but `ubuntu-server` and other
+  metapackages depend on it: disabling keeps the standard package set intact. When apport is
+  stopped, it puts back `kernel.core_pattern = core` and `fs.suid_dumpable = 0`.
+
+setting:
+  location: /etc/default/apport; units apport.service, apport-forward.socket, apport-autoreport.path, apport-autoreport.timer, whoopsie.service, whoopsie.path
+  default_value: enabled=1, units enabled and running
+  recommended_value: enabled=0, units masked and stopped
+
+audit:
+  manual: |
+    1. If apport is installed, `grep enabled /etc/default/apport` must show `enabled=0`.
+    2. `systemctl is-enabled` must print `disabled` or `masked`, and `systemctl is-active` must not
+       print `active`, for each of these units that exists: `apport.service`,
+       `apport-forward.socket`, `apport-autoreport.path`, `apport-autoreport.timer`,
+       `whoopsie.service`, `whoopsie.path`.
+    3. `cat /proc/sys/kernel/core_pattern` must not start with `|/usr/share/apport/`.
+  checks:
+    - id: apport-config
+      engine: shell
+      description: Effective enabled= value in /etc/default/apport.
+      facts: [apport]
+      spec:
+        script: |
+          v=$(sed -n 's/^[[:space:]]*enabled[[:space:]]*=[[:space:]]*//p' /etc/default/apport 2>/dev/null | tail -n 1)
+          echo "enabled=${v:-1 (default)}"
+          [ "$v" = 0 ]
+    - id: units
+      engine: shell
+      description: Crash reporting units are disabled or masked, and not running.
+      spec:
+        script: |
+          rc=0
+          for u in apport.service apport-forward.socket apport-autoreport.path apport-autoreport.timer whoopsie.service whoopsie.path; do
+            e=$(systemctl is-enabled "$u" 2>/dev/null)
+            case $e in "" | not-found) continue ;; esac
+            a=$(systemctl is-active "$u" 2>/dev/null)
+            echo "$u: $e, $a"
+            case $e in disabled | masked | masked-runtime) ;; *) rc=1 ;; esac
+            [ "$a" = active ] && rc=1
+          done
+          exit "$rc"
+    - id: core-pattern
+      engine: shell
+      description: kernel.core_pattern does not send core dumps to apport.
+      spec:
+        script: |
+          p=$(cat /proc/sys/kernel/core_pattern) || exit 3
+          echo "$p"
+          case $p in "|/usr/share/apport/"*) exit 1 ;; esac
+          exit 0
+
+remediation:
+  manual: |
+    1. In `/etc/default/apport`, set `enabled=0`.
+    2. Stop and mask the units that exist:
+       `systemctl mask --now apport.service apport-forward.socket apport-autoreport.path apport-autoreport.timer`,
+       and on desktops `systemctl mask --now whoopsie.service whoopsie.path`.
+    3. Check that `/proc/sys/kernel/core_pattern` no longer starts with `|/usr/share/apport/`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Set `enabled=1` in `/etc/default/apport`, then `systemctl unmask` and `systemctl enable --now`
+    the units.
+  scripts:
+    - id: disable
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: apport-bug(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/apport-bug.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - How to report a bug in Ubuntu Server
+    url: https://documentation.ubuntu.com/server/how-to/software/report-a-bug/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Security documentation - Dangerous sysctls (kernel.core_pattern, fs.suid_dumpable)
+    url: https://documentation.ubuntu.com/security/common-mistakes/dangerous-sysctls/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: core(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/core.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.5.5"
+    relation: stricter
+    note: Ours also turns off whoopsie, apport-forward and apport-autoreport.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.5.6"
+    relation: stricter
+    note: Ours also turns off whoopsie, apport-forward and apport-autoreport.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.7"
+    relation: stricter
+    note: Ours also turns off whoopsie, apport-forward and apport-autoreport.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.7"
+    relation: stricter
+    note: Ours also turns off whoopsie, apport-forward and apport-autoreport.
+threats:
+  - framework: mitre-attack
+    id: T1003
+  - framework: cwe
+    id: CWE-528
+related_controls:
+  - id: CB-UBU-BOOT-005
+    type: related
+  - id: CB-UBU-BOOT-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Fails on a fresh install (enabled=1, apport init script active, core_pattern piped to apport); fix masks the units, core_pattern back to core, suid_dumpable to 0; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Fails on a fresh install (enabled=1, apport init script active, core_pattern piped to apport); fix masks the units, core_pattern back to core, suid_dumpable to 0; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Fails on a fresh install (enabled=1, apport.service and its socket, path and timer enabled, core_pattern piped to apport); fix masks the units, core_pattern back to core, suid_dumpable to 0; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Fails on a fresh install (enabled=1, apport.service and its socket, path and timer enabled, core_pattern piped to apport); fix masks the units, core_pattern back to core, suid_dumpable to 0; kept after reboot; fix idempotent."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

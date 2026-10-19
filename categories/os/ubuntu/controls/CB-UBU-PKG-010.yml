@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-010
+title: Install only the packages the system needs
+finding:
+  title: Packages without a use on this system are installed
+  description: Every unneeded package adds code that can be vulnerable, services that can be exposed and updates to follow.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: manual
+tags: [packages, minimal-install]
+
+description: |
+  A minimal installation contains only what the role of the system requires: no graphical
+  environment on a server, no compiler or debugging tools on a production host, no tool installed
+  "just in case". Ubuntu makes it easier with the minimized server installation and minimal cloud
+  images, and by tracking packages installed only as dependencies so that `apt-get autoremove`
+  can remove them. Snaps are packages too: they count as much as the `.deb` packages.
+rationale: |
+  Each package is attack surface: its vulnerabilities, its services and its setuid binaries.
+  Compilers, debuggers and network tools also help an attacker who got a foothold. Fewer packages
+  also mean fewer updates and a simpler review of the system.
+impact: |
+  Removing a package that an application relies on breaks it. Review before removing, and test on
+  a non-production system first.
+
+audit:
+  manual: |
+    1. List the packages installed on purpose with `apt-mark showmanual`, and check that each one
+       is needed by the role of the system.
+    2. Run `apt-get -s autoremove`: it lists dependencies that are no longer needed.
+    3. Look for packages that rarely belong on a server: graphical environment
+       (`dpkg -l 'xserver-xorg*' 'gnome*' 'kde*'`), compilers and build tools
+       (`gcc`, `make`, `build-essential`), debuggers (`gdb`, `strace`), network tools (`nmap`,
+       `netcat*`, `tcpdump`), unused interpreters.
+    4. Run `snap list` and check that each snap is needed (on a server, often none but `lxd` if
+       containers are used).
+    5. Check that `apt-config dump APT::Install-Recommends` matches the policy of the organisation.
+remediation:
+  manual: |
+    1. Remove each unneeded package with `apt-get purge <package>`, after checking with
+       `apt-get -s purge <package>` what else would be removed.
+    2. Run `apt-get autoremove --purge` to remove the dependencies left behind, and
+       `snap remove --purge <snap>` for each unneeded snap.
+    3. For new systems, start from a minimal installation (the "Ubuntu Server (minimized)" choice
+       of the installer, or a minimal cloud image) and add packages for the role only.
+    4. Write down the list of packages expected for each role, so drifts can be spotted.
+
+references:
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R58)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+  - title: apt-mark(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/apt-mark.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-UBU-PKG-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

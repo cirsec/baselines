@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-013
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Redémarrer après les mises à jour qui l'exigent, ou utiliser Livepatch
+finding:
+  title: Le système attend depuis trop longtemps un redémarrage exigé par des mises à jour
+  description: Un noyau ou des bibliothèques centrales mis à jour sont installés mais pas chargés ; les vulnérabilités qu'ils corrigent restent exploitables.
+description: |
+  Certaines mises à jour ne prennent effet qu'après un redémarrage : le noyau, et les
+  bibliothèques chargées par tous les processus comme la bibliothèque C, OpenSSL ou systemd.
+  Quand un paquet le demande, `update-notifier-common` crée `/var/run/reboot-required` et liste
+  les paquets concernés dans `/var/run/reboot-required.pkgs`. Les deux fichiers disparaissent au
+  démarrage suivant (`/var/run` est un tmpfs).
+
+  Canonical Livepatch, inclus dans Ubuntu Pro, applique au noyau en cours d'exécution les
+  correctifs des vulnérabilités hautes et critiques du noyau, sans redémarrage.
+
+  Le contrôle échoue quand `/var/run/reboot-required` a plus de `{{ max_days }}` jours, sauf si
+  tous les paquets qui ont demandé le redémarrage sont des paquets du noyau (`linux-*`) et que
+  Livepatch fonctionne et a appliqué ses correctifs.
+rationale: |
+  Un paquet mis à jour sur le disque ne protège pas le système tant que l'ancien noyau ou
+  l'ancienne bibliothèque reste en mémoire : un scanner qui lit les versions des paquets déclare
+  le système corrigé alors que la vulnérabilité reste exploitable. Les systèmes jamais redémarrés
+  font partie des constats d'audit les plus fréquents. Un délai borné laisse le temps de planifier
+  le redémarrage dans une fenêtre de maintenance.
+impact: |
+  Le redémarrage interrompt les services du système : prévoir une fenêtre de maintenance
+  régulière, ou utiliser `Unattended-Upgrade::Automatic-Reboot` avec `Automatic-Reboot-Time` sur
+  les systèmes qui peuvent redémarrer seuls. Livepatch demande un abonnement Ubuntu Pro et ne
+  couvre que le noyau.
+notes: |
+  Le contrôle ne redémarre pas le système : il n'y a pas de correction automatique. Des
+  processus de longue durée peuvent aussi garder d'anciennes bibliothèques en mémoire sans aucun
+  fichier reboot-required ; `needrestart` (installé par défaut sur les serveurs 22.04 et
+  suivants) redémarre les services concernés après les mises à jour.
+setting:
+  location: /var/run/reboot-required, /var/run/reboot-required.pkgs
+  recommended_value: "Absent, ou âgé d'au plus {{ max_days }} jours, ou seulement des paquets du noyau avec Livepatch appliqué"
+parameters:
+  max_days: Plus long délai accepté entre une mise à jour qui exige un redémarrage et ce redémarrage.
+audit:
+  manual: |
+    1. `ls -l --time-style=+%F /var/run/reboot-required` n'affiche aucun fichier, ou une date
+       d'il y a au plus `{{ max_days }}` jours.
+    2. Sinon, `cat /var/run/reboot-required.pkgs` ne liste que des paquets `linux-*` et
+       `canonical-livepatch status` montre Livepatch en fonctionnement avec ses correctifs appliqués.
+remediation:
+  manual: |
+    Redémarrer le système pendant une fenêtre de maintenance (`systemctl reboot`), puis vérifier
+    que `/var/run/reboot-required` a disparu. Pour suivre sans intervention humaine :
+
+    - planifier le redémarrage avec unattended-upgrades sur les systèmes qui peuvent redémarrer
+      seuls, dans `/etc/apt/apt.conf.d/52unattended-upgrades-local` :
+      `Unattended-Upgrade::Automatic-Reboot "true";` et
+      `Unattended-Upgrade::Automatic-Reboot-Time "03:00";` ;
+    - sur les systèmes rattachés à Ubuntu Pro, activer Livepatch (`pro enable livepatch`) pour
+      reporter les redémarrages dus au noyau, et redémarrer quand même pour les autres paquets.

@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-FS-003
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Monter /tmp comme système de fichiers séparé avec nodev, nosuid et noexec
+finding:
+  title: Des programmes peuvent être exécutés, ou des fichiers de périphérique et programmes setuid utilisés, depuis /tmp
+  description: Tous les utilisateurs peuvent écrire dans /tmp, qui est donc l'endroit habituel pour déposer et lancer des outils d'attaque ; le remplir peut remplir le système de fichiers racine.
+description: |
+  `/tmp` est un système de fichiers séparé monté avec :
+
+  - `nodev` : les fichiers de périphérique qu'il contient sont inutilisables ;
+  - `nosuid` : les bits setuid et setgid y sont ignorés ;
+  - `noexec` : les programmes qu'il contient ne peuvent pas être exécutés directement.
+
+  Sur Ubuntu, le plus simple est l'unité `tmp.mount` de systemd, qui monte un tmpfs (en mémoire,
+  vidé à chaque démarrage). Ubuntu 26.04 l'active par défaut avec `nodev` et `nosuid` ; Ubuntu
+  20.04, 22.04 et 24.04 laissent `/tmp` sur le système de fichiers racine et fournissent l'unité
+  comme exemple dans `/usr/share/systemd/`.
+rationale: |
+  `/tmp` est accessible en écriture à tous les utilisateurs et services. Les attaquants y déposent
+  leurs outils et les lancent, et un fichier setuid ou un nœud de périphérique déposé par un compte
+  compromis peut être détourné. `noexec`, `nosuid` et `nodev` empêchent ces usages. Un système de
+  fichiers séparé évite aussi qu'un utilisateur ou un processus emballé qui remplit `/tmp` remplisse
+  le système de fichiers racine.
+impact: |
+  Les scripts et binaires de `/tmp` ne peuvent plus être lancés directement (`./script`) ;
+  `sh /tmp/script` fonctionne toujours, `noexec` est donc un obstacle, pas une barrière. Quelques
+  installeurs et outils de compilation qui lancent des programmes depuis `/tmp` échouent : diriger
+  leur `TMPDIR` ailleurs. Un `/tmp` en tmpfs consomme de la mémoire (jusqu'à la moitié de la RAM) et
+  perd son contenu au redémarrage.
+notes: |
+  La correction utilise `tmp.mount` et un fichier complémentaire qui ajoute `noexec`. Sur Ubuntu 20.04
+  à 24.04, `/tmp` ne devient un tmpfs qu'au redémarrage suivant : le monter sur un système en marche
+  masquerait des fichiers utilisés par des programmes. Les fichiers restés dans l'ancien `/tmp` sur
+  disque sont ensuite cachés sous le point de montage. Quand `/tmp` est une partition déclarée dans
+  `/etc/fstab`, la correction s'arrête et les options doivent être ajoutées à la main. En 26.04, le
+  fichier complémentaire remplace les options de l'unité livrée, ce qui retire son quota optionnel
+  par utilisateur (`usrquota`) ; l'y rajouter si des quotas utilisateur sur `/tmp` sont voulus.
+
+  Les snaps ont leur propre `/tmp` privé à l'intérieur du `/tmp` de l'hôte : ils suivent les mêmes
+  options.
+setting:
+  location: /etc/systemd/system/tmp.mount.d/60-cirsec.conf, ou /etc/fstab
+  recommended_value: Système de fichiers séparé (tmpfs) avec nodev,nosuid,noexec
+audit:
+  manual: |
+    Lancer `findmnt -kn /tmp`. La commande doit afficher une ligne (système de fichiers séparé)
+    dont les options contiennent `nodev`, `nosuid` et `noexec`.
+remediation:
+  manual: |
+    Avec un tmpfs (recommandé) :
+    1. Sur Ubuntu 20.04 à 24.04 seulement : `cp /usr/share/systemd/tmp.mount /etc/systemd/system/` puis
+       `systemctl enable tmp.mount`.
+    2. Créer `/etc/systemd/system/tmp.mount.d/60-cirsec.conf` :
+       ```
+       [Mount]
+       Options=mode=1777,strictatime,nosuid,nodev,noexec,size=50%%,nr_inodes=1m
+       ```
+    3. Lancer `systemctl daemon-reload`. Si `/tmp` est déjà un tmpfs, lancer
+       `mount -o remount,nodev,nosuid,noexec /tmp` ; sinon redémarrer.
+
+    Avec une partition déclarée dans `/etc/fstab` : ajouter `nodev,nosuid,noexec` aux options de la
+    ligne `/tmp`, puis lancer `mount -o remount /tmp`.
+  rollback: |
+    Supprimer `/etc/systemd/system/tmp.mount.d/60-cirsec.conf` (et, sur Ubuntu 20.04 à 24.04, lancer
+    `systemctl disable tmp.mount` et supprimer `/etc/systemd/system/tmp.mount`), lancer
+    `systemctl daemon-reload` et redémarrer.

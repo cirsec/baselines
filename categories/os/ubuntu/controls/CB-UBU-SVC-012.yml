@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-012
+title: Only approved services listen on network interfaces
+finding:
+  title: Services nobody approved accept connections from the network
+  description: Every listening socket is an entry point; unknown ones are neither patched nor monitored.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: partial
+tags: [services, network, attack-surface]
+
+description: |
+  Each TCP or UDP socket listening on a non-loopback address must belong to a service the system
+  is meant to provide, and listen only on the interfaces where that service is needed.
+rationale: |
+  The services an attacker can reach from the network define the remote attack surface. Services
+  that listen by default (LLMNR in systemd-resolved, development servers, agents) are easy to
+  forget and widen it without anyone noticing.
+impact: |
+  Stopping or rebinding a service makes it unreachable for remote clients; check with its owner
+  first.
+notes: |
+  The check lists the listening sockets outside loopback as `protocol/port process` and always
+  passes, so the control ends as `review`: a person must compare the list with the services
+  approved for the system role. On a fresh Ubuntu cloud image the list holds the SSH server
+  (tcp/22, shown as `systemd` from 24.04 because `ssh.socket` listens for it) and the DHCP client
+  of `systemd-networkd` (udp/68). `systemd-resolved` and `chronyd` listen on loopback only.
+
+audit:
+  manual: |
+    1. Run `ss -Hltunp` as root.
+    2. For each socket not bound to `127.0.0.0/8` or `::1`, check that the process is an approved
+       service for this system and that it listens only on the needed addresses.
+  checks:
+    - id: listeners
+      engine: shell
+      description: Lists sockets listening outside loopback, for review.
+      spec:
+        script: |
+          command -v ss >/dev/null 2>&1 || { echo "ss not found"; exit 3; }
+          ss -Hltunp 2>/dev/null | awk '{
+            addr = $5
+            if (addr ~ /^(127\.|\[::1\]|\[::ffff:127\.)/) next
+            port = addr; sub(/.*:/, "", port)
+            proc = $7; sub(/^users:\(\("/, "", proc); sub(/".*/, "", proc)
+            print $1 "/" port " " (proc == "" ? "?" : proc)
+          }' | sort -u | tr '\n' ' '
+          echo
+
+remediation:
+  manual: |
+    For each socket that is not approved: stop and mask the service (`systemctl mask --now
+    <unit>`) or remove its package. For an approved service that listens too widely, bind it to
+    the needed address in its configuration, and filter the port with the host firewall.
+
+references:
+  - title: ss(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/ss.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R80)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R80
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(1)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.22"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.22"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.23"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1046
+  - framework: mitre-attack
+    id: T1210
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Lists tcp/22 sshd and udp/68 systemd-network on the stock image and ends as review."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Lists tcp/22 sshd and udp/68 systemd-network on the stock image and ends as review."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Lists tcp/22 (ssh.socket, shown as systemd) and udp/68 systemd-network on the stock image and ends as review."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Lists tcp/22 (ssh.socket, shown as systemd) and udp/68 systemd-network on the stock image and ends as review."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

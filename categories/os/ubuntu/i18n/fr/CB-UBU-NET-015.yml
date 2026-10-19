@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-015
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'utiliser que des chiffrements, MAC et échanges de clés robustes dans le serveur SSH
+finding:
+  title: Le serveur SSH accepte des algorithmes cryptographiques faibles ou dépassés
+  description: Des algorithmes faibles permettent à un attaquant qui enregistre ou intercepte des sessions SSH de les déchiffrer ou de les altérer, maintenant ou plus tard.
+description: |
+  Le serveur OpenSSH négocie trois familles d'algorithmes avec chaque client, fixées par `Ciphers`,
+  `MACs` et `KexAlgorithms` dans `sshd_config`. Ce contrôle exige que chaque algorithme proposé par le
+  serveur figure dans une liste autorisée :
+
+  - chiffrements : ChaCha20-Poly1305, AES-GCM, AES-CTR ;
+  - MAC : HMAC-SHA2-256/512, de préférence en mode encrypt-then-MAC (`-etm`) ;
+  - échange de clés : hybride post-quantique (`mlkem768x25519-sha256`, `sntrup761x25519-sha512`),
+    Curve25519, ECDH NIST, et groupes Diffie-Hellman d'au moins 2048 bits avec SHA-2.
+
+  Le premier algorithme d'échange de clés proposé doit être un algorithme hybride post-quantique.
+rationale: |
+  Les chiffrements CBC, RC4, 3DES, les MAC à base de SHA-1 et MD5, UMAC à étiquette de 64 bits et le
+  Diffie-Hellman SHA-1 sont cassés ou trop faibles pour une protection durable ; UMAC est écarté pour
+  s'en tenir aux constructions HMAC-SHA2, largement éprouvées. Les sessions enregistrées aujourd'hui
+  pourront être déchiffrées plus tard par un ordinateur quantique si l'échange de clés n'est pas
+  post-quantique, d'où l'obligation de le préférer.
+impact: |
+  Les vieux clients et équipements réseau qui ne connaissent que des algorithmes retirés ne peuvent
+  plus se connecter (par exemple `hmac-sha1` ou `diffie-hellman-group14-sha1`). Vérifier les clients,
+  outils d'automatisation et bibliothèques SFTP utilisés avant d'appliquer.
+notes: |
+  Ubuntu livre OpenSSH 8.2 (20.04), 8.9 (22.04), 9.6 (24.04) et 10.2 (26.04). Tous excluent déjà les
+  chiffrements faibles mais proposent encore des MAC SHA-1 et UMAC. Seul 26.04 place un échange de
+  clés post-quantique en tête ; 22.04 et 24.04 proposent `sntrup761x25519-sha512@openssh.com` après
+  Curve25519, et 20.04 n'en a aucun (son `sntrup4591761x25519-sha512@tinyssh.org` est une ancienne
+  variante retirée) : la vérification post-quantique ne s'applique donc pas à 20.04. La correction
+  écrit les trois listes dans `/etc/ssh/sshd_config.d/00-cirsec.conf`, lu avant les fichiers des
+  images cloud (`50-cloud-init.conf`, `60-cloudimg-settings.conf`) puisque sshd garde la première
+  valeur lue, en ne gardant que les algorithmes connus de l'OpenSSH installé (`ssh -Q`) :
+  `mlkem768x25519-sha256` n'est mis que sur 26.04. À partir de 24.04, sshd est lancé par
+  `ssh.socket` ; `sshd -T` échoue faute de `/run/sshd` tant qu'une première connexion n'a pas démarré
+  `ssh.service` : les vérifications signalent une erreur jusque-là, et la correction crée le
+  répertoire avant de tester la configuration.
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf (`Ciphers`, `MACs`, `KexAlgorithms`)
+  recommended_value: Uniquement les algorithmes autorisés, échange de clés post-quantique en premier
+audit:
+  manual: |
+    Lancer `sshd -T | grep -E '^(ciphers|macs|kexalgorithms) '` et vérifier que :
+    1. les chiffrements sont parmi `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`,
+       `aes128-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr` ;
+    2. les MAC sont parmi `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`,
+       `hmac-sha2-512`, `hmac-sha2-256` ;
+    3. les échanges de clés sont parmi `mlkem768x25519-sha256`, `sntrup761x25519-sha512` (avec ou sans
+       `@openssh.com`), `curve25519-sha256` (avec ou sans `@libssh.org`), `ecdh-sha2-nistp256/384/521`,
+       `diffie-hellman-group-exchange-sha256`, `diffie-hellman-group14-sha256`,
+       `diffie-hellman-group16-sha512`, `diffie-hellman-group18-sha512`, et que le premier est
+       `mlkem768x25519-sha256` ou `sntrup761x25519-sha512`.
+remediation:
+  manual: |
+    Créer `/etc/ssh/sshd_config.d/00-cirsec.conf` (mode 0600) avec les listes ci-dessous, en retirant
+    les algorithmes que `ssh -Q cipher`, `ssh -Q mac` ou `ssh -Q kex` n'affiche pas :
+    ```
+    Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+    MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+    KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256
+    ```
+    Vérifier avec `sshd -t`, puis lancer `systemctl reload ssh` (à partir de 24.04, si `ssh.service` ne tourne pas encore, la
+    prochaine connexion le démarre avec les nouveaux réglages). Garder une session ouverte jusqu'à ce
+    qu'une nouvelle connexion réussisse.
+  rollback: |
+    Retirer les trois lignes de `/etc/ssh/sshd_config.d/00-cirsec.conf` et lancer `systemctl reload ssh`.

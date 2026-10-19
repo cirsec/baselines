@@ -201,6 +201,21 @@ def test_release_has_oscal_and_generated(repo, tmp_path):
     assert mode == 0o755
 
 
+@pytest.mark.parametrize("target,listed,rc", [("24.04", "24.04", 0), ("24.04", "22.04", 2), ("12", "12", 0), ("12.7", "12", 0), ("", "12", 3)])
+def test_cb_version_in(target, listed, rc):
+    r = subprocess.run(["sh", "-c", f'. "{LIB}"; cb_version_in {listed} 26.04'], capture_output=True, text=True,
+                       env={**os.environ, "CB_PRODUCT_VERSION": target})
+    assert r.returncode == rc
+
+
+@pytest.mark.parametrize("applicable,status,rc", [(0, "manual", 4), (2, "not_applicable", 2)])
+def test_manual_control_respects_applicability(applicable, status, rc):
+    script = (f'. "{LIB}"; CB_CONTROL=demo CB_ASSESSMENT=manual; '
+              f'cb_applicable() {{ return {applicable}; }}; cb_main check')
+    r = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env={**os.environ, "CB_PRODUCT_VERSION": "x"})
+    assert r.returncode == rc and f"control\tdemo\t{status}" in r.stdout
+
+
 def test_fix_skipped_when_check_errors(tmp_path):
     marker = tmp_path / "touched"
     script = (f'. "{LIB}"; CB_APPLY=1 CB_RC=0; '

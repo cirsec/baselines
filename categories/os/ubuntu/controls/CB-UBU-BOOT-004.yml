@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-004
+title: Restrict ptrace to descendant processes
+finding:
+  title: Any process can trace and read the memory of other processes of the same user
+  description: A compromised process can read secrets (SSH agent keys, browser sessions) from every other process the user runs.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, yama, credentials]
+
+description: |
+  The Yama security module adds the `kernel.yama.ptrace_scope` sysctl, which restricts the
+  `ptrace` system call used by debuggers to inspect and modify other processes:
+
+  - `0`: a process can trace any process with the same user ID.
+  - `1`: a process can only trace its own descendants, unless the target allows it explicitly.
+  - `2`: only processes with the `CAP_SYS_PTRACE` capability can use `ptrace`.
+  - `3`: nobody can use `ptrace`, and the value cannot be changed until the next reboot.
+rationale: |
+  With `0` (the kernel default), malware running as a user can attach to the user's SSH agent, password
+  manager or browser and read keys and session tokens from their memory. Limiting `ptrace` to
+  descendants keeps normal debugging (`gdb ./program`, `strace command`) working while blocking
+  attachment to unrelated running processes.
+impact: |
+  With `1`, attaching a debugger to an already running process (`gdb -p`, `strace -p`) needs
+  root or `CAP_SYS_PTRACE`. With `2`, every use of `ptrace` needs privileges, which breaks
+  debugging by regular users. `3` cannot be undone without a reboot.
+notes: |
+  Ubuntu ships `1` in `/etc/sysctl.d/10-ptrace.conf` (`/usr/lib/sysctl.d/55-ptrace.conf` on 26.04):
+  the check passes on core profiles, and hardened profiles raise it to `2`.
+
+setting:
+  location: sysctl `kernel.yama.ptrace_scope`, persisted in `/etc/sysctl.d/`
+  default_value: "1"
+  recommended_value: "At least {{ ptrace_scope }}"
+
+parameters:
+  - name: ptrace_scope
+    type: integer
+    description: Minimum value of kernel.yama.ptrace_scope.
+    default: 1
+    profile_defaults:
+      server-hardened: 2
+      desktop-hardened: 2
+    minimum: 1
+    maximum: 3
+
+audit:
+  manual: |
+    Run `sysctl kernel.yama.ptrace_scope`. The value must be at least {{ ptrace_scope }}.
+    Then check that no sysctl configuration file sets a lower value.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.yama.ptrace_scope.
+      spec: { key: kernel.yama.ptrace_scope, operator: ">=", value: "{{ ptrace_scope }}" }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `kernel.yama.ptrace_scope = {{ ptrace_scope }}`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl -w kernel.yama.ptrace_scope=1`.
+    A value of 3 can only be lowered by rebooting after removing the line.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Ubuntu Security documentation - Kernel protections
+    url: https://documentation.ubuntu.com/security/security-features/kernel-protections/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Linux kernel documentation - Yama
+    url: https://docs.kernel.org/admin-guide/LSM/Yama.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R11)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R11
+    relation: equivalent
+    note: Both require a value of at least 1.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.5.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.5.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1055.008
+  - framework: mitre-attack
+    id: T1003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Core passes on a fresh install (1); server-hardened fails, generated fix sets 2; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Core passes on a fresh install (1); server-hardened fails, generated fix sets 2; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Core passes on a fresh install (1); server-hardened fails, generated fix sets 2; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Core passes on a fresh install (1); server-hardened fails, generated fix sets 2; kept after reboot; fix idempotent."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

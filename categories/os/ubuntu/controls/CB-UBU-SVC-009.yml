@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-009
+title: Disable the Squid web proxy on systems that are not proxy servers
+finding:
+  title: A web proxy can run on a system that is not a proxy server
+  description: An open or forgotten proxy relays traffic for others and hides its origin.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, proxy, http, attack-surface]
+
+description: |
+  Squid (`squid.service`) is the HTTP caching proxy packaged by Ubuntu.
+
+  The control passes when the unit is masked or not installed at all.
+rationale: |
+  A proxy relays connections for its clients. A misconfigured one lets outsiders reach internal
+  systems or use the host to hide attacks, and its cache can hold sensitive responses.
+impact: |
+  Masking the unit stops it and prevents it from starting again. Proxy servers must exclude this
+  control in their tailoring file.
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid fix.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled squid.service`. It must print `masked`, or fail because the unit does
+    not exist.
+  checks:
+    - id: squid
+      engine: systemd-unit
+      description: Squid proxy server.
+      spec: { unit: squid.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now squid.service`, or `apt purge squid` if the package is not needed.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask squid.service` then `systemctl enable --now squid.service`.
+  scripts:
+    - id: squid
+      from_check: squid
+
+references:
+  - title: squid(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/squid.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers the web proxy.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.21"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.18"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1090
+related_controls:
+  - id: CB-UBU-SVC-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes (units absent); with squid installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (units absent); with squid installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (units absent); with squid installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (units absent); with squid installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

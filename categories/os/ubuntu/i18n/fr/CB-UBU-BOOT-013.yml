@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-013
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les fichiers core
+finding:
+  title: Les programmes qui plantent peuvent écrire leur mémoire sur le disque
+  description: Les fichiers core peuvent contenir des mots de passe, des clés et des données personnelles, et restent sur le disque longtemps après le plantage.
+description: |
+  Un fichier core est une copie de la mémoire d'un processus écrite quand il plante. Sur Ubuntu,
+  trois mécanismes décident s'il est écrit :
+
+  - la limite de ressource `core` du processus, fixée pour les sessions par `pam_limits` à partir de
+    `/etc/security/limits.conf` et `/etc/security/limits.d/` ;
+  - quand le paquet `systemd-coredump` est installé, sa configuration (`/etc/systemd/coredump.conf`
+    et `/etc/systemd/coredump.conf.d/`), qui stocke les fichiers dans `/var/lib/systemd/coredump/` ;
+  - apport, installé par défaut, qui se déclare gestionnaire des fichiers core dans
+    `kernel.core_pattern` et range ses rapports de plantage, fichier core compris, dans `/var/crash/`.
+
+  Ce contrôle fixe une limite dure `core` à 0 pour toutes les sessions et, avec systemd-coredump,
+  `Storage=none` et `ProcessSizeMax=0`. Apport est désactivé par CB-UBU-BOOT-015.
+rationale: |
+  La mémoire d'un processus planté contient ce qu'il manipulait : mots de passe saisis, jetons de
+  session, clés privées, documents. Les fichiers core sont souvent lisibles par plus de monde que le
+  processus d'origine, collectés par des outils de support, et rarement nettoyés.
+impact: |
+  Les plantages ne peuvent plus être analysés à partir d'un fichier core. Quand un plantage doit être
+  débogué, relever la limite pour cette seule session (`ulimit -c unlimited` après avoir retiré la
+  limite dure) sur un système de test.
+notes: |
+  Ubuntu fixe une limite souple à 0 mais laisse la limite dure `unlimited` (26.04 la fixe
+  explicitement dans `/etc/security/limits.d/10-coredump-debian.conf`) : n'importe quel utilisateur
+  peut réactiver les fichiers core avec `ulimit -c`. Le fichier écrit par la correction est trié
+  après et l'emporte.
+
+  Un gestionnaire déclaré dans `kernel.core_pattern` (ligne commençant par `|`) reçoit la mémoire du
+  processus planté quelle que soit sa limite `core` : le noyau n'applique pas la limite à un tube,
+  et ce qui est conservé dépend du gestionnaire. C'est pourquoi la limite de session ne suffit pas
+  sur Ubuntu tant qu'apport tourne.
+  Les fichiers core des programmes setuid sont traités à part par CB-UBU-BOOT-005.
+setting:
+  location: /etc/security/limits.d/, /etc/systemd/coredump.conf.d/
+  recommended_value: Limite dure à 0 ; avec systemd-coredump, Storage=none et ProcessSizeMax=0
+audit:
+  manual: |
+    1. Lancer `su -s /bin/sh nobody -c 'ulimit -Hc'`. La commande doit afficher `0`.
+    2. Si systemd-coredump est installé, lancer `systemd-analyze cat-config systemd/coredump.conf` :
+       le dernier `Storage=` doit valoir `none` et le dernier `ProcessSizeMax=` doit valoir `0`.
+remediation:
+  manual: |
+    1. Créer `/etc/security/limits.d/60-cirsec.conf` avec :
+       ```
+       *    hard core 0
+       root hard core 0
+       ```
+    2. Si systemd-coredump est installé, créer `/etc/systemd/coredump.conf.d/60-cirsec.conf` avec :
+       ```
+       [Coredump]
+       Storage=none
+       ProcessSizeMax=0
+       ```
+    3. Se déconnecter puis se reconnecter pour que la limite de session s'applique.
+  rollback: |
+    Supprimer les deux fichiers. Les nouvelles sessions retrouvent les limites précédentes.

@@ -1,0 +1,255 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-001
+title: Keep the systemd journal running, persistent, compressed and bounded in size
+finding:
+  title: System logs may be lost at reboot or fill the disk
+  description: Without a persistent and bounded journal, the history of the system disappears at reboot or grows until the file system is full.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [journald, logging]
+
+description: |
+  `systemd-journald` collects the messages of the kernel, of services and of programs that use
+  syslog. Its settings live in `/etc/systemd/journald.conf` and drop-in files in
+  `/etc/systemd/journald.conf.d/`. This control requires:
+
+  - the `systemd-journald` service to run;
+  - `Storage=persistent`, so the journal is written to `/var/log/journal/` and survives reboots;
+  - `Compress=yes` (the default), so large entries are compressed;
+  - an explicit size budget: `SystemMaxUse={{ max_use }}` and `SystemKeepFree={{ keep_free }}`.
+    journald removes the oldest archived files to stay within these limits.
+rationale: |
+  Logs are the first source when investigating an incident. A journal kept only in memory is lost
+  at every reboot, which is also what an intruder triggers to erase traces. An explicit size
+  budget makes rotation predictable and keeps the journal from filling the file system.
+impact: |
+  Journal files use up to {{ max_use }} on the file system holding `/var/log`. The oldest entries
+  are removed when the budget is reached; keep a remote copy (CB-UBU-AUDIT-008) when a longer
+  history is required.
+notes: |
+  On Ubuntu 20.04 to 26.04 the default is `Storage=auto` and `/var/log/journal/` exists, so the journal
+  is already persistent; the control asks for an explicit setting so that removing the directory
+  does not silently switch to memory-only logging.
+
+setting:
+  location: /etc/systemd/journald.conf.d/60-cirsec.conf
+  default_value: Storage=auto, Compress=yes, size limits computed from the file system size
+  recommended_value: "Storage=persistent, Compress=yes, SystemMaxUse={{ max_use }}, SystemKeepFree={{ keep_free }}"
+
+parameters:
+  - name: max_use
+    type: string
+    description: Maximum disk space used by the persistent journal (journald size syntax, for example 1G or 500M).
+    default: 1G
+  - name: keep_free
+    type: string
+    description: Disk space journald leaves free on the file system holding /var/log/journal.
+    default: 1G
+
+audit:
+  manual: |
+    1. Run `systemctl is-active systemd-journald`. It must print `active`.
+    2. Run `systemd-analyze cat-config systemd/journald.conf`. The last value of each setting must be
+       `Storage=persistent`, `Compress=yes` (or no `Compress=` line), `SystemMaxUse={{ max_use }}`
+       and `SystemKeepFree={{ keep_free }}`.
+  checks:
+    - id: active
+      engine: shell
+      description: State of the systemd-journald service.
+      spec:
+        script: |
+          o=$(systemctl is-active systemd-journald 2>/dev/null)
+          echo "systemd-journald: ${o:-unknown}"
+          [ "$o" = active ]
+    - id: storage
+      engine: shell
+      description: Effective Storage= of journald.
+      spec:
+        script: |
+          v=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^[[:space:]]*Storage=//p' | tail -n 1)
+          echo "Storage=${v:-auto (default)}"
+          [ "$v" = persistent ]
+    - id: compress
+      engine: shell
+      description: Effective Compress= of journald.
+      spec:
+        script: |
+          v=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^[[:space:]]*Compress=//p' | tail -n 1)
+          echo "Compress=${v:-yes (default)}"
+          case ${v:-yes} in yes | true | on | 1) exit 0 ;; esac
+          exit 1
+    - id: size
+      engine: shell
+      description: Effective SystemMaxUse= and SystemKeepFree= of journald.
+      spec:
+        script: |
+          c=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null)
+          m=$(printf '%s\n' "$c" | sed -n 's/^[[:space:]]*SystemMaxUse=//p' | tail -n 1)
+          k=$(printf '%s\n' "$c" | sed -n 's/^[[:space:]]*SystemKeepFree=//p' | tail -n 1)
+          echo "SystemMaxUse=${m:-default} SystemKeepFree=${k:-default}"
+          [ "$m" = "$CB_MAX_USE" ] && [ "$k" = "$CB_KEEP_FREE" ]
+
+remediation:
+  manual: |
+    1. Create `/etc/systemd/journald.conf.d/60-cirsec.conf` with:
+       ```
+       [Journal]
+       Storage=persistent
+       Compress=yes
+       SystemMaxUse={{ max_use }}
+       SystemKeepFree={{ keep_free }}
+       ```
+    2. Run `systemctl restart systemd-journald`.
+  effects:
+    restart: service
+    services: [systemd-journald]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/journald.conf.d/60-cirsec.conf` and run `systemctl restart systemd-journald`.
+  scripts:
+    - id: dropin
+      engine: shell
+      content: |
+        f=/etc/systemd/journald.conf.d/60-cirsec.conf
+        mkdir -p /etc/systemd/journald.conf.d
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-AUDIT-001' '[Journal]' 'Storage=persistent' 'Compress=yes' \
+          "SystemMaxUse=$CB_MAX_USE" "SystemKeepFree=$CB_KEEP_FREE" >"$f"
+        chmod 644 "$f"
+        systemctl start systemd-journald
+
+references:
+  - title: journald.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/journald.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: partial
+    note: R71 asks for a logging system; this control covers the local journal.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.1.3"
+    relation: partial
+    note: CIS leaves the rotation values to the site; ours sets two of them as parameters.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.1.3"
+    relation: partial
+    note: CIS leaves the rotation values to the site; ours sets two of them as parameters.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.1.1.5"
+    relation: partial
+    note: CIS leaves the rotation values to the site; ours sets two of them as parameters.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.1.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.1.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.1.1.5"
+    relation: partial
+    note: CIS leaves the rotation values to the site; ours sets two of them as parameters.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.1.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.1.1.7"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+  - framework: cwe
+    id: CWE-778
+related_controls:
+  - id: CB-UBU-AUDIT-002
+    type: related
+  - id: CB-UBU-AUDIT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on stock image (Storage=auto, no size budget); drop-in fixes it, journald restarted; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on stock image (Storage=auto, no size budget); drop-in fixes it, journald restarted; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on stock image (Storage=auto, no size budget); drop-in fixes it, journald restarted; passes after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on stock image (Storage=auto, no size budget); drop-in fixes it, journald restarted; passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

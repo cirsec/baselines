@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-014
+title: Remove prelink
+finding:
+  title: prelink is installed
+  description: prelink rewrites system binaries and libraries, which defeats address randomization of libraries and breaks file integrity checks.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [package, memory, integrity]
+
+description: |
+  `prelink` modifies ELF binaries and shared libraries in place so that libraries load at fixed,
+  precomputed addresses, to save a little time at program start. It is in the `universe`
+  component of Ubuntu up to 24.04 and is no longer in the archive from 26.04.
+rationale: |
+  Prelinked libraries always load at the same address, which removes part of the benefit of
+  address space layout randomization (CB-UBU-BOOT-001). Prelink also rewrites binaries on a
+  schedule, so file integrity tools such as AIDE report changes that are not attacks, which
+  trains administrators to ignore their alerts. The startup gain is negligible on current
+  hardware.
+impact: |
+  None known. Before removal, the fix runs `prelink -ua` to restore every binary to its original
+  content, which can take a few minutes on a large system.
+notes: |
+  On 26.04 the package cannot be installed from the archive, so the check passes unless it came
+  from another source.
+
+setting:
+  location: Package `prelink`
+  default_value: Not installed
+  recommended_value: Not installed
+
+audit:
+  manual: |
+    Run `dpkg -s prelink`. The package must not be installed.
+  checks:
+    - id: package
+      engine: package
+      description: The prelink package is not installed.
+      spec: { name: prelink, state: absent }
+
+remediation:
+  manual: |
+    1. Restore the original binaries: `prelink -ua`.
+    2. Remove the package: `apt purge prelink`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Reinstall the package with `apt install prelink`; binaries are prelinked again at the next
+    run of its daily job.
+  scripts:
+    - id: undo-and-purge
+      engine: shell
+      content: |
+        if command -v prelink >/dev/null 2>&1; then
+          prelink -ua || { echo 'prelink -ua failed, package kept' >&2; exit 1; }
+        fi
+        DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y -q prelink
+
+references:
+  - title: prelink(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/prelink.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Security documentation - Address space layout randomization
+    url: https://documentation.ubuntu.com/security/security-features/process-memory/aslr/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.5.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.5.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.6"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1068
+related_controls:
+  - id: CB-UBU-BOOT-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Passes on a fresh install; with prelink installed and run (prelink -avmR) it fails, the fix runs prelink -ua and purges the package, then it passes."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Passes on a fresh install; with prelink installed and run (prelink -avmR) it fails, the fix runs prelink -ua and purges the package, then it passes."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Passes on a fresh install; with prelink installed and run (prelink -avmR) it fails, the fix runs prelink -ua and purges the package, then it passes."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install; prelink is not in the 26.04 archive."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

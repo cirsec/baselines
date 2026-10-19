@@ -13,9 +13,10 @@
 
 CB_BACKUP_DIR=${CB_BACKUP_DIR:-/var/backups/cirsec/$(date +%Y%m%d-%H%M%S)}
 
-# Product version of the target (e.g. 12 for Debian 12). Override with CB_PRODUCT_VERSION.
+# Product version of the target: VERSION_ID of os-release (12 on Debian 12, 24.04 on Ubuntu 24.04).
+# Override with CB_PRODUCT_VERSION.
 if [ -z "${CB_PRODUCT_VERSION+x}" ]; then
-  CB_PRODUCT_VERSION=$( (. /etc/os-release && printf '%s' "${VERSION_ID%%.*}") 2>/dev/null)
+  CB_PRODUCT_VERSION=$( (. /etc/os-release && printf '%s' "$VERSION_ID") 2>/dev/null)
 fi
 
 # cb_cmp OBSERVED OPERATOR EXPECTED -> 0 true, 1 false, 3 cannot compare.
@@ -46,15 +47,23 @@ _cb_cmp() {
 }
 
 # cb_version_in V... -> 0 if the target version is listed, 2 if not, 3 if unknown.
+# A listed version matches the full VERSION_ID ("24.04") or its major part ("12" for 12.x).
 cb_version_in() {
   if [ -z "$CB_PRODUCT_VERSION" ]; then
     echo "product version unknown, set CB_PRODUCT_VERSION" >&2
     return 3
   fi
   for _v in "$@"; do
-    [ "$_v" = "$CB_PRODUCT_VERSION" ] && return 0
+    [ "$_v" = "$CB_PRODUCT_VERSION" ] || [ "$_v" = "${CB_PRODUCT_VERSION%%.*}" ] && return 0
   done
   return 2
+}
+
+# cb_sshd ARGS -> sshd from /usr/sbin. Creates /run/sshd first: with socket activation (Ubuntu 24.04+)
+# it only exists once ssh.service has run, and sshd -T / -t refuse to start without it.
+cb_sshd() {
+  [ -d /run/sshd ] || mkdir -p -m 0755 /run/sshd
+  PATH="$PATH:/usr/sbin" sshd "$@"
 }
 
 # cb_fact NAME -> 0 true, 2 false, 3 detection error.
@@ -176,14 +185,13 @@ cb_exit_code() {
 cb_main() {
   case ${1:-} in
     check)
-      if [ "$CB_ASSESSMENT" = manual ]; then
-        printf 'control\t%s\tmanual\n' "$CB_CONTROL"
-        exit 4
-      fi
       cb_applicable
       _r=$?
       if [ "$_r" -ne 0 ]; then
         [ "$_r" -eq 2 ] && _s=not_applicable || _s=error
+      elif [ "$CB_ASSESSMENT" = manual ]; then
+        printf 'control\t%s\tmanual\n' "$CB_CONTROL"
+        exit 4
       else
         CB_P=0 CB_F=0 CB_E=0
         cb_run_checks

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-028
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver cloud-init une fois le serveur provisionné
+finding:
+  title: cloud-init s'exécute encore à chaque démarrage d'un serveur provisionné
+  description: Quiconque peut modifier les métadonnées de l'instance ou brancher un disque de configuration peut exécuter des commandes en root au démarrage suivant.
+description: |
+  cloud-init configure une nouvelle instance à partir de sa source de données (datasource) : le
+  service de métadonnées du fournisseur cloud (IMDS), ou un disque de configuration comme un volume
+  NoCloud `cidata` ou un config drive OpenStack. Il est installé sur toutes les images cloud Ubuntu
+  et sur les serveurs installés avec Subiquity, et il démarre à chaque boot : il détecte de nouveau
+  la source de données, exécute ses modules « à chaque démarrage » (`bootcmd`, `scripts-per-boot`,
+  mise à jour du nom d'hôte et de `/etc/hosts`), et quand l'identifiant d'instance change, il
+  rejoue tous les modules du premier démarrage (utilisateurs, clés SSH, paquets, scripts
+  user-data).
+
+  Une fois le serveur provisionné et géré par les outils de l'organisation, le fichier
+  `/etc/cloud/cloud-init.disabled` (ou `cloud-init=disabled` sur la ligne de commande du noyau)
+  empêche cloud-init de s'exécuter au démarrage. `cloud-init status` affiche alors `disabled`.
+rationale: |
+  La source de données est un canal de configuration de niveau root qui échappe à la gestion des
+  changements du serveur. Une personne qui peut modifier le user-data dans la console cloud,
+  répondre à la place du service de métadonnées sur un réseau sans protection de l'IMDS, ou
+  brancher un disque nommé `cidata` sur la machine peut ajouter une clé SSH, créer un compte ou
+  exécuter un script en root au démarrage suivant. Arrêter cloud-init après le provisionnement
+  ferme ce canal et laisse le réseau, les comptes et les clés sous la seule gestion de configuration.
+impact: |
+  À partir du démarrage suivant, cloud-init n'applique plus les changements venant de la
+  plateforme :
+
+  - **réseau** : `/etc/netplan/50-cloud-init.yaml` reste tel qu'écrit au provisionnement et n'est
+    plus régénéré. Quand il reconnaît l'interface par son adresse MAC, une carte réseau nouvelle
+    ou remplacée (autre adresse MAC, VM déplacée sur un autre réseau) démarre sans réseau ;
+  - **disque** : la partition et le système de fichiers racine ne sont plus agrandis après
+    l'agrandissement du disque (`growpart`, `resizefs`) : lancer `growpart` et `resize2fs` à la main ;
+  - **identité** : le nom d'hôte, les clés SSH et les comptes des métadonnées ne sont plus mis à
+    jour, et une VM clonée garde les clés d'hôte SSH de sa source.
+
+  Réactiver cloud-init (supprimer le fichier et redémarrer) avant de redimensionner, déplacer ou
+  cloner le serveur par la plateforme cloud. Ne pas appliquer ce contrôle aux images ou modèles,
+  ni aux instances en autoscaling que la plateforme doit pouvoir reconstruire.
+notes: |
+  La correction n'écrit le fichier que si `cloud-init status` indique `done`, pour ne jamais
+  arrêter un provisionnement en cours ou en échec. La correction est désactivée par défaut
+  (`lockout_risk`) : un serveur dont le réseau dépend de cloud-init peut devenir injoignable après
+  un changement de matériel. Supprimer le paquet `cloud-init` atteint aussi l'objectif, mais c'est
+  plus difficile à défaire et certaines plateformes (Azure, modèles Proxmox) s'attendent à sa
+  présence. L'agent invité QEMU et le serveur SSH continuent de fonctionner : ils ne dépendent pas
+  de cloud-init une fois le système provisionné.
+setting:
+  location: /etc/cloud/cloud-init.disabled
+  recommended_value: Présent
+audit:
+  manual: |
+    1. Vérifier que `/etc/cloud/cloud-init.disabled` existe, ou que `/proc/cmdline` contient
+       `cloud-init=disabled`.
+    2. Après un redémarrage, `cloud-init status` doit afficher `status: disabled`.
+remediation:
+  manual: |
+    1. Vérifier que le provisionnement est terminé : `cloud-init status` doit afficher
+       `status: done`.
+    2. Vérifier que `/etc/netplan/` contient la configuration réseau dont le serveur a besoin sans
+       cloud-init (et adapter un éventuel `match: macaddress` si le matériel peut changer).
+    3. Lancer `touch /etc/cloud/cloud-init.disabled`, redémarrer, et vérifier que
+       `cloud-init status` affiche `status: disabled` et que le réseau et l'accès SSH fonctionnent.
+  rollback: |
+    Supprimer `/etc/cloud/cloud-init.disabled` et redémarrer. Si l'identifiant d'instance n'a pas
+    changé, cloud-init n'exécute de nouveau que ses modules « à chaque démarrage ».

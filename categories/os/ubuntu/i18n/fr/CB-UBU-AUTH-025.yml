@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-025
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Remplacer les secrets par défaut dès l'installation
+finding:
+  title: Des secrets définis par l'installateur, une image ou un éditeur sont toujours utilisés
+  description: Les mots de passe, clés et certificats par défaut sont connus de quiconque dispose de la même image ou de la même documentation.
+description: |
+  Après une installation ou un clonage depuis une image, chaque secret identique sur d'autres
+  systèmes doit être remplacé : mots de passe définis par l'installateur ou un modèle, clés d'hôte
+  SSH copiées avec l'image, mots de passe d'application par défaut et certificats autosignés livrés
+  par les paquets.
+rationale: |
+  Les systèmes issus d'une même image partagent leurs secrets. Un attaquant qui en extrait un, ou
+  qui lit la documentation de l'éditeur, peut le réutiliser partout où l'image a été déployée.
+impact: |
+  Régénérer les clés d'hôte SSH change leurs empreintes : les clients doivent accepter les nouvelles.
+audit:
+  manual: |
+    1. Comparer les empreintes des clés d'hôte SSH (`ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub`)
+       avec d'autres systèmes issus de la même image. Elles doivent différer.
+    2. Vérifier que les mots de passe des comptes créés par l'installateur ou l'image ont été changés.
+    3. Lister les applications avec des identifiants par défaut (bases de données, consoles web) et
+       confirmer qu'ils ont été changés.
+remediation:
+  manual: |
+    1. Régénérer les clés d'hôte SSH : `rm /etc/ssh/ssh_host_*` puis `dpkg-reconfigure openssh-server`.
+    2. Définir de nouveaux mots de passe pour les comptes créés par l'image, ou les verrouiller.
+    3. Changer les mots de passe par défaut des applications et remplacer les certificats snakeoil
+       (`make-ssl-cert generate-default-snakeoil --force-overwrite`, ou de vrais certificats).

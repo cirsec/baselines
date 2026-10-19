@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-FS-012
+title: Encrypt the disks holding the system and data
+finding:
+  title: File systems or swap are stored unencrypted on disk
+  description: Anyone holding the disk or the device, lost, stolen or discarded, can read its data and change the system offline.
+status: active
+profiles: [desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [encryption, luks, physical-access]
+
+description: |
+  With LUKS (dm-crypt), each partition or LVM volume group is encrypted with a key unlocked at
+  boot, by a passphrase, a TPM or a key server. The Ubuntu installers set it up when asked: the
+  desktop installer with its LVM and encryption option (or, from 23.10, the experimental
+  TPM-backed encryption), the server installer by encrypting the LVM volume group in the guided
+  storage layout. Only `/boot` and the EFI system partition stay in clear text.
+rationale: |
+  Laptops and workstations are lost and stolen, and disks leave with returned or discarded
+  hardware. Without encryption, the data, the password hashes and the keys on the disk can be
+  read, and the system can be modified offline (for example to plant a backdoor) without any
+  trace.
+impact: |
+  A passphrase must be typed at every boot, unless a TPM or network unlock is set up, which makes
+  unattended reboots harder. Encrypting an existing system requires a reinstallation or an
+  offline conversion. Performance cost is negligible on CPUs with AES instructions.
+notes: |
+  The check covers every mounted ext2/3/4, XFS, Btrfs, F2FS and JFS file system except `/boot`
+  and below, and every swap partition or swap file; zram swap is in memory and skipped. A device
+  that is not a block device (ZFS dataset, network file system) makes the check report an error,
+  to be reviewed by hand.
+
+  Ubuntu desktops swap to `/swap.img` on the root file system, which is therefore encrypted with
+  it. TPM-backed encryption also uses LUKS2 volumes, so the check accepts it the same way.
+
+setting:
+  location: Disk layout, /etc/crypttab
+  default_value: Unencrypted unless chosen in the installer
+  recommended_value: Every file system except /boot, and swap, on a dm-crypt device
+
+audit:
+  manual: |
+    Run `lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS`. Every mounted file system except `/boot` and
+    `/boot/efi`, and every swap, must sit below a device of type `crypt`.
+  checks:
+    - id: crypt
+      engine: shell
+      description: dm-crypt below each mounted disk file system and swap.
+      spec:
+        script: |
+          rc=0 n=0
+          list=$(findmnt -rn -o SOURCE,TARGET -t ext2,ext3,ext4,xfs,btrfs,f2fs,jfs
+                 swapon --noheadings --show=NAME,TYPE 2>/dev/null | while read -r name type; do
+                   case $type in
+                     partition) echo "$name swap" ;;
+                     file) echo "$(findmnt -n -o SOURCE -T "$name") swap:$name" ;;
+                   esac
+                 done)
+          while read -r src target; do
+            [ -n "$src" ] || continue
+            case $target in /boot | /boot/*) continue ;; esac
+            case $src in /dev/zram*) continue ;; esac
+            dev=${src%%\[*}
+            n=$((n + 1))
+            if ! t=$(lsblk -nso TYPE "$dev" 2>/dev/null); then
+              echo "$target on $src: not a block device, check by hand"
+              [ "$rc" = 1 ] || rc=3
+            elif ! printf '%s\n' "$t" | grep -qx crypt; then
+              echo "$target on $src: not encrypted"
+              rc=1
+            fi
+          done <<EOF
+          $list
+          EOF
+          [ "$rc" = 0 ] && echo "$n file systems and swaps, all on dm-crypt"
+          exit "$rc"
+
+remediation:
+  manual: |
+    Encryption cannot be added safely to a running system by a script.
+
+    1. For a new system, enable encryption in the Ubuntu installer (desktop: LVM and encryption,
+       or TPM-backed encryption; server: encrypt the LVM volume group), set `storage` with a
+       `password` in an autoinstall file, or create LUKS2 volumes with `cryptsetup luksFormat` and list them in
+       `/etc/crypttab`.
+    2. For an existing system, back up the data, reinstall with encryption and restore; or
+       convert offline with `cryptsetup reencrypt --encrypt` from a live system, after a full
+       backup.
+    3. Encrypt swap as well (inside the encrypted LVM, or with a random key in `/etc/crypttab`).
+    4. Keep a recovery passphrase in a safe place, separate from the device.
+
+references:
+  - title: crypttab(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/crypttab.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: cryptsetup(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/cryptsetup.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Security documentation - Full disk encryption
+    url: https://documentation.ubuntu.com/security/security-features/storage/encryption-full-disk/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - TPM-backed LUKS decryption with Clevis
+    url: https://documentation.ubuntu.com/server/how-to/security/tpm-backed-luks-decryption-with-clevis/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28(1)
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1005
+  - framework: mitre-attack
+    id: T1200
+  - framework: cwe
+    id: CWE-311
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM 2520, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM 2522, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM 2524, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM 2526, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on the unencrypted cloud root (expected, manual fix); a LUKS2 loop device mounted ext4 is accepted."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

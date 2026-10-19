@@ -1,0 +1,173 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-002
+title: Forward the journal to rsyslog only when rsyslog is the chosen logger
+finding:
+  title: The journal forwarding setting does not match the logging system in use
+  description: Messages are either sent to a syslog daemon that does not exist, or not given to the rsyslog daemon that is supposed to store and forward them.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [journald, rsyslog, logging]
+
+description: |
+  An Ubuntu system should use one logging system: the systemd journal alone, or the journal
+  feeding rsyslog, which then writes text files and forwards messages. The journald setting
+  `ForwardToSyslog=` decides whether each message is also handed to a syslog daemon.
+
+  - When the `rsyslog` package is installed, `ForwardToSyslog=yes` is required, so that rsyslog
+    receives every message.
+  - When it is not installed, `ForwardToSyslog=no` is required, since nothing reads the
+    forwarded messages.
+rationale: |
+  A mismatch either loses messages in the files and remote copies managed by rsyslog, or wastes
+  resources on a socket nobody reads. Choosing one system keeps the log pipeline simple to review.
+impact: |
+  None known. The journal keeps every message in both cases.
+notes: |
+  Ubuntu Server installs rsyslog by default. On Ubuntu 20.04 and 22.04, journald is built with
+  `ForwardToSyslog=yes` as its default (shown commented out in `/etc/systemd/journald.conf`); from
+  24.04 the built-in default is `no` and the rsyslog package ships
+  `/usr/lib/systemd/journald.conf.d/syslog.conf` with `ForwardToSyslog=yes`. The check takes the
+  built-in default into account when no file sets the value. The fix writes
+  `/etc/systemd/journald.conf.d/syslog.conf`, which replaces the file shipped by rsyslog.
+
+setting:
+  location: /etc/systemd/journald.conf.d/syslog.conf
+  default_value: yes (rsyslog installed by default)
+  recommended_value: yes when rsyslog is installed, no otherwise
+
+audit:
+  manual: |
+    1. Run `dpkg-query -W -f='${Status}\n' rsyslog` to know whether rsyslog is installed.
+    2. Run `systemd-analyze cat-config systemd/journald.conf`. The last `ForwardToSyslog=` must be
+       `yes` if rsyslog is installed, and `no` (or absent) otherwise.
+  checks:
+    - id: forward
+      engine: shell
+      description: Effective ForwardToSyslog= compared with the presence of rsyslog.
+      spec:
+        script: |
+          v=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^[[:space:]]*ForwardToSyslog=//p' | tail -n 1)
+          # unset: the build default, shown commented out in journald.conf (yes on 20.04 and 22.04)
+          [ -n "$v" ] || v=$(sed -n 's/^#ForwardToSyslog=//p' /etc/systemd/journald.conf 2>/dev/null | head -n 1)
+          case ${v:-no} in yes | true | on | 1) v=yes ;; *) v=no ;; esac
+          case $(dpkg-query -W -f='${Status}' rsyslog 2>/dev/null) in
+            *' installed') want=yes ;;
+            *) want=no ;;
+          esac
+          echo "ForwardToSyslog=$v, expected $want"
+          [ "$v" = "$want" ]
+
+remediation:
+  manual: |
+    Create `/etc/systemd/journald.conf.d/syslog.conf` with `[Journal]` and `ForwardToSyslog=yes` if
+    rsyslog is installed, `ForwardToSyslog=no` otherwise, then run `systemctl restart systemd-journald`.
+  effects:
+    restart: service
+    services: [systemd-journald]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/journald.conf.d/syslog.conf` and run `systemctl restart systemd-journald`.
+  scripts:
+    - id: dropin
+      engine: shell
+      content: |
+        case $(dpkg-query -W -f='${Status}' rsyslog 2>/dev/null) in
+          *' installed') v=yes ;;
+          *) v=no ;;
+        esac
+        f=/etc/systemd/journald.conf.d/syslog.conf
+        mkdir -p /etc/systemd/journald.conf.d
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-AUDIT-002' '[Journal]' "ForwardToSyslog=$v" >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: journald.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/journald.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: rsyslogd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/rsyslogd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R71
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-6(4)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.2.2"
+    relation: partial
+    note: CIS asks for no when journald is the only logger; ours asks for yes when rsyslog is installed (Ubuntu default) and no otherwise.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.2.3.3"
+    relation: stricter
+    note: Ours also turns forwarding off when rsyslog is absent.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.1.1.4"
+    relation: partial
+    note: CIS asks for no when journald is the only logger; ours asks for yes when rsyslog is installed (Ubuntu default) and no otherwise.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.1.2.3"
+    relation: stricter
+    note: Ours also turns forwarding off when rsyslog is absent.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.1.1.1.3"
+    relation: stricter
+    note: Ours also turns forwarding off when rsyslog is absent.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.1.1.1.3"
+    relation: stricter
+    note: Ours also turns forwarding off when rsyslog is absent.
+threats:
+  - framework: cwe
+    id: CWE-778
+related_controls:
+  - id: CB-UBU-AUDIT-001
+    type: related
+  - id: CB-UBU-AUDIT-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "rsyslog installed, built-in default ForwardToSyslog=yes: passes on stock image (check reads the commented build default)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock image (built-in default yes, rsyslog installed); after removing rsyslog fails, fix writes ForwardToSyslog=no and passes."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock image (rsyslog ships journald.conf.d/syslog.conf with ForwardToSyslog=yes); kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock image (rsyslog ships journald.conf.d/syslog.conf with ForwardToSyslog=yes); kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-011
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger la configuration du chargeur de démarrage par un mot de passe
+finding:
+  title: N'importe qui devant la console peut modifier les entrées de démarrage
+  description: Modifier la ligne de commande du noyau au démarrage (par exemple ajouter init=/bin/sh) donne un shell root sans aucun mot de passe.
+description: |
+  GRUB peut exiger un nom de superutilisateur et un mot de passe avant toute modification d'une
+  entrée de démarrage ou l'ouverture de la ligne de commande GRUB. Le mot de passe est stocké sous
+  forme d'empreinte PBKDF2 dans la configuration GRUB. Marquer les entrées de démarrage normales
+  `--unrestricted` garde les démarrages sans intervention : le mot de passe n'est demandé que pour
+  les modifier.
+rationale: |
+  Quiconque accède à la console (physiquement, via la console d'un hyperviseur ou une carte de
+  gestion à distance) peut sinon modifier la ligne de commande du noyau, démarrer en mode
+  mono-utilisateur ou sur un shell, et contourner tous les contrôles de comptes et d'audit du système.
+impact: |
+  Modifier les entrées de démarrage ou utiliser le shell GRUB pendant un incident demande le mot de
+  passe GRUB. Le ranger avec les autres secrets d'urgence. Les démarrages sans modification ne sont
+  pas concernés.
+notes: |
+  Le chiffrement complet du disque protège mieux contre les attaques hors ligne. Le mot de passe
+  GRUB n'empêche pas de démarrer sur un autre support ; le restreindre dans les réglages du firmware.
+
+  `/etc/grub.d/10_linux` est un fichier de configuration du paquet `grub-common` : une mise à jour qui
+  le modifie garde la version locale (unattended-upgrades) ou pose la question. Après une telle mise à
+  jour, vérifier que `--unrestricted` est toujours sur la ligne `CLASS=`.
+setting:
+  location: "`/etc/grub.d/40_custom` (ou un autre fichier de `/etc/grub.d/`), compilé dans `/boot/grub/grub.cfg`"
+  recommended_value: Un superutilisateur et une empreinte de mot de passe PBKDF2
+audit:
+  manual: |
+    Dans `/boot/grub/grub.cfg`, vérifier qu'une ligne `set superusers=` et une ligne `password_pbkdf2` existent.
+remediation:
+  manual: |
+    1. Générer une empreinte : `grub-mkpasswd-pbkdf2`.
+    2. Ajouter à `/etc/grub.d/40_custom` :
+       ```
+       set superusers="root"
+       password_pbkdf2 root grub.pbkdf2.sha512.10000.<empreinte>
+       ```
+    3. Pour garder des démarrages sans intervention, ajouter `--unrestricted` à la ligne `CLASS=`
+       de `/etc/grub.d/10_linux`, ou à chaque `menuentry` qui doit démarrer sans mot de passe.
+    4. Lancer `update-grub`, puis redémarrer une fois depuis la console pour confirmer que l'entrée
+       par défaut démarre toujours.
+  rollback: |
+    Retirer les deux lignes de `/etc/grub.d/40_custom` et lancer `update-grub`.

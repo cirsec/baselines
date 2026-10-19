@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-001
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Décider si IPv6 est utilisé, puis le désactiver ou le sécuriser
+finding:
+  title: IPv6 est actif sans décision de l'utiliser
+  description: Une pile IPv6 que personne n'a prévue reste souvent sans filtrage ni supervision, à côté d'une configuration IPv4 durcie.
+description: |
+  Ubuntu active IPv6 par défaut : chaque interface reçoit une adresse lien-local, et une adresse
+  globale dès qu'un routeur annonce un préfixe. Chaque système doit faire l'objet d'une décision
+  écrite : soit IPv6 est utilisé, et il est configuré et filtré comme IPv4, soit il ne l'est pas, et
+  la pile est désactivée.
+rationale: |
+  Les règles de pare-feu, la supervision et le durcissement sont souvent écrits pour IPv4 seulement.
+  Une pile IPv6 laissée active par défaut offre à un attaquant du réseau local un second chemin vers
+  le système, moins surveillé (annonces de routeur, services lien-local).
+impact: |
+  Désactiver IPv6 casse les logiciels qui attendent `::1` ou des sockets IPv6. Vérifier les services
+  locaux après le changement.
+notes: |
+  Les contrôles sysctl IPv6 de ce référentiel ne s'appliquent que si la pile IPv6 est présente, via le
+  fait `ipv6`.
+audit:
+  manual: |
+    1. Vérifier si IPv6 est actif : `test -d /proc/sys/net/ipv6 && sysctl net.ipv6.conf.all.disable_ipv6`
+       (`0` signifie actif), et lister les adresses avec `ip -6 address`.
+    2. Chercher dans la documentation du système une décision sur IPv6 pour cet hôte.
+    3. Si IPv6 est utilisé, vérifier que le pare-feu filtre aussi IPv6 (`ufw status verbose` avec
+       `IPV6=yes` dans `/etc/default/ufw`, valeur par défaut d'Ubuntu, ou une table `inet`/`ip6` dans `nft list ruleset`).
+remediation:
+  manual: |
+    - Si IPv6 n'est pas utilisé, ajouter `ipv6.disable=1` à `GRUB_CMDLINE_LINUX` dans
+      `/etc/default/grub`, lancer `update-grub` et redémarrer. Sans accès au chargeur de démarrage,
+      mettre plutôt `net.ipv6.conf.all.disable_ipv6 = 1` et `net.ipv6.conf.default.disable_ipv6 = 1`
+      dans `/etc/sysctl.d/60-cirsec.conf`. Avec netplan, mettre aussi `link-local: [ ipv4 ]` (ou
+      `[]`) sur chaque interface pour qu'elle ne demande pas d'adresse IPv6.
+    - Si IPv6 est utilisé, appliquer les contrôles IPv6 de ce référentiel et filtrer IPv6 dans le
+      pare-feu.
+    - Consigner la décision dans la documentation du système.
+  rollback: |
+    Retirer `ipv6.disable=1` ou les lignes `disable_ipv6`, puis redémarrer.

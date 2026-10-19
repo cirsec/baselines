@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-005
+title: Disable IMAP and POP3 mail access servers the system does not provide
+finding:
+  title: An IMAP or POP3 server can run on a system that does not provide mailboxes
+  description: A mail access server accepts user passwords from the network and exposes stored mail.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, mail, imap, pop3, attack-surface]
+
+description: |
+  IMAP and POP3 servers let mail clients read mailboxes stored on the system. Ubuntu packages
+  Dovecot (`dovecot.service` and `dovecot.socket`) and Cyrus (`cyrus-imapd.service`).
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  These servers authenticate users with their passwords, so they are a target for password
+  guessing, and a flaw in them exposes every mailbox on the system.
+impact: |
+  Masking a unit stops it and prevents it from starting again. Sending mail through the local
+  mail transfer agent is not affected. Mail servers must exclude this control in their
+  tailoring file.
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid fix.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `dovecot.service`, `dovecot.socket`, `cyrus-imapd.service`.
+  logic: all
+  checks:
+    - id: dovecot
+      engine: systemd-unit
+      description: Dovecot IMAP and POP3 server.
+      spec: { unit: dovecot.service, state: masked }
+    - id: dovecot-socket
+      engine: systemd-unit
+      description: Dovecot socket activation.
+      spec: { unit: dovecot.socket, state: masked }
+    - id: cyrus-imapd
+      engine: systemd-unit
+      description: Cyrus IMAP and POP3 server.
+      spec: { unit: cyrus-imapd.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead: `apt purge dovecot-core cyrus-imapd cyrus-common`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: dovecot-socket
+      from_check: dovecot-socket
+    - id: dovecot
+      from_check: dovecot
+    - id: cyrus-imapd
+      from_check: cyrus-imapd
+
+references:
+  - title: dovecot(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/dovecot.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers mail access servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.8"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1110
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes (units absent); with dovecot-imapd installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (units absent); with dovecot-imapd installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (units absent); with dovecot-imapd installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (units absent); with dovecot-imapd installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,233 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-014
+title: Decide and configure what happens when the audit disk fills up
+finding:
+  title: The system keeps running without recording audit events when the audit log space runs out
+  description: With the Ubuntu defaults, auditd only suspends itself when the disk is full, and actions continue unrecorded.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, availability]
+
+description: |
+  `/etc/audit/auditd.conf` sets what auditd does as the partition holding `/var/log/audit` fills
+  up. Ubuntu ships `space_left_action = SYSLOG`, `admin_space_left_action = SUSPEND`,
+  `disk_full_action = SUSPEND` and `disk_error_action = SUSPEND`: audit stops and the system
+  carries on, and nobody is warned.
+
+  The `disk_full_policy` parameter records the choice of the organization:
+
+  - `stop-system` (default, accountability first): nothing may happen unrecorded. When the
+    partition is almost full (`admin_space_left`) or full, the system goes to single user mode or
+    halts (`{{ admin_space_left_action }}` / `{{ disk_full_action }}`). Remote sessions and services
+    stop until an administrator frees space at the console.
+  - `keep-running` (availability first): auditd suspends itself (`suspend`) and the system keeps
+    serving. Actions done while the partition is full are not recorded.
+
+  In both cases `space_left_action` must warn someone early (`email`, `exec`, `single` or `halt`;
+  fix: `{{ space_left_action }}`), and `disk_error_action` must be `syslog`, `single` or `halt`
+  (fix: `{{ disk_error_action }}`).
+rationale: |
+  Accountability requires that nothing happens without being recorded: on systems that must prove
+  who did what (regulated, high-value), `stop-system` is the right choice. On systems where an
+  outage is worse than a gap in the audit trail, `keep-running` is acceptable, provided the early
+  warning reaches someone. What is never acceptable is the Ubuntu default, which stops auditing
+  without warning anybody.
+impact: |
+  With `stop-system`, a full audit partition stops remote sessions and services: SSH becomes
+  unreachable, recovery needs the console. This is why the fix is disabled by default in generated
+  artifacts (`lockout_risk`); enable it once the policy is chosen. With `keep-running`, the system
+  stays up but the audit trail has a gap. In both cases, monitor the free space and archive audit
+  logs in time. `email` needs a working local mail transport, otherwise only a syslog message is
+  written.
+setting:
+  location: /etc/audit/auditd.conf
+  default_value: space_left_action = SYSLOG, admin_space_left_action, disk_full_action and disk_error_action = SUSPEND
+  recommended_value: "space_left_action = {{ space_left_action }}, admin_space_left_action = {{ admin_space_left_action }}, disk_full_action = {{ disk_full_action }}, disk_error_action = {{ disk_error_action }}"
+
+parameters:
+  - name: disk_full_policy
+    type: enum
+    description: "stop-system: halt or single user mode when the audit disk is full (accountability first). keep-running: suspend auditing and keep the system up (availability first)."
+    allowed: [stop-system, keep-running]
+    default: stop-system
+  - name: space_left_action
+    type: enum
+    description: Action when free space drops below space_left.
+    allowed: [email, exec, single, halt]
+    default: email
+  - name: admin_space_left_action
+    type: enum
+    description: Action when free space drops below admin_space_left, used with disk_full_policy stop-system.
+    allowed: [single, halt]
+    default: single
+  - name: disk_full_action
+    type: enum
+    description: Action when the partition is full, used with disk_full_policy stop-system.
+    allowed: [single, halt]
+    default: single
+  - name: disk_error_action
+    type: enum
+    description: Action when writing the audit log fails.
+    allowed: [syslog, single, halt]
+    default: syslog
+
+audit:
+  manual: |
+    Run `grep -Ei '^\s*(space_left|admin_space_left|disk_full|disk_error)_action' /etc/audit/auditd.conf`.
+    `space_left_action` must be email, exec, single or halt and `disk_error_action` syslog, single
+    or halt. With `disk_full_policy` = `stop-system`, `admin_space_left_action` and
+    `disk_full_action` must be single or halt; with `keep-running`, suspend is also accepted.
+  checks:
+    - id: actions
+      engine: shell
+      description: Disk space actions in auditd.conf.
+      spec:
+        script: |
+          f=/etc/audit/auditd.conf
+          [ -r "$f" ] || { echo "$f not found: auditd is not installed"; exit 1; }
+          get() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/p" "$f" | tail -n 1 | tr 'A-Z' 'a-z'; }
+          rc=0
+          stop=single,halt
+          [ "$CB_DISK_FULL_POLICY" = keep-running ] && stop=suspend,single,halt
+          echo "disk_full_policy=$CB_DISK_FULL_POLICY"
+          for kv in space_left_action:email,exec,single,halt admin_space_left_action:$stop \
+            disk_full_action:$stop disk_error_action:syslog,single,halt; do
+            k=${kv%%:*} v=$(get "${kv%%:*}")
+            echo "$k=${v:-unset}"
+            case ",${kv#*:}," in *",${v:-unset},"*) ;; *) rc=1 ;; esac
+          done
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Choose the policy, `stop-system` or `keep-running` (see the description), and record it in
+       the tailoring file as `disk_full_policy`.
+    2. In `/etc/audit/auditd.conf`, set `space_left_action = {{ space_left_action }}` and
+       `disk_error_action = {{ disk_error_action }}`.
+    3. With `stop-system`, set `admin_space_left_action = {{ admin_space_left_action }}` and
+       `disk_full_action = {{ disk_full_action }}`; with `keep-running`, set both to `suspend`.
+    4. Run `systemctl restart auditd`.
+  effects:
+    restart: service
+    services: [auditd]
+    disruption: high
+    lockout_risk: true
+  rollback: |
+    Set the four actions back to `SYSLOG` / `SUSPEND` in `/etc/audit/auditd.conf` and restart auditd.
+  scripts:
+    - id: auditd-conf
+      engine: shell
+      content: |
+        f=/etc/audit/auditd.conf
+        [ -f "$f" ] || { echo "$f not found: auditd is not installed" >&2; exit 1; }
+        cb_backup "$f"
+        set_kv() {
+          sed -i "/^[[:space:]]*$1[[:space:]]*=/d" "$f"
+          printf '%s = %s\n' "$1" "$2" >>"$f"
+        }
+        set_kv space_left_action "$CB_SPACE_LEFT_ACTION"
+        if [ "$CB_DISK_FULL_POLICY" = keep-running ]; then
+          set_kv admin_space_left_action suspend
+          set_kv disk_full_action suspend
+        else
+          set_kv admin_space_left_action "$CB_ADMIN_SPACE_LEFT_ACTION"
+          set_kv disk_full_action "$CB_DISK_FULL_ACTION"
+        fi
+        set_kv disk_error_action "$CB_DISK_ERROR_ACTION"
+
+references:
+  - title: auditd.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/auditd.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R73
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-5(1)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.2.4"
+    relation: equivalent
+    note: Equivalent with disk_full_policy stop-system; looser with keep-running.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.2.4"
+    relation: equivalent
+    note: Equivalent with disk_full_policy stop-system; looser with keep-running.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.2.4"
+    relation: equivalent
+    note: Equivalent with disk_full_policy stop-system; looser with keep-running.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.2.4"
+    relation: equivalent
+    note: Equivalent with disk_full_policy stop-system; looser with keep-running.
+threats:
+  - framework: mitre-attack
+    id: T1562.012
+  - framework: cwe
+    id: CWE-778
+related_controls:
+  - id: CB-UBU-AUDIT-011
+    type: requires
+  - id: CB-UBU-AUDIT-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fix enabled with CB_ENABLE_CB_UBU_AUDIT_014=1 (stop-system policy); fails on stock auditd.conf, passes after fix and reboot. Disk-full action not triggered."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fix enabled with CB_ENABLE_CB_UBU_AUDIT_014=1 (stop-system policy); fails on stock auditd.conf, passes after fix and reboot. Disk-full action not triggered."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fix enabled with CB_ENABLE_CB_UBU_AUDIT_014=1 (stop-system policy); fails on stock auditd.conf, passes after fix and reboot. Disk-full action not triggered."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fix enabled with CB_ENABLE_CB_UBU_AUDIT_014=1 (stop-system policy); fails on stock auditd.conf, passes after fix and reboot. Disk-full action not triggered."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

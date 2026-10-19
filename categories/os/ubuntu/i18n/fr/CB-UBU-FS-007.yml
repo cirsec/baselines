@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-FS-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les fichiers des bases d'utilisateurs, de groupes et de mots de passe
+finding:
+  title: Les fichiers des bases de comptes ont un propriétaire ou des droits trop larges
+  description: Les empreintes de mots de passe peuvent être lues pour un cassage hors ligne, ou les fichiers de comptes modifiés pour ajouter un utilisateur ou obtenir root.
+description: |
+  Les fichiers qui définissent les comptes locaux, et les sauvegardes que les outils shadow gardent
+  avec le suffixe `-`, ont le propriétaire Ubuntu et au plus ces droits :
+
+  | Fichiers | Propriétaire:groupe | Droits maximum |
+  |---|---|---|
+  | `/etc/passwd`, `/etc/passwd-`, `/etc/group`, `/etc/group-` | `root:root` | `644` |
+  | `/etc/shadow`, `/etc/shadow-`, `/etc/gshadow`, `/etc/gshadow-` | `root:shadow` | `640` |
+  | `/etc/shells` | `root:root` | `644` |
+  | `/etc/security/opasswd`, `/etc/security/opasswd.old` | `root:root` | `600` |
+
+  Les fichiers absents sont ignorés.
+rationale: |
+  `passwd` et `group` doivent rester lisibles par tous pour la résolution des noms, mais seul root
+  peut les modifier : un droit d'écriture permet de créer un compte d'UID 0. `shadow` et `gshadow`
+  contiennent les empreintes des mots de passe ; sur Ubuntu, le groupe `shadow` permet à
+  `unix_chkpwd` et aux verrouilleurs d'écran de vérifier un mot de passe sans être root, et personne
+  d'autre ne doit pouvoir les lire. `opasswd` contient les empreintes des anciens mots de passe
+  conservées par `pam_pwhistory`. Les sauvegardes `-` contiennent les mêmes données que les fichiers
+  actifs.
+impact: |
+  Aucun connu : ce sont les valeurs par défaut d'Ubuntu, et la correction ne fait que retirer des
+  accès en trop.
+notes: |
+  Ubuntu, comme Debian, utilise le groupe `shadow` pour `shadow` et `gshadow`, et non `root` comme d'autres
+  distributions. Les passer en `root:root` casse la vérification des mots de passe par
+  `unix_chkpwd` pour les programmes non root (verrouilleurs d'écran, certains services PAM).
+setting:
+  location: /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow, /etc/shells, /etc/security/opasswd
+  recommended_value: Voir le tableau de la description
+audit:
+  manual: |
+    Lancer `stat -c '%n %U:%G %a' /etc/passwd* /etc/group* /etc/shadow* /etc/gshadow* /etc/shells /etc/security/opasswd*`
+    et comparer chaque ligne au tableau ci-dessus.
+remediation:
+  manual: |
+    ```
+    chown root:root /etc/passwd /etc/passwd- /etc/group /etc/group- /etc/shells
+    chmod u-x,go-wx /etc/passwd /etc/passwd- /etc/group /etc/group- /etc/shells
+    chown root:shadow /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
+    chmod u-x,g-wx,o-rwx /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
+    chown root:root /etc/security/opasswd*
+    chmod 600 /etc/security/opasswd*
+    ```
+  rollback: |
+    Inutile : la correction ne fait que rétablir le propriétaire Ubuntu et retirer des droits en trop.

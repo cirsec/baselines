@@ -1,0 +1,220 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-002
+title: Prevent loading of unused network protocol modules
+finding:
+  title: Rarely used network protocol modules can be loaded on demand
+  description: Any user can make the kernel load these modules by opening a socket of their protocol, exposing code with a history of vulnerabilities.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, modules, network]
+
+description: |
+  The Ubuntu kernel ships network protocols as modules that are loaded automatically the first
+  time a program opens a socket of that family: DCCP, SCTP, RDS, TIPC, ATM and CAN. This control
+  makes `modprobe` refuse to load them (`install <module> /bin/false`), keeps them out of
+  automatic loading (`blacklist <module>`), and checks that none of them is loaded.
+rationale: |
+  These protocols are seldom used on servers and desktops, yet their code is reachable from any
+  unprivileged process through automatic module loading. Several of them had local privilege
+  escalation vulnerabilities (for example in DCCP, RDS and SCTP). Code that cannot be loaded
+  cannot be exploited.
+impact: |
+  Applications that need one of these protocols stop working: SCTP for some telecom and
+  clustering software, CAN for automotive and industrial buses, RDS for some database clusters.
+  Remove the module from the `net_modules` parameter on such systems.
+notes: |
+  Modules that are not built for the running kernel (RDS is missing from the 20.04 to 24.04
+  kernels, DCCP was removed from the 26.04 kernel) are configured anyway, so that a kernel change does not reopen them. Other protocols not used
+  by the system can be added to the list.
+
+setting:
+  location: /etc/modprobe.d/60-cirsec-net.conf
+  default_value: Modules loaded on demand
+  recommended_value: "install /bin/false and blacklist for: {{ net_modules }}"
+
+parameters:
+  - name: net_modules
+    type: list
+    description: Kernel modules of network protocols that must not be loaded.
+    default: [dccp, sctp, rds, tipc, atm, can]
+
+audit:
+  manual: |
+    For each module in `{{ net_modules }}`:
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>( |$)'` shows
+       `install <module> /bin/false` (or `/bin/true`) and `blacklist <module>`;
+    2. `lsmod | grep '^<module> '` prints nothing.
+    Also review `lsmod` for other network protocol modules the system does not need.
+  checks:
+    - id: modules
+      engine: shell
+      description: modprobe configuration and loaded modules for each listed protocol.
+      spec:
+        script: |
+          cfg=$(modprobe --showconfig 2>/dev/null) || exit 3
+          rc=0
+          for m in $CB_NET_MODULES; do
+            bad=
+            printf '%s\n' "$cfg" | grep -Eq "^install $m /(usr/)?bin/(false|true)( |$)" || bad="$bad no-install-rule"
+            printf '%s\n' "$cfg" | grep -qx "blacklist $m" || bad="$bad not-blacklisted"
+            grep -q "^$m " /proc/modules && bad="$bad loaded"
+            if [ -n "$bad" ]; then echo "$m:$bad"; rc=1; else echo "$m: disabled"; fi
+          done
+          exit "$rc"
+
+remediation:
+  manual: |
+    Create `/etc/modprobe.d/60-cirsec-net.conf` with two lines per module:
+    ```
+    install dccp /bin/false
+    blacklist dccp
+    ```
+    then unload any loaded one with `modprobe -r <module>` (or reboot).
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-net.conf`. The modules load on demand again.
+  scripts:
+    - id: modprobe-conf
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: modprobe.d(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/modprobe.d.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: modprobe(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/modprobe.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.2.7"
+    relation: partial
+    note: The other unneeded protocols are reviewed by hand (audit.manual) or added to the parameter.
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1188
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Fails on a fresh install; fix.sh writes install /bin/false and blacklist for the six modules; passes after remediation and reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Fails on a fresh install; fix.sh writes install /bin/false and blacklist for the six modules; passes after remediation and reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Fails on a fresh install; fix.sh writes install /bin/false and blacklist for the six modules; passes after remediation and reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Fails on a fresh install; fix.sh writes install /bin/false and blacklist for the six modules; passes after remediation and reboot; second remediate leaves it alone."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

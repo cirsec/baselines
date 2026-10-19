@@ -1,0 +1,249 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-011
+title: Lock accounts after repeated failed logins
+finding:
+  title: Passwords can be guessed without limit
+  description: Without a lockout, an attacker can try passwords against local accounts as fast as the login services allow.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [pam, password, brute-force]
+
+description: |
+  `pam_faillock` (in `libpam-modules`) counts failed authentications per user and denies access
+  once the count reaches `deny` within `fail_interval`, until `unlock_time` seconds have passed
+  or an administrator runs `faillock --user <name> --reset`. Its settings are in
+  `/etc/security/faillock.conf`. Ubuntu ships the module but does not enable it: two
+  `pam-auth-update` profiles add it before (`preauth`) and after (`authfail`) `pam_unix`, and in
+  the account stack.
+rationale: |
+  A lockout turns an online guessing attack from millions of attempts into a handful per
+  account and per unlock period, and makes the attack visible in the logs.
+impact: |
+  A user who mistypes their password {{ deny }} times waits {{ unlock_time }} seconds, or asks an
+  administrator. An attacker can lock out a known account on purpose. With `deny_root`, root
+  can be locked too: keep a console access that does not rely on PAM password checks, such as
+  an SSH key.
+notes: |
+  SSH public key logins do not go through the password check and are not counted.
+
+  On Ubuntu 20.04 (PAM 1.3.1), `pam_faillock` and `faillock.conf` are a backport from PAM 1.4
+  shipped in later updates of `libpam-modules` (1.3.1-5ubuntu4.2 and newer): keep the PAM
+  packages up to date before applying. The packaged `pam_tally2` module of 20.04 is not used.
+  The `root` account is locked on Ubuntu by default, so `even_deny_root` mostly matters when an
+  administrator gave root a password.
+
+setting:
+  location: /usr/share/pam-configs/cirsec_faillock*, /etc/security/faillock.conf
+  default_value: Not enabled
+  recommended_value: "deny = {{ deny }}, unlock_time = {{ unlock_time }}"
+
+parameters:
+  - name: deny
+    type: integer
+    description: Failed attempts before the account is locked.
+    default: 5
+    minimum: 1
+    maximum: 10
+  - name: unlock_time
+    type: integer
+    description: Seconds before a locked account unlocks by itself. 0 means only an administrator can unlock it.
+    unit: seconds
+    default: 900
+    minimum: 0
+    maximum: 86400
+  - name: deny_root
+    type: boolean
+    description: Also lock root after failed attempts (even_deny_root).
+    default: false
+    profile_defaults:
+      server-hardened: true
+      desktop-hardened: true
+
+audit:
+  manual: |
+    1. `/etc/pam.d/common-auth` must contain `pam_faillock.so preauth` before `pam_unix.so` and
+       `pam_faillock.so authfail` after it; `/etc/pam.d/common-account` must contain `pam_faillock.so`.
+    2. In `/etc/security/faillock.conf`: `deny` between 1 and {{ deny }}, `unlock_time` of 0 or at
+       least {{ unlock_time }}; if `deny_root` is required, `even_deny_root` is set.
+  checks:
+    - id: preauth
+      engine: file-content
+      spec: { path: /etc/pam.d/common-auth, pattern: "^\\s*auth\\s+.*pam_faillock\\.so\\s+preauth" }
+    - id: authfail
+      engine: file-content
+      spec: { path: /etc/pam.d/common-auth, pattern: "^\\s*auth\\s+.*pam_faillock\\.so\\s+authfail" }
+    - id: account
+      engine: file-content
+      spec: { path: /etc/pam.d/common-account, pattern: "^\\s*account\\s+.*pam_faillock\\.so" }
+    - id: settings
+      engine: shell
+      description: Effective faillock.conf settings.
+      spec:
+        script: |
+          f=/etc/security/faillock.conf
+          get() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p" "$f" | tail -n 1; }
+          deny=$(get deny) unlock=$(get unlock_time)
+          root=$(grep -c '^[[:space:]]*even_deny_root' "$f")
+          echo "deny=${deny:-3} unlock_time=${unlock:-600} even_deny_root=$root"
+          [ "${deny:-3}" -ge 1 ] && [ "${deny:-3}" -le "$CB_DENY" ] || exit 1
+          [ "${unlock:-600}" -eq 0 ] || [ "${unlock:-600}" -ge "$CB_UNLOCK_TIME" ] || exit 1
+          [ "$CB_DENY_ROOT" != true ] || [ "$root" -gt 0 ]
+
+remediation:
+  manual: |
+    1. Create `/usr/share/pam-configs/cirsec_faillock_notify`:
+       ```
+       Name: CIRSEC - count failed logins (pam_faillock preauth)
+       Default: yes
+       Priority: 1024
+       Auth-Type: Primary
+       Auth:
+               requisite       pam_faillock.so preauth
+       Account-Type: Primary
+       Account:
+               required        pam_faillock.so
+       ```
+    2. Create `/usr/share/pam-configs/cirsec_faillock`:
+       ```
+       Name: CIRSEC - lock after failed logins (pam_faillock authfail)
+       Default: yes
+       Priority: 0
+       Auth-Type: Primary
+       Auth:
+               [default=die]   pam_faillock.so authfail
+       ```
+    3. Run `pam-auth-update --enable cirsec_faillock_notify cirsec_faillock`.
+    4. Set `deny = {{ deny }}` and `unlock_time = {{ unlock_time }}` in `/etc/security/faillock.conf`
+       (and `even_deny_root` if required).
+    5. Before closing your session, check that a new login still works.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Run `pam-auth-update --remove cirsec_faillock cirsec_faillock_notify`, delete the two profile
+    files, and unlock accounts with `faillock --user <name> --reset`.
+  scripts:
+    - id: configure
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: pam_faillock(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_faillock.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: faillock.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/faillock.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: pam-auth-update(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam-auth-update.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-7
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.1.3"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.1.3"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.1.3"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.1.3"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1110.001
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Backported pam_faillock (libpam-modules 1.3.1-5ubuntu4.7) - locked after 5 failures with pamtester, faillock --reset unlocks; even_deny_root in server-hardened; sudo and guest agent still work; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Lockout tested with pamtester - locked after 5 failures, faillock --reset unlocks; even_deny_root in server-hardened; sudo of the default user and root through the guest agent still work; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Lockout tested with pamtester - locked after 5 failures, faillock --reset unlocks; even_deny_root in server-hardened; sudo of the default user and root through the guest agent still work; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Lockout tested with pamtester - locked after 5 failures, faillock --reset unlocks; even_deny_root in server-hardened; sudo of the default user and root through the guest agent still work; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

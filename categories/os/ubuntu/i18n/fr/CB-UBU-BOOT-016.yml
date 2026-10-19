@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-016
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les espaces de noms utilisateur non privilégiés avec AppArmor
+finding:
+  title: N'importe quel programme local peut créer des espaces de noms utilisateur non privilégiés
+  description: Les espaces de noms utilisateur donnent à un processus non privilégié des capacités proches de root sur des interfaces du noyau qui sont une source fréquente de failles d'élévation de privilèges.
+applicability:
+  conditions: |
+    Le sysctl n'existe que dans les noyaux Ubuntu à partir de 23.10. Les noyaux de 20.04 et 22.04
+    ne l'ont pas.
+description: |
+  Avec `kernel.apparmor_restrict_unprivileged_userns = 1`, un processus non privilégié ne peut créer
+  un espace de noms utilisateur que si son profil AppArmor l'y autorise (règle `userns`). Les
+  programmes non confinés obtiennent un espace de noms sans aucune capacité. Ubuntu livre des profils
+  qui accordent ce droit aux programmes qui en ont besoin, comme les navigateurs, Flatpak, LXC,
+  Podman et Buildah.
+rationale: |
+  Dans un espace de noms utilisateur, un utilisateur non privilégié détient des capacités comme
+  `CAP_NET_ADMIN` ou `CAP_SYS_ADMIN` sur cet espace, ce qui lui expose de larges parties du noyau
+  (netfilter, systèmes de fichiers, piles réseau). Beaucoup d'exploits d'élévation de privilèges
+  locaux commencent par en créer un. Réserver les espaces de noms aux programmes profilés supprime
+  ce point d'entrée pour tout le reste.
+impact: |
+  Aucun sur une installation par défaut. Un programme qui a besoin des espaces de noms utilisateur et
+  n'a pas de profil AppArmor (navigateur compilé localement, application hors archive, certains outils
+  de bac à sable ou de conteneurs) ne peut plus démarrer son bac à sable. Lui donner un profil avec la
+  règle `userns,` dans `/etc/apparmor.d/` plutôt que de lever la restriction pour tout le système.
+notes: |
+  Ubuntu l'active par défaut dans `/usr/lib/sysctl.d/10-apparmor.conf` à partir de 24.04. Le contrôle
+  protège contre le contournement courant qui la remet à `0` pour tout le système. Contrairement à
+  `kernel.unprivileged_userns_clone`, il laisse les espaces de noms aux programmes autorisés.
+setting:
+  location: sysctl `kernel.apparmor_restrict_unprivileged_userns`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "1"
+audit:
+  manual: |
+    Lancer `sysctl kernel.apparmor_restrict_unprivileged_userns`. La valeur doit être `1`.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne la fixe à `0`.
+remediation:
+  manual: |
+    Commenter toute affectation de la clé dans `/etc/sysctl.conf`, `/etc/sysctl.d/` et `/run/sysctl.d/`
+    (un fichier comme `99-userns.conf` est trié après `60-cirsec.conf` et l'emporte), créer
+    `/etc/sysctl.d/60-cirsec.conf` contenant `kernel.apparmor_restrict_unprivileged_userns = 1`, puis
+    lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl --system`. Les affectations
+    commentées se restaurent depuis le répertoire de sauvegarde `/var/backups/cirsec/`.

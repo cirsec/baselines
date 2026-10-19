@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-011
+title: Do not install recommended and suggested packages automatically
+finding:
+  title: APT installs recommended packages automatically
+  description: Each installation pulls in packages nobody asked for, which grow the attack surface without being reviewed.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [apt, packages, minimal-install]
+
+description: |
+  Ubuntu packages declare strong dependencies (`Depends`) and weak ones (`Recommends`,
+  `Suggests`). By default APT also installs recommended packages. `APT::Install-Recommends` and
+  `APT::Install-Suggests` set to `false` make it install strong dependencies only.
+rationale: |
+  Recommended packages are often optional services, documentation tools or helpers that the
+  system does not need. Installing only what is required keeps the system minimal, as asked by
+  the minimal installation principle.
+impact: |
+  Some features can be missing after an installation (for example a plugin or a helper shipped as
+  a recommendation). Install them explicitly with `apt-get install <package>`, or once with
+  `apt-get install --install-recommends <package>`. Packages already installed are not removed.
+notes: |
+  Ubuntu Desktop installs most of its applications as recommendations of the `ubuntu-desktop`
+  metapackage. With this setting, applications that a later version of the metapackage
+  recommends (after an update or a release upgrade) are not installed; nothing already installed
+  is removed.
+
+setting:
+  location: /etc/apt/apt.conf.d/
+  default_value: "Install-Recommends true, Install-Suggests false"
+  recommended_value: "Install-Recommends false, Install-Suggests false"
+
+audit:
+  manual: |
+    Run `apt-config dump APT::Install-Recommends APT::Install-Suggests`. Both must be `0` or
+    `false`.
+  checks:
+    - id: weak-deps
+      engine: shell
+      description: APT::Install-Recommends and APT::Install-Suggests, as merged by apt-config.
+      spec:
+        script: |
+          eval "$(apt-config shell R APT::Install-Recommends S APT::Install-Suggests)" || exit 3
+          echo "Install-Recommends=${R:-unset} Install-Suggests=${S:-unset}"
+          case ${R:-true} in 0 | false | no | off) ;; *) exit 1 ;; esac
+          case ${S:-false} in 0 | false | no | off) ;; *) exit 1 ;; esac
+
+remediation:
+  manual: |
+    Create `/etc/apt/apt.conf.d/99cirsec-no-recommends` with:
+
+    ```
+    APT::Install-Recommends "false";
+    APT::Install-Suggests "false";
+    ```
+
+    and remove any later setting of these options (`/etc/apt/apt.conf` is read after the
+    directory).
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove `/etc/apt/apt.conf.d/99cirsec-no-recommends`.
+  scripts:
+    - id: weak-deps
+      engine: shell
+      content: |
+        f=/etc/apt/apt.conf.d/99cirsec-no-recommends
+        cb_backup "$f"
+        printf '%s\n' '// CB-UBU-PKG-011: install strong dependencies only.' 'APT::Install-Recommends "false";' 'APT::Install-Suggests "false";' >"$f"
+
+references:
+  - title: apt.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/apt.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: apt-get(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/apt-get.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: partial
+    note: R58 asks for a minimal set of packages; this control stops APT from adding optional ones.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.2.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.2"
+    relation: equivalent
+related_controls:
+  - id: CB-UBU-PKG-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on stock (Install-Recommends 1); fix writes 99cirsec-no-recommends; passes for server-hardened and desktop-hardened, kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on stock (Install-Recommends 1); fix writes 99cirsec-no-recommends; passes for server-hardened and desktop-hardened, kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on stock (Install-Recommends 1); fix writes 99cirsec-no-recommends; passes for server-hardened and desktop-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on stock (Install-Recommends 1); fix writes 99cirsec-no-recommends; passes for server-hardened and desktop-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

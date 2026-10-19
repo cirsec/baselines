@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-009
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les processus non confinés et non privilégiés de changer de profil AppArmor
+finding:
+  title: Les processus non privilégiés et non confinés peuvent passer sur un profil AppArmor plus permissif
+  description: Un processus sans profil peut utiliser aa-exec ou change_profile pour choisir un profil qui lui donne des droits qu'il ne devrait pas avoir.
+applicability:
+  conditions: |
+    Le sysctl n'existe que dans les noyaux qui intègrent la restriction AppArmor des processus non
+    privilégiés : les noyaux Ubuntu à partir de 23.10. Les noyaux de 20.04 et 22.04 ne l'ont pas.
+description: |
+  `kernel.apparmor_restrict_unprivileged_unconfined` active les restrictions AppArmor pour les
+  processus à la fois non privilégiés et non confinés (sans aucun profil). Avec `1`, un tel processus
+  ne peut pas utiliser `change_profile` (par exemple via `aa-exec`) pour passer sur un autre profil.
+rationale: |
+  Certains profils AppArmor accordent des droits que les processus non confinés n'ont pas par défaut,
+  comme créer des espaces de noms utilisateur. Sans cette restriction, n'importe quel processus local
+  pourrait basculer sur un tel profil et utiliser ces droits, ce qui contourne la politique.
+impact: |
+  Les utilisateurs non privilégiés ne peuvent plus lancer de programme sous un profil choisi avec
+  `aa-exec`. Les programmes lancés normalement reçoivent leur profil comme d'habitude.
+notes: |
+  Ubuntu 26.04 l'active par défaut dans `/usr/lib/sysctl.d/10-apparmor.conf` ; Ubuntu 24.04 le
+  laisse désactivé. Le réglage voisin `kernel.apparmor_restrict_unprivileged_userns` est
+  CB-UBU-BOOT-016.
+setting:
+  location: sysctl `kernel.apparmor_restrict_unprivileged_unconfined`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "1"
+audit:
+  manual: |
+    Lancer `sysctl kernel.apparmor_restrict_unprivileged_unconfined`. La valeur doit être `1`.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant
+    `kernel.apparmor_restrict_unprivileged_unconfined = 1`, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer
+    `sysctl --system` (retour à la valeur de la distribution).

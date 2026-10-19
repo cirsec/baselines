@@ -1,0 +1,253 @@
+# yaml-language-server: $schema=../../../schema/standard.schema.json
+id: ubuntu
+code: UBU
+title: Ubuntu
+description: Secure configuration baseline for Ubuntu LTS systems, servers and desktops. Version-specific differences are handled per control with applicability.versions.
+status: draft
+version: 0.1.0
+applies_to:
+  - product: Ubuntu
+    vendor: Canonical
+    versions: ["20.04", "22.04", "24.04", "26.04"]
+profiles:
+  - key: core
+    title: Core
+    description: Settings every Ubuntu system should apply, server or desktop. Low operational impact.
+  - key: server
+    title: Server
+    description: Core plus settings for headless servers.
+    extends: core
+  - key: server-hardened
+    title: Server hardened
+    description: Stronger settings for exposed or sensitive servers. May break some workloads.
+    extends: server
+  - key: desktop
+    title: Desktop
+    description: Core plus settings for workstations with a graphical session.
+    extends: core
+  - key: desktop-hardened
+    title: Desktop hardened
+    description: Stronger settings for admin or mobile workstations. May hinder some uses.
+    extends: desktop
+domains:
+  - code: BOOT
+    title: Boot & system hardening
+  - code: AUTH
+    title: Accounts & authentication
+  - code: NET
+    title: Network
+  - code: SVC
+    title: Services
+  - code: FS
+    title: Filesystem & permissions
+  - code: AUDIT
+    title: Logging & auditing
+  - code: DESK
+    title: Desktop environment
+  - code: PKG
+    title: Packages & updates
+facts:
+  - key: openssh-server
+    title: OpenSSH server is installed
+    detect:
+      engine: package
+      spec: { name: openssh-server, state: installed }
+  - key: sudo
+    title: A sudo command is installed (sudo or sudo-rs)
+    detect:
+      engine: shell
+      spec:
+        script: command -v sudo >/dev/null 2>&1
+  - key: auditd
+    title: auditd is installed
+    detect:
+      engine: package
+      spec: { name: auditd, state: installed }
+  - key: rsyslog
+    title: rsyslog is installed
+    detect:
+      engine: package
+      spec: { name: rsyslog, state: installed }
+  - key: chrony
+    title: chrony is installed
+    detect:
+      engine: package
+      spec: { name: chrony, state: installed }
+  - key: systemd-timesyncd
+    title: systemd-timesyncd is installed
+    detect:
+      engine: package
+      spec: { name: systemd-timesyncd, state: installed }
+  - key: ufw
+    title: ufw is installed
+    detect:
+      engine: package
+      spec: { name: ufw, state: installed }
+  - key: nftables
+    title: nftables is installed
+    detect:
+      engine: package
+      spec: { name: nftables, state: installed }
+  - key: systemd-coredump
+    title: systemd-coredump is installed
+    detect:
+      engine: package
+      spec: { name: systemd-coredump, state: installed }
+  - key: cron
+    title: cron is installed
+    detect:
+      engine: package
+      spec: { name: cron, state: installed }
+  - key: gdm
+    title: GNOME Display Manager is installed
+    detect:
+      engine: package
+      spec: { name: gdm3, state: installed }
+  - key: desktop-gnome
+    title: GNOME desktop is installed
+    detect:
+      engine: package
+      spec: { name: gnome-shell, state: installed }
+  - key: desktop-kde
+    title: KDE Plasma desktop is installed
+    detect:
+      engine: package
+      spec: { name: plasma-workspace, state: installed }
+  - key: desktop-xfce
+    title: Xfce desktop is installed
+    detect:
+      engine: package
+      spec: { name: xfce4-session, state: installed }
+  - key: ipv6
+    title: IPv6 is enabled in the kernel
+    detect:
+      engine: shell
+      spec:
+        script: test -d /proc/sys/net/ipv6
+  - key: grub
+    title: GRUB is the boot loader
+    detect:
+      engine: shell
+      spec:
+        script: test -f /boot/grub/grub.cfg
+  - key: lightdm
+    title: LightDM display manager is installed
+    detect:
+      engine: package
+      spec: { name: lightdm, state: installed }
+  - key: sddm
+    title: SDDM display manager is installed
+    detect:
+      engine: package
+      spec: { name: sddm, state: installed }
+  - key: usb
+    title: The kernel has USB support
+    detect:
+      engine: shell
+      spec:
+        script: test -d /sys/bus/usb
+  - key: mta
+    title: A mail transfer agent is installed
+    detect:
+      engine: shell
+      spec:
+        script: test -x /usr/sbin/sendmail
+  - key: at
+    title: at is installed
+    detect:
+      engine: package
+      spec: { name: at, state: installed }
+  - key: sssd-ldap
+    title: SSSD LDAP provider is installed
+    detect:
+      engine: package
+      spec: { name: sssd-ldap, state: installed }
+  - key: sudo-rs
+    title: sudo is provided by sudo-rs
+    detect:
+      engine: shell
+      spec:
+        script: sudo --version 2>/dev/null | head -n 1 | grep -q '^sudo-rs'
+  - key: snapd
+    title: snapd is installed
+    detect:
+      engine: package
+      spec: { name: snapd, state: installed }
+  - key: cloud-init
+    title: cloud-init is installed
+    detect:
+      engine: package
+      spec: { name: cloud-init, state: installed }
+  - key: apport
+    title: apport is installed
+    detect:
+      engine: package
+      spec: { name: apport, state: installed }
+  - key: ubuntu-pro
+    title: The system is attached to Ubuntu Pro
+    detect:
+      engine: shell
+      spec:
+        script: |
+          pro api u.pro.status.is_attached.v1 2>/dev/null | grep -Eq '"is_attached": ?true'
+maintainers:
+  - name: Alice
+    github: Sn0wAlice
+primary_sources:
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+  - title: Ubuntu Security documentation
+    url: https://documentation.ubuntu.com/security/
+    publisher: Canonical
+    kind: vendor-doc
+  - title: Ubuntu Server documentation - Security
+    url: https://documentation.ubuntu.com/server/how-to/security/
+    publisher: Canonical
+    kind: vendor-doc
+  - title: Ubuntu manual pages
+    url: https://manpages.ubuntu.com/
+    publisher: Canonical
+    kind: vendor-doc
+  - title: Ubuntu release cycle
+    url: https://ubuntu.com/about/release-cycle
+    publisher: Canonical
+    kind: vendor-doc
+  - title: Linux kernel documentation - sysctl
+    url: https://docs.kernel.org/admin-guide/sysctl/index.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+  - title: NIST SP 800-123 - Guide to General Server Security
+    url: https://csrc.nist.gov/pubs/sp/800/123/final
+    publisher: NIST
+    kind: guide
+i18n:
+  fr:
+    title: Ubuntu
+    description: Référentiel de configuration sécurisée pour les systèmes Ubuntu LTS, serveurs et postes de travail. Les différences entre versions sont gérées par contrôle via applicability.versions.
+    domains:
+      BOOT: Démarrage et durcissement système
+      AUTH: Comptes et authentification
+      NET: Réseau
+      SVC: Services
+      FS: Système de fichiers et permissions
+      AUDIT: Journalisation et audit
+      DESK: Environnement graphique
+      PKG: Paquets et mises à jour
+    profiles:
+      core:
+        title: Socle
+        description: Paramètres que tout système Ubuntu devrait appliquer, serveur ou poste. Impact opérationnel faible.
+      server:
+        title: Serveur
+        description: Socle plus les paramètres des serveurs sans interface graphique.
+      server-hardened:
+        title: Serveur renforcé
+        description: Paramètres plus stricts pour les serveurs exposés ou sensibles. Peut casser certains usages.
+      desktop:
+        title: Poste de travail
+        description: Socle plus les paramètres des postes avec session graphique.
+      desktop-hardened:
+        title: Poste renforcé
+        description: Paramètres plus stricts pour les postes d'administration ou nomades. Peut gêner certains usages.

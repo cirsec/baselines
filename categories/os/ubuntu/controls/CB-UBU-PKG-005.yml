@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-005
+title: Restrict access to APT repository credentials
+finding:
+  title: APT repository credentials are readable or writable by other users
+  description: Local users can read the logins and passwords used to reach private repositories or proxies, or replace them.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apt, credentials, permissions]
+
+description: |
+  `/etc/apt/auth.conf` and the `.conf` files of `/etc/apt/auth.conf.d/` hold logins and passwords
+  for private repositories and proxies, in a netrc-like format. APT reads them as root before it
+  drops privileges, so they can be `root:root` mode `0600`. The directory itself should be
+  `root:root` mode `0755` or stricter.
+rationale: |
+  These credentials often give access to commercial or internal repositories, sometimes shared by
+  a whole fleet. A readable file leaks them to every local user; a writable directory lets a user
+  add or change them.
+impact: |
+  None known. The directory is empty on a default installation; the file checks apply only when
+  files exist.
+
+setting:
+  location: /etc/apt/auth.conf, /etc/apt/auth.conf.d
+  default_value: "Directory root:root 0755, no file"
+  recommended_value: "Directory root:root 0755 or stricter, files root:root 0600 or stricter"
+
+audit:
+  manual: |
+    1. `stat -c '%U:%G %a' /etc/apt/auth.conf.d` shows `root:root` and `755` or stricter.
+    2. `stat -c '%U:%G %a %n' /etc/apt/auth.conf /etc/apt/auth.conf.d/*` shows `root:root` and
+       `600` or stricter for every existing file.
+  checks:
+    - id: auth-conf-d
+      engine: file-perms
+      description: The /etc/apt/auth.conf.d directory.
+      spec: { path: /etc/apt/auth.conf.d, owner: root, group: root, mode: "0755" }
+    - id: auth-conf-d-files
+      engine: file-perms
+      description: Files in /etc/apt/auth.conf.d (not applicable when empty).
+      spec: { path: "/etc/apt/auth.conf.d/*", owner: root, group: root, mode: "0600" }
+    - id: auth-conf
+      engine: file-perms
+      description: The legacy /etc/apt/auth.conf file (not applicable when absent).
+      spec: { path: /etc/apt/auth.conf, owner: root, group: root, mode: "0600" }
+
+remediation:
+  manual: |
+    Run `chown root:root /etc/apt/auth.conf.d`, `chmod 755 /etc/apt/auth.conf.d`, then for each
+    credential file `chown root:root <file>` and `chmod 600 <file>`. Change the passwords if the
+    files were readable by other users.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the previous owner and mode with `chown` and `chmod`.
+  scripts:
+    - id: auth-conf-d
+      from_check: auth-conf-d
+    - id: auth-conf-d-files
+      from_check: auth-conf-d-files
+    - id: auth-conf
+      from_check: auth-conf
+
+references:
+  - title: apt_auth.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/apt_auth.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.2.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.2.1.6"
+    relation: stricter
+    note: Files must not be readable by their group either (0600).
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.6"
+    relation: stricter
+    note: Files must not be readable by their group either (0600).
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: cwe
+    id: CWE-522
+related_controls:
+  - id: CB-UBU-PKG-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on stock (empty auth.conf.d); 0644 credential file detected and fixed."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock (empty auth.conf.d); 0644 credential file detected and fixed."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock (empty auth.conf.d); 0644 credential file detected and fixed."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock (empty auth.conf.d); 0644 credential file detected and fixed."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

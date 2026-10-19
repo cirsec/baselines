@@ -119,8 +119,8 @@ def package_check(s: dict) -> str:
 
 def package_fix(s: dict) -> str:
     if s["state"] == "installed":
-        return f"DEBIAN_FRONTEND=noninteractive apt-get install -y -q {q(s['name'])}"
-    return f"DEBIAN_FRONTEND=noninteractive apt-get purge -y -q {q(s['name'])}"
+        return f"DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -q {q(s['name'])}"
+    return f"DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y -q {q(s['name'])}"
 
 
 def systemd_check(s: dict) -> str:
@@ -178,7 +178,7 @@ def file_perms_fix(s: dict) -> str:
 
 
 def sshd_check(s: dict) -> str:
-    return (f"o=$(PATH=\"$PATH:/usr/sbin\" sshd -T 2>/dev/null | awk -v k={q(s['key'])} '$1 == k {{ $1 = \"\"; sub(/^ /, \"\"); print; exit }}')\n"
+    return (f"o=$(cb_sshd -T 2>/dev/null | awk -v k={q(s['key'])} '$1 == k {{ $1 = \"\"; sub(/^ /, \"\"); print; exit }}')\n"
             f"[ -n \"$o\" ] || return 3\n"
             f"printf '%s\\n' \"$o\"\n"
             f"cb_cmp \"$o\" {_op(s)} {_expected(s)}")
@@ -196,7 +196,7 @@ def sshd_fix(s: dict) -> str:
             "touch \"$f\"\n"
             f"sed -i '/^[[:space:]]*{_sed_re(key)}[[:space:]]/Id' \"$f\"\n"
             f"printf '%s %s\\n' {q(key)} {q(value)} >>\"$f\"\n"
-            "if ! PATH=\"$PATH:/usr/sbin\" sshd -t; then\n"
+            "if ! cb_sshd -t; then\n"
             "  cb_restore \"$f\"\n"
             "  echo 'sshd -t rejected the change, reverted' >&2\n"
             "  return 1\n"
@@ -476,7 +476,7 @@ excluded() {{
 
 printf '{{"format":"cirsec-baselines-result","standard":%s,"version":%s,"profile":%s,' \\
   {q(json.dumps(meta['standard']))} {q(json.dumps(meta['version']))} {q(json.dumps(profile))}
-CB_PRODUCT_VERSION=${{CB_PRODUCT_VERSION-$( (. /etc/os-release && printf '%s' "${{VERSION_ID%%.*}}") 2>/dev/null)}}
+CB_PRODUCT_VERSION=${{CB_PRODUCT_VERSION-$( (. /etc/os-release && printf '%s' "$VERSION_ID") 2>/dev/null)}}
 export CB_PRODUCT_VERSION
 printf '"target":{{"name":%s,"product_version":%s}},' "$(json "$(hostname)")" "$(json "$CB_PRODUCT_VERSION")"
 printf '"scanner":{{"name":"cirsec-audit.sh","version":%s}},"started":%s,"results":[' \\

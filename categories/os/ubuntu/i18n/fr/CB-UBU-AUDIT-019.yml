@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-019
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les changements des comptes, des groupes et des réglages d'authentification
+finding:
+  title: Les changements des comptes et des réglages d'authentification ne sont pas enregistrés
+  description: Comptes, mots de passe et règles PAM peuvent être modifiés pour créer une porte dérobée sans laisser de trace.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-identity.rules` :
+
+  - les écritures dans les bases de comptes `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow`
+    et l'historique des mots de passe `/etc/security/opasswd`, dans `/etc/nsswitch.conf`,
+    `/etc/pam.conf` et `/etc/pam.d/` (clé `identity`) ;
+  - chaque exécution de `usermod` par un utilisateur connecté (clé `usermod`).
+rationale: |
+  Ajouter un compte, modifier l'appartenance à un groupe ou affaiblir une règle PAM sont les moyens les
+  plus simples de garder un accès à un système. Ces événements montrent chacun de ces changements et
+  l'utilisateur qui l'a fait.
+impact: |
+  Les changements de mot de passe des utilisateurs produisent des événements `identity`, ce qui est attendu.
+setting:
+  location: /etc/audit/rules.d/60-cirsec-identity.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-identity.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `identity`, `usermod`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -w /etc/group -p wa -k identity
+    -w /etc/passwd -p wa -k identity
+    -w /etc/gshadow -p wa -k identity
+    -w /etc/shadow -p wa -k identity
+    -w /etc/security/opasswd -p wa -k identity
+    -w /etc/nsswitch.conf -p wa -k identity
+    -w /etc/pam.conf -p wa -k identity
+    -w /etc/pam.d -p wa -k identity
+    -a always,exit -S all -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=-1 -F key=usermod
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-identity.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-identity.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

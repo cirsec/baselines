@@ -1,0 +1,195 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-015
+title: Configure systemd-timesyncd with approved time servers and keep it running
+finding:
+  title: systemd-timesyncd uses built-in fallback servers or is not running
+  description: The clock follows whatever servers were compiled in, or is not synchronized at all.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [time, ntp, timesyncd]
+
+applicability:
+  facts: [systemd-timesyncd]
+
+description: |
+  `systemd-timesyncd` is a simple SNTP client. Its servers are set with `NTP=` in
+  `/etc/systemd/timesyncd.conf` or in a drop-in under `/etc/systemd/timesyncd.conf.d/`. Without
+  `NTP=`, it only uses the `FallbackNTP=` list compiled into the package. The service must be
+  enabled and running.
+rationale: |
+  Explicit servers make the time source a documented choice: internal servers for isolated
+  networks, or a public pool the organization trusts. A stopped client lets the clock drift,
+  which breaks log correlation and time-based authentication.
+impact: |
+  The system contacts the configured servers on UDP port 123; the firewall must allow it. When
+  the default list is kept, the server is `ntp.ubuntu.com`, run by Canonical.
+notes: |
+  The check reads the merged configuration with `systemd-analyze cat-config` and keeps the last
+  `NTP=` line, which is the one systemd applies. Ubuntu ships no `NTP=` line (only the commented
+  `FallbackNTP=ntp.ubuntu.com`), so the control fails on a fresh install of 20.04 to 24.04. On
+  26.04, chrony replaces systemd-timesyncd and the control is not applicable. The fix writes `/etc/systemd/timesyncd.conf.d/60-cirsec.conf`.
+
+  **Check and swap the default servers.** `time_servers` defaults to `ntp.ubuntu.com`, the
+  server Ubuntu already falls back to, so that the fix works everywhere. It is not an approved source: replace it in the tailoring file
+  with your organization's own time servers (internal NTP, domain controllers, or a provider you
+  trust) before applying the fix in production.
+
+setting:
+  location: /etc/systemd/timesyncd.conf.d/60-cirsec.conf
+  default_value: No NTP= line (compiled-in fallback servers)
+  recommended_value: "NTP={{ time_servers }}"
+
+parameters:
+  - name: time_servers
+    type: string
+    description: Space-separated list of approved NTP servers, written by the fix.
+    default: ntp.ubuntu.com
+
+audit:
+  manual: |
+    1. Run `systemd-analyze cat-config systemd/timesyncd.conf`. The last `NTP=` line must list at
+       least one approved server.
+    2. `systemctl is-enabled systemd-timesyncd` must print `enabled` and
+       `systemctl is-active systemd-timesyncd` must print `active`.
+  logic: all
+  checks:
+    - id: servers
+      engine: shell
+      description: Time servers set with NTP= in the merged configuration.
+      spec:
+        script: |
+          o=$(systemd-analyze cat-config systemd/timesyncd.conf 2>/dev/null | grep -E '^[[:space:]]*NTP=' | tail -n 1)
+          v=$(printf '%s' "$o" | sed 's/^[[:space:]]*NTP=[[:space:]]*//')
+          echo "NTP=${v:-<not set>}"
+          [ -n "$v" ]
+    - id: enabled
+      engine: systemd-unit
+      description: systemd-timesyncd is enabled.
+      spec: { unit: systemd-timesyncd.service, state: enabled }
+    - id: active
+      engine: shell
+      description: systemd-timesyncd is running.
+      spec:
+        script: systemctl is-active systemd-timesyncd.service || exit 1
+
+remediation:
+  manual: |
+    Create `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` containing:
+    ```
+    [Time]
+    NTP={{ time_servers }}
+    ```
+    then run `systemctl enable systemd-timesyncd` and `systemctl restart systemd-timesyncd`.
+    Check with `timedatectl timesync-status`.
+  effects:
+    restart: service
+    services: [systemd-timesyncd]
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` and restart systemd-timesyncd.
+  scripts:
+    - id: enabled
+      from_check: enabled
+    - id: servers
+      engine: shell
+      content: |
+        f=/etc/systemd/timesyncd.conf.d/60-cirsec.conf
+        want=$(printf '# Written by CIRSEC Baselines CB-UBU-SVC-015\n[Time]\nNTP=%s' "$CB_TIME_SERVERS")
+        if [ "$(cat "$f" 2>/dev/null)" != "$want" ]; then
+          cb_backup "$f"
+          mkdir -p /etc/systemd/timesyncd.conf.d
+          printf '%s\n' "$want" >"$f"
+        fi
+        systemctl is-active --quiet systemd-timesyncd.service || systemctl start systemd-timesyncd.service
+
+references:
+  - title: timesyncd.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/timesyncd.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemd-timesyncd.service(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/systemd-timesyncd.service.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - Synchronize time using timedatectl and timesyncd
+    url: https://documentation.ubuntu.com/server/how-to/networking/timedatectl-and-timesyncd/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-8(1)
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.3.2.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.3.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.3.2.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.006
+related_controls:
+  - id: CB-UBU-SVC-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image fails (no NTP=); fix writes timesyncd.conf.d/60-cirsec.conf with ntp.ubuntu.com, clock synchronized after reboot; not applicable once chrony replaced timesyncd."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image fails (no NTP=); fix writes timesyncd.conf.d/60-cirsec.conf with ntp.ubuntu.com, clock synchronized after reboot; not applicable once chrony replaced timesyncd."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image fails (no NTP=); fix writes timesyncd.conf.d/60-cirsec.conf with ntp.ubuntu.com, clock synchronized after reboot; not applicable once chrony replaced timesyncd."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Not applicable: chrony replaces systemd-timesyncd on 26.04."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

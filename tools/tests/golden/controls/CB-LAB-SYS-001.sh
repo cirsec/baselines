@@ -33,7 +33,7 @@ cb_check_forward() {
 }
 
 cb_check_auth_tries() {
-  o=$(PATH="$PATH:/usr/sbin" sshd -T 2>/dev/null | awk -v k=maxauthtries '$1 == k { $1 = ""; sub(/^ /, ""); print; exit }')
+  o=$(cb_sshd -T 2>/dev/null | awk -v k=maxauthtries '$1 == k { $1 = ""; sub(/^ /, ""); print; exit }')
   [ -n "$o" ] || return 3
   printf '%s\n' "$o"
   cb_cmp "$o" '<=' 4
@@ -131,7 +131,7 @@ cb_fix_auth_tries() {
   touch "$f"
   sed -i '/^[[:space:]]*maxauthtries[[:space:]]/Id' "$f"
   printf '%s %s\n' maxauthtries 4 >>"$f"
-  if ! PATH="$PATH:/usr/sbin" sshd -t; then
+  if ! cb_sshd -t; then
     cb_restore "$f"
     echo 'sshd -t rejected the change, reverted' >&2
     return 1
@@ -139,7 +139,7 @@ cb_fix_auth_tries() {
 }
 
 cb_fix_telnet() {
-  DEBIAN_FRONTEND=noninteractive apt-get purge -y -q telnetd
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y -q telnetd
 }
 
 cb_fix_avahi() {

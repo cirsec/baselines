@@ -1,0 +1,219 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-027
+title: Audit login records and session files
+finding:
+  title: Tampering with login records is not detected
+  description: The files that record who logged in and failed logins can be edited to hide a session.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [auditd, login]
+
+description: |
+  auditd rules in `/etc/audit/rules.d/60-cirsec-session.rules`:
+
+  - writes to the session records `/run/utmp`, `/var/log/wtmp`, `/var/log/btmp` and, when the
+    `wtmpdb` package is installed (not by default up to 26.04), its database in `/var/lib/wtmpdb/`
+    (key `session`);
+  - writes to `/var/log/lastlog` and to the `pam_faillock` counters in `/run/faillock/`
+    (key `logins`).
+rationale: |
+  `last`, `lastb`, `who` and `faillock` read these files. Every login writes to them, so the records
+  show logins and logouts; an edit outside a login is a sign of an attempt to erase a session.
+impact: |
+  Each login and logout produces a few records.
+notes: |
+  `/run/utmp` is used instead of `/var/run/utmp`: `/var/run` is a symbolic link to `/run` and the kernel watches the real path.
+
+setting:
+  location: /etc/audit/rules.d/60-cirsec-session.rules
+  default_value: No audit rules
+  recommended_value: "Rules loaded (auditctl -l) and present in /etc/audit/rules.d/60-cirsec-session.rules"
+
+audit:
+  manual: |
+    1. Run `auditctl -l` as root. It must list the rules shown below (keys `logins`, `session`).
+    2. Run `grep -h . /etc/audit/rules.d/*.rules`. The same rules must be present, so they load at boot.
+
+    Expected rules, as `auditctl -l` prints them:
+    ```
+    -w /run/utmp -p wa -k session
+    -w /var/log/wtmp -p wa -k session
+    -w /var/log/btmp -p wa -k session
+    -w /var/lib/wtmpdb -p wa -k session
+    -w /var/log/lastlog -p wa -k logins
+    -w /run/faillock -p wa -k logins
+    ```
+  checks:
+    - id: rules
+      engine: shell
+      description: Rules loaded in the kernel and present in /etc/audit/rules.d.
+      spec:
+        script: |
+          command -v auditctl >/dev/null 2>&1 || { echo "auditctl not found: auditd is not installed"; exit 1; }
+          want() {
+          cat <<'RULES'
+          -w /run/utmp -p wa -k session
+          -w /var/log/wtmp -p wa -k session
+          -w /var/log/btmp -p wa -k session
+          -w /var/lib/wtmpdb -p wa -k session
+          -w /var/log/lastlog -p wa -k logins
+          -w /run/faillock -p wa -k logins
+          RULES
+          }
+          loaded=$(auditctl -l 2>&1) || { echo "$loaded"; exit 3; }
+          disk=$(cat /etc/audit/rules.d/*.rules 2>/dev/null)
+          n=0 rc=0
+          while IFS= read -r r; do
+            [ -n "$r" ] || continue
+            n=$((n + 1))
+            printf '%s\n' "$loaded" | grep -Fxq -- "$r" || { echo "not loaded: $r"; rc=1; }
+            printf '%s\n' "$disk" | grep -Fxq -- "$r" || { echo "not in /etc/audit/rules.d: $r"; rc=1; }
+          done <<EOF
+          $(want)
+          EOF
+          [ "$rc" = 1 ] || echo "$n rules loaded and present in /etc/audit/rules.d"
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Write the expected rules to `/etc/audit/rules.d/60-cirsec-session.rules` (mode 0640).
+    2. Run `augenrules --load`. If `auditctl -s` shows `enabled 2`, the configuration is locked:
+       reboot to load the new rules.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/audit/rules.d/60-cirsec-session.rules` and run `augenrules --load` (or reboot if the configuration is locked).
+  scripts:
+    - id: rules-file
+      engine: shell
+      content: |
+        command -v augenrules >/dev/null 2>&1 || { echo "auditd is not installed" >&2; exit 1; }
+        want() {
+        cat <<'RULES'
+        -w /run/utmp -p wa -k session
+        -w /var/log/wtmp -p wa -k session
+        -w /var/log/btmp -p wa -k session
+        -w /var/lib/wtmpdb -p wa -k session
+        -w /var/log/lastlog -p wa -k logins
+        -w /run/faillock -p wa -k logins
+        RULES
+        }
+        f=/etc/audit/rules.d/60-cirsec-session.rules
+        t=$(mktemp)
+        { echo '# Written by CIRSEC Baselines CB-UBU-AUDIT-027'; want; } >"$t"
+        if ! cmp -s "$t" "$f"; then
+          cb_backup "$f"
+          cat "$t" >"$f"
+        fi
+        rm -f "$t"
+        chmod 640 "$f"
+        if auditctl -s | grep -q '^enabled 2'; then
+          echo "audit rules are locked (-e 2): reboot to load $f"
+        else
+          augenrules --load >/dev/null
+        fi
+
+references:
+  - title: audit.rules(7), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man7/audit.rules.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: auditctl(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/auditctl.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R73)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: "R73"
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: "AU-12"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: "AC-17(1)"
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.3.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.3.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.3.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.3.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.20"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.21"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.22"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.23"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.002
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-UBU-AUDIT-011
+    type: requires
+  - id: CB-UBU-AUDIT-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 2.8.5; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 3.0.7; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 3.1.2; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 4.1.2; passes after reboot with enabled 2."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

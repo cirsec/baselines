@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-005
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer sudo avec un pseudo-terminal, un fichier journal et un cache d'authentification court
+finding:
+  title: Les réglages de sudo permettent le détournement du terminal, ne gardent pas de journal local ou mémorisent l'authentification trop longtemps
+  description: Les commandes lancées avec sudo peuvent agir sur le terminal de l'utilisateur, ne laissent de trace que dans syslog, et une session oubliée reste privilégiée.
+description: |
+  Trois réglages de sudo, définis par des lignes `Defaults` dans `/etc/sudoers` ou `/etc/sudoers.d/` :
+
+  - `use_pty` : lancer chaque commande dans un nouveau pseudo-terminal, pour qu'elle ne puisse pas
+    injecter de saisie dans le terminal de l'utilisateur après la fin de sudo ;
+  - `logfile` : écrire chaque commande sudo dans un fichier dédié, en plus de syslog ;
+  - `timestamp_timeout` : durée en minutes pendant laquelle une authentification réussie est
+    mémorisée avant que sudo redemande le mot de passe.
+rationale: |
+  Sans `use_pty`, un programme malveillant lancé via sudo peut continuer en arrière-plan et
+  injecter des frappes dans le shell de l'utilisateur. Un fichier journal dédié garde une trace
+  lisible des commandes privilégiées même si syslog est perdu ou saturé. Un cache court limite le
+  temps pendant lequel un terminal laissé sans surveillance peut lancer des commandes privilégiées.
+impact: |
+  Certains programmes interactifs se comportent différemment dans un pseudo-terminal (rare). Les
+  utilisateurs ressaisissent leur mot de passe après {{ timestamp_timeout }} minutes sans utiliser sudo.
+notes: |
+  Ubuntu définit `use_pty` dans `/etc/sudoers` depuis 22.04 (pas sur 20.04) et mémorise
+  l'authentification 15 minutes. Avec le sudo d'origine, les valeurs effectives se lisent avec
+  `sudo -V` en root, qui fusionne tous les fichiers sudoers.
+
+  Sur Ubuntu 26.04, la commande `sudo` est `sudo-rs`. Il lance toujours les commandes dans un
+  pseudo-terminal sauf si `!use_pty` est défini, envoie chaque commande à syslog (le journal) et
+  n'a pas d'option `logfile` : `visudo` rejette cette ligne comme réglage inconnu. Son `sudo -V`
+  n'affiche que la version : les vérifications lisent donc les fichiers sudoers, et celle du
+  `logfile` est non applicable.
+setting:
+  location: /etc/sudoers.d/60-cirsec
+  recommended_value: "use_pty, logfile={{ log_file }} (sauf avec sudo-rs), timestamp_timeout au plus {{ timestamp_timeout }}"
+parameters:
+  log_file: Chemin du fichier journal de sudo. Inutilisé par sudo-rs, qui journalise seulement dans syslog.
+  timestamp_timeout: Durée maximale en minutes de mémorisation de l'authentification par sudo.
+audit:
+  manual: |
+    Avec le sudo d'origine, lancer `sudo -V` en root et vérifier que :
+    1. la sortie contient `Always run commands in a pseudo-tty` ;
+    2. `Path to log file:` est renseigné ;
+    3. `Authentication timestamp timeout:` vaut au plus {{ timestamp_timeout }} minutes.
+
+    Avec sudo-rs (`sudo --version` commence par `sudo-rs`), lire `/etc/sudoers` et
+    `/etc/sudoers.d/*` : aucun `Defaults !use_pty`, et le dernier `timestamp_timeout` vaut au plus
+    {{ timestamp_timeout }} (15 en son absence).
+remediation:
+  manual: |
+    Créer `/etc/sudoers.d/60-cirsec` avec `visudo -f /etc/sudoers.d/60-cirsec` :
+    ```
+    Defaults use_pty
+    Defaults logfile="{{ log_file }}"
+    Defaults timestamp_timeout={{ timestamp_timeout }}
+    ```
+    Omettre la ligne `logfile` avec sudo-rs (Ubuntu 26.04) : sudo-rs la rejette. Retirer des autres
+    fichiers sudoers tout `timestamp_timeout` de valeur supérieure.
+  rollback: |
+    Supprimer `/etc/sudoers.d/60-cirsec`.

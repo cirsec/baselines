@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-001
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Lier chaque dépôt APT à sa clé de signature
+finding:
+  title: Des dépôts APT ne sont pas liés à une clé de signature ou contournent la vérification des signatures
+  description: Un dépôt sans clé propre accepte toutes les clés connues d'APT, et des options comme trusted=yes désactivent complètement la vérification des signatures.
+description: |
+  APT vérifie la signature du fichier `Release` de chaque dépôt. L'option `Signed-By`
+  (`[signed-by=...]` au format une ligne, champ `Signed-By:` au format deb822 `.sources`) désigne
+  le trousseau autorisé à signer ce dépôt. Sans elle, toute clé de `/etc/apt/trusted.gpg.d/` est
+  acceptée pour tous les dépôts.
+
+  Des options propres à une source peuvent aussi affaiblir ou désactiver ces vérifications :
+  `trusted=yes`, `allow-insecure=yes`, `allow-weak=yes`, `allow-downgrade-to-insecure=yes`,
+  `check-valid-until=no` et `check-date=no`.
+rationale: |
+  Lier chaque dépôt à sa propre clé limite une clé tierce compromise ou malveillante au dépôt pour
+  lequel elle a été ajoutée : elle ne peut pas signer des paquets qui remplacent ceux d'Ubuntu.
+  Les sources qui contournent la vérification des signatures permettent à quiconque se trouve sur
+  le chemin réseau, ou contrôle le miroir, d'installer des paquets arbitraires en root.
+impact: |
+  Aucun pour l'archive Ubuntu. Un dépôt tiers (PPA, dépôt d'éditeur) a besoin de sa clé dans un
+  fichier séparé (généralement sous `/etc/apt/keyrings/`), référencé depuis son entrée de source.
+  Les clés laissées dans `/etc/apt/trusted.gpg.d/` restent valables pour les entrées sans
+  `Signed-By`.
+notes: |
+  Ubuntu 24.04 et 26.04 utilisent le fichier deb822 `/etc/apt/sources.list.d/ubuntu.sources`
+  avec `Signed-By` : ils sont conformes. Ubuntu 20.04 et 22.04 utilisent des entrées une ligne
+  dans `/etc/apt/sources.list` sans cette option, les clés Ubuntu étant dans
+  `/etc/apt/trusted.gpg.d/` : ils échouent tant qu'ils ne sont pas corrigés. La correction
+  automatique ajoute le trousseau de l'archive Ubuntu aux entrées de `archive.ubuntu.com`,
+  `<pays>.archive.ubuntu.com`, `security.ubuntu.com` et `ports.ubuntu.com`. Les autres dépôts,
+  les miroirs internes et les options de contournement sont laissés à un humain. Les dépôts écrits
+  par le client Ubuntu Pro (`esm.ubuntu.com`) ont leur propre `Signed-By`.
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/*.list, /etc/apt/sources.list.d/*.sources
+  recommended_value: Signed-By sur chaque entrée, aucune option qui désactive ou affaiblit la vérification des signatures
+audit:
+  manual: |
+    Lire chaque entrée active de `/etc/apt/sources.list`, `/etc/apt/sources.list.d/*.list` et
+    `/etc/apt/sources.list.d/*.sources` :
+    1. chaque entrée une ligne a `[signed-by=<trousseau>]`, chaque bloc deb822 un champ `Signed-By:` ;
+    2. aucune entrée ne définit `trusted=yes`, `allow-insecure=yes`, `allow-weak=yes`,
+       `allow-downgrade-to-insecure=yes`, `check-valid-until=no` ou `check-date=no` (ni les
+       champs deb822 correspondants).
+remediation:
+  manual: |
+    1. Pour chaque dépôt, enregistrer sa clé publique dans un fichier dédié, par exemple
+       `/etc/apt/keyrings/<éditeur>.asc` (les clés Ubuntu sont dans `/usr/share/keyrings/`).
+    2. La référencer depuis l'entrée : `deb [signed-by=/etc/apt/keyrings/<éditeur>.asc] https://...`
+       au format une ligne, ou `Signed-By: /etc/apt/keyrings/<éditeur>.asc` dans un bloc
+       `.sources`. Sur 26.04, `apt modernize-sources` convertit les anciennes entrées en deb822.
+    3. Retirer `trusted=yes` et les autres options qui affaiblissent les vérifications. Un dépôt
+       qui ne fonctionne qu'avec elles doit être corrigé par son propriétaire (signé) ou retiré.
+    4. Lancer `apt-get update` et vérifier qu'aucun avertissement de signature n'apparaît.
+
+    La correction automatique ajoute seulement `/usr/share/keyrings/ubuntu-archive-keyring.gpg`
+    aux entrées de l'archive Ubuntu.
+  rollback: |
+    Restaurer les fichiers de sources depuis le dossier de sauvegarde affiché par `remediate.sh`.

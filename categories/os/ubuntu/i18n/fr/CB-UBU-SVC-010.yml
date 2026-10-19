@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-010
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter l'agent de transfert de courrier à la distribution locale
+finding:
+  title: L'agent de transfert de courrier accepte des connexions depuis le réseau
+  description: Un MTA en écoute sur les interfaces externes peut servir de relais ou être attaqué à distance.
+description: |
+  La plupart des systèmes n'ont besoin d'un agent de transfert de courrier (MTA) que pour envoyer
+  des notifications locales (sortie de cron, alertes de sécurité) à un administrateur. Ce MTA
+  doit écouter uniquement sur l'interface de bouclage, sur les ports SMTP 25, 465 et 587.
+
+  Sur Ubuntu, le MTA est généralement Postfix (`inet_interfaces` dans `/etc/postfix/main.cf`) ou
+  exim4 (`dc_local_interfaces` dans `/etc/exim4/update-exim4.conf.conf`).
+  Sendmail, plus difficile à configurer de façon sûre, ne doit pas être installé.
+rationale: |
+  Un MTA joignable depuis le réseau peut devenir un relais ouvert pour le spam ou l'hameçonnage,
+  et expose un analyseur complexe aux attaquants distants. Les notifications locales fonctionnent
+  tout aussi bien via l'interface de bouclage.
+impact: |
+  Le système ne reçoit plus de courrier d'autres hôtes. Les serveurs et relais de messagerie
+  doivent exclure ce contrôle dans leur fichier de personnalisation. Supprimer `sendmail-bin`
+  supprime aussi les paquets qui en dépendent ; installer exim4 ou Postfix d'abord si le système
+  doit toujours envoyer du courrier.
+notes: |
+  Le contrôle ne s'applique que si un MTA est installé (`/usr/sbin/sendmail` existe) : Ubuntu n'en
+  installe aucun par défaut. Postfix installé avec la réponse « Internet Site » écoute sur toutes
+  les interfaces ; la configuration par défaut d'exim4 n'écoute que sur le bouclage. La correction
+  redémarre elle-même exim4 ou Postfix, et seulement quand elle a modifié leur configuration.
+audit:
+  manual: |
+    1. Lancer `ss -Hltn`. Aucun socket sur le port 25, 465 ou 587 ne doit être lié à une adresse hors
+       de `127.0.0.0/8` ou `::1`.
+    2. Lancer `dpkg-query -W -f='${Status}\n' sendmail-bin`. La commande ne doit pas afficher
+       `install ok installed`.
+remediation:
+  manual: |
+    - exim4 : mettre `dc_local_interfaces='127.0.0.1 ; ::1'` dans `/etc/exim4/update-exim4.conf.conf`,
+      puis lancer `update-exim4.conf` et `systemctl restart exim4`.
+    - Postfix : lancer `postconf -e 'inet_interfaces = loopback-only'` puis `systemctl restart postfix`.
+    - Sendmail : installer exim4 ou Postfix, puis `apt purge sendmail-bin`.
+  rollback: |
+    Restaurer le fichier de configuration depuis le répertoire de sauvegarde, puis lancer
+    `update-exim4.conf` et redémarrer le MTA.

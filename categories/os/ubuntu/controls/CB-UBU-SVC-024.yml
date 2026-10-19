@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-024
+title: Remove the X Window System server and the GNOME display manager from servers
+finding:
+  title: An X Window System server or a graphical login manager is installed on a server
+  description: A graphical server stack adds a large amount of privileged, rarely needed code.
+status: active
+profiles: [server-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [packages, x11, attack-surface]
+
+description: |
+  `xserver-common` holds the files shared by every X.Org server (Xorg, Xvfb, Xephyr, and Xwayland
+  on Ubuntu). When it is absent, no X server is installed. `gdm3`, the GNOME display manager of
+  Ubuntu Desktop, starts a graphical login screen as soon as it is installed.
+rationale: |
+  An X server is complex software, historically run with root privileges, with a long record of
+  local privilege escalation flaws. A display manager adds a graphical login on the console and
+  its own services (accessibility, network manager applets, remote login). A server administered
+  over SSH needs neither.
+impact: |
+  Removes `gdm3`, `xserver-common` and every package that depends on them: X servers, and the
+  graphical desktop if one is installed (the `ubuntu-desktop` metapackages go with it). X client applications forwarded over SSH (`ssh -X`) still work,
+  since they use the X server of the administrator's workstation.
+notes: |
+  The control is only in the hardened server profile; desktops need an X server or Xwayland.
+
+audit:
+  manual: |
+    Run `dpkg-query -W -f='${Status}\n' gdm3 xserver-common`. It must not print
+    `install ok installed`.
+  checks:
+    - id: gdm3
+      engine: package
+      description: GNOME display manager.
+      spec: { name: gdm3, state: absent }
+    - id: xserver-common
+      engine: package
+      description: X.Org server common files.
+      spec: { name: xserver-common, state: absent }
+
+remediation:
+  manual: |
+    Run `apt purge gdm3 xserver-common` after checking the list of packages apt will remove.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Reinstall the needed X server, for example `apt install xserver-xorg-core`.
+  scripts:
+    - id: gdm3
+      from_check: gdm3
+    - id: xserver-common
+      from_check: xserver-common
+
+references:
+  - title: Xserver(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/Xserver.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R58)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R58
+    relation: partial
+    note: R58 asks to install only the packages that are strictly needed; this control covers the X server.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.7.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.20"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.7.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.20"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.23"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.21"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1068
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes; with xvfb installed (xserver-common) the check fails, fix purges it, audit passes after reboot. gdm3 check passes on the stock image (GNOME not installed in this test)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes; with xvfb installed (xserver-common) the check fails, fix purges it, audit passes after reboot. gdm3 check passes on the stock image (GNOME not installed in this test)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes; with xvfb installed (xserver-common) the check fails, fix purges it, audit passes after reboot. gdm3 check passes on the stock image (GNOME not installed in this test)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes; with xvfb installed (xserver-common) the check fails, fix purges it, audit passes after reboot. gdm3 check passes on the stock image (GNOME not installed in this test)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

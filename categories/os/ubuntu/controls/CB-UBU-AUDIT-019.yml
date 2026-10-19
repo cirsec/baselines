@@ -1,0 +1,267 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUDIT-019
+title: Audit changes to accounts, groups and authentication settings
+finding:
+  title: Changes to accounts and authentication settings are not recorded
+  description: Accounts, passwords and PAM rules can be changed to create a backdoor without leaving a record.
+status: active
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [auditd, accounts, pam]
+
+description: |
+  auditd rules in `/etc/audit/rules.d/60-cirsec-identity.rules`:
+
+  - writes to the account databases `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` and
+    the password history `/etc/security/opasswd`, to `/etc/nsswitch.conf`, `/etc/pam.conf` and
+    `/etc/pam.d/` (key `identity`);
+  - every run of `usermod` by a user who logged in (key `usermod`).
+rationale: |
+  Adding an account, changing a group membership or weakening a PAM rule are the simplest ways to
+  keep access to a system. These records show every such change and the user who made it.
+impact: |
+  Password changes by users produce `identity` records, which is expected.
+
+setting:
+  location: /etc/audit/rules.d/60-cirsec-identity.rules
+  default_value: No audit rules
+  recommended_value: "Rules loaded (auditctl -l) and present in /etc/audit/rules.d/60-cirsec-identity.rules"
+
+audit:
+  manual: |
+    1. Run `auditctl -l` as root. It must list the rules shown below (keys `identity`, `usermod`).
+    2. Run `grep -h . /etc/audit/rules.d/*.rules`. The same rules must be present, so they load at boot.
+
+    Expected rules, as `auditctl -l` prints them:
+    ```
+    -w /etc/group -p wa -k identity
+    -w /etc/passwd -p wa -k identity
+    -w /etc/gshadow -p wa -k identity
+    -w /etc/shadow -p wa -k identity
+    -w /etc/security/opasswd -p wa -k identity
+    -w /etc/nsswitch.conf -p wa -k identity
+    -w /etc/pam.conf -p wa -k identity
+    -w /etc/pam.d -p wa -k identity
+    -a always,exit -S all -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=-1 -F key=usermod
+    ```
+  checks:
+    - id: rules
+      engine: shell
+      description: Rules loaded in the kernel and present in /etc/audit/rules.d.
+      spec:
+        script: |
+          command -v auditctl >/dev/null 2>&1 || { echo "auditctl not found: auditd is not installed"; exit 1; }
+          want() {
+          cat <<'RULES'
+          -w /etc/group -p wa -k identity
+          -w /etc/passwd -p wa -k identity
+          -w /etc/gshadow -p wa -k identity
+          -w /etc/shadow -p wa -k identity
+          -w /etc/security/opasswd -p wa -k identity
+          -w /etc/nsswitch.conf -p wa -k identity
+          -w /etc/pam.conf -p wa -k identity
+          -w /etc/pam.d -p wa -k identity
+          -a always,exit -S all -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=-1 -F key=usermod
+          RULES
+          }
+          loaded=$(auditctl -l 2>&1) || { echo "$loaded"; exit 3; }
+          disk=$(cat /etc/audit/rules.d/*.rules 2>/dev/null)
+          n=0 rc=0
+          while IFS= read -r r; do
+            [ -n "$r" ] || continue
+            n=$((n + 1))
+            printf '%s\n' "$loaded" | grep -Fxq -- "$r" || { echo "not loaded: $r"; rc=1; }
+            printf '%s\n' "$disk" | grep -Fxq -- "$r" || { echo "not in /etc/audit/rules.d: $r"; rc=1; }
+          done <<EOF
+          $(want)
+          EOF
+          [ "$rc" = 1 ] || echo "$n rules loaded and present in /etc/audit/rules.d"
+          exit "$rc"
+
+remediation:
+  manual: |
+    1. Write the expected rules to `/etc/audit/rules.d/60-cirsec-identity.rules` (mode 0640).
+    2. Run `augenrules --load`. If `auditctl -s` shows `enabled 2`, the configuration is locked:
+       reboot to load the new rules.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/audit/rules.d/60-cirsec-identity.rules` and run `augenrules --load` (or reboot if the configuration is locked).
+  scripts:
+    - id: rules-file
+      engine: shell
+      content: |
+        command -v augenrules >/dev/null 2>&1 || { echo "auditd is not installed" >&2; exit 1; }
+        want() {
+        cat <<'RULES'
+        -w /etc/group -p wa -k identity
+        -w /etc/passwd -p wa -k identity
+        -w /etc/gshadow -p wa -k identity
+        -w /etc/shadow -p wa -k identity
+        -w /etc/security/opasswd -p wa -k identity
+        -w /etc/nsswitch.conf -p wa -k identity
+        -w /etc/pam.conf -p wa -k identity
+        -w /etc/pam.d -p wa -k identity
+        -a always,exit -S all -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=-1 -F key=usermod
+        RULES
+        }
+        f=/etc/audit/rules.d/60-cirsec-identity.rules
+        t=$(mktemp)
+        { echo '# Written by CIRSEC Baselines CB-UBU-AUDIT-019'; want; } >"$t"
+        if ! cmp -s "$t" "$f"; then
+          cb_backup "$f"
+          cat "$t" >"$f"
+        fi
+        rm -f "$t"
+        chmod 640 "$f"
+        if auditctl -s | grep -q '^enabled 2'; then
+          echo "audit rules are locked (-e 2): reboot to load $f"
+        else
+          augenrules --load >/dev/null
+        fi
+
+references:
+  - title: audit.rules(7), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man7/audit.rules.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: auditctl(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/auditctl.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R73)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: "R73"
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: "AU-12"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: "AC-2(4)"
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.3.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "6.3.3.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.3.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "6.2.3.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.13"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.16"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "6.2.3.27"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.13"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.16"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "6.2.3.30"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1136.001
+  - framework: mitre-attack
+    id: T1556.003
+related_controls:
+  - id: CB-UBU-AUDIT-011
+    type: requires
+  - id: CB-UBU-AUDIT-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 2.8.5; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 3.0.7; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 3.1.2; passes after reboot with enabled 2."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails after auditd install; rules written and loaded (augenrules), all present in auditctl -l with auditd 4.1.2; passes after reboot with enabled 2."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-019
+title: Set a restrictive default umask for login sessions
+finding:
+  title: New files are readable by every local user by default
+  description: With the Ubuntu default umask, documents, exports and logs created by users and root are world-readable.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [accounts, umask, permissions]
+
+description: |
+  The umask removes permission bits from every file and directory a process creates. Ubuntu
+  login sessions get `022` (files `644`, everyone can read them), and `pam_umask` with
+  `USERGROUPS_ENAB yes` even gives `002` to regular users who have their own group. This control sets `{{ umask }}` from
+  `/etc/profile.d/`, which applies to the login shells of every user, root included.
+rationale: |
+  Users and administrators regularly create files with sensitive content (exports, dumps,
+  configuration copies) in their home or in `/tmp`. A restrictive umask keeps them private
+  unless someone opens them on purpose.
+impact: |
+  Files created in shared directories are no longer readable by other users. Teams that share
+  files through a common group need `chmod g+r` or a setgid group directory.
+notes: |
+  Services started by systemd do not read `/etc/profile`; set their umask with `UMask=` in their unit.
+
+setting:
+  location: /etc/profile.d/60-cirsec-umask.sh
+  default_value: "022"
+  recommended_value: "{{ umask }}"
+
+parameters:
+  - name: umask
+    type: enum
+    description: Default umask of login shells.
+    default: "027"
+    allowed: ["027", "077"]
+    profile_defaults:
+      server-hardened: "077"
+
+audit:
+  manual: |
+    Run `su -s /bin/sh -l nobody -c umask` and `su -l root -c umask`. Both must print
+    `0{{ umask }}` (or a stricter value).
+  checks:
+    - id: user
+      engine: shell
+      description: Umask of a login shell for a regular account.
+      spec:
+        script: |
+          u=$(su -s /bin/sh -l nobody -c umask 2>/dev/null | tail -n 1) || exit 3
+          echo "nobody login umask: $u"
+          [ $(( 0$u & 0$CB_UMASK )) -eq $(( 0$CB_UMASK )) ]
+    - id: root
+      engine: shell
+      description: Umask of a root login shell.
+      spec:
+        script: |
+          u=$(su -l root -c umask 2>/dev/null | tail -n 1) || exit 3
+          echo "root login umask: $u"
+          [ $(( 0$u & 0$CB_UMASK )) -eq $(( 0$CB_UMASK )) ]
+
+remediation:
+  manual: |
+    Create `/etc/profile.d/60-cirsec-umask.sh` containing `umask {{ umask }}`. New login sessions
+    pick it up.
+  effects:
+    restart: session
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/profile.d/60-cirsec-umask.sh`.
+  scripts:
+    - id: profile
+      engine: shell
+      content: |
+        f=/etc/profile.d/60-cirsec-umask.sh
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-AUTH-019' "umask $CB_UMASK" >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: pam_umask(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_umask.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: bash(1), Ubuntu manual pages (umask, INVOCATION)
+    url: https://manpages.ubuntu.com/manpages/noble/man1/bash.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R36)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R36
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.4.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.4.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.4.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.4.3.3"
+    relation: equivalent
+threats:
+  - framework: cwe
+    id: CWE-276
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install (022); login shells of nobody and root get 027 in core, 077 in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install (022); login shells of nobody and root get 027 in core, 077 in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install (022); login shells of nobody and root get 027 in core, 077 in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on a fresh install (022); login shells of nobody and root get 027 in core, 077 in server-hardened; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

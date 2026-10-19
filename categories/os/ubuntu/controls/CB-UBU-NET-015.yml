@@ -1,0 +1,247 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-015
+title: Use only strong ciphers, MACs and key exchange algorithms in the SSH server
+finding:
+  title: The SSH server accepts weak or outdated cryptographic algorithms
+  description: Weak algorithms let an attacker who records or intercepts SSH sessions decrypt or tamper with them, now or later.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [ssh, cryptography, network]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  The OpenSSH server negotiates three families of algorithms with each client, set by
+  `Ciphers`, `MACs` and `KexAlgorithms` in `sshd_config`. This control requires every algorithm
+  the server offers to be in an allow list:
+
+  - ciphers: ChaCha20-Poly1305, AES-GCM, AES-CTR;
+  - MACs: HMAC-SHA2-256/512, preferably in encrypt-then-MAC (`-etm`) mode;
+  - key exchange: hybrid post-quantum (`mlkem768x25519-sha256`, `sntrup761x25519-sha512`),
+    Curve25519, NIST ECDH, and Diffie-Hellman groups of at least 2048 bits with SHA-2.
+
+  The first key exchange algorithm offered must be a hybrid post-quantum one.
+rationale: |
+  CBC ciphers, RC4, 3DES, SHA-1 and MD5 based MACs, 64-bit tag UMAC and SHA-1 Diffie-Hellman are
+  broken or too weak for long-term protection; UMAC is kept out to stay with
+  the widely reviewed HMAC-SHA2 constructions. Sessions recorded today can be decrypted later by a
+  quantum computer unless the key exchange is post-quantum, which is why it must be preferred.
+impact: |
+  Old clients and network equipment that only support removed algorithms cannot connect anymore
+  (for example `hmac-sha1` or `diffie-hellman-group14-sha1`). Check the clients, automation tools
+  and SFTP libraries in use before applying.
+notes: |
+  Ubuntu ships OpenSSH 8.2 (20.04), 8.9 (22.04), 9.6 (24.04) and 10.2 (26.04). All of them
+  exclude weak ciphers but still offer SHA-1 and UMAC MACs. Only 26.04 puts a post-quantum key
+  exchange first; 22.04 and 24.04 offer `sntrup761x25519-sha512@openssh.com` after Curve25519,
+  and 20.04 has none (its `sntrup4591761x25519-sha512@tinyssh.org` is an older, withdrawn
+  variant), so the post-quantum check does not apply to 20.04. The fix writes the three lists in
+  `/etc/ssh/sshd_config.d/00-cirsec.conf`, read before the cloud image files (`50-cloud-init.conf`,
+  `60-cloudimg-settings.conf`) since sshd keeps the first value it reads, keeping only the
+  algorithms the installed OpenSSH supports (`ssh -Q`): `mlkem768x25519-sha256` is only set on
+  26.04. On 24.04 and later, sshd is started by `ssh.socket`; `sshd -T` fails with a missing
+  `/run/sshd` until a first connection has started `ssh.service`, so the checks report an error
+  until then, and the fix creates the directory before testing the configuration.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf (`Ciphers`, `MACs`, `KexAlgorithms`)
+  default_value: OpenSSH defaults, including hmac-sha1 and umac-64 MACs
+  recommended_value: Only the allowed algorithms, post-quantum key exchange first
+
+audit:
+  manual: |
+    Run `sshd -T | grep -E '^(ciphers|macs|kexalgorithms) '` and check that:
+    1. ciphers are among `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`,
+       `aes128-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`;
+    2. MACs are among `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`,
+       `hmac-sha2-512`, `hmac-sha2-256`;
+    3. key exchange algorithms are among `mlkem768x25519-sha256`, `sntrup761x25519-sha512`
+       (with or without `@openssh.com`), `curve25519-sha256` (with or without `@libssh.org`),
+       `ecdh-sha2-nistp256/384/521`, `diffie-hellman-group-exchange-sha256`,
+       `diffie-hellman-group14-sha256`, `diffie-hellman-group16-sha512`,
+       `diffie-hellman-group18-sha512`, and the first one is `mlkem768x25519-sha256` or
+       `sntrup761x25519-sha512`.
+  checks:
+    - id: ciphers
+      engine: sshd-config
+      description: Effective Ciphers list.
+      spec:
+        key: ciphers
+        operator: match
+        value: '^((chacha20-poly1305@openssh\.com|aes(128|256)-gcm@openssh\.com|aes(128|192|256)-ctr)(,|$))+$'
+    - id: macs
+      engine: sshd-config
+      description: Effective MACs list.
+      spec:
+        key: macs
+        operator: match
+        value: '^(hmac-sha2-(256|512)(-etm@openssh\.com)?(,|$))+$'
+    - id: kex
+      engine: sshd-config
+      description: Effective KexAlgorithms list.
+      spec:
+        key: kexalgorithms
+        operator: match
+        value: '^((mlkem768x25519-sha256|sntrup761x25519-sha512(@openssh\.com)?|curve25519-sha256(@libssh\.org)?|ecdh-sha2-nistp(256|384|521)|diffie-hellman-group-exchange-sha256|diffie-hellman-group14-sha256|diffie-hellman-group(16|18)-sha512)(,|$))+$'
+    - id: kex-post-quantum
+      engine: sshd-config
+      versions: ["22.04", "24.04", "26.04"]
+      description: First key exchange algorithm is a hybrid post-quantum one.
+      spec:
+        key: kexalgorithms
+        operator: match
+        value: '^(mlkem768x25519-sha256|sntrup761x25519-sha512(@openssh\.com)?)(,|$)'
+
+remediation:
+  manual: |
+    Create `/etc/ssh/sshd_config.d/00-cirsec.conf` (mode 0600) with the lists below, removing the
+    algorithms that `ssh -Q cipher`, `ssh -Q mac` or `ssh -Q kex` does not print:
+    ```
+    Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+    MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+    KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256
+    ```
+    Check with `sshd -t`, then run `systemctl reload ssh` (on 24.04 and later, when `ssh.service`
+    is not running yet, the next connection starts it with the new settings). Keep an open
+    session until a new connection succeeds.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Remove the three lines from `/etc/ssh/sshd_config.d/00-cirsec.conf` and run `systemctl reload ssh`.
+  scripts:
+    - id: algorithms
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: sshd_config(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/sshd_config.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ssh(1), Ubuntu manual pages (ssh -Q)
+    url: https://manpages.ubuntu.com/manpages/noble/man1/ssh.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: OpenSSH - Post-Quantum Cryptography
+    url: https://www.openssh.com/pq.html
+    publisher: OpenSSH
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-13
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.15"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.15"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.15"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.23"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.13"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.17"
+    relation: stricter
+    note: Ours only allows HMAC-SHA2 MACs.
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-327
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "MACs with UMAC and SHA-1 reported, post-quantum check not applicable; fix.sh writes the lists filtered with ssh -Q; a UMAC client is refused; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "MACs and post-quantum order reported; fix.sh puts sntrup761x25519-sha512@openssh.com first; a UMAC client is refused; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Checks report an error before the first SSH connection (no /run/sshd), then MACs fail; fix.sh works on a fresh boot; a UMAC client is refused; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "MACs reported, mlkem768x25519-sha256 already first; fix.sh writes the lists filtered with ssh -Q; a UMAC client is refused; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

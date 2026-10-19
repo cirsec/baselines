@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-025
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer le chargement et le retrait des modules noyau
+finding:
+  title: Des modules noyau peuvent être chargés ou retirés sans trace
+  description: Un module noyau malveillant (rootkit) peut être chargé sans aucune trace dans le journal d'audit.
+description: |
+  Règles auditd dans `/etc/audit/rules.d/60-cirsec-modules.rules`, clé `kernel_modules` :
+  `init_module`, `finit_module` et `delete_module` appelés par des utilisateurs connectés, programmes
+  64 et 32 bits, et chaque exécution de `kmod` (derrière `modprobe`, `insmod`, `rmmod`, `lsmod`).
+rationale: |
+  Le code chargé dans le noyau s'exécute avec tous les privilèges et peut cacher des processus, des
+  fichiers et des connexions. Enregistrer les chargements de modules est l'un des rares moyens de
+  repérer un rootkit noyau après coup.
+impact: |
+  Lancer `lsmod` en tant qu'administrateur connecté produit aussi un événement, car c'est le même programme `kmod`.
+notes: |
+  Les modules chargés automatiquement par udev au démarrage n'ont pas d'utilisateur connecté et ne sont pas enregistrés, ce qui correspond à l'objectif (actions des personnes).
+setting:
+  location: /etc/audit/rules.d/60-cirsec-modules.rules
+  recommended_value: "Règles chargées (auditctl -l) et présentes dans /etc/audit/rules.d/60-cirsec-modules.rules"
+audit:
+  manual: |
+    1. Lancer `auditctl -l` en root. La commande doit lister les règles ci-dessous (clés `kernel_modules`).
+    2. Lancer `grep -h . /etc/audit/rules.d/*.rules`. Les mêmes règles doivent y figurer, pour être chargées au démarrage.
+
+    Règles attendues, telles que `auditctl -l` les affiche :
+    ```
+    -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    -a always,exit -F arch=b32 -S init_module,delete_module,finit_module -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    -a always,exit -S all -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=-1 -F key=kernel_modules
+    ```
+remediation:
+  manual: |
+    1. Écrire les règles attendues dans `/etc/audit/rules.d/60-cirsec-modules.rules` (mode 0640).
+    2. Lancer `augenrules --load`. Si `auditctl -s` affiche `enabled 2`, la configuration est
+       verrouillée : redémarrer pour charger les nouvelles règles.
+  rollback: |
+    Supprimer `/etc/audit/rules.d/60-cirsec-modules.rules` et lancer `augenrules --load` (ou redémarrer si la configuration est verrouillée).

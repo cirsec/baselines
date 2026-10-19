@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-002
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas afficher de détails système dans le message du jour
+finding:
+  title: Le message du jour affiche la version du système et du noyau à chaque connexion
+  description: Chaque session, y compris celle d'un compte compromis, apprend la version exacte et le noyau à viser.
+description: |
+  Après la connexion, `pam_motd` affiche `/etc/motd` et un message dynamique construit en lançant
+  avec `run-parts` les scripts exécutables de `/etc/update-motd.d/`. Sur Ubuntu, `00-header`
+  affiche la version complète de la distribution ainsi que le nom, la version et l'architecture du
+  noyau (`Welcome to Ubuntu 24.04.5 LTS (GNU/Linux 6.8.0-147-generic x86_64)`), et d'autres
+  scripts peuvent répéter la version (sur 20.04, l'avis ESM de `91-contract-ua-esm-status`).
+
+  Ce contrôle construit le message dynamique comme le fait `pam_motd` et vérifie que sa sortie ne
+  cite ni la version du noyau en cours ni le `Ubuntu <version>` du système.
+rationale: |
+  La version du noyau et la version exacte de la distribution indiquent à un attaquant qui a
+  obtenu un shell, ou qui observe simplement une session, quels exploits d'élévation de privilèges
+  locaux s'appliquent. Inutile de les montrer à chaque utilisateur à chaque connexion.
+impact: |
+  Les utilisateurs ne voient plus la ligne d'accueil avec la version et le noyau, ni aucun autre
+  script qui les affichait. Ils peuvent toujours lancer `uname -a` ou `lsb_release -a`. Les autres
+  parties du message (liens d'aide, charge du système, mises à jour en attente) sont conservées.
+notes: |
+  Le correctif enregistre le nouveau mode avec `dpkg-statoverride`, pour qu'une mise à jour de
+  paquet (par exemple `base-files`, qui fournit `00-header`) ne rende pas le script de nouveau
+  exécutable. Ubuntu ne fournit pas de `/etc/motd` ; sa vérification ne s'applique que si un
+  administrateur en a créé un.
+setting:
+  location: /etc/motd, /etc/update-motd.d/00-header
+  recommended_value: Scripts qui affichent la version ou le noyau non exécutables, /etc/motd sans détail sur le système
+audit:
+  manual: |
+    1. Si `/etc/motd` existe, il ne doit contenir ni les séquences `\m`, `\r`, `\s`, `\v` ni
+       `Ubuntu` suivi d'une version.
+    2. Lancer `run-parts --lsbsysinit /etc/update-motd.d` en root. La sortie ne doit contenir ni le
+       résultat de `uname -r`, ni `Ubuntu` suivi du `VERSION_ID` de `/etc/os-release`.
+remediation:
+  manual: |
+    1. Pour chaque script de `/etc/update-motd.d/` dont la sortie montre la version ou le noyau
+       (`00-header` par défaut), retirer le droit d'exécution de façon durable :
+       `dpkg-statoverride --update --add root root 0644 /etc/update-motd.d/00-header`.
+    2. Retirer de `/etc/motd`, s'il existe, les noms, versions et séquences d'échappement.
+  rollback: |
+    Pour chaque script modifié : `dpkg-statoverride --remove /etc/update-motd.d/<script>` puis
+    `chmod 755 /etc/update-motd.d/<script>`.

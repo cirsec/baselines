@@ -1,0 +1,229 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-FS-003
+title: Mount /tmp as a separate filesystem with nodev, nosuid and noexec
+finding:
+  title: Programs can be run, or device files and setuid programs used, from /tmp
+  description: Every user can write to /tmp, so it is the usual place to drop and run attack tools, and filling it can fill the root filesystem.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [mount, tmp, tmpfs]
+
+description: |
+  `/tmp` is a separate filesystem mounted with:
+
+  - `nodev`: device files on it are not usable;
+  - `nosuid`: setuid and setgid bits on it are ignored;
+  - `noexec`: programs on it cannot be executed directly.
+
+  On Ubuntu the simplest way is the `tmp.mount` unit of systemd, which mounts a tmpfs (in memory,
+  emptied at each boot). Ubuntu 26.04 enables it by default with `nodev` and `nosuid`; Ubuntu 20.04,
+  22.04 and 24.04 keep `/tmp` on the root filesystem and ship the unit as an example in
+  `/usr/share/systemd/`.
+rationale: |
+  `/tmp` is writable by every user and every service. Attackers drop their tools there and run
+  them, and a setuid file or device node placed there by a compromised account can be abused.
+  `noexec`, `nosuid` and `nodev` stop these uses. A separate filesystem also keeps a user or a
+  runaway process that fills `/tmp` from filling the root filesystem.
+impact: |
+  Scripts and binaries in `/tmp` cannot be run directly (`./script`); `sh /tmp/script` still works,
+  so `noexec` is a hurdle, not a barrier. A few installers and build tools that run helpers from
+  `/tmp` fail: point their `TMPDIR` elsewhere. A tmpfs `/tmp` uses memory (up to half of the RAM)
+  and loses its content at reboot.
+notes: |
+  The fix uses `tmp.mount` and a drop-in that adds `noexec`. On Ubuntu 20.04 to 24.04, `/tmp`
+  becomes a tmpfs at the next reboot only: mounting it on a running system would hide files that programs are using.
+  Files left in the old on-disk `/tmp` are then hidden under the mount. When `/tmp` is a partition
+  declared in `/etc/fstab`, the fix stops and the options must be added by hand. On 26.04 the
+  drop-in replaces the options of the shipped unit, which drops its optional per-user quota
+  (`usrquota`); add it back in the drop-in if user quotas on `/tmp` are wanted.
+
+  Snaps get their own private `/tmp` inside the host `/tmp`, so they follow the same options.
+
+setting:
+  location: /etc/systemd/system/tmp.mount.d/60-cirsec.conf, or /etc/fstab
+  default_value: "20.04 to 24.04: directory of the root filesystem. 26.04: tmpfs with nodev,nosuid"
+  recommended_value: Separate filesystem (tmpfs) with nodev,nosuid,noexec
+
+audit:
+  manual: |
+    Run `findmnt -kn /tmp`. It must print a line (separate filesystem) whose options contain
+    `nodev`, `nosuid` and `noexec`.
+  checks:
+    - id: mount
+      engine: shell
+      description: /tmp is a mount point and its options include nodev, nosuid and noexec.
+      spec:
+        script: |
+          o=$(findmnt -kn -o SOURCE,FSTYPE,OPTIONS --mountpoint /tmp | tail -n 1)
+          [ -n "$o" ] || { echo "/tmp is not a separate filesystem"; exit 1; }
+          echo "/tmp $o"
+          rc=0
+          for opt in nodev nosuid noexec; do
+            case ,${o##* }, in *,$opt,*) ;; *) echo "missing $opt"; rc=1 ;; esac
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    With a tmpfs (recommended):
+    1. On Ubuntu 20.04 to 24.04 only: `cp /usr/share/systemd/tmp.mount /etc/systemd/system/` then
+       `systemctl enable tmp.mount`.
+    2. Create `/etc/systemd/system/tmp.mount.d/60-cirsec.conf`:
+       ```
+       [Mount]
+       Options=mode=1777,strictatime,nosuid,nodev,noexec,size=50%%,nr_inodes=1m
+       ```
+    3. Run `systemctl daemon-reload`. If `/tmp` is already a tmpfs, run
+       `mount -o remount,nodev,nosuid,noexec /tmp`; otherwise reboot.
+
+    With a partition declared in `/etc/fstab`: add `nodev,nosuid,noexec` to the options of the
+    `/tmp` line, then run `mount -o remount /tmp`.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/systemd/system/tmp.mount.d/60-cirsec.conf` (and, on Ubuntu 20.04 to 24.04, run
+    `systemctl disable tmp.mount` and delete `/etc/systemd/system/tmp.mount`), run
+    `systemctl daemon-reload` and reboot.
+  scripts:
+    - id: tmp-mount
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: systemd - Using /tmp/ and /var/tmp/ Safely
+    url: https://systemd.io/TEMPORARY_DIRECTORIES/
+    publisher: systemd project
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemd.mount(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/systemd.mount.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: mount(8), Ubuntu manual pages (filesystem-independent mount options)
+    url: https://manpages.ubuntu.com/manpages/noble/man8/mount.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R28)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R28
+    relation: partial
+    note: R28 covers the whole partitioning; this control covers /tmp.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548.001
+  - framework: cwe
+    id: CWE-400
+related_controls:
+  - id: CB-UBU-FS-004
+    type: related
+  - id: CB-UBU-FS-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM 2520, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on fresh install (/tmp on the root filesystem); fix copies tmp.mount, /tmp becomes a tmpfs at reboot with nodev,nosuid,noexec; apt-get still installs packages, snaps still run; running a script from /tmp is refused."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM 2522, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on fresh install (/tmp on the root filesystem); fix copies tmp.mount, /tmp becomes a tmpfs at reboot with nodev,nosuid,noexec; apt-get still installs packages, snaps still run; running a script from /tmp is refused."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM 2524, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on fresh install (/tmp on the root filesystem); fix copies tmp.mount, /tmp becomes a tmpfs at reboot with nodev,nosuid,noexec; apt-get still installs packages, snaps still run; running a script from /tmp is refused."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM 2526, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on fresh install (tmp.mount without noexec); fix adds noexec through a drop-in and remounts at once; kept after reboot; apt-get still installs packages, snaps still run; running a script from /tmp is refused."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

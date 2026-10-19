@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rejeter par défaut le trafic sortant
+finding:
+  title: Le pare-feu local laisse le système ouvrir n'importe quelle connexion sortante
+  description: Un logiciel malveillant ou un intrus sur l'hôte peut joindre n'importe quel serveur d'Internet pour télécharger des outils ou exfiltrer des données.
+description: |
+  La plupart des pare-feu locaux ne filtrent que le trafic entrant. Ce contrôle exige que la politique
+  par défaut des paquets sortants les rejette, pour que le système ne puisse joindre que les
+  destinations et ports autorisés par des règles explicites (DNS, NTP, miroirs de paquets, mandataires,
+  collecteurs de journaux...) :
+
+  - avec ufw : `deny (outgoing)` ou `reject (outgoing)` dans `ufw status verbose` ;
+  - avec nftables (quand `nftables.service` est activé et ufw inactif) : une chaîne de base sur le
+    crochet `output` avec `policy drop` ;
+  - avec iptables-persistent (quand `netfilter-persistent.service` est activé et que ni ufw ni
+    nftables ne le sont) : politique `OUTPUT` à `DROP` pour iptables et, avec IPv6, ip6tables.
+rationale: |
+  Une liste d'autorisations en sortie empêche un service compromis de télécharger une seconde charge,
+  de joindre un serveur de commande ou d'exfiltrer des données directement. Les tentatives bloquées
+  apparaissent aussi dans les journaux du pare-feu.
+impact: |
+  Chaque flux sortant nécessaire doit être listé à l'avance, y compris DNS, NTP, les mises à jour de
+  paquets et les réponses traitées hors suivi de connexion. Une règle manquante casse les mises à jour,
+  la synchronisation de l'heure ou la résolution de noms. Il n'y a pas de correction automatique pour
+  cette raison.
+audit:
+  manual: |
+    - ufw : `ufw status verbose` affiche `deny (outgoing)` ou `reject (outgoing)`.
+    - nftables : `nft list ruleset` contient une chaîne avec `hook output` et `policy drop`.
+    - iptables-persistent : `iptables -S` et `ip6tables -S` affichent `-P OUTPUT DROP`.
+remediation:
+  manual: |
+    1. Lister les flux sortants dont le système a besoin (`ss -tunp` sur une journée type, les DNS, NTP
+       et miroirs configurés, mandataires, serveurs de journaux et de sauvegarde).
+    2. Les autoriser, puis changer la politique par défaut :
+       - ufw : `ufw allow out 53`, `ufw allow out 123/udp`, `ufw allow out to <miroir> port 443 proto tcp`...
+         puis `ufw default deny outgoing` ;
+       - nftables : ajouter une chaîne de base `output` avec `policy drop;`, une règle
+         `ct state established,related accept`, `oif lo accept` et une règle par flux ;
+       - iptables-persistent : ajouter les règles `OUTPUT` de chaque flux, puis
+         `iptables -P OUTPUT DROP` (et ip6tables), et `netfilter-persistent save`.
+    3. Vérifier la résolution de noms, la synchronisation de l'heure et `apt update` juste après.
+  rollback: |
+    ufw : `ufw default allow outgoing`. nftables : remettre la politique de la chaîne output à `accept`
+    et recharger. iptables : `iptables -P OUTPUT ACCEPT`, `ip6tables -P OUTPUT ACCEPT`, puis
+    `netfilter-persistent save`.

@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-017
+title: Keep the cron daemon enabled and running
+finding:
+  title: The cron daemon is installed but not running
+  description: Scheduled maintenance and security jobs, such as log rotation or integrity checks, silently stop.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [cron, scheduling]
+
+applicability:
+  facts: [cron]
+
+description: |
+  `cron` runs the jobs in `/etc/crontab`, `/etc/cron.d/`, the `/etc/cron.hourly` to
+  `/etc/cron.monthly` directories and the users' crontabs. When the package is installed,
+  `cron.service` must be enabled and running.
+rationale: |
+  Packages and administrators rely on cron for periodic tasks: integrity checks, report mails,
+  cleanup jobs. A stopped daemon disables them without any error message.
+impact: |
+  None known.
+notes: |
+  Ubuntu installs and enables cron by default, on servers, desktops and cloud images. The control
+  is not applicable only when the package was removed.
+
+audit:
+  manual: |
+    `systemctl is-enabled cron` must print `enabled` and `systemctl is-active cron` must print
+    `active`.
+  logic: all
+  checks:
+    - id: enabled
+      engine: systemd-unit
+      description: cron is enabled.
+      spec: { unit: cron.service, state: enabled }
+    - id: active
+      engine: shell
+      description: cron is running.
+      spec:
+        script: systemctl is-active cron.service || exit 1
+
+remediation:
+  manual: |
+    Run `systemctl unmask cron` if it is masked, then `systemctl enable --now cron`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now cron`.
+  scripts:
+    - id: enabled
+      from_check: enabled
+
+references:
+  - title: cron(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/cron.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.4.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.4.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.4.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.4.1.1"
+    relation: equivalent
+related_controls:
+  - id: CB-UBU-SVC-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on the stock image (cron installed and running) and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on the stock image (cron installed and running) and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on the stock image (cron installed and running) and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on the stock image (cron installed and running) and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

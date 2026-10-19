@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-015
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer la politique d'âge des mots de passe aux comptes existants
+finding:
+  title: Les comptes existants gardent des mots de passe qui n'expirent jamais
+  description: Modifier login.defs n'agit que sur les nouveaux comptes ; les comptes existants gardent leurs anciens réglages.
+description: |
+  Chaque compte a ses propres champs d'âge dans `/etc/shadow` (âge minimal et maximal, délai
+  d'avertissement, délai d'inactivité, date du dernier changement), copiés depuis les valeurs par
+  défaut à sa création. Ce contrôle applique la politique de CB-UBU-AUTH-014 à chaque compte
+  existant qui a un mot de passe, et vérifie qu'aucune date de dernier changement n'est dans le futur.
+rationale: |
+  Sans cette étape, la politique ne protège que les comptes créés après elle. Une date de dernier
+  changement dans le futur repousserait l'expiration indéfiniment.
+impact: |
+  Un compte dont le mot de passe a plus de {{ max_days }} jours doit le changer à sa prochaine
+  connexion par mot de passe, et est désactivé {{ inactive_days }} jours plus tard. Les connexions
+  SSH par clé de ce compte sont aussi refusées tant que le mot de passe n'est pas changé : vérifier
+  les comptes de service et d'automatisation avant d'appliquer.
+parameters:
+  max_days: Âge maximal d'un mot de passe en jours.
+  min_days: Délai minimal en jours entre deux changements.
+  inactive_days: Jours après l'expiration avant la désactivation du compte.
+audit:
+  manual: |
+    Pour chaque compte avec une empreinte de mot de passe dans `/etc/shadow` (champ 2 commençant par
+    `$`), vérifier avec `chage -l <utilisateur>` : maximum <= {{ max_days }}, minimum >= {{ min_days }},
+    avertissement >= 7, inactivité entre 0 et {{ inactive_days }}, et une date de dernier changement
+    qui n'est pas dans le futur.
+remediation:
+  manual: |
+    Pour chaque compte avec un mot de passe : `chage --maxdays {{ max_days }} --mindays {{ min_days }}
+    --warndays 7 --inactive {{ inactive_days }} <utilisateur>`. Corriger les dates de dernier
+    changement dans le futur avec `chage --lastday <AAAA-MM-JJ> <utilisateur>`.
+  rollback: |
+    Restaurer `/etc/shadow` depuis la sauvegarde, ou réinitialiser chaque compte avec `chage`.

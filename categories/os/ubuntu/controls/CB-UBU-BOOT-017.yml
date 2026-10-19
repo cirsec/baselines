@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-017
+title: Protect FIFOs and regular files in world-writable sticky directories
+finding:
+  title: Programs can be tricked into opening FIFOs or files planted by other users in /tmp
+  description: A privileged program that opens an existing file in a shared directory can write data into, or read data from, a file an attacker created there.
+status: active
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [kernel, sysctl, filesystem, toctou]
+
+description: |
+  `fs.protected_fifos` and `fs.protected_regular` restrict `O_CREAT` opens of FIFOs and regular
+  files that already exist in a sticky directory and that the process does not own:
+
+  - `1`: refused in world-writable sticky directories (such as `/tmp`) when the file is owned
+    neither by the process nor by the owner of the directory;
+  - `2`: the same rule also applies to group-writable sticky directories.
+rationale: |
+  A program that "creates" a file in `/tmp` with a predictable name, without `O_EXCL`, opens the
+  file an attacker put there first instead. With a FIFO, the attacker reads what the program
+  writes or feeds it data; with a regular file, they control or read its content. These settings
+  block the attack in the kernel, whatever the quality of the program.
+impact: |
+  `1` has no known impact and is the Ubuntu default. With `2`, programs that share files or
+  FIFOs between users of a group through a group-writable sticky directory must open them
+  without `O_CREAT` or run as their owner.
+notes: |
+  Ubuntu ships `fs.protected_fifos = 1` and `fs.protected_regular = 2` (`99-protect-links.conf`
+  from procps, or `50-default.conf` from systemd on 26.04), so core profiles pass on a fresh
+  install and hardened profiles raise `fs.protected_fifos` to `2`.
+
+setting:
+  location: sysctl `fs.protected_fifos` and `fs.protected_regular`, persisted in `/etc/sysctl.d/`
+  default_value: "fs.protected_fifos = 1, fs.protected_regular = 2"
+  recommended_value: "Both at least {{ protection_level }}"
+
+parameters:
+  - name: protection_level
+    type: integer
+    description: Minimum value of fs.protected_fifos and fs.protected_regular. 1 covers world-writable sticky directories, 2 adds group-writable ones.
+    default: 1
+    profile_defaults:
+      server-hardened: 2
+      desktop-hardened: 2
+    minimum: 1
+    maximum: 2
+
+audit:
+  manual: |
+    Run `sysctl fs.protected_fifos fs.protected_regular`. Both values must be at least
+    {{ protection_level }}. Then check that no sysctl configuration file sets a lower value.
+  checks:
+    - id: fifos
+      engine: sysctl
+      description: Running value of fs.protected_fifos.
+      spec: { key: fs.protected_fifos, operator: ">=", value: "{{ protection_level }}" }
+    - id: regular
+      engine: sysctl
+      description: Running value of fs.protected_regular.
+      spec: { key: fs.protected_regular, operator: ">=", value: "{{ protection_level }}" }
+
+remediation:
+  manual: |
+    For each key below {{ protection_level }}, add `<key> = {{ protection_level }}` to
+    `/etc/sysctl.d/zz-cirsec.conf`, then run `sysctl --system`. The file must sort after
+    `/usr/lib/sysctl.d/99-protect-links.conf` (`protect-links.conf`, without a number, on 20.04),
+    which sets both keys: a file named `60-*.conf` or `99-*.conf` would be overridden at the next
+    boot.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/zz-cirsec.conf` and run `sysctl --system`.
+  scripts:
+    - id: raise
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: Linux kernel documentation - Documentation for /proc/sys/fs/ (protected_fifos, protected_regular)
+    url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Security documentation - File handling (FIFO and regular file restrictions)
+    url: https://documentation.ubuntu.com/security/security-features/process-memory/file-handling/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R14)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R14
+    relation: partial
+    note: R14 asks for 2 on both keys among other filesystem settings; core profiles accept 1, hardened profiles require 2.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-377
+related_controls:
+  - id: CB-UBU-BOOT-006
+    type: related
+  - id: CB-UBU-BOOT-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Core passes on a fresh install (fifos 1, regular 2); server-hardened fails, fix writes fs.protected_fifos = 2 to zz-cirsec.conf; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Core passes on a fresh install (fifos 1, regular 2); server-hardened fails, fix writes fs.protected_fifos = 2 to zz-cirsec.conf; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Core passes on a fresh install (fifos 1, regular 2); server-hardened fails, fix writes fs.protected_fifos = 2 to zz-cirsec.conf; kept after reboot; fix idempotent."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Core passes on a fresh install (fifos 1, regular 2); server-hardened fails, fix writes fs.protected_fifos = 2 to zz-cirsec.conf; kept after reboot; fix idempotent."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-023
+title: Disable the CUPS print server and printer discovery
+finding:
+  title: The CUPS print service runs on a system that does not print
+  description: CUPS and cups-browsed parse print jobs and printer announcements, and have had remotely exploitable flaws.
+status: active
+profiles: [server, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, cups, printing, attack-surface]
+
+description: |
+  CUPS is started by `cups.service`, `cups.socket` and `cups.path`; `cups-browsed.service`
+  discovers network printers and adds them automatically.
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  The print stack parses complex documents and network announcements. Flaws in `cups-browsed`
+  have allowed remote code execution by announcing a malicious printer. Servers rarely print.
+impact: |
+  The system can no longer print, and network printers are no longer discovered. Print servers
+  and desktops that print keep CUPS: the control is only in the server and hardened desktop
+  profiles, and can be excluded in the tailoring file.
+notes: |
+  The socket and path units can start `cupsd` on their own, so they are masked too.
+
+audit:
+  manual: |
+    Run `systemctl is-enabled cups.service cups.socket cups.path cups-browsed.service`. Each must
+    print `masked`, or fail because the unit does not exist.
+  logic: all
+  checks:
+    - id: cups-browsed
+      engine: systemd-unit
+      description: Printer discovery daemon.
+      spec: { unit: cups-browsed.service, state: masked }
+    - id: cups-socket
+      engine: systemd-unit
+      description: CUPS socket activation.
+      spec: { unit: cups.socket, state: masked }
+    - id: cups-path
+      engine: systemd-unit
+      description: CUPS path activation.
+      spec: { unit: cups.path, state: masked }
+    - id: cups
+      engine: systemd-unit
+      description: CUPS scheduler.
+      spec: { unit: cups.service, state: masked }
+
+remediation:
+  manual: |
+    Run `systemctl mask --now cups-browsed.service cups.socket cups.path cups.service`, or
+    `apt purge cups cups-daemon cups-browsed` if nothing depends on them.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask cups-browsed.service cups.socket cups.path cups.service` then
+    `systemctl enable --now cups.service cups-browsed.service`.
+  scripts:
+    - id: cups-browsed
+      from_check: cups-browsed
+    - id: cups-socket
+      from_check: cups-socket
+    - id: cups-path
+      from_check: cups-path
+    - id: cups
+      from_check: cups
+
+references:
+  - title: cupsd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/cupsd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: cups-browsed(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/cups-browsed.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service and names CUPS; this control covers it.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.11"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: cwe
+    id: CWE-20
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes (units absent); with cups installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (units absent); with cups installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (units absent); with cups installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (units absent); with cups installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

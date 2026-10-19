@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-021
+title: Limit SSH logins to the users and groups that need them
+finding:
+  title: Every account with a valid credential can log in over SSH
+  description: Service accounts, temporary users or accounts with a leaked key can open a shell remotely although they never should.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: manual
+tags: [ssh, access-control]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  The OpenSSH server options `AllowGroups`, `AllowUsers`, `DenyGroups` and `DenyUsers` restrict
+  which accounts may log in, whatever credentials they hold. A typical setup allows one group,
+  for example `AllowGroups ssh-users`, and adds the people who administer or use the host to it.
+rationale: |
+  Many accounts exist on a system for services, applications or past projects. An allow list makes
+  SSH access a deliberate decision per account, so that a key or password left on an account that
+  should not log in remotely is useless to an attacker.
+impact: |
+  Accounts outside the list, including automation accounts, cannot log in anymore. The list must
+  be kept up to date with arrivals and departures. The right list depends on the host, which is
+  why there is no automatic fix.
+
+audit:
+  manual: |
+    Run `sshd -T | grep -E '^(allowusers|allowgroups|denyusers|denygroups) '`. At least one of
+    these options must be set, and the accounts or groups it allows must match the list of
+    people and tools that need SSH access to this host.
+
+remediation:
+  manual: |
+    1. Create a group (`groupadd ssh-users`) and add the accounts that need SSH access
+       (`usermod -aG ssh-users <account>`), starting with your own.
+    2. Add `AllowGroups ssh-users` to `/etc/ssh/sshd_config.d/00-cirsec.conf`.
+    3. Check with `sshd -t`, run `systemctl reload ssh`, and test a new connection before closing
+       the current one.
+  rollback: |
+    Remove the `AllowGroups` line and run `systemctl reload ssh`.
+
+references:
+  - title: sshd_config(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/sshd_config.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1021.004
+  - framework: mitre-attack
+    id: T1078
+  - framework: cwe
+    id: CWE-284
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

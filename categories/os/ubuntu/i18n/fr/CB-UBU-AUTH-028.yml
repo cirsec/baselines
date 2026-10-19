@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-028
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder le groupe shadow vide
+finding:
+  title: Des utilisateurs sont membres du groupe shadow
+  description: Les membres du groupe shadow peuvent lire toutes les empreintes de mots de passe du système.
+description: |
+  `/etc/shadow` est lisible par le groupe `shadow` pour que quelques programmes setgid (comme
+  `unix_chkpwd`) puissent vérifier les mots de passe. Aucun utilisateur n'a besoin d'en être membre.
+rationale: |
+  Un utilisateur du groupe `shadow` peut copier toutes les empreintes de mots de passe et les casser hors ligne.
+impact: |
+  Aucun pour un système standard.
+audit:
+  manual: |
+    1. `getent group shadow` n'affiche aucun membre après le dernier deux-points.
+    2. `awk -F: -v g="$(getent group shadow | cut -d: -f3)" '$4 == g' /etc/passwd` n'affiche rien.
+remediation:
+  manual: |
+    Retirer chaque membre avec `gpasswd -d <utilisateur> shadow`, et donner un autre groupe
+    principal aux utilisateurs dont c'est le groupe principal avec `usermod -g <groupe> <utilisateur>`.

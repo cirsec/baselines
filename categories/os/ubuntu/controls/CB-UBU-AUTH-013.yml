@@ -1,0 +1,236 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-013
+title: Refuse empty passwords and hash passwords with a strong algorithm in pam_unix
+finding:
+  title: pam_unix accepts accounts with an empty password
+  description: An account whose password field is empty can be logged into without any password.
+status: active
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [pam, password]
+
+description: |
+  `pam_unix` checks local passwords against `/etc/shadow`. Three options matter here:
+
+  - `nullok` lets accounts with an empty password field authenticate with no password. Ubuntu
+    sets it in the default `unix` profile;
+  - the hashing method used when a password is changed: `yescrypt` from Ubuntu 22.04, `sha512`
+    on 20.04, whose `pam_unix` (PAM 1.3.1) does not support yescrypt. Older methods (`md5`,
+    `bigcrypt`, DES) are fast to crack;
+  - `use_authtok` in the password stack: `pam_unix` stores the new password that the modules
+    before it (quality check, history) accepted, instead of asking for it again unchecked.
+rationale: |
+  An empty password field, created by mistake or by a tool, becomes an open account as long as
+  `nullok` is present. A weak hashing method lets an attacker who copies `/etc/shadow` recover
+  passwords quickly.
+impact: |
+  Accounts with an empty password can no longer log in with a password. Give them a password, or
+  lock them with `passwd -l`.
+notes: |
+  The packaged `unix` profile is replaced by a copy without `nullok`, so package upgrades do not
+  bring the option back. Passwords keep their current hash until they are changed.
+
+  `pam-auth-update` writes `use_authtok` on the `pam_unix.so` password line only when another
+  password module runs before it. On a default system `pam_unix` is first and the option is
+  absent: it appears once `pam_pwquality` (CB-UBU-AUTH-010) or `pam_pwhistory`
+  (CB-UBU-AUTH-012) is enabled. Adding it by hand while `pam_unix` is first would break password
+  changes.
+
+setting:
+  location: /usr/share/pam-configs/cirsec_unix
+  default_value: "nullok; yescrypt (sha512 on 20.04); no use_authtok"
+  recommended_value: No nullok, yescrypt or sha512, use_authtok
+
+audit:
+  manual: |
+    1. No `pam_unix.so` line in `/etc/pam.d/common-auth` or `/etc/pam.d/common-password` contains `nullok`.
+    2. The `pam_unix.so` line of `/etc/pam.d/common-password` contains `yescrypt` or `sha512`,
+       and `use_authtok`.
+  checks:
+    - id: no-nullok-auth
+      engine: file-content
+      spec: { path: /etc/pam.d/common-auth, pattern: "pam_unix\\.so.*\\bnullok\\b", expect: no_match }
+    - id: no-nullok-password
+      engine: file-content
+      spec: { path: /etc/pam.d/common-password, pattern: "pam_unix\\.so.*\\bnullok\\b", expect: no_match }
+    - id: strong-hash
+      engine: file-content
+      spec: { path: /etc/pam.d/common-password, pattern: "^\\s*password\\s+.*pam_unix\\.so.*\\b(yescrypt|sha512)\\b" }
+    - id: use-authtok
+      engine: file-content
+      description: pam_unix stores the password accepted by the modules before it.
+      spec: { path: /etc/pam.d/common-password, pattern: "^\\s*password\\s+.*pam_unix\\.so.*\\buse_authtok\\b" }
+
+remediation:
+  manual: |
+    1. Lock or set a password for every account with an empty field: `awk -F: '$2==""' /etc/shadow`.
+    2. Copy `/usr/share/pam-configs/unix` to `/usr/share/pam-configs/cirsec_unix`, remove every
+       `nullok`, change `Name:` and make sure the `Password:` lines carry `yescrypt` (`sha512` on
+       20.04).
+    3. Run `pam-auth-update --enable cirsec_unix --disable unix`. On Ubuntu 20.04 and 22.04,
+       whose `pam-auth-update` has no `--disable`, run
+       `pam-auth-update --enable cirsec_unix --remove unix`, then add a `unix` line to
+       `/var/lib/pam/seen` so that later runs do not enable the profile again.
+    4. Enable a password quality or history module (CB-UBU-AUTH-010, CB-UBU-AUTH-012) so that
+       `use_authtok` is written on the `pam_unix.so` password line.
+    5. Check that a new login still works before closing your session.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Run `pam-auth-update --enable unix --remove cirsec_unix` and delete the profile file.
+  scripts:
+    - id: profile
+      engine: shell
+      content: |
+        p=/usr/share/pam-configs/cirsec_unix
+        sed -e '/^Name:/!s/[[:space:]]nullok\b//g' \
+            -e 's/^Name: .*/Name: CIRSEC - Unix authentication without nullok/' /usr/share/pam-configs/unix >"$p"
+        h=yescrypt
+        [ "$(. /etc/os-release && printf '%s' "$VERSION_ID")" != 20.04 ] || h=sha512
+        grep -q yescrypt "$p" || grep -q sha512 "$p" || sed -i "s/\(pam_unix\.so obscure\)/\1 $h/" "$p"
+        for f in /etc/pam.d/common-auth /etc/pam.d/common-password /etc/pam.d/common-account /etc/pam.d/common-session; do cb_backup "$f"; done
+        if grep -q -- '--disable' /usr/sbin/pam-auth-update; then
+          DEBIAN_FRONTEND=noninteractive pam-auth-update --enable cirsec_unix --disable unix
+        else
+          # Ubuntu 20.04 and 22.04: no --disable. Remove the profile, then mark it as seen so later
+          # runs (package upgrades, other profiles) do not enable it again as a new default.
+          DEBIAN_FRONTEND=noninteractive pam-auth-update --enable cirsec_unix --remove unix
+          grep -qx unix /var/lib/pam/seen || echo unix >>/var/lib/pam/seen
+        fi
+
+references:
+  - title: pam_unix(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam_unix.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: pam-auth-update(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/pam-auth-update.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R68)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R68
+    relation: partial
+    note: R68 is about protecting stored passwords; this control covers the hashing method.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.2.1"
+    relation: partial
+    note: Ours checks pam_unix in the password stack only.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.3.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.2.1"
+    relation: partial
+    note: Ours checks pam_unix in the password stack only.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.3.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.2.1"
+    relation: partial
+    note: Ours checks pam_unix in the password stack only.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.3.4.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.2.1"
+    relation: partial
+    note: Ours checks pam_unix in the password stack only.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.4.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.3.4.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+  - framework: cwe
+    id: CWE-916
+related_controls:
+  - id: CB-UBU-AUTH-010
+    type: related
+  - id: CB-UBU-AUTH-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "nullok removed through the cirsec_unix profile (--remove unix and seen entry, no --disable on this release), sha512 kept, use_authtok present; password login works with pamtester (login, sshd, sudo); unchanged after dpkg-reconfigure libpam-runtime and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "nullok removed through the cirsec_unix profile (--remove unix and seen entry, no --disable on this release), use_authtok present; password login works with pamtester (login, sshd, sudo); unchanged after dpkg-reconfigure libpam-runtime and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "nullok removed through the cirsec_unix profile (--disable unix), use_authtok present; password login works with pamtester (login, sshd, sudo); unchanged after dpkg-reconfigure libpam-runtime and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "nullok removed through the cirsec_unix profile (--disable unix), use_authtok present; password login works with pamtester (login, sshd, sudo); unchanged after dpkg-reconfigure libpam-runtime and reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

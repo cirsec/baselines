@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUTH-017
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder le PATH de root sans répertoire relatif ni modifiable
+finding:
+  title: Le PATH de connexion de root contient un répertoire relatif ou modifiable
+  description: Une commande tapée en root peut lancer un programme déposé par un autre utilisateur.
+description: |
+  Quand root tape un nom de commande, le shell cherche dans les répertoires de `PATH` dans l'ordre.
+  Chaque entrée doit être un chemin absolu vers un répertoire existant, appartenant à root et non
+  modifiable par le groupe ou les autres. Les entrées vides et `.` désignent le répertoire courant.
+rationale: |
+  Si le `PATH` de root contient le répertoire courant ou un répertoire modifiable par un autre
+  utilisateur, celui-ci peut y déposer un programme portant le nom d'une commande courante (`ls`,
+  `sudo`) et le faire exécuter par root.
+impact: |
+  Aucun pour le PATH par défaut d'Ubuntu. Les scripts qui lançaient des programmes depuis le
+  répertoire courant doivent utiliser `./programme`.
+audit:
+  manual: |
+    Lancer `su - root -c 'echo $PATH'`. Il ne doit contenir aucune entrée vide, ni `.`, ni chemin
+    relatif, et chaque répertoire doit exister, appartenir à root et n'être modifiable ni par le
+    groupe ni par les autres.
+remediation:
+  manual: |
+    Retirer les entrées vides, `.` et relatives du PATH défini dans `/root/.profile`,
+    `/root/.bashrc`, `/etc/profile` et `/etc/environment`. Corriger le propriétaire et le mode de
+    chaque répertoire signalé avec `chown root:root` et `chmod go-w`.

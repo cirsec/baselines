@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-AUDIT-008
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Envoyer les journaux système vers un serveur de journalisation distant
+finding:
+  title: Les journaux système ne sont stockés que sur le système qui les produit
+  description: Un intrus disposant de root peut effacer les journaux locaux, et un disque perdu emporte l'historique.
+description: |
+  Une copie des journaux doit quitter le système au fil de l'eau, vers un serveur de journalisation
+  ou une plateforme de collecte que le système ne peut pas modifier. Sur Ubuntu, deux voies
+  correspondent au système de journalisation choisi :
+
+  - avec le journal seul, `systemd-journal-upload` (paquet `systemd-journal-remote`) envoie le
+    journal en HTTPS vers un serveur `systemd-journal-remote` ;
+  - avec rsyslog, une action `omfwd` envoie les messages en TCP, de préférence avec TLS
+    (CB-UBU-AUDIT-009).
+rationale: |
+  Les journaux distants survivent à la compromission ou à la perte du système et font référence quand
+  les journaux locaux ont été altérés. Ils permettent aussi de corréler les événements entre systèmes.
+impact: |
+  Nécessite un serveur de journalisation et des flux réseau vers lui. Les messages sont mis en file
+  quand le serveur est injoignable ; dimensionner la file pour qu'une longue coupure ne remplisse pas
+  le disque.
+audit:
+  manual: |
+    1. Avec le journal seul : lancer `systemctl is-active systemd-journal-upload` et vérifier `URL=`
+       dans `systemd-analyze cat-config systemd/journal-upload.conf`.
+    2. Avec rsyslog : chercher une ligne `action(type="omfwd" target=...)` ou `@@machine` avec
+       `grep -Er 'omfwd|^\s*[^#].*@@?' /etc/rsyslog.conf /etc/rsyslog.d/`.
+    3. Vérifier sur le serveur de journalisation que des messages récents de ce système sont arrivés.
+remediation:
+  manual: |
+    1. Avec le journal seul : installer `systemd-journal-remote`, régler `URL=https://<serveur>:19532`
+       et le certificat client dans `/etc/systemd/journal-upload.conf.d/`, puis lancer
+       `systemctl enable --now systemd-journal-upload`.
+    2. Avec rsyslog : ajouter dans `/etc/rsyslog.d/60-remote.conf` :
+       ```
+       *.* action(type="omfwd" target="<serveur>" port="6514" protocol="tcp"
+                  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+                  queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on"
+                  action.resumeRetryCount="-1")
+       ```
+       puis lancer `systemctl restart rsyslog`.
+  rollback: |
+    Désactiver `systemd-journal-upload`, ou retirer le fichier de transfert et redémarrer rsyslog.

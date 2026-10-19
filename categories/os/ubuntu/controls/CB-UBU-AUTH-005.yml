@@ -1,0 +1,259 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-005
+title: Configure sudo to use a pseudo-terminal, a log file and a short credential cache
+finding:
+  title: sudo defaults allow terminal hijacking, keep no local log or cache credentials too long
+  description: Commands run with sudo can escape to the user's terminal, leave traces only in syslog, and a forgotten session stays privileged.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sudo, privilege-escalation, logging]
+
+applicability:
+  facts: [sudo]
+
+description: |
+  Three sudo defaults, set with `Defaults` lines in `/etc/sudoers` or `/etc/sudoers.d/`:
+
+  - `use_pty`: run each command in a new pseudo-terminal, so it cannot inject input into the
+    user's terminal after sudo exits;
+  - `logfile`: write every sudo command to a dedicated file, in addition to syslog;
+  - `timestamp_timeout`: how many minutes a successful authentication is cached before sudo asks
+    for the password again.
+rationale: |
+  Without `use_pty`, a malicious program run through sudo can keep running in the background and
+  push keystrokes into the user's shell. A dedicated log file keeps a readable record of
+  privileged commands even if syslog is lost or flooded. A short cache limits how long an
+  unattended terminal can run privileged commands without a password.
+impact: |
+  Some interactive programs behave differently in a pseudo-terminal (rare). Users type their
+  password again after {{ timestamp_timeout }} minutes of not using sudo.
+notes: |
+  Ubuntu sets `use_pty` in `/etc/sudoers` since 22.04 (not on 20.04) and caches credentials for
+  15 minutes. With the original sudo, the effective values are read with `sudo -V` as root, which
+  merges every sudoers file.
+
+  On Ubuntu 26.04 the `sudo` command is `sudo-rs`. It always runs commands in a pseudo-terminal
+  unless `!use_pty` is set, sends every command to syslog (the journal), and has no `logfile`
+  option: `visudo` rejects that line as an unknown setting. Its `sudo -V` only prints the version,
+  so the checks read the sudoers files instead, and the `logfile` check is not applicable.
+
+setting:
+  location: /etc/sudoers.d/60-cirsec
+  default_value: "20.04: no use_pty; 22.04 and later: use_pty; no log file, 15 minutes"
+  recommended_value: "use_pty, logfile={{ log_file }} (not with sudo-rs), timestamp_timeout at most {{ timestamp_timeout }}"
+
+parameters:
+  - name: log_file
+    type: string
+    description: Path of the sudo log file. Not used by sudo-rs, which logs to syslog only.
+    default: /var/log/sudo.log
+  - name: timestamp_timeout
+    type: integer
+    description: Maximum number of minutes sudo caches credentials.
+    unit: minutes
+    default: 15
+    profile_defaults:
+      server-hardened: 5
+      desktop-hardened: 5
+    minimum: 0
+    maximum: 15
+
+audit:
+  manual: |
+    With the original sudo, run `sudo -V` as root and check that:
+    1. it prints `Always run commands in a pseudo-tty`;
+    2. `Path to log file:` is set;
+    3. `Authentication timestamp timeout:` is at most {{ timestamp_timeout }} minutes.
+
+    With sudo-rs (`sudo --version` starts with `sudo-rs`), read `/etc/sudoers` and
+    `/etc/sudoers.d/*`: there is no `Defaults !use_pty`, and the last `timestamp_timeout` is at most
+    {{ timestamp_timeout }} (15 when absent).
+  checks:
+    - id: use-pty
+      engine: shell
+      description: sudo runs commands in a pseudo-terminal.
+      spec:
+        script: |
+          if sudo --version 2>/dev/null | head -n 1 | grep -q '^sudo-rs'; then
+            l=$(cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null | grep -E '^[[:space:]]*Defaults.*![[:space:]]*use_pty')
+            [ -z "$l" ] || { echo "sudo-rs: $l"; exit 1; }
+            echo "sudo-rs: use_pty (default, not disabled)"
+            exit 0
+          fi
+          sudo -V 2>/dev/null | grep -q 'Always run commands in a pseudo-tty' || { echo "use_pty not set"; exit 1; }
+          echo "use_pty set"
+    - id: logfile
+      engine: shell
+      description: sudo writes to a log file (not applicable to sudo-rs, which only logs to syslog).
+      spec:
+        script: |
+          if sudo --version 2>/dev/null | head -n 1 | grep -q '^sudo-rs'; then
+            echo "sudo-rs has no logfile option; commands are logged to syslog"
+            exit 2
+          fi
+          f=$(sudo -V 2>/dev/null | sed -n 's/^Path to log file: //p')
+          echo "logfile=${f:-none}"
+          [ -n "$f" ]
+    - id: timeout
+      engine: shell
+      description: sudo credential cache lifetime.
+      spec:
+        script: |
+          if sudo --version 2>/dev/null | head -n 1 | grep -q '^sudo-rs'; then
+            t=$(cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null | grep -E '^[[:space:]]*Defaults' \
+              | sed -n 's/.*timestamp_timeout[[:space:]]*=[[:space:]]*\([0-9-]*\).*/\1/p' | tail -n 1)
+            t=${t:-15}
+          else
+            t=$(sudo -V 2>/dev/null | sed -n 's/^Authentication timestamp timeout: \([0-9-]*\).*/\1/p')
+          fi
+          echo "timestamp_timeout=${t:-unknown} minutes"
+          [ -n "$t" ] || exit 3
+          [ "$t" -ge 0 ] && [ "$t" -le "$CB_TIMESTAMP_TIMEOUT" ]
+
+remediation:
+  manual: |
+    Create `/etc/sudoers.d/60-cirsec` with `visudo -f /etc/sudoers.d/60-cirsec`:
+    ```
+    Defaults use_pty
+    Defaults logfile="{{ log_file }}"
+    Defaults timestamp_timeout={{ timestamp_timeout }}
+    ```
+    Leave out the `logfile` line with sudo-rs (Ubuntu 26.04): sudo-rs rejects it. Remove any
+    `timestamp_timeout` with a higher value from other sudoers files.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/sudoers.d/60-cirsec`.
+  scripts:
+    - id: dropin
+      engine: shell
+      content: |
+        f=/etc/sudoers.d/60-cirsec
+        t=$(mktemp)
+        {
+          echo '# Written by CIRSEC Baselines CB-UBU-AUTH-005'
+          echo 'Defaults use_pty'
+          sudo --version 2>/dev/null | head -n 1 | grep -q '^sudo-rs' || printf 'Defaults logfile="%s"\n' "$CB_LOG_FILE"
+          echo "Defaults timestamp_timeout=$CB_TIMESTAMP_TIMEOUT"
+        } >"$t"
+        if ! visudo -cqf "$t" >/dev/null; then rm -f "$t"; echo "invalid sudoers drop-in" >&2; exit 1; fi
+        cb_backup "$f"
+        install -m 0440 -o root -g root "$t" "$f"
+        rm -f "$t"
+
+references:
+  - title: sudoers(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/sudoers.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: sudo-rs(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/sudo-rs.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - sudo-rs and Rust coreutils
+    url: https://documentation.ubuntu.com/server/reference/other-tools/sudo-rs/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R39)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R39
+    relation: partial
+    note: R39 lists several sudo directives; this control covers use_pty, logging and the cache.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.2.3"
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.2.6"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.2.3"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.2.6"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.2.3"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.2.6"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.2.2"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.2.3"
+    relation: partial
+    note: sudo-rs, the default sudo on 26.04, has no log file option; ours then relies on syslog.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.2.6"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1548.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on a fresh install (sudo 1.8.31, no use_pty, no log file); drop-in validated by visudo fixes it; sudo of the default user still works; 5 minutes in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on a fresh install (no log file); drop-in validated by visudo fixes it; sudo of the default user still works; 5 minutes in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on a fresh install (no log file); drop-in validated by visudo fixes it; sudo of the default user still works; 5 minutes in server-hardened; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "sudo-rs 0.2.13 - use_pty by default passes, logfile not applicable, timeout read from sudoers; drop-in without logfile accepted by visudo, sudo still works, 5 minutes in server-hardened; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

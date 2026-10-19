@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-AUTH-004
+title: Install sudo for administrative access
+finding:
+  title: sudo is not installed
+  description: Without sudo, administrators share the root password or log in as root, and their actions cannot be traced to a person.
+status: active
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sudo, privilege-escalation, accountability]
+
+description: |
+  `sudo` lets authorized users run commands as root (or another user) with their own password,
+  according to rules in `/etc/sudoers` and `/etc/sudoers.d/`. Every command is logged with the
+  name of the user who ran it.
+rationale: |
+  Administration through personal accounts and sudo replaces a shared root password, gives each
+  administrator only the rights they need, and leaves an audit trail that names who did what.
+impact: |
+  None known. Ubuntu installs sudo on every server, desktop and cloud image.
+notes: |
+  Since Ubuntu 25.10, the `sudo` command is provided by `sudo-rs`, a reimplementation in Rust,
+  selected through the `sudo` alternative; the original `sudo` package stays installed. Either
+  package meets this control.
+
+audit:
+  manual: |
+    Run `dpkg -s sudo sudo-rs`. At least one of the two packages must be installed.
+  logic: any
+  checks:
+    - id: package
+      engine: package
+      description: The sudo package is installed.
+      spec: { name: sudo, state: installed }
+    - id: package-rs
+      engine: package
+      description: The sudo-rs package is installed.
+      spec: { name: sudo-rs, state: installed }
+
+remediation:
+  manual: |
+    Run `apt install sudo`, then grant administrators access by adding them to the `sudo` group.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  scripts:
+    - id: install
+      from_check: package
+
+references:
+  - title: sudo(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/sudo.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: sudo-rs(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/sudo-rs.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R33)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R33
+    relation: partial
+    note: R33 asks for accountable administration; sudo is the means.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.2.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.2.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on a fresh install (sudo installed); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on a fresh install (sudo installed); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on a fresh install (sudo installed); profiles core and server-hardened."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on a fresh install (sudo and sudo-rs installed, sudo-rs selected by the alternative); profiles core and server-hardened."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
