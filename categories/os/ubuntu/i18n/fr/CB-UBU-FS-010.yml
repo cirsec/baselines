@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-FS-010
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Examiner les programmes setuid et setgid et ne garder que ceux qui sont nécessaires
+finding:
+  title: Des programmes setuid ou setgid inattendus sont présents
+  description: Chaque programme setuid ou setgid s'exécute avec des privilèges supplémentaires pour n'importe quel utilisateur ; une seule faille ou un seul binaire déposé suffit à céder ces privilèges.
+description: |
+  Un programme avec le bit setuid (ou setgid) s'exécute avec les droits de son propriétaire (ou de
+  son groupe), en général root, quel que soit l'utilisateur qui le lance. Chacun de ces programmes
+  sur les systèmes de fichiers locaux est connu et nécessaire. Le contrôle liste ceux qui ne
+  correspondent pas à `{{ allowed }}`, une liste de motifs shell qui contient les programmes setuid
+  et setgid livrés par les paquets Ubuntu courants. Une personne examine toujours la liste complète.
+rationale: |
+  Les programmes setuid root sont le principal moyen pour un utilisateur local d'élever ses
+  privilèges : une faille dans l'un d'eux (pkexec, sudo et d'autres en ont eu plusieurs) donne root.
+  Les attaquants laissent aussi une copie setuid d'un shell comme porte dérobée. Moins de programmes
+  de ce type réduit la surface d'attaque, et une liste examinée fait ressortir tout nouveau venu.
+impact: |
+  Retirer le bit setuid d'un programme empêche les utilisateurs non root de s'en servir (par exemple
+  `chfn`, `chsh` ou `newgrp`). Vérifier qui a besoin de chaque programme avant de le retirer.
+notes: |
+  Les images cloud d'Ubuntu neuves en comptent de 20 à 25. Tous sont dans la liste par défaut sauf
+  `/usr/bin/ntfs-3g` en 26.04, que l'image livre setuid root : la prise en charge de NTFS sert
+  rarement sur un serveur, et son pilote FUSE exécuté en root a connu plusieurs failles d'élévation
+  de privilèges ; il est donc signalé pour examen plutôt qu'accepté. En 26.04, `sudo` est sudo-rs
+  (`/usr/lib/cargo/bin/sudo` et `su`), le sudo d'origine restant disponible en `/usr/bin/sudo.ws`.
+  Les postes graphiques en ajoutent quelques-uns (par exemple `Xorg.wrap`, `pppd`) : ajouter ceux
+  qui sont nécessaires dans le fichier d'adaptation.
+  `dpkg-statoverride` conserve un bit retiré lors des mises à jour du paquet ; un simple `chmod` est
+  annulé à la prochaine mise à jour. Le contrôle aboutit à « à examiner » : il confirme qu'il n'y a
+  rien d'inattendu, pas que chaque programme de la liste est nécessaire.
+parameters:
+  allowed: Motifs shell des programmes setuid et setgid acceptés sans examen.
+audit:
+  manual: |
+    1. Pour chaque système de fichiers local listé par `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, lancer
+       `find <point de montage> -xdev -type f -perm /6000 -exec ls -l {} +`.
+    2. Pour chaque programme, vérifier qu'il vient d'un paquet (`dpkg -S <programme>`), que
+       `dpkg --verify <paquet>` ne signale aucune modification, et qu'il est nécessaire sur ce système.
+remediation:
+  manual: |
+    Pour chaque programme inattendu, et pour les programmes de la liste dont ce système n'a pas besoin :
+    1. S'il n'appartient à aucun paquet (`dpkg -S` ne trouve rien) ou si `dpkg --verify` le signale
+       comme modifié, le traiter comme une compromission possible et enquêter avant de le supprimer.
+    2. Si son paquet n'est pas nécessaire, purger le paquet.
+    3. Sinon, retirer le bit de façon durable :
+       `dpkg-statoverride --update --add root root 0755 <programme>`.
+    4. Ajouter les programmes nécessaires et examinés à `{{ allowed }}` dans le fichier d'adaptation.

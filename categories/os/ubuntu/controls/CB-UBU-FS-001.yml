@@ -1,0 +1,360 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-FS-001
+title: Block kernel modules for filesystems the system does not use
+finding:
+  title: The kernel can load modules for rarely used filesystems
+  description: Any user who can attach a disk image or removable media can make the kernel parse it with old, rarely audited filesystem code.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [kernel-modules, filesystems, modprobe]
+
+description: |
+  The kernel loads a filesystem module on demand, the first time something mounts a filesystem
+  of that type. This control blocks the modules listed in `{{ modules }}` for good: each one gets
+  an `install <module> /bin/false` rule, so any load attempt fails, and a `blacklist` rule, so it
+  is never picked by hardware aliases. A module that no installed kernel ships is compliant.
+
+  The core list holds filesystems that have no use on an Ubuntu server or workstation (cramfs,
+  freevxfs, hfs, hfsplus, jffs2). The hardened profiles add overlay, squashfs and udf.
+
+  `squashfs` is always left alone when snapd is installed: every snap is a squashfs image, and
+  Ubuntu ships parts of the system (LXD on servers, Firefox and the App Center on desktops) as
+  snaps. Blocking it would stop every snap from mounting.
+rationale: |
+  Filesystem drivers parse complex on-disk structures. Rarely used ones get little review, and
+  crafted images have repeatedly led to kernel memory corruption and privilege escalation. Desktop
+  automounters, udisks and loop devices let an unprivileged user reach this code with a USB stick
+  or a downloaded image. A module that cannot be loaded removes that attack surface.
+impact: |
+  Media using a blocked filesystem can no longer be mounted. In the hardened profiles this
+  includes `overlay` (Docker, Podman, LXD and other container engines), `squashfs` (live images;
+  snaps are protected, see above) and `udf` (DVDs and some USB media). Remove a module from
+  `{{ modules }}` in the tailoring file when the system needs it.
+notes: |
+  On Ubuntu 20.04 to 24.04, the `linux-modules` package of the generic kernel does not ship cramfs,
+  freevxfs, hfs, hfsplus or jffs2 (they come with `linux-modules-extra`), so the core list passes
+  there without any configuration. Ubuntu 26.04 ships them in `linux-modules`, and firewire too.
+
+  Ubuntu kernels build `squashfs` into the kernel image: modprobe rules cannot block a built-in
+  driver. The check reports such a module as built in and does not count it as a failure, since
+  only a rebuilt kernel could remove it. To really drop squashfs, remove snapd (if nothing uses
+  snaps) and use a kernel that builds it as a module.
+
+  Review the other filesystem modules the same way: `ls /lib/modules/$(uname -r)/kernel/fs`
+  lists what the kernel can load, and the ones the system never mounts can be added to
+  `{{ modules }}`.
+
+setting:
+  location: /etc/modprobe.d/60-cirsec-filesystems.conf
+  default_value: Every module shipped by the kernel can be loaded
+  recommended_value: "install /bin/false and blacklist for: {{ modules }}"
+
+parameters:
+  - name: modules
+    type: list
+    description: Kernel modules to block, as named by modprobe.
+    default: [cramfs, freevxfs, hfs, hfsplus, jffs2]
+    profile_defaults:
+      server-hardened: [cramfs, freevxfs, hfs, hfsplus, jffs2, overlay, squashfs, udf]
+      desktop-hardened: [cramfs, freevxfs, hfs, hfsplus, jffs2, overlay, squashfs, udf]
+
+audit:
+  manual: |
+    For each module of `{{ modules }}` (except `squashfs` when `dpkg -l snapd` shows it installed):
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>'` must show
+       `install <module> /bin/false` and `blacklist <module>` (dashes appear as underscores), or
+       `find /lib/modules -name '<module>.ko*'` must find nothing. A module listed in
+       `/lib/modules/*/modules.builtin` is built into the kernel and cannot be blocked: note it.
+    2. `grep '^<module> ' /proc/modules` must find nothing.
+  checks:
+    - id: modules
+      engine: shell
+      description: Each listed module is blocked in the modprobe configuration, or not shipped, and not loaded.
+      spec:
+        script: |
+          cfg=$(modprobe --showconfig 2>/dev/null) || exit 3
+          # Every snap is a squashfs image: never block it while snapd is installed.
+          skip=
+          dpkg-query -W -f='${Status}' snapd 2>/dev/null | grep -q 'ok installed' && skip=squashfs
+          rc=0
+          for m in $CB_MODULES; do
+            n=$(printf '%s' "$m" | tr - _)
+            if [ "$m" = "$skip" ]; then
+              echo "$m: kept, snapd is installed"; continue
+            fi
+            if grep -q "^$n " /proc/modules; then
+              echo "$m: loaded"; rc=1; continue
+            fi
+            if grep -qs "/$n.ko\$\|/$m.ko\$" /lib/modules/*/modules.builtin; then
+              echo "$m: built into the kernel, modprobe cannot block it"
+            elif printf '%s\n' "$cfg" | grep -Eq "^install $n (/usr)?/bin/(false|true)( |\$)" &&
+              printf '%s\n' "$cfg" | grep -qx "blacklist $n"; then
+              echo "$m: blocked"
+            elif [ -z "$(find /lib/modules/ \( -name "$m.ko*" -o -name "$n.ko*" \) 2>/dev/null | head -n 1)" ]; then
+              echo "$m: not shipped by any installed kernel"
+            else
+              echo "$m: can be loaded"; rc=1
+            fi
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    1. Create `/etc/modprobe.d/60-cirsec-filesystems.conf` with, for each module of `{{ modules }}`
+       (leave out `squashfs` when snapd is installed):
+       ```
+       install <module> /bin/false
+       blacklist <module>
+       ```
+    2. Unload the modules that are loaded with `modprobe -r <module>`. A module that is in use
+       (mounted filesystem) stays loaded until it is unmounted or the system reboots.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-filesystems.conf`. The modules load again on demand.
+  scripts:
+    - id: modprobe-conf
+      engine: shell
+      content: |
+        f=/etc/modprobe.d/60-cirsec-filesystems.conf
+        skip=
+        dpkg-query -W -f='${Status}' snapd 2>/dev/null | grep -q 'ok installed' && skip=squashfs
+        cb_backup "$f"
+        {
+          echo '# Written by CIRSEC Baselines CB-UBU-FS-001'
+          for m in $CB_MODULES; do
+            [ "$m" = "$skip" ] || printf 'install %s /bin/false\nblacklist %s\n' "$m" "$m"
+          done
+        } >"$f"
+        chmod 644 "$f"
+        rc=0
+        for m in $CB_MODULES; do
+          [ "$m" = "$skip" ] && continue
+          n=$(printf '%s' "$m" | tr - _)
+          grep -q "^$n " /proc/modules || continue
+          modprobe -r "$n" || { echo "$m is in use, it stays loaded until reboot" >&2; rc=1; }
+        done
+        exit $rc
+
+references:
+  - title: modprobe.d(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/modprobe.d.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: modprobe(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/modprobe.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: The snap format
+    url: https://snapcraft.io/docs/reference/development/yaml-schemas/the-snap-format/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.7"
+    relation: looser
+    note: Hardened profiles only, and not when snapd is installed (snaps are squashfs images); Ubuntu kernels build squashfs in, so modprobe cannot block it.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.1.10"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.7"
+    relation: looser
+    note: Hardened profiles only, and not when snapd is installed (snaps are squashfs images); Ubuntu kernels build squashfs in, so modprobe cannot block it.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.1.10"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.7"
+    relation: looser
+    note: Hardened profiles only, and not when snapd is installed (snaps are squashfs images); Ubuntu kernels build squashfs in, so modprobe cannot block it.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.1.11"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.6"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.7"
+    relation: looser
+    note: Hardened profiles only, and not when snapd is installed (snaps are squashfs images); Ubuntu kernels build squashfs in, so modprobe cannot block it.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.8"
+    relation: equivalent
+    note: Hardened profiles only.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.1.11"
+    relation: partial
+    note: The review of other filesystem modules is left to the administrator, who extends the list.
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1188
+related_controls:
+  - id: CB-UBU-FS-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM 2520, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Core list passes unconfigured (modules not shipped by linux-modules); hardened list fails on overlay and udf, squashfs kept because snapd is installed; fix blocks them, modprobe then refuses them; kept after reboot; snaps (LXD on 20.04/22.04, hello-world) still install and run."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM 2522, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Core list passes unconfigured (modules not shipped by linux-modules); hardened list fails on overlay and udf, squashfs kept because snapd is installed; fix blocks them, modprobe then refuses them; kept after reboot; snaps (LXD on 20.04/22.04, hello-world) still install and run."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM 2524, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Core list passes unconfigured (modules not shipped by linux-modules); hardened list fails on overlay and udf, squashfs kept because snapd is installed; fix blocks them, modprobe then refuses them; kept after reboot; snaps (LXD on 20.04/22.04, hello-world) still install and run."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM 2526, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Core list fails on fresh install (cramfs, freevxfs, hfs, hfsplus, jffs2 shipped by linux-modules); fix blocks them, modprobe then refuses cramfs; hardened adds overlay and udf, squashfs kept because snapd is installed; kept after reboot; a snap still installs and runs. With snapd purged, squashfs is reported as built into the kernel."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-FS-008
+title: Leave no world-writable file, and set the sticky bit on world-writable directories
+finding:
+  title: Files can be changed by any user, or shared directories let users delete each other's files
+  description: Any local account or compromised service can alter a world-writable file, or replace another user's file in a shared directory.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [permissions, world-writable, sticky-bit]
+
+description: |
+  On local filesystems (ext2/3/4, XFS, Btrfs, JFS, F2FS, FAT, exFAT and tmpfs):
+
+  - no regular file is writable by others;
+  - every directory writable by others has the sticky bit (`t`), so that only the owner of a file
+    can delete or rename it, as on `/tmp`.
+
+  Network filesystems and kernel pseudo-filesystems (`/proc`, `/sys`, `/dev`) are not scanned.
+rationale: |
+  A world-writable file can be modified by every account and every service: when it is a script,
+  a configuration or data read by a privileged process, this leads to code execution or tampering.
+  Without the sticky bit, any user can delete or replace other users' files in a shared directory
+  and set traps for programs that use predictable names there.
+impact: |
+  Removing write access for others can break a badly packaged application that relies on it. Fix
+  such cases with a dedicated group instead. Adding the sticky bit to a shared directory only
+  stops users from deleting each other's files.
+notes: |
+  A fresh Ubuntu 20.04 to 26.04 system has no finding. The scan stays on each filesystem (`find -xdev`)
+  and takes a few seconds on a typical system, longer on file servers.
+
+audit:
+  manual: |
+    For each local filesystem listed by `findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs`, run:
+    ```
+    find <mount point> -xdev \( -type f -perm -0002 -o -type d -perm -0002 ! -perm -1000 \)
+    ```
+    The command must print nothing.
+  checks:
+    - id: world-writable
+      engine: shell
+      description: World-writable files and world-writable directories without the sticky bit on local filesystems.
+      spec:
+        script: |
+          out=$(for m in $(findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs); do
+            find "$m" -xdev \( -type f -perm -0002 -o -type d -perm -0002 ! -perm -1000 \) -print 2>/dev/null
+          done | sort -u)
+          [ -z "$out" ] && { echo "no world-writable file, every world-writable directory is sticky"; exit 0; }
+          echo "$(printf '%s\n' "$out" | wc -l) item(s):"
+          printf '%s\n' "$out" | head -n 20
+          exit 1
+
+remediation:
+  manual: |
+    For each reported item:
+    - directory: run `chmod +t <directory>`, or `chmod o-w <directory>` if it does not need to be
+      shared;
+    - file: find which package or application owns it (`dpkg -S <file>`) and why it is writable,
+      then run `chmod o-w <file>`, and give access through a group if some users still need it.
+
+    The automated fix only adds the sticky bit to directories; files are left for review.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `chmod -t <directory>` on the directories listed by the audit before the fix.
+  scripts:
+    - id: sticky-bit
+      engine: shell
+      content: |
+        for m in $(findmnt -knr -o TARGET -t ext2,ext3,ext4,xfs,btrfs,jfs,f2fs,vfat,exfat,tmpfs); do
+          find "$m" -xdev -type d -perm -0002 ! -perm -1000 -exec chmod +t {} + 2>/dev/null
+        done
+        exit 0
+
+references:
+  - title: chmod(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/chmod.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: inode(7), Ubuntu manual pages (sticky bit)
+    url: https://manpages.ubuntu.com/manpages/noble/man7/inode.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R54)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R54
+    relation: partial
+    note: R54 also asks for world-writable directories to belong to root.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "7.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "7.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "7.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "7.1.11"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1222.002
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM 2520, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on fresh install; planted world-writable file and directory detected; fix adds the sticky bit to the directory only."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM 2522, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on fresh install; planted world-writable file and directory detected; fix adds the sticky bit to the directory only."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM 2524, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on fresh install; planted world-writable file and directory detected; fix adds the sticky bit to the directory only."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM 2526, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on fresh install; planted world-writable file and directory detected; fix adds the sticky bit to the directory only."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

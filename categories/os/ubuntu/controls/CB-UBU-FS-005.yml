@@ -1,0 +1,218 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-FS-005
+title: Put /home, /var, /var/tmp, /var/log and /var/log/audit on separate filesystems
+finding:
+  title: User data, variable data and logs share the root filesystem
+  description: A user or a service that fills one of these directories fills the whole system, and they cannot get their own mount options.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [mount, partitions]
+
+description: |
+  Each directory of `{{ separate_mounts }}` is the mount point of its own filesystem (partition,
+  LVM logical volume, or bind mount of a dedicated volume), instead of a plain directory of the
+  root filesystem.
+rationale: |
+  Separate filesystems contain disk exhaustion: logs or user files that grow without bound stop at
+  their own volume, and the system keeps running and logging. They are also the only way to give
+  these trees restrictive mount options (`nodev`, `nosuid`, `noexec`, see CB-UBU-FS-006), and they
+  keep audit logs available when other data fills up.
+impact: |
+  Partitioning is chosen at installation. Changing it later means adding disks or shrinking
+  volumes, moving data and editing `/etc/fstab`, with downtime. Volumes that are too small fill up
+  sooner: size them from the expected log and data volumes, and prefer LVM to resize later.
+notes: |
+  Ubuntu cloud images have a single root partition (plus `/boot` from 24.04), so this control
+  fails there by design. The guided layouts of the Ubuntu installers put everything in one root
+  filesystem or one LVM logical volume: choose "Custom storage layout" in the server installer, or
+  describe the volumes in the `storage` section of an autoinstall file, and keep free space in
+  the LVM volume group to grow them later.
+
+setting:
+  location: /etc/fstab
+  default_value: Single root filesystem
+  recommended_value: "Separate filesystems for: {{ separate_mounts }}"
+
+parameters:
+  - name: separate_mounts
+    type: list
+    description: Directories that must be mount points of their own filesystem.
+    default: [/home, /var, /var/tmp, /var/log, /var/log/audit]
+
+audit:
+  manual: |
+    For each directory of `{{ separate_mounts }}`, run `findmnt -kn <directory>`. It must print a
+    line.
+  checks:
+    - id: mounts
+      engine: shell
+      description: Each listed directory is a mount point.
+      spec:
+        script: |
+          rc=0
+          for p in $CB_SEPARATE_MOUNTS; do
+            o=$(findmnt -kn -o SOURCE,FSTYPE --mountpoint "$p" | tail -n 1)
+            if [ -n "$o" ]; then echo "$p: $o"; else echo "$p: not a separate filesystem"; rc=1; fi
+          done
+          exit $rc
+
+remediation:
+  manual: |
+    At installation, create a partition or LVM logical volume for each directory of
+    `{{ separate_mounts }}`.
+
+    On an installed system, for each missing one:
+    1. Create the volume and its filesystem (for example `lvcreate` then `mkfs.ext4`).
+    2. In single-user mode or with the services that write there stopped, mount it on a temporary
+       directory and copy the data with `cp -a` (or `rsync -aHAX`), keeping owners and modes.
+    3. Add the line to `/etc/fstab` with the options of CB-UBU-FS-006, mount it on the target
+       directory, check, and remove the old copy hidden under the mount point.
+    4. Reboot and check that every service starts.
+
+references:
+  - title: Ubuntu installer documentation - Autoinstall configuration reference (storage)
+    url: https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: file-hierarchy(7), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man7/file-hierarchy.7.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R28, R71)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R28
+    relation: partial
+    note: R28 also lists /boot, /opt, /srv and /usr; ours requires the five partitions CIS asks for.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5(2)
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.4.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.5.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.6.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.1.2.7.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1499.001
+  - framework: cwe
+    id: CWE-400
+related_controls:
+  - id: CB-UBU-FS-006
+    type: related
+  - id: CB-UBU-FS-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM 2520, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM 2522, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM 2524, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM 2526, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Fails on the single-partition cloud image; a loop-mounted /var/tmp is reported as separate."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
