@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-013
+title: Reboot after updates that require it, or use Livepatch
+finding:
+  title: The system has waited too long for a reboot that updates require
+  description: Updated kernel or core libraries are installed but not running, so the vulnerabilities they fix are still exploitable.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [updates, reboot, livepatch]
+
+description: |
+  Some updates only take effect after a reboot: the kernel, and libraries loaded by every
+  process such as the C library, OpenSSL or systemd. When a package asks for it,
+  `update-notifier-common` creates `/var/run/reboot-required` and lists the packages concerned in
+  `/var/run/reboot-required.pkgs`. Both files disappear at the next boot (`/var/run` is a tmpfs).
+
+  Canonical Livepatch, part of Ubuntu Pro, applies the fixes for high and critical kernel
+  vulnerabilities to the running kernel without a reboot.
+
+  The control fails when `/var/run/reboot-required` is older than `{{ max_days }}` days, unless
+  every package that asked for the reboot is a kernel package (`linux-*`) and Livepatch is
+  running and has applied its patches.
+rationale: |
+  An updated package on disk does not protect the system while the old kernel or library is
+  still in memory: a scanner reading package versions reports the system as fixed while the
+  vulnerability can still be exploited. Systems that are never rebooted are among the most
+  frequent audit findings. A bounded delay leaves time to plan the reboot in a maintenance
+  window.
+impact: |
+  Rebooting interrupts the services of the system: plan a regular maintenance window, or use
+  `Unattended-Upgrade::Automatic-Reboot` with `Automatic-Reboot-Time` on systems that can reboot
+  on their own. Livepatch needs an Ubuntu Pro subscription and only covers the kernel.
+notes: |
+  The control does not reboot the system: there is no automated fix. Long-running processes can
+  also keep old libraries mapped without any reboot-required file; `needrestart` (installed by
+  default on 22.04 and later servers) restarts the services concerned after updates.
+
+setting:
+  location: /var/run/reboot-required, /var/run/reboot-required.pkgs
+  recommended_value: "Absent, or at most {{ max_days }} days old, or only kernel packages with Livepatch applied"
+
+parameters:
+  - name: max_days
+    type: integer
+    description: Longest accepted delay between an update that requires a reboot and the reboot.
+    unit: days
+    default: 14
+    profile_defaults:
+      server-hardened: 7
+      desktop-hardened: 7
+    minimum: 1
+    maximum: 90
+
+audit:
+  manual: |
+    1. `ls -l --time-style=+%F /var/run/reboot-required` shows no file, or a date at most
+       `{{ max_days }}` days ago.
+    2. Otherwise, `cat /var/run/reboot-required.pkgs` lists only `linux-*` packages and
+       `canonical-livepatch status` shows Livepatch running with its patches applied.
+  checks:
+    - id: reboot-required
+      engine: shell
+      description: Age of /var/run/reboot-required, packages that asked for the reboot, and Livepatch state.
+      spec:
+        script: |
+          f=/var/run/reboot-required
+          [ -e "$f" ] || { echo "no reboot required"; exit 0; }
+          age=$(( ($(date +%s) - $(stat -c %Y "$f")) / 86400 ))
+          pkgs=$(sort -u "$f.pkgs" 2>/dev/null | tr '\n' ' ')
+          echo "reboot required for $age days (limit $CB_MAX_DAYS) by: ${pkgs:-unknown packages}"
+          [ "$age" -le "$CB_MAX_DAYS" ] && exit 0
+          if [ -n "$pkgs" ] && [ -z "$(sort -u "$f.pkgs" | grep -v '^linux-')" ]; then
+            lp=/snap/bin/canonical-livepatch
+            if [ -x "$lp" ] && "$lp" status --format=json 2>/dev/null | grep -Eiq '"patchState": ?"(applied|nothing-to-apply)"'; then
+              echo "kernel updates only, covered by Livepatch"
+              exit 0
+            fi
+            echo "kernel updates only, Livepatch not running or not applied"
+          fi
+          exit 1
+
+remediation:
+  manual: |
+    Reboot the system during a maintenance window (`systemctl reboot`), then check that
+    `/var/run/reboot-required` is gone. To keep up without a human:
+
+    - schedule the reboot with unattended-upgrades on systems that can reboot unattended, in
+      `/etc/apt/apt.conf.d/52unattended-upgrades-local`:
+      `Unattended-Upgrade::Automatic-Reboot "true";` and
+      `Unattended-Upgrade::Automatic-Reboot-Time "03:00";`;
+    - on systems attached to Ubuntu Pro, enable Livepatch (`pro enable livepatch`) to defer kernel
+      reboots, and still reboot for the other packages.
+
+references:
+  - title: Ubuntu Server documentation - Automatic updates
+    url: https://documentation.ubuntu.com/server/how-to/software/automatic-updates/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: unattended-upgrade(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/unattended-upgrade.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Canonical Livepatch
+    url: https://ubuntu.com/security/livepatch
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Canonical Livepatch documentation
+    url: https://ubuntu.com/security/livepatch/docs
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: partial
+    note: R61 asks for a regular update process; this control checks that installed fixes are actually running.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-UBU-PKG-007
+    type: related
+  - id: CB-UBU-PKG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on stock; reboot-required 20 days old for libc6 fails (14 days core), 8 days old for linux-* fails with 7 days (hardened) and passes with a stub canonical-livepatch reporting patchState applied (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock; reboot-required 20 days old for libc6 fails (14 days core), 8 days old for linux-* fails with 7 days (hardened) and passes with a stub canonical-livepatch reporting patchState applied (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock; reboot-required 20 days old for libc6 fails (14 days core), 8 days old for linux-* fails with 7 days (hardened) and passes with a stub canonical-livepatch reporting patchState applied (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock; reboot-required 20 days old for libc6 fails (14 days core), 8 days old for linux-* fails with 7 days (hardened) and passes with a stub canonical-livepatch reporting patchState applied (no Pro token in the lab)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

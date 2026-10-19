@@ -1,0 +1,237 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-006
+title: Configure the Ubuntu security pocket
+finding:
+  title: The Ubuntu security pocket is not configured
+  description: Security fixes are published in a separate pocket; without it the system never receives them.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [apt, repositories, updates, ubuntu-pro]
+
+description: |
+  The Ubuntu Security Team publishes fixes in the `<codename>-security` pocket (for example
+  `noble-security`), served from `security.ubuntu.com/ubuntu` (`ports.ubuntu.com/ubuntu-ports`
+  for other architectures). Each Ubuntu release needs an enabled `deb` entry for this pocket, or
+  for an internal mirror of it.
+
+  On a system attached to Ubuntu Pro, the Expanded Security Maintenance (ESM) fixes for the
+  main and restricted components are published in the `<codename>-infra-security` pocket of
+  `esm.ubuntu.com/infra/ubuntu`, which the Pro client adds when the `esm-infra` service is
+  enabled. Attached systems must have it too.
+rationale: |
+  Fixes reach the `<codename>-updates` pocket too, but only the security pocket is guaranteed to
+  carry every security fix as soon as it is published, and it is the one unattended-upgrades
+  installs from. Without it, a system stays exposed to every published vulnerability, even if
+  updates are applied every day. Once a release leaves standard support (20.04 since May 2025),
+  new fixes for main and restricted are published in ESM only.
+impact: |
+  None known. The system must reach the security mirror (and `esm.ubuntu.com` when attached to
+  Ubuntu Pro) or an internal copy of them.
+notes: |
+  Configured by default on every release (`security.ubuntu.com` in `/etc/apt/sources.list` on
+  20.04 and 22.04, in `/etc/apt/sources.list.d/ubuntu.sources` on 24.04 and later). The ESM
+  check only applies to systems attached to Ubuntu Pro (fact `ubuntu-pro`); whether a system
+  should be attached is decided by CB-UBU-PKG-009 and CB-UBU-PKG-014. The `esm-apps` pocket is
+  checked by CB-UBU-PKG-014.
+
+setting:
+  location: /etc/apt/sources.list, /etc/apt/sources.list.d/
+  default_value: <codename>-security configured, no ESM pocket until attached to Ubuntu Pro
+  recommended_value: An enabled deb entry for the <codename>-security pocket, and for <codename>-infra-security when attached to Ubuntu Pro
+
+audit:
+  manual: |
+    1. Run `apt-cache policy | grep -- '-security'`. It must list the `<codename>-security` pocket
+       of the installed release (`. /etc/os-release; echo "$VERSION_CODENAME"`).
+    2. If `pro status` shows the system attached to Ubuntu Pro, it must also list
+       `<codename>-infra-security` from `esm.ubuntu.com`, and `pro status` must show `esm-infra`
+       enabled.
+  checks:
+    - id: security-suite
+      engine: shell
+      description: Enabled deb entries for the security pocket of the installed release.
+      spec:
+        script: |
+          c=$( (. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}") 2>/dev/null)
+          [ -n "$c" ] || { echo "VERSION_CODENAME unknown in /etc/os-release"; exit 3; }
+          files=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no APT source file"; exit 1; }
+          # One line per entry: file:line, types, URIs, suites, ;option=value list (lowercase).
+          # shellcheck disable=SC2086
+          awk '
+            function flush() { if (st && en != "no") print src "\t" ty "\t" ur "\t" su "\t" op; st = 0; ty = ur = su = op = en = "" }
+            FNR == 1 { flush(); d = FILENAME ~ /\.sources$/ }
+            !d {
+              sub(/#.*/, ""); if ($1 !~ /^deb(-src)?$/) next
+              l = $0; o = ""; i = index(l, "["); j = index(l, "]")
+              if (i && j > i) { o = substr(l, i + 1, j - i - 1); l = substr(l, 1, i - 1) " " substr(l, j + 1) }
+              split(l, w, " "); gsub(/[ \t]+/, ";", o)
+              print FILENAME ":" FNR "\t" w[1] "\t" w[2] "\t" w[3] "\t;" tolower(o); next
+            }
+            /^#/ { next }
+            /^[ \t]*$/ { flush(); next }
+            /^[ \t]/ { next }
+            {
+              if (!st) { st = 1; src = FILENAME ":" FNR }
+              k = $0; sub(/:.*/, "", k); k = tolower(k); v = $0; sub(/^[^:]*:[ \t]*/, "", v)
+              if (k == "types") ty = v; else if (k == "uris") ur = v; else if (k == "suites") su = v
+              else if (k == "enabled") en = tolower(v)
+              else op = op ";" k "=" tolower(v == "" ? "inline" : v)
+            }
+            END { flush() }' $files | awk -F '\t' -v s="$c-security" '
+            {
+              nt = split($2, t, " "); ns = split($4, w, " "); deb = 0
+              for (i = 1; i <= nt; i++) if (t[i] == "deb") deb = 1
+              for (i = 1; i <= ns; i++) if (deb && w[i] == s) { print $1 " " $3 " " s; found = 1 }
+            }
+            END { if (!found) print "no enabled deb entry for " s; exit !found }'
+
+    - id: esm-infra-suite
+      engine: shell
+      description: Enabled deb entries for the ESM infra pocket, on systems attached to Ubuntu Pro.
+      facts: [ubuntu-pro]
+      spec:
+        script: |
+          c=$( (. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}") 2>/dev/null)
+          [ -n "$c" ] || { echo "VERSION_CODENAME unknown in /etc/os-release"; exit 3; }
+          files=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no APT source file"; exit 1; }
+          # One line per entry: file:line, types, URIs, suites, ;option=value list (lowercase).
+          # shellcheck disable=SC2086
+          awk '
+            function flush() { if (st && en != "no") print src "\t" ty "\t" ur "\t" su "\t" op; st = 0; ty = ur = su = op = en = "" }
+            FNR == 1 { flush(); d = FILENAME ~ /\.sources$/ }
+            !d {
+              sub(/#.*/, ""); if ($1 !~ /^deb(-src)?$/) next
+              l = $0; o = ""; i = index(l, "["); j = index(l, "]")
+              if (i && j > i) { o = substr(l, i + 1, j - i - 1); l = substr(l, 1, i - 1) " " substr(l, j + 1) }
+              split(l, w, " "); gsub(/[ \t]+/, ";", o)
+              print FILENAME ":" FNR "\t" w[1] "\t" w[2] "\t" w[3] "\t;" tolower(o); next
+            }
+            /^#/ { next }
+            /^[ \t]*$/ { flush(); next }
+            /^[ \t]/ { next }
+            {
+              if (!st) { st = 1; src = FILENAME ":" FNR }
+              k = $0; sub(/:.*/, "", k); k = tolower(k); v = $0; sub(/^[^:]*:[ \t]*/, "", v)
+              if (k == "types") ty = v; else if (k == "uris") ur = v; else if (k == "suites") su = v
+              else if (k == "enabled") en = tolower(v)
+              else op = op ";" k "=" tolower(v == "" ? "inline" : v)
+            }
+            END { flush() }' $files | awk -F '\t' -v s="$c-infra-security" '
+            {
+              nt = split($2, t, " "); ns = split($4, w, " "); deb = 0
+              for (i = 1; i <= nt; i++) if (t[i] == "deb") deb = 1
+              for (i = 1; i <= ns; i++) if (deb && w[i] == s) { print $1 " " $3 " " s; found = 1 }
+            }
+            END { if (!found) print "no enabled deb entry for " s; exit !found }'
+remediation:
+  manual: |
+    1. Add the security pocket, for example in `/etc/apt/sources.list.d/ubuntu.sources` on 24.04
+       and later (replace `noble` with the codename of the installed release, or the URI with an
+       internal mirror):
+
+       ```
+       Types: deb
+       URIs: https://security.ubuntu.com/ubuntu
+       Suites: noble-security
+       Components: main universe restricted multiverse
+       Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+       ```
+
+       On 20.04 and 22.04, add to `/etc/apt/sources.list`:
+       `deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse`.
+    2. On a system attached to Ubuntu Pro, run `pro enable esm-infra`: the Pro client writes the
+       ESM source entry and its key.
+    3. Run `apt-get update`.
+
+references:
+  - title: Ubuntu Server documentation - Package management
+    url: https://documentation.ubuntu.com/server/how-to/software/package-management/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Pro Client - How to enable ESM Infra
+    url: https://documentation.ubuntu.com/pro-client/en/latest/howtoguides/enable_esm_infra/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu - Expanded Security Maintenance
+    url: https://ubuntu.com/security/esm
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R61)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: partial
+    note: R61 asks for regular security updates; receiving them first needs the security pocket.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.2.1.2"
+    relation: partial
+    note: This version asks for the repositories to be configured as the organisation wants; ours requires the security pocket (and ESM when attached to Ubuntu Pro).
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.2.1.2"
+    relation: partial
+    note: This version asks for the repositories to be configured as the organisation wants; ours requires the security pocket (and ESM when attached to Ubuntu Pro).
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-UBU-PKG-007
+    type: related
+  - id: CB-UBU-PKG-008
+    type: related
+  - id: CB-UBU-PKG-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on stock; fails with the security pocket disabled; ESM check not applicable when not attached, and with a shimmed attached Pro client fails without and passes with an esm-infra entry (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock; fails with the security pocket disabled; ESM check not applicable when not attached, and with a shimmed attached Pro client fails without and passes with an esm-infra entry (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock; fails with the security pocket disabled; ESM check not applicable when not attached, and with a shimmed attached Pro client fails without and passes with an esm-infra entry (no Pro token in the lab)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock; fails with the security pocket disabled; ESM check not applicable when not attached, and with a shimmed attached Pro client fails without and passes with an esm-infra entry (no Pro token in the lab)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

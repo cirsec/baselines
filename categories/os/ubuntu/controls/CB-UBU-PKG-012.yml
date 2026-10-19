@@ -1,0 +1,216 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-012
+title: Keep snap packages refreshed automatically
+finding:
+  title: Snap packages are not refreshed automatically
+  description: Automatic snap refreshes are stopped or held for long, so the snaps keep their known vulnerabilities while APT updates are applied.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [snap, updates]
+applicability:
+  facts: [snapd]
+
+description: |
+  Snaps are installed and updated by `snapd`, not by APT: unattended-upgrades never touches
+  them. snapd checks the store several times a day (`refresh.timer`) and installs new
+  revisions on its own. An administrator can postpone these refreshes:
+
+  - for all snaps, with `snap refresh --hold[=<duration>]` (the `refresh.hold` system option);
+  - for some snaps, with `snap refresh --hold[=<duration>] <snap>`.
+
+  Without a duration, the hold lasts forever. The control fails when a hold ends more than
+  `{{ max_hold_days }}` days from now, and when the `snapd` service is not enabled.
+rationale: |
+  Snaps bundle their own libraries: a fix in an Ubuntu library reaches a snap only when the snap
+  is rebuilt and refreshed. LXD, Firefox, Thunderbird and many agents ship as snaps, and some of
+  them face the network. An indefinite hold, often set once to get through an incident and then
+  forgotten, leaves them vulnerable for good while the APT side of the system looks up to date.
+impact: |
+  A refresh restarts the services of the refreshed snap (for example the LXD daemon, not its
+  containers). Use `refresh.timer` to move refreshes into a maintenance window, and holds of
+  at most `{{ max_hold_days }}` days to postpone them, rather than indefinite holds.
+notes: |
+  `snapd` is installed on every Ubuntu release (fact `snapd`); the 20.04 and 22.04 cloud images
+  ship the `lxd` snap, Ubuntu Desktop ships Firefox and other applications as snaps. A hold that
+  has already ended (for example one set while building an image) passes. Snaps installed from a
+  local file (`--dangerous`, revisions `x1`, `x2`...) are never refreshed: list them with
+  `snap list` and replace them with store snaps or remove them.
+
+setting:
+  location: snapd system options (snap get system refresh), per-snap holds
+  default_value: No hold, snapd.service enabled
+  recommended_value: "No hold ending more than {{ max_hold_days }} days from now, snapd.service enabled"
+
+parameters:
+  - name: max_hold_days
+    type: integer
+    description: Longest accepted refresh hold, counted from now, for all snaps or for one snap.
+    unit: days
+    default: 30
+    minimum: 1
+    maximum: 90
+
+audit:
+  manual: |
+    1. `systemctl is-enabled snapd.service` prints `enabled`.
+    2. `snap refresh --time` shows no `hold:` line, or a hold ending in at most
+       `{{ max_hold_days }}` days.
+    3. `snap list` shows no snap with `held` in the Notes column. For a held snap, read the end of
+       its hold in the `hold` field of
+       `curl -s --unix-socket /run/snapd.socket http://localhost/v2/snaps` (an indefinite hold
+       shows a date about 300 years ahead); it must be at most `{{ max_hold_days }}` days ahead.
+  checks:
+    - id: snapd-service
+      engine: systemd-unit
+      description: The snapd service, which runs the automatic refreshes.
+      spec: { unit: snapd.service, state: enabled }
+    - id: holds
+      engine: shell
+      description: Refresh holds for all snaps and for each snap, read from the snapd API.
+      spec:
+        script: |
+          command -v python3 >/dev/null || { echo "python3 is needed to read the snapd API"; exit 3; }
+          [ -S /run/snapd.socket ] || { echo "snapd socket missing, snapd is not running"; exit 1; }
+          python3 - "$CB_MAX_HOLD_DAYS" <<'EOF'
+          import calendar, json, socket, sys, time
+
+          def get(path):
+              s = socket.socket(socket.AF_UNIX)
+              s.settimeout(30)
+              s.connect("/run/snapd.socket")
+              s.sendall(("GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n" % path).encode())
+              data = b""
+              while True:
+                  chunk = s.recv(65536)
+                  if not chunk:
+                      break
+                  data += chunk
+              s.close()
+              return json.loads(data.split(b"\r\n\r\n", 1)[1])["result"]
+
+          def until(value):
+              if not value:
+                  return None
+              if value == "forever":
+                  return float("inf")
+              return calendar.timegm(time.strptime(value[:19], "%Y-%m-%dT%H:%M:%S"))
+
+          try:
+              holds = [("all snaps", get("/v2/snaps/system/conf?keys=refresh").get("refresh", {}).get("hold"))]
+              holds += [(s["name"], s.get("hold")) for s in get("/v2/snaps")]
+          except Exception as e:
+              print("snapd API error: %s" % e)
+              sys.exit(3)
+          limit = time.time() + int(sys.argv[1]) * 86400
+          bad = 0
+          for name, value in holds:
+              t = until(value)
+              if t is None or t <= time.time():
+                  continue
+              days = "forever" if t == float("inf") or t > time.time() + 36500 * 86400 else "%d days" % ((t - time.time()) // 86400)
+              print("%s: held for %s (%s)" % (name, days, value))
+              bad += t > limit
+          print("%d snaps, %d holds longer than %s days" % (len(holds) - 1, bad, sys.argv[1]))
+          sys.exit(1 if bad else 0)
+          EOF
+
+remediation:
+  manual: |
+    1. `systemctl enable --now snapd.service` if it was disabled.
+    2. Remove the long holds: `snap refresh --unhold` for all snaps, `snap refresh --unhold <snap>`
+       for one snap. If a refresh must be postponed, use `snap refresh --hold=<duration>` with a
+       duration of at most `{{ max_hold_days }}` days.
+    3. To keep refreshes out of business hours, set a window instead, for example
+       `snap set system refresh.timer=sat,02:00-04:00`.
+    4. Run `snap refresh` to catch up, during a maintenance window if snap services must not
+       restart now.
+
+    The automated fix enables `snapd.service` and removes every refresh hold, bounded ones
+    included; it does not run `snap refresh`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Hold the refreshes again with `snap refresh --hold=<duration> [<snap>]`.
+  scripts:
+    - id: snapd-service
+      from_check: snapd-service
+    - id: holds
+      engine: shell
+      content: |
+        # Remove every hold: the check only fails when one is longer than the limit, and a fresh
+        # bounded hold can be set again by the administrator.
+        if [ -n "$(snap get system refresh.hold 2>/dev/null)" ]; then
+          snap refresh --unhold >/dev/null
+        fi
+        snap list 2>/dev/null | awk 'NR > 1 && $NF ~ /(^|,)held(,|$)/ { print $1 }' |
+          while IFS= read -r s; do
+            snap refresh --unhold "$s" >/dev/null || exit 1
+          done
+
+references:
+  - title: Snapcraft documentation - Managing updates
+    url: https://snapcraft.io/docs/managing-updates
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: snap(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/snap.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Security documentation
+    url: https://documentation.ubuntu.com/security/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: partial
+    note: Covers the snap packages, which the APT update controls do not reach.
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-UBU-PKG-007
+    type: related
+  - id: CB-UBU-PKG-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on stock (expired image hold, lxd/core20/snapd); forever hold on all snaps and on one snap, 59-day hold on lxd and disabled snapd.service detected, 9-day hold accepted; fix unholds and enables snapd, lxd works after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock (lxd/core22/snapd); forever hold on all snaps and on one snap, 59-day hold on lxd and disabled snapd.service detected, 9-day hold accepted; fix unholds and enables snapd, lxd works after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock (no snap installed); forever hold on all snaps and on hello-world detected; fix removes both holds."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock (no snap installed); forever hold on all snaps and on hello-world detected; fix removes both holds."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

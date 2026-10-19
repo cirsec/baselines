@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Installer automatiquement les mises à jour de sécurité
+finding:
+  title: Les mises à jour de sécurité ne sont pas installées automatiquement
+  description: Les correctifs attendent qu'un humain les applique, souvent pendant des semaines, alors que les vulnérabilités qu'ils corrigent sont publiques.
+description: |
+  `unattended-upgrades` installe les mises à jour disponibles sans action humaine. Deux minuteries
+  systemd le pilotent : `apt-daily.timer` rafraîchit les listes de paquets et
+  `apt-daily-upgrade.timer` installe les mises à jour, quand `APT::Periodic::Update-Package-Lists`
+  et `APT::Periodic::Unattended-Upgrade` ne valent pas `0`. Les mises à jour installées sont
+  choisies par `Unattended-Upgrade::Allowed-Origins` (ou `Origins-Pattern`) ; la valeur par
+  défaut d'Ubuntu autorise la poche `<nom de code>-security` et les poches de sécurité ESM
+  (`<nom de code>-infra-security`, `<nom de code>-apps-security`), utilisées une fois le système
+  rattaché à Ubuntu Pro.
+rationale: |
+  La plupart des compromissions exploitent des vulnérabilités pour lesquelles un correctif existe
+  déjà. Installer les correctifs de sécurité chaque jour et automatiquement referme cette fenêtre
+  sans dépendre d'un processus manuel. Les mises à jour de sécurité Ubuntu sont des correctifs
+  minimaux rétroportés, conçus pour être installés sans revue.
+impact: |
+  Les services sont redémarrés par leur paquet lors de la mise à jour, ce qui peut causer une
+  courte interruption. Le système n'est pas redémarré (`Unattended-Upgrade::Automatic-Reboot` est
+  à false par défaut) : les correctifs du noyau et de la libc demandent toujours un redémarrage
+  planifié. Les organisations qui déploient les mises à jour avec un outil central de gestion des
+  correctifs peuvent exclure ce contrôle dans leur fichier d'adaptation, en le documentant.
+notes: |
+  Installé et actif par défaut sur toutes les versions d'Ubuntu, serveur, poste et images cloud
+  (`/etc/apt/apt.conf.d/20auto-upgrades` avec les deux options à `1`). Le contrôle échoue quand
+  quelqu'un l'a désactivé. Les snaps ne sont pas mis à jour par unattended-upgrades : voir
+  CB-UBU-PKG-012.
+setting:
+  location: /etc/apt/apt.conf.d/20auto-upgrades, /etc/apt/apt.conf.d/50unattended-upgrades
+  recommended_value: unattended-upgrades installé, les deux options APT::Periodic à 1, origine de sécurité autorisée, minuteries actives
+audit:
+  manual: |
+    1. `dpkg -s unattended-upgrades` affiche `Status: install ok installed`.
+    2. `apt-config dump APT::Periodic` affiche `Update-Package-Lists` et `Unattended-Upgrade` à
+       `1` (ou une autre valeur non nulle).
+    3. `apt-config dump Unattended-Upgrade::Allowed-Origins Unattended-Upgrade::Origins-Pattern`
+       contient `${distro_id}:${distro_codename}-security` ou une autre origine en `-security`.
+    4. `systemctl is-enabled apt-daily.timer apt-daily-upgrade.timer` affiche deux fois `enabled`.
+    5. `unattended-upgrade --dry-run --debug` liste l'origine de sécurité parmi les origines autorisées.
+remediation:
+  manual: |
+    1. `apt-get install unattended-upgrades`.
+    2. Écrire `/etc/apt/apt.conf.d/20auto-upgrades` avec
+       `APT::Periodic::Update-Package-Lists "1";` et `APT::Periodic::Unattended-Upgrade "1";`
+       (c'est ce que fait `dpkg-reconfigure -plow unattended-upgrades`), et supprimer tout réglage
+       à `0` dans un fichier lu après (`apt-config dump APT::Periodic` montre le résultat). La
+       correction automatique met ces réglages en commentaire.
+    3. Si `Unattended-Upgrade::Allowed-Origins` a été personnalisé, y remettre
+       `"${distro_id}:${distro_codename}-security";` (et les origines ESM
+       `"${distro_id}ESMApps:${distro_codename}-apps-security";` et
+       `"${distro_id}ESM:${distro_codename}-infra-security";`) dans
+       `/etc/apt/apt.conf.d/50unattended-upgrades`.
+    4. `systemctl enable --now apt-daily.timer apt-daily-upgrade.timer`.
+  rollback: |
+    Mettre les deux options `APT::Periodic` à `0` dans `/etc/apt/apt.conf.d/20auto-upgrades`, ou
+    purger `unattended-upgrades`.

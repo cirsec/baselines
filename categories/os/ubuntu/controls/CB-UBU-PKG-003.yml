@@ -1,0 +1,186 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-003
+title: Keep APT signature, freshness and TLS checks enabled
+finding:
+  title: APT is configured to accept unsigned, weakly signed, outdated or unverified repositories
+  description: Global APT options disable the checks that stop a tampered or replayed repository from being used.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [apt, repositories, signatures, supply-chain]
+
+description: |
+  These APT options, set in `/etc/apt/apt.conf` or `/etc/apt/apt.conf.d/`, weaken the checks APT
+  makes on every repository:
+
+  - `Acquire::AllowInsecureRepositories`: use repositories without a signed `Release` file;
+  - `Acquire::AllowWeakRepositories`: accept signatures made with weak algorithms (SHA-1);
+  - `Acquire::AllowDowngradeToInsecureRepositories`: accept a repository that was signed and no
+    longer is;
+  - `APT::Get::AllowUnauthenticated`: install packages that cannot be authenticated;
+  - `Acquire::Check-Date` and `Acquire::Check-Valid-Until` set to false: accept `Release` files
+    dated in the future or past their expiry date;
+  - `Acquire::https::Verify-Peer` and `Acquire::https::Verify-Host` set to false, globally or for
+    one host: accept any TLS certificate.
+
+  APT's defaults are safe, and Ubuntu sets the first three options to `0` explicitly; the
+  control checks that nothing overrides them.
+rationale: |
+  Signature checks are what make a compromised mirror or network harmless. With them disabled, or
+  with expired metadata accepted, an attacker can install arbitrary packages as root, or replay old
+  signed metadata so that known vulnerable versions stay installed.
+impact: |
+  None for the Ubuntu archive. A repository that only works with one of these options must be
+  fixed (signed, given a valid date or certificate) or removed.
+
+setting:
+  location: /etc/apt/apt.conf, /etc/apt/apt.conf.d/
+  default_value: All checks enabled
+  recommended_value: All checks enabled, written explicitly in /etc/apt/apt.conf.d/99cirsec-apt-security
+
+audit:
+  manual: |
+    Run `apt-config dump` and check that it shows none of:
+    `Acquire::AllowInsecureRepositories`, `Acquire::AllowWeakRepositories`,
+    `Acquire::AllowDowngradeToInsecureRepositories` or `APT::Get::AllowUnauthenticated` set to
+    `1`/`true`/`yes`, nor `Acquire::Check-Date`, `Acquire::Check-Valid-Until`,
+    `Acquire::https::Verify-Peer` or `Acquire::https::Verify-Host` (also under
+    `Acquire::https::<host>::`) set to `0`/`false`/`no`.
+  checks:
+    - id: options
+      engine: shell
+      description: Effective APT configuration, as merged by apt-config.
+      spec:
+        script: |
+          o=$(apt-config dump 2>/dev/null) || { echo "apt-config failed"; exit 3; }
+          p='^(Binary::[^:]+::)?'
+          bad=$(printf '%s\n' "$o" | grep -Ei "$p(Acquire::(AllowInsecureRepositories|AllowWeakRepositories|AllowDowngradeToInsecureRepositories)|APT::Get::AllowUnauthenticated) \"(1|true|yes|on)\"";
+                printf '%s\n' "$o" | grep -Ei "$p""Acquire::(Check-Date|Check-Valid-Until|https(::[^ ]+)?::Verify-(Peer|Host)) \"(0|false|no|off)\"")
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "no option disables signature, date or TLS checks"
+
+remediation:
+  manual: |
+    1. Find where each option is set with `grep -riE 'Allow(Insecure|Weak|DowngradeToInsecure|Unauthenticated)|Check-(Date|Valid-Until)|Verify-(Peer|Host)' /etc/apt/apt.conf /etc/apt/apt.conf.d/`.
+    2. Remove those lines.
+    3. Optionally, write the safe values explicitly in `/etc/apt/apt.conf.d/99cirsec-apt-security`,
+       which is read after the other files of the directory. `/etc/apt/apt.conf` is read last and
+       wins over it.
+    4. Run `apt-get update` and check that it prints no error.
+
+    The automated fix writes `99cirsec-apt-security` and comments out the offending lines of
+    `/etc/apt/apt.conf`. Host-specific `Verify-Peer`/`Verify-Host` lines must be removed by hand.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove `/etc/apt/apt.conf.d/99cirsec-apt-security` and restore `/etc/apt/apt.conf` from the
+    backup directory printed by `remediate.sh`.
+  scripts:
+    - id: options
+      engine: shell
+      content: |
+        f=/etc/apt/apt.conf
+        if [ -f "$f" ] && grep -Eqi '^[^#]*(Allow(Insecure|Weak|DowngradeToInsecure)Repositories|AllowUnauthenticated|Check-(Date|Valid-Until)|Verify-(Peer|Host))' "$f"; then
+          cb_backup "$f"
+          sed -E -i 's/^([^#]*(Allow(Insecure|Weak|DowngradeToInsecure)Repositories|AllowUnauthenticated|Check-(Date|Valid-Until)|Verify-(Peer|Host)))/# disabled by CB-UBU-PKG-003: \1/I' "$f"
+        fi
+        f=/etc/apt/apt.conf.d/99cirsec-apt-security
+        cb_backup "$f"
+        cat >"$f" <<'EOF'
+        // CB-UBU-PKG-003: keep APT signature, freshness and TLS checks enabled.
+        Acquire::AllowInsecureRepositories "false";
+        Acquire::AllowWeakRepositories "false";
+        Acquire::AllowDowngradeToInsecureRepositories "false";
+        APT::Get::AllowUnauthenticated "false";
+        Acquire::Check-Date "true";
+        Acquire::Check-Valid-Until "true";
+        Acquire::https::Verify-Peer "true";
+        Acquire::https::Verify-Host "true";
+        EOF
+
+references:
+  - title: apt.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/apt.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: apt-secure(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/apt-secure.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: apt-transport-https(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/apt-transport-https.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R59
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.13"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.1.15"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: cwe
+    id: CWE-494
+  - framework: cwe
+    id: CWE-295
+related_controls:
+  - id: CB-UBU-PKG-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on stock; AllowInsecureRepositories in apt.conf and per-host Verify-Peer false detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on stock; AllowInsecureRepositories in apt.conf and per-host Verify-Peer false detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on stock; AllowInsecureRepositories in apt.conf and per-host Verify-Peer false detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on stock; AllowInsecureRepositories in apt.conf and per-host Verify-Peer false detected; fix writes 99cirsec-apt-security and comments apt.conf, apt-get update works."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

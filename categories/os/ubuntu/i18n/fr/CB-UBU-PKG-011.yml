@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-PKG-011
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas installer automatiquement les paquets recommandés et suggérés
+finding:
+  title: APT installe automatiquement les paquets recommandés
+  description: Chaque installation ajoute des paquets que personne n'a demandés, qui étendent la surface d'attaque sans être revus.
+description: |
+  Les paquets Ubuntu déclarent des dépendances fortes (`Depends`) et faibles (`Recommends`,
+  `Suggests`). Par défaut, APT installe aussi les paquets recommandés. `APT::Install-Recommends`
+  et `APT::Install-Suggests` à `false` lui font installer uniquement les dépendances fortes.
+rationale: |
+  Les paquets recommandés sont souvent des services optionnels, des outils de documentation ou des
+  utilitaires dont le système n'a pas besoin. N'installer que le nécessaire garde le système
+  minimal, comme le demande le principe d'installation minimale.
+impact: |
+  Certaines fonctions peuvent manquer après une installation (par exemple un greffon ou un
+  utilitaire livré en recommandation). Les installer explicitement avec `apt-get install <paquet>`,
+  ou ponctuellement avec `apt-get install --install-recommends <paquet>`. Les paquets déjà
+  installés ne sont pas retirés.
+notes: |
+  Ubuntu Desktop installe la plupart de ses applications comme recommandations du métapaquet
+  `ubuntu-desktop`. Avec ce réglage, les applications qu'une version ultérieure du métapaquet
+  recommande (après une mise à jour ou une montée de version) ne sont pas installées ; rien de ce
+  qui est déjà installé n'est retiré.
+setting:
+  location: /etc/apt/apt.conf.d/
+  recommended_value: "Install-Recommends false, Install-Suggests false"
+audit:
+  manual: |
+    Lancer `apt-config dump APT::Install-Recommends APT::Install-Suggests`. Les deux doivent valoir
+    `0` ou `false`.
+remediation:
+  manual: |
+    Créer `/etc/apt/apt.conf.d/99cirsec-no-recommends` avec :
+
+    ```
+    APT::Install-Recommends "false";
+    APT::Install-Suggests "false";
+    ```
+
+    et supprimer tout réglage ultérieur de ces options (`/etc/apt/apt.conf` est lu après le
+    dossier).
+  rollback: |
+    Supprimer `/etc/apt/apt.conf.d/99cirsec-no-recommends`.

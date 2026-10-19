@@ -1,0 +1,234 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-PKG-008
+title: Leave no security update pending
+finding:
+  title: Security updates are available but not installed
+  description: Packages with published security fixes are still installed in their vulnerable version.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apt, updates]
+
+description: |
+  `apt-get -s dist-upgrade` simulates an upgrade from the local package lists and shows, for each
+  package, the version and origin of the update. Updates coming from a security pocket
+  (`<codename>-security`, or `<codename>-infra-security` and `<codename>-apps-security` from
+  Ubuntu Pro ESM) fix vulnerabilities. The result is only as fresh as the package lists, refreshed by `apt-get update`
+  or `apt-daily.timer`.
+rationale: |
+  An available security update means the vulnerability is public and a fix exists, which is when
+  exploitation is most likely. Checking for pending security updates catches systems where
+  automatic updates are disabled, broken, or blocked by a held package or a dependency change.
+impact: |
+  None for the check, which changes nothing. Installing updates restarts the services concerned.
+notes: |
+  The check fails on pending security updates and on package lists older than
+  `{{ max_lists_age }}` days (newest `Release` file or
+  `/var/lib/apt/periodic/update-success-stamp`), since stale lists hide pending updates. Other
+  pending updates (`-updates`, backports) are only listed in the evidence. The check does not
+  run `apt-get update`: refresh the lists first for an up-to-date answer.
+
+  Phased updates: Ubuntu releases some `-updates` (SRU) to a growing share of systems, and apt
+  (22.04 and later) holds them back on the others. Security pockets are never phased, so a
+  deferred update is never a pending security fix; deferred packages are counted in the evidence
+  only. ESM updates are only visible on systems attached to Ubuntu Pro: on a 20.04 system that is
+  not attached, the check passes while `pro security-status` lists ESM fixes it cannot install.
+  CB-UBU-PKG-009 catches that case.
+
+parameters:
+  - name: max_lists_age
+    type: integer
+    description: Maximum age of the newest package list before the check fails.
+    unit: days
+    default: 7
+    minimum: 1
+    maximum: 90
+
+audit:
+  manual: |
+    1. Run `apt-get update`.
+    2. Run `apt-get -s dist-upgrade | grep '^Inst' | grep -i security`. It must print nothing.
+  checks:
+    - id: pending
+      engine: shell
+      description: Updates pending in the local package lists, and the age of these lists.
+      spec:
+        script: |
+          s=$(LC_ALL=C apt-get -s -o Debug::NoLocking=1 dist-upgrade 2>/dev/null) || { echo "apt-get simulation failed"; exit 3; }
+          all=$(printf '%s\n' "$s" | grep -c '^Inst ')
+          sec=$(printf '%s\n' "$s" | grep '^Inst ' | grep -E '\(.*-security' | awk '{ print $2 }')
+          nsec=$(printf '%s' "$sec" | grep -c .)
+          # apt dates the Release files with the archive's Last-Modified: also use the stamp that
+          # Ubuntu touches after each successful apt-get update.
+          newest=$(find /var/lib/apt/lists /var/lib/apt/periodic -maxdepth 1 \( -name '*Release' -o -name update-success-stamp \) -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+          age=999
+          [ -n "$newest" ] && age=$(( ($(date +%s) - ${newest%.*}) / 86400 ))
+          ph=$(printf '%s\n' "$s" | sed -n '/deferred due to phasing/,/^[^ ]/p' | grep '^ ' | wc -w)
+          echo "$all pending, $nsec security ($(printf '%s' "$sec" | head -20 | tr '\n' ' ')), $ph deferred by phasing, lists $age days old"
+          [ "$nsec" -eq 0 ] && [ "$age" -le "$CB_MAX_LISTS_AGE" ]
+
+remediation:
+  manual: |
+    Run `apt-get update` then `apt-get dist-upgrade` (or `unattended-upgrade` for security
+    updates only, which also installs ESM updates on attached systems), during a maintenance
+    window if services must not restart. Reboot when the kernel, libc or systemd were updated (`/var/run/reboot-required` exists, see CB-UBU-PKG-013). If a
+    package is held (`apt-mark showhold`), find out why before releasing it.
+
+references:
+  - title: apt-get(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/apt-get.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - About apt upgrade and phased updates
+    url: https://documentation.ubuntu.com/server/explanation/software/about-apt-upgrade-and-phased-updates/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R61)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R61
+    relation: partial
+    note: R61 asks for a regular update process; this control checks its result for security updates.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.2.2.1"
+    relation: partial
+    note: Only security updates make the check fail; other pending updates are reported.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.2.2.1"
+    relation: partial
+    note: Only security updates make the check fail; other pending updates are reported.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.2.2.1"
+    relation: partial
+    note: Only security updates make the check fail; other pending updates are reported.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.2.2.1"
+    relation: partial
+    note: Only security updates make the check fail; other pending updates are reported.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.1.1"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.1.2"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.3.1.3"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.1.1"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.1.2"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.3.1.3"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.1.1"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.1.2"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.1.3"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.3.1.4"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.1.1"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.1.2"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.1.3"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.3.1.4"
+    relation: partial
+    note: Ours requires no pending security update for any package, not a minimum version of the PAM packages.
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-1395
+related_controls:
+  - id: CB-UBU-PKG-007
+    type: related
+  - id: CB-UBU-PKG-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Passes on up-to-date VM; fails after downgrading libexpat1 below its security version and with lists older than max_lists_age; passes after upgrade and after apt-get update (update-success-stamp)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Passes on up-to-date VM; fails after downgrading libexpat1 below its security version and with lists older than max_lists_age; passes after upgrade and after apt-get update (update-success-stamp)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Passes on up-to-date VM; fails after downgrading libexpat1 below its security version and with lists older than max_lists_age; passes after upgrade and after apt-get update (update-success-stamp)."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on up-to-date VM; fails after downgrading libexpat1 below its security version and with lists older than max_lists_age; passes after upgrade and after apt-get update (update-success-stamp)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
