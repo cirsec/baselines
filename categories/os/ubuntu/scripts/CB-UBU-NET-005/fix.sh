@@ -17,7 +17,7 @@ if [ "$#" -gt 1 ]; then
 fi
 # sshd -T needs /run/sshd, which only exists once ssh.service has run (ssh.socket on 24.04 and later).
 if command -v sshd >/dev/null 2>&1; then
-  [ -d /run/sshd ] || mkdir -p -m 0755 /run/sshd
+  [ -d /run/sshd ] || mkdir -m 0755 /run/sshd
   ports=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
   if [ -z "$ports" ]; then
     echo 'cannot read the SSH ports with sshd -T; ufw left disabled' >&2

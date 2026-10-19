@@ -1,7 +1,7 @@
 # CB-UBU-NET-015: set strong SSH server algorithms, keeping only those this OpenSSH version supports.
 PATH="$PATH:/usr/sbin"
 # sshd -T and -t need /run/sshd, which only exists once ssh.service has run (ssh.socket on 24.04 and later).
-[ -d /run/sshd ] || mkdir -p -m 0755 /run/sshd
+[ -d /run/sshd ] || mkdir -m 0755 /run/sshd
 f=/etc/ssh/sshd_config.d/00-cirsec.conf
 grep -Eqi '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config.d/\*\.conf' /etc/ssh/sshd_config || {
   echo '/etc/ssh/sshd_config does not include sshd_config.d/*.conf' >&2

@@ -62,7 +62,7 @@ cb_version_in() {
 # cb_sshd ARGS -> sshd from /usr/sbin. Creates /run/sshd first: with socket activation (Ubuntu 24.04+)
 # it only exists once ssh.service has run, and sshd -T / -t refuse to start without it.
 cb_sshd() {
-  [ -d /run/sshd ] || mkdir -p -m 0755 /run/sshd
+  [ -d /run/sshd ] || mkdir -m 0755 /run/sshd
   PATH="$PATH:/usr/sbin" sshd "$@"
 }
 
