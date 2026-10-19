@@ -1,0 +1,195 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-016
+title: Configure chrony with time sources, run it unprivileged and keep it running
+finding:
+  title: chrony has no time source, runs as root or is not running
+  description: The clock is not synchronized, or the NTP daemon parses network traffic with full privileges.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [time, ntp, chrony]
+
+applicability:
+  facts: [chrony]
+
+description: |
+  chrony reads its sources (`server`, `pool` or `peer` lines) from `/etc/chrony/chrony.conf` and
+  the files included by Ubuntu's default configuration from 22.04: `/etc/chrony/conf.d/*.conf` and
+  `/etc/chrony/sources.d/*.sources` (20.04 only reads `chrony.conf`). After start-up, `chronyd` drops root privileges to the
+  `_chrony` user unless the `user` directive or the `-u` option says otherwise. The service
+  `chrony.service` must be enabled and running.
+rationale: |
+  Without a source the clock drifts. chronyd parses packets from the network; running it as an
+  unprivileged user limits what a flaw in that code can reach. A stopped daemon leaves the clock
+  unsynchronized.
+impact: |
+  None known with the Ubuntu defaults, which use the Ubuntu NTP servers and the `_chrony` user.
+notes: |
+  The sources are site-specific, so the fix only enables and starts the service; adding sources
+  and removing a `user root` setting are manual. chrony is the default time daemon from 26.04
+  (version 4.8), which reaches `ntp.ubuntu.com` with Network Time Security (`nts` option in
+  `/etc/chrony/sources.d/ubuntu-ntp-pools.sources`). On 20.04, chrony 3.5 does not support NTS:
+  sources there are authenticated only with symmetric keys, or not at all. Keep NTS when the
+  approved servers support it.
+
+audit:
+  manual: |
+    1. `grep -E '^[[:space:]]*(server|pool|peer)[[:space:]]' /etc/chrony/chrony.conf
+       /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources` must list approved sources.
+    2. `ps -C chronyd -o user=` must print `_chrony`.
+    3. `systemctl is-enabled chrony` must print `enabled` and `systemctl is-active chrony` `active`.
+  logic: all
+  checks:
+    - id: sources
+      engine: shell
+      description: chrony has at least one server, pool or peer source.
+      spec:
+        script: |
+          o=$(grep -hEs '^[[:space:]]*(server|pool|peer)[[:space:]]' /etc/chrony/chrony.conf \
+            /etc/chrony/conf.d/*.conf /etc/chrony/sources.d/*.sources | head -n 5)
+          if [ -z "$o" ]; then echo "no server, pool or peer directive"; exit 1; fi
+          printf '%s\n' "$o"
+    - id: user
+      engine: shell
+      description: chronyd runs as _chrony.
+      spec:
+        script: |
+          u=$(ps -C chronyd -o user= 2>/dev/null | sort -u | tr -d ' ' | tr '\n' ' ')
+          echo "chronyd user: ${u:-not running}"
+          [ "$u" = "_chrony " ]
+    - id: enabled
+      engine: systemd-unit
+      description: chrony is enabled.
+      spec: { unit: chrony.service, state: enabled }
+    - id: active
+      engine: shell
+      description: chrony is running.
+      spec:
+        script: systemctl is-active chrony.service || exit 1
+
+remediation:
+  manual: |
+    1. Add approved sources in `/etc/chrony/sources.d/local.sources`, one per line, for example
+       `server ntp1.example.org iburst`, then run `chronyc reload sources`.
+    2. Remove any `user` directive other than `user _chrony` from the chrony configuration and any
+       `-u` option from `DAEMON_OPTS` in `/etc/default/chrony`.
+    3. Run `systemctl enable --now chrony`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Run `systemctl disable --now chrony`.
+  scripts:
+    - id: enabled
+      from_check: enabled
+
+references:
+  - title: chrony.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/chrony.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - How to serve the Network Time Protocol with Chrony
+    url: https://documentation.ubuntu.com/server/how-to/networking/serve-ntp-with-chrony/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: chronyd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/chronyd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-8(1)
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.3.3.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.3.3.3"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1070.006
+related_controls:
+  - id: CB-UBU-SVC-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Not applicable on the stock image; with chrony 3.5 installed passes (sources from chrony.conf, chronyd as _chrony), synchronized after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Not applicable on the stock image; with chrony 4.2 installed passes (sources.d, chronyd as _chrony), synchronized after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Not applicable on the stock image; with chrony 4.5 installed passes (sources.d, chronyd as _chrony), synchronized after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Passes on the stock image (chrony 4.8 default, NTS sources in sources.d, chronyd as _chrony)."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

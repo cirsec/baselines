@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-004
+title: Disable LDAP and NIS directory server services the system does not provide
+finding:
+  title: An LDAP or NIS directory server can run on a system that does not provide one
+  description: A forgotten directory server can leak account data or let an attacker publish accounts.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, ldap, nis, attack-surface]
+
+description: |
+  Directory servers packaged by Ubuntu:
+
+  - OpenLDAP: `slapd`;
+  - NIS: `ypserv`, with its companions `yppasswdd` (password changes) and `ypxfrd` (map
+    transfers).
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  A directory server holds account and group data that other systems trust. NIS sends password
+  hashes to any client that asks and has no real authentication; an unattended OpenLDAP server
+  can expose or accept changes to that data.
+impact: |
+  Masking a unit stops it and prevents it from starting again. LDAP and NIS clients are not
+  affected. Directory servers must exclude this control in their tailoring file.
+notes: |
+  A unit that does not exist counts as compliant. On Ubuntu, `slapd` only ships a System V init
+  script; systemd still masks the generated `slapd.service`.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `slapd.service`, `ypserv.service`, `yppasswdd.service`, `ypxfrd.service`.
+  logic: all
+  checks:
+    - id: slapd
+      engine: systemd-unit
+      description: OpenLDAP server.
+      spec: { unit: slapd.service, state: masked }
+    - id: ypserv
+      engine: systemd-unit
+      description: NIS server.
+      spec: { unit: ypserv.service, state: masked }
+    - id: yppasswdd
+      engine: systemd-unit
+      description: NIS password update server.
+      spec: { unit: yppasswdd.service, state: masked }
+    - id: ypxfrd
+      engine: systemd-unit
+      description: NIS map transfer server.
+      spec: { unit: ypxfrd.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead: `apt purge slapd ypserv`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: slapd
+      from_check: slapd
+    - id: ypserv
+      from_check: ypserv
+    - id: yppasswdd
+      from_check: yppasswdd
+    - id: ypxfrd
+      from_check: ypxfrd
+
+references:
+  - title: slapd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/slapd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ypserv(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/ypserv.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service and names NIS; this control covers directory servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.13"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.10"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1087.002
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes; with slapd and nis installed (SysV units, generated) the checks fail, fix masks them, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (units absent); with slapd and nis installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (units absent); with slapd and nis installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (units absent); with slapd and nis installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

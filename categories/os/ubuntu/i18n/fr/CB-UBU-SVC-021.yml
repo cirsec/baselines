@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-021
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le montage automatique autofs
+finding:
+  title: Le service autofs peut monter des systèmes de fichiers à la demande
+  description: Des supports amovibles ou des partages réseau sont montés dès qu'on accède à un chemin.
+description: |
+  `autofs` monte des systèmes de fichiers (périphériques locaux, partages NFS ou SMB) quand on
+  accède à un chemin de ses tables, et les démonte quand ils sont inactifs.
+
+  Le contrôle est conforme quand `autofs.service` est masqué ou n'est pas installé du tout.
+rationale: |
+  Le montage automatique de supports amovibles permet à toute personne ayant un accès physique
+  d'introduire des fichiers ou des images de systèmes de fichiers malveillantes ; les montages
+  réseau automatiques atteignent des partages auxquels l'administrateur ne s'attend pas forcément.
+impact: |
+  Les systèmes de fichiers listés dans les tables autofs ne sont plus montés à la demande : les
+  monter via `/etc/fstab` à la place. Les systèmes qui dépendent d'autofs, comme les répertoires
+  personnels sur NFS, doivent exclure ce contrôle dans leur fichier de personnalisation.
+notes: |
+  Le contrôle fait partie du profil serveur et du profil poste renforcé : sur un poste standard,
+  le montage à la demande est une fonction attendue.
+audit:
+  manual: |
+    Lancer `systemctl is-enabled autofs.service`. La commande doit afficher `masked`, ou échouer
+    parce que l'unité n'existe pas.
+remediation:
+  manual: |
+    Lancer `systemctl mask --now autofs.service`, ou `apt purge autofs` si le paquet n'est pas utile.
+  rollback: |
+    Lancer `systemctl unmask autofs.service` puis `systemctl enable --now autofs.service`.

@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-008
+title: Disable web server services on systems that do not serve web content
+finding:
+  title: A web server can run on a system that does not serve web content
+  description: A forgotten web server publishes default pages, modules and files that nobody maintains.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, http, attack-surface]
+
+description: |
+  Web servers packaged by Ubuntu: Apache (`apache2.service`), nginx (`nginx.service`) and
+  lighttpd (`lighttpd.service`). They are often pulled in as dependencies of other software.
+
+  The control passes when each unit is masked or not installed at all.
+rationale: |
+  A web server that nobody expects is not patched, monitored or hardened, and may publish
+  directories or status pages that reveal information. It is remotely reachable code.
+impact: |
+  Masking a unit stops it and prevents it from starting again. **Web servers and reverse proxies
+  must exclude this control in their tailoring file**, with the reason, for example:
+
+  ```yaml
+  exclude:
+    - control: CB-UBU-SVC-008
+      reason: Web server role (nginx serves the intranet).
+  ```
+notes: |
+  A unit that does not exist counts as compliant, so removing the package is an equally valid fix.
+
+audit:
+  manual: |
+    For each unit, run `systemctl is-enabled <unit>`. It must print `masked`, or fail because the
+    unit does not exist: `apache2.service`, `nginx.service`, `lighttpd.service`.
+  logic: all
+  checks:
+    - id: apache2
+      engine: systemd-unit
+      description: Apache HTTP server.
+      spec: { unit: apache2.service, state: masked }
+    - id: nginx
+      engine: systemd-unit
+      description: nginx web server.
+      spec: { unit: nginx.service, state: masked }
+    - id: lighttpd
+      engine: systemd-unit
+      description: lighttpd web server.
+      spec: { unit: lighttpd.service, state: masked }
+
+remediation:
+  manual: |
+    Stop and mask each unit that is installed: `systemctl mask --now <unit>`. If the package is not
+    needed at all, remove it instead: `apt purge apache2 nginx lighttpd`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask <unit>` then `systemctl enable --now <unit>`.
+  scripts:
+    - id: apache2
+      from_check: apache2
+    - id: nginx
+      from_check: nginx
+    - id: lighttpd
+      from_check: lighttpd
+
+references:
+  - title: apache2(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/apache2.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: nginx(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/nginx.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers web servers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.19"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1190
+related_controls:
+  - id: CB-UBU-SVC-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes (units absent); with apache2 installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes (units absent); with apache2 installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes (units absent); with apache2 installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes (units absent); with apache2 installed the check fails, server-hardened remediation masks the units, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-013
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer les clients réseau en clair (NIS, rsh, talk, telnet, outils LDAP, FTP)
+finding:
+  title: Des clients de protocoles réseau en clair ou obsolètes sont installés
+  description: Ces clients transmettent les identifiants en clair ou aident un intrus à rebondir vers d'autres systèmes.
+description: |
+  Paquets clients de protocoles obsolètes ou qui transmettent les identifiants sans chiffrement :
+
+  - client NIS : `nis` (ypbind) ;
+  - rsh, rlogin et rcp : `rsh-client`, `rsh-redone-client` (jusqu'à 24.04) ;
+  - talk : `talk`, `inetutils-talk` ;
+  - telnet : `telnet`, `inetutils-telnet` ;
+  - outils LDAP en ligne de commande : `ldap-utils` ;
+  - FTP : `ftp`, `tnftp`, `inetutils-ftp`.
+
+  Le contrôle est conforme quand aucun d'eux n'est installé.
+rationale: |
+  Utiliser ces clients expose les mots de passe et les données sur le réseau. Un intrus qui
+  arrive sur le système peut aussi s'en servir pour atteindre ou sonder d'autres hôtes. SSH, SFTP
+  et les bibliothèques LDAP sur TLS les remplacent.
+impact: |
+  Supprime les paquets listés, et tout paquet qui en dépend. Sur une image Ubuntu d'origine, cela
+  inclut le métapaquet `ubuntu-standard` (et `ubuntu-server` sur 20.04), qui dépend de `telnet` et
+  `ftp` : les paquets qu'il a installés restent en place, mais ceux que des mises à jour lui
+  ajouteraient ne sont plus installés automatiquement. Les administrateurs qui utilisent
+  `ldapsearch` ou `telnet` pour le dépannage les perdent ; `nc` ou `openssl s_client` couvrent la
+  plupart de ces usages. Les systèmes qui en ont réellement besoin doivent exclure ce contrôle dans
+  leur fichier de personnalisation.
+notes: |
+  Le client NIS a aussi besoin de CB-UBU-SVC-003 (rpcbind) ; l'authentification LDAP via SSSD n'a
+  pas besoin de `ldap-utils`.
+audit:
+  manual: |
+    Lancer `dpkg-query -W -f='${Package} ${Status}\n' nis rsh-client rsh-redone-client talk
+    inetutils-talk telnet inetutils-telnet ldap-utils ftp tnftp inetutils-ftp`. Aucune ligne ne
+    doit se terminer par `install ok installed`.
+remediation:
+  manual: |
+    Lancer `apt purge nis rsh-client rsh-redone-client talk inetutils-talk telnet inetutils-telnet
+    ldap-utils ftp tnftp inetutils-ftp`, après avoir vérifié la liste des paquets qu'apt va supprimer.
+  rollback: |
+    Réinstaller le paquet nécessaire avec `apt install <paquet>`.

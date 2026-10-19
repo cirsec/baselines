@@ -1,0 +1,187 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-028
+title: Disable cloud-init once the server is provisioned
+finding:
+  title: cloud-init still runs at every boot on a provisioned server
+  description: Whoever can change the instance metadata or attach a configuration disk can run commands as root at the next boot.
+status: draft
+profiles: [server-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, cloud-init, provisioning, attack-surface]
+
+applicability:
+  facts: [cloud-init]
+
+description: |
+  cloud-init configures a new instance from its datasource: the metadata service of the cloud
+  provider (IMDS), or a configuration disk such as a NoCloud `cidata` volume or an OpenStack
+  config drive. It is installed on every Ubuntu cloud image and on servers installed with
+  Subiquity, and it starts at every boot: it detects the datasource again, runs its per-boot
+  modules (`bootcmd`, `scripts-per-boot`, hostname and `/etc/hosts` updates), and when the
+  instance ID changes it runs every first-boot module again (users, SSH keys, packages, user-data
+  scripts).
+
+  Once the server is provisioned and managed by the organization's own tools, the file
+  `/etc/cloud/cloud-init.disabled` (or `cloud-init=disabled` on the kernel command line) stops
+  cloud-init from running at boot. `cloud-init status` then prints `disabled`.
+rationale: |
+  The datasource is a root-level configuration channel that is not covered by the server's own
+  change management. A person who can edit the user-data in the cloud console, answer as the
+  metadata service on a network without IMDS protection, or attach a disk labelled `cidata` to the
+  machine can add an SSH key, create an account or run a script as root at the next boot. Stopping
+  cloud-init after provisioning closes that channel and keeps the network, users and keys under
+  configuration management only.
+impact: |
+  From the next boot, cloud-init no longer applies changes coming from the platform:
+
+  - **network**: `/etc/netplan/50-cloud-init.yaml` stays as written at provisioning and is no
+    longer regenerated. When it matches the interface by MAC address, a new or replaced network
+    card (another MAC address, a VM moved to a new network) comes up without network;
+  - **disk**: the root partition and file system are no longer grown after the disk is enlarged
+    (`growpart`, `resizefs`): run `growpart` and `resize2fs` by hand;
+  - **identity**: hostname, SSH keys and users from the metadata are no longer updated, and a
+    cloned VM keeps the SSH host keys of its source.
+
+  Re-enable cloud-init (remove the file and reboot) before resizing, moving or cloning the server
+  through the cloud platform. Do not apply this control to images or templates, and keep it off
+  for autoscaled instances that the platform must be able to rebuild.
+notes: |
+  The fix only writes the file when `cloud-init status` reports `done`, so that it never stops a
+  provisioning that is still running or failed. The fix is disabled by default (`lockout_risk`):
+  a server whose network depends on cloud-init can become unreachable after a hardware change.
+  Removing the `cloud-init` package also meets the goal, but it is harder to undo and some
+  platforms (Azure, Proxmox templates) expect it to be present. The QEMU guest agent and the SSH
+  server keep working: they do not depend on cloud-init once the system is provisioned.
+
+setting:
+  location: /etc/cloud/cloud-init.disabled
+  default_value: Absent (cloud-init runs at every boot)
+  recommended_value: Present
+
+audit:
+  manual: |
+    1. Check that `/etc/cloud/cloud-init.disabled` exists, or that `/proc/cmdline` contains
+       `cloud-init=disabled`.
+    2. After a reboot, `cloud-init status` must print `status: disabled`.
+  checks:
+    - id: disabled
+      engine: shell
+      description: cloud-init is disabled by /etc/cloud/cloud-init.disabled or the kernel command line.
+      spec:
+        script: |
+          if [ -e /etc/cloud/cloud-init.disabled ]; then
+            echo "/etc/cloud/cloud-init.disabled present"
+            exit 0
+          fi
+          if grep -qw 'cloud-init=disabled' /proc/cmdline; then
+            echo "cloud-init=disabled on the kernel command line"
+            exit 0
+          fi
+          s=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')
+          echo "cloud-init enabled (status: ${s:-unknown})"
+          exit 1
+
+remediation:
+  manual: |
+    1. Check that provisioning is over: `cloud-init status` must print `status: done`.
+    2. Check that `/etc/netplan/` holds the network configuration the server needs without
+       cloud-init (and adapt any `match: macaddress` if the hardware may change).
+    3. Run `touch /etc/cloud/cloud-init.disabled`, reboot, and check that `cloud-init status`
+       prints `status: disabled` and that the network and SSH access still work.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Delete `/etc/cloud/cloud-init.disabled` and reboot. If the instance ID has not changed,
+    cloud-init only runs its per-boot modules again.
+  scripts:
+    - id: disable
+      engine: shell
+      content: |
+        f=/etc/cloud/cloud-init.disabled
+        [ -e "$f" ] && exit 0
+        s=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')
+        if [ "$s" != done ]; then
+          echo "cloud-init provisioning is not done (status: ${s:-unknown}), not disabling it" >&2
+          exit 1
+        fi
+        printf '# Written by CIRSEC Baselines CB-UBU-SVC-028: cloud-init does not run at boot.\n' >"$f"
+
+references:
+  - title: cloud-init documentation - How to disable cloud-init
+    url: https://docs.cloud-init.io/en/latest/howto/disable_cloud_init.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: cloud-init documentation - Boot stages
+    url: https://docs.cloud-init.io/en/latest/explanation/boot.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: cloud-init documentation - NoCloud datasource
+    url: https://docs.cloud-init.io/en/latest/reference/datasources/nocloud.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: cloud-init(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/cloud-init.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers cloud-init after provisioning.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1037
+  - framework: mitre-attack
+    id: T1098.004
+  - framework: mitre-attack
+    id: T1552.005
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image fails (status: done); fix only with CB_ENABLE_CB_UBU_SVC_028=1 (lockout_risk), writes cloud-init.disabled; after reboot status: disabled, network (DHCP from the cloud-init netplan file), SSH and guest agent work, also after installing and removing about 30 packages."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image fails (status: done); fix only with CB_ENABLE_CB_UBU_SVC_028=1 (lockout_risk), writes cloud-init.disabled; after reboot status: disabled, network (DHCP from the cloud-init netplan file), SSH and guest agent work, also after installing and removing about 30 packages."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image fails (status: done); fix only with CB_ENABLE_CB_UBU_SVC_028=1 (lockout_risk), writes cloud-init.disabled; after reboot status: disabled, network (DHCP from the cloud-init netplan file), SSH and guest agent work, also after installing and removing about 30 packages."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image fails (status: done); fix only with CB_ENABLE_CB_UBU_SVC_028=1 (lockout_risk), writes cloud-init.disabled; after reboot status: disabled, network (DHCP from the cloud-init netplan file), SSH and guest agent work, also after installing and removing about 30 packages."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

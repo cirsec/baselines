@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-001
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les services serveur DHCP et DNS que le système ne fournit pas
+finding:
+  title: Des services serveur DHCP ou DNS peuvent tourner sur un système qui ne les fournit pas
+  description: Un serveur DHCP ou DNS inutile répond sur le réseau et peut distribuer de mauvaises adresses ou de mauvais noms.
+description: |
+  Ubuntu fournit plusieurs serveurs d'infrastructure réseau :
+
+  - DHCP : `isc-dhcp-server` (`isc-dhcp-server`, `isc-dhcp-server6`) et Kea (`kea-dhcp4-server`,
+    `kea-dhcp6-server`, `kea-dhcp-ddns-server`) ;
+  - DNS : BIND (`named`) ;
+  - dnsmasq, à la fois relais DNS et serveur DHCP (`dnsmasq`).
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  Ces démons répondent aux requêtes de n'importe quel hôte du réseau. Un serveur DHCP ou DNS
+  pirate ou oublié peut rediriger les clients vers un attaquant, et chaque démon actif est du code
+  exploitable à distance.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer, même comme dépendance. Les systèmes dont
+  le rôle est de fournir du DHCP ou du DNS doivent exclure ce contrôle dans leur fichier de
+  personnalisation (tailoring). Le binaire dnsmasq utilisé par libvirt ou NetworkManager
+  (`dnsmasq-base`) n'est pas concerné : seul le service autonome `dnsmasq` est masqué.
+notes: |
+  La vérification lit `systemctl is-enabled` : une unité inexistante est considérée conforme, donc
+  supprimer le paquet (`apt purge`) est une correction tout aussi valable. Ces paquets ne sont pas
+  installés par défaut sur Ubuntu (serveur, poste ou image cloud).
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `isc-dhcp-server.service`, `isc-dhcp-server6.service`,
+    `kea-dhcp4-server.service`, `kea-dhcp6-server.service`, `kea-dhcp-ddns-server.service`,
+    `named.service`, `dnsmasq.service`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si le paquet n'est
+    pas utile du tout, le supprimer plutôt : `apt purge isc-dhcp-server kea-dhcp4-server
+    kea-dhcp6-server kea-dhcp-ddns-server bind9 dnsmasq`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

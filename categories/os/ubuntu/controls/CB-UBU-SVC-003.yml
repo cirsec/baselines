@@ -1,0 +1,173 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-SVC-003
+title: Remove the NFS server and disable rpcbind when the system does not provide them
+finding:
+  title: The NFS server or rpcbind can run on a system that does not need them
+  description: NFS exports and the RPC port mapper are reachable from the network and have a long record of remote vulnerabilities.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [services, nfs, rpc, attack-surface]
+
+description: |
+  The NFS server (package `nfs-kernel-server`) exports local directories over NFS.
+  `rpcbind` maps ONC RPC program numbers to ports; it listens on port 111 through
+  `rpcbind.socket` and `rpcbind.service`, and is needed by NFSv3 and NIS.
+
+  The control requires `nfs-kernel-server` to be absent, and the rpcbind units to be masked or not
+  installed at all.
+rationale: |
+  NFS trusts client addresses and user IDs, so a misconfigured export gives remote access to
+  files. rpcbind tells any host which RPC services run, and has been abused for traffic
+  amplification and remote code execution.
+impact: |
+  Removing the NFS server stops every export. Masking `rpcbind` breaks NFSv3 client mounts and file locking (`rpc.statd`) and NIS. NFSv4
+  mounts do not need it. NFS servers, and clients that still mount NFSv3 shares, must exclude this
+  control in their tailoring file.
+notes: |
+  The NFS server is removed rather than masked: its maintainer scripts manage the unit through
+  the `nfs-kernel-server.service` alias, and with `nfs-server.service` masked, removing or
+  upgrading the package fails. A rpcbind unit that does not exist
+  counts as compliant. The NFS client package `nfs-common` is handled by CB-UBU-SVC-027 in the
+  hardened server profile.
+
+audit:
+  manual: |
+    1. `dpkg-query -W -f='${Status}\n' nfs-kernel-server` must not print `install ok installed`.
+    2. `systemctl is-enabled rpcbind.service rpcbind.socket` must print `masked`, or fail because
+       the units do not exist.
+  logic: all
+  checks:
+    - id: nfs-server
+      engine: package
+      description: NFS kernel server package.
+      spec: { name: nfs-kernel-server, state: absent }
+    - id: rpcbind
+      engine: systemd-unit
+      description: rpcbind service.
+      spec: { unit: rpcbind.service, state: masked }
+    - id: rpcbind-socket
+      engine: systemd-unit
+      description: rpcbind socket activation.
+      spec: { unit: rpcbind.socket, state: masked }
+
+remediation:
+  manual: |
+    Run `apt purge nfs-kernel-server`, then `systemctl mask --now rpcbind.socket rpcbind.service`
+    (or `apt purge rpcbind` if nothing depends on it).
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Run `systemctl unmask rpcbind.socket rpcbind.service`, `systemctl enable --now rpcbind.socket`,
+    and reinstall the NFS server with `apt install nfs-kernel-server`.
+  scripts:
+    - id: nfs-server
+      from_check: nfs-server
+    - id: rpcbind-socket
+      from_check: rpcbind-socket
+    - id: rpcbind
+      from_check: rpcbind
+
+references:
+  - title: rpcbind(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/rpcbind.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: nfsd(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/nfsd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: systemctl(1), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man1/systemctl.1.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R62)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R62
+    relation: partial
+    note: R62 asks to disable every unneeded service; this control covers the NFS server and rpcbind.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "2.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "2.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.12"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "2.1.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "2.1.12"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1210
+  - framework: mitre-attack
+    id: T1046
+related_controls:
+  - id: CB-UBU-SVC-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic
+    notes: "Stock image passes; with nfs-kernel-server installed the checks fail, fix purges the server and masks rpcbind, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic
+    notes: "Stock image passes; with nfs-kernel-server installed the checks fail, fix purges the server and masks rpcbind, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic
+    notes: "Stock image passes; with nfs-kernel-server installed the checks fail, fix purges the server and masks rpcbind, audit passes, unchanged on a second run and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic
+    notes: "Stock image passes; with nfs-kernel-server installed the checks fail, fix purges the server and masks rpcbind, audit passes, unchanged on a second run and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

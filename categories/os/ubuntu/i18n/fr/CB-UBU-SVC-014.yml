@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-014
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner exactement un démon de synchronisation du temps
+finding:
+  title: L'horloge système n'est pas synchronisée, ou plusieurs démons se la disputent
+  description: Des horodatages faux cassent la corrélation des journaux, la vérification des certificats et Kerberos ; deux démons font sauter l'horloge.
+description: |
+  Ubuntu fournit plusieurs clients NTP : `systemd-timesyncd` (par défaut jusqu'à 24.04), `chrony`
+  (par défaut depuis 26.04, avec l'unité alternative `chronyd-restricted` depuis 24.04), `ntp`
+  (20.04 et 22.04), `ntpsec` (depuis 22.04) et `openntpd`. Exactement un d'entre eux doit être actif.
+rationale: |
+  Les journaux, les traces d'audit et les protocoles d'authentification reposent sur une heure
+  exacte. Sans démon, l'horloge dérive ; avec deux, chacun corrige l'autre et l'horloge saute, ce
+  qui fausse les chronologies lors d'une investigation.
+impact: |
+  Aucun connu quand un démon est déjà actif, ce qui est le cas par défaut sur Ubuntu.
+notes: |
+  La vérification compte les unités par leur vrai nom : un alias (`chronyd.service`, `ntp.service`
+  fourni par `ntpsec`) n'est pas compté deux fois. Les paquets sont en conflit entre eux, donc deux
+  démons cohabitent rarement ; l'échec
+  habituel est l'absence de démon, par exemple dans un conteneur où `systemd-timesyncd` ne
+  démarre pas (l'hôte garde l'heure). Les conteneurs peuvent exclure ce contrôle dans leur fichier
+  de personnalisation. Les paramètres du démon sont vérifiés par CB-UBU-SVC-015 (timesyncd) et
+  CB-UBU-SVC-016 (chrony).
+audit:
+  manual: |
+    Lancer `systemctl is-active chrony chronyd-restricted systemd-timesyncd ntp ntpsec openntpd`.
+    Exactement une ligne doit afficher `active` (un alias d'une unité active affiche aussi
+    `active` : vérifier avec `systemctl show -p Id <unité>`).
+remediation:
+  manual: |
+    - Aucun démon : lancer `systemctl enable --now systemd-timesyncd` (20.04 à 24.04) ou
+      `systemctl enable --now chrony` (26.04), ou `apt install chrony`.
+    - Plusieurs démons : en garder un, puis `systemctl mask --now <unité>` pour les autres ou purger
+      leurs paquets.

@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-015
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer systemd-timesyncd avec des serveurs de temps approuvés et le garder actif
+finding:
+  title: systemd-timesyncd utilise les serveurs de secours intégrés ou ne tourne pas
+  description: L'horloge suit les serveurs compilés dans le paquet, ou n'est pas synchronisée du tout.
+description: |
+  `systemd-timesyncd` est un client SNTP simple. Ses serveurs se définissent avec `NTP=` dans
+  `/etc/systemd/timesyncd.conf` ou dans un fichier complémentaire sous
+  `/etc/systemd/timesyncd.conf.d/`. Sans `NTP=`, il n'utilise que la liste `FallbackNTP=` compilée
+  dans le paquet. Le service doit être activé et en cours d'exécution.
+rationale: |
+  Des serveurs explicites font de la source de temps un choix documenté : serveurs internes pour
+  les réseaux isolés, ou pool public auquel l'organisation fait confiance. Un client arrêté laisse
+  l'horloge dériver, ce qui casse la corrélation des journaux et l'authentification basée sur le temps.
+impact: |
+  Le système contacte les serveurs configurés sur le port UDP 123 ; le pare-feu doit l'autoriser.
+  Avec la liste par défaut, le serveur est `ntp.ubuntu.com`, géré par Canonical.
+notes: |
+  La vérification lit la configuration fusionnée avec `systemd-analyze cat-config` et garde la
+  dernière ligne `NTP=`, celle que systemd applique. Ubuntu ne fournit aucune ligne `NTP=` (seulement
+  `FallbackNTP=ntp.ubuntu.com` en commentaire) : le
+  contrôle échoue donc sur une installation neuve. La correction écrit
+  `/etc/systemd/timesyncd.conf.d/60-cirsec.conf`.
+
+  **Vérifier et remplacer les serveurs par défaut.** `time_servers` vaut par défaut `ntp.ubuntu.com`,
+  le serveur de secours d'Ubuntu, pour que la correction fonctionne partout. Ce n'est pas une source approuvée : le remplacer
+  dans le fichier de personnalisation par les serveurs de temps de l'organisation (NTP interne,
+  contrôleurs de domaine, ou un fournisseur de confiance) avant d'appliquer la correction en production.
+setting:
+  location: /etc/systemd/timesyncd.conf.d/60-cirsec.conf
+  recommended_value: "NTP={{ time_servers }}"
+parameters:
+  time_servers: Liste des serveurs NTP approuvés, séparés par des espaces, écrite par la correction.
+audit:
+  manual: |
+    1. Lancer `systemd-analyze cat-config systemd/timesyncd.conf`. La dernière ligne `NTP=` doit
+       lister au moins un serveur approuvé.
+    2. `systemctl is-enabled systemd-timesyncd` doit afficher `enabled` et
+       `systemctl is-active systemd-timesyncd` doit afficher `active`.
+remediation:
+  manual: |
+    Créer `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` contenant :
+    ```
+    [Time]
+    NTP={{ time_servers }}
+    ```
+    puis lancer `systemctl enable systemd-timesyncd` et `systemctl restart systemd-timesyncd`.
+    Vérifier avec `timedatectl timesync-status`.
+  rollback: |
+    Supprimer `/etc/systemd/timesyncd.conf.d/60-cirsec.conf` et redémarrer systemd-timesyncd.

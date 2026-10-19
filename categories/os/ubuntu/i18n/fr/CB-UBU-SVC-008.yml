@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-008
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les serveurs web sur les systèmes qui ne servent pas de contenu web
+finding:
+  title: Un serveur web peut tourner sur un système qui ne sert pas de contenu web
+  description: Un serveur web oublié publie des pages, modules et fichiers par défaut que personne ne maintient.
+description: |
+  Serveurs web fournis par Ubuntu : Apache (`apache2.service`), nginx (`nginx.service`) et
+  lighttpd (`lighttpd.service`). Ils sont souvent installés comme dépendances d'autres logiciels.
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  Un serveur web que personne n'attend n'est ni mis à jour, ni supervisé, ni durci, et peut
+  publier des répertoires ou des pages d'état qui divulguent des informations. C'est du code
+  joignable à distance.
+impact: |
+  Masquer une unité l'arrête et l'empêche de redémarrer. **Les serveurs web et les reverse proxies
+  doivent exclure ce contrôle dans leur fichier de personnalisation**, avec la raison, par exemple :
+
+  ```yaml
+  exclude:
+    - control: CB-UBU-SVC-008
+      reason: Rôle serveur web (nginx sert l'intranet).
+  ```
+notes: |
+  Une unité inexistante est considérée conforme, donc supprimer le paquet est une correction tout
+  aussi valable.
+audit:
+  manual: |
+    Pour chaque unité, lancer `systemctl is-enabled <unité>`. La commande doit afficher `masked`, ou
+    échouer parce que l'unité n'existe pas : `apache2.service`, `nginx.service`, `lighttpd.service`.
+remediation:
+  manual: |
+    Arrêter et masquer chaque unité installée : `systemctl mask --now <unité>`. Si le paquet n'est
+    pas utile du tout, le supprimer plutôt : `apt purge apache2 nginx lighttpd`.
+  rollback: |
+    Lancer `systemctl unmask <unité>` puis `systemctl enable --now <unité>`.

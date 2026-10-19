@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-024
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer le serveur X Window System et le gestionnaire de connexion GNOME des serveurs
+finding:
+  title: Un serveur X Window System ou un gestionnaire de connexion graphique est installé sur un serveur
+  description: Une pile graphique ajoute une grande quantité de code privilégié rarement nécessaire.
+description: |
+  `xserver-common` contient les fichiers partagés par tous les serveurs X.Org (Xorg, Xvfb, Xephyr,
+  et Xwayland sur Ubuntu). Quand il est absent, aucun serveur X n'est installé. `gdm3`, le
+  gestionnaire de connexion GNOME d'Ubuntu Desktop, lance un écran de connexion graphique dès qu'il
+  est installé.
+rationale: |
+  Un serveur X est un logiciel complexe, historiquement exécuté avec les privilèges root, avec un
+  long historique de failles d'élévation de privilèges locale. Un gestionnaire de connexion ajoute
+  une connexion graphique sur la console et ses propres services (accessibilité, applets réseau,
+  connexion à distance). Un serveur administré par SSH n'a besoin ni de l'un ni de l'autre.
+impact: |
+  Supprime `gdm3`, `xserver-common` et tous les paquets qui en dépendent : serveurs X, et
+  l'environnement graphique s'il y en a un (les métapaquets `ubuntu-desktop` partent avec). Les applications X déportées par SSH (`ssh -X`) fonctionnent toujours,
+  car elles utilisent le serveur X du poste de l'administrateur.
+notes: |
+  Le contrôle n'est que dans le profil serveur renforcé ; les postes ont besoin d'un serveur X ou
+  de Xwayland.
+audit:
+  manual: |
+    Lancer `dpkg-query -W -f='${Status}\n' gdm3 xserver-common`. La commande ne doit pas afficher
+    `install ok installed`.
+remediation:
+  manual: |
+    Lancer `apt purge gdm3 xserver-common` après avoir vérifié la liste des paquets qu'apt va supprimer.
+  rollback: |
+    Réinstaller le serveur X nécessaire, par exemple `apt install xserver-xorg-core`.
