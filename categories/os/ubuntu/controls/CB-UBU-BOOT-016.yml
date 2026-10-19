@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-016
+title: Restrict unprivileged user namespaces with AppArmor
+finding:
+  title: Any local program can create unprivileged user namespaces
+  description: User namespaces give an unprivileged process root-like capabilities over kernel interfaces that are a frequent source of privilege escalation bugs.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apparmor, kernel, sysctl, namespaces]
+
+applicability:
+  versions: ["24.04", "26.04"]
+  conditions: |
+    The sysctl only exists in Ubuntu kernels from 23.10 on. The 20.04 and 22.04 kernels do
+    not have it.
+
+description: |
+  With `kernel.apparmor_restrict_unprivileged_userns = 1`, an unprivileged process can only
+  create a user namespace when its AppArmor profile allows it (the `userns` rule). Unconfined
+  programs get a namespace without any capability in it. Ubuntu ships profiles that grant the
+  right to the programs that need it, such as browsers, Flatpak, LXC, Podman and Buildah.
+rationale: |
+  Inside a user namespace, an unprivileged user holds capabilities such as `CAP_NET_ADMIN` or
+  `CAP_SYS_ADMIN` over the namespace, which exposes large parts of the kernel (netfilter,
+  filesystems, network stacks) to them. Many local privilege escalation exploits start by
+  creating one. Restricting namespaces to profiled programs removes that entry point for
+  everything else.
+impact: |
+  None on a default install. A program that needs user namespaces and has no AppArmor profile
+  (a self-built browser, an application from outside the archive, some sandboxing or container
+  tools) fails to start its sandbox. Give it a profile with the `userns,` rule in
+  `/etc/apparmor.d/` instead of turning the restriction off for the whole system.
+notes: |
+  Ubuntu turns it on by default in `/usr/lib/sysctl.d/10-apparmor.conf` from 24.04 on. The
+  control guards against the common workaround of setting it back to `0` system-wide. Unlike
+  `kernel.unprivileged_userns_clone`, it keeps namespaces available to the programs that are
+  allowed to use them.
+
+setting:
+  location: sysctl `kernel.apparmor_restrict_unprivileged_userns`, persisted in `/etc/sysctl.d/`
+  default_value: "1"
+  recommended_value: "1"
+
+audit:
+  manual: |
+    Run `sysctl kernel.apparmor_restrict_unprivileged_userns`. The value must be `1`.
+    Then check that no sysctl configuration file sets it to `0`.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.apparmor_restrict_unprivileged_userns.
+      spec: { key: kernel.apparmor_restrict_unprivileged_userns, value: 1 }
+
+remediation:
+  manual: |
+    Comment out every assignment of the key in `/etc/sysctl.conf`, `/etc/sysctl.d/` and
+    `/run/sysctl.d/` (a file such as `99-userns.conf` sorts after `60-cirsec.conf` and wins), create
+    `/etc/sysctl.d/60-cirsec.conf` containing `kernel.apparmor_restrict_unprivileged_userns = 1`,
+    then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl --system`. Commented-out
+    assignments can be restored from the backup directory `/var/backups/cirsec/`.
+  scripts:
+    - id: set
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: Ubuntu Security documentation - AppArmor (unprivileged user namespace restrictions)
+    url: https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu blog - Restricted unprivileged user namespaces are coming to Ubuntu 23.10
+    url: https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1068
+related_controls:
+  - id: CB-UBU-BOOT-008
+    type: requires
+  - id: CB-UBU-BOOT-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Passes on a fresh install (1); with /etc/sysctl.d/99-userns.conf setting 0 it fails, the fix comments it out; 1 kept after reboot; strict snap runs, unprivileged unshare -U refused."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install (1); with /etc/sysctl.d/99-userns.conf setting 0 it fails, the fix comments it out; 1 kept after reboot; strict snap runs, unprivileged unshare -U refused."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,216 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-013
+title: Disable core dumps
+finding:
+  title: Crashing programs can write their memory to disk
+  description: Core dumps can contain passwords, keys and personal data, and stay on disk long after the crash.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [core-dump, pam, systemd]
+
+description: |
+  A core dump is a copy of the memory of a process written when it crashes. On Ubuntu, three
+  mechanisms decide whether one is written:
+
+  - the `core` resource limit of the process, set for login sessions by `pam_limits` from
+    `/etc/security/limits.conf` and `/etc/security/limits.d/`;
+  - when the `systemd-coredump` package is installed, its configuration
+    (`/etc/systemd/coredump.conf` and `/etc/systemd/coredump.conf.d/`), which stores the dumps
+    in `/var/lib/systemd/coredump/`;
+  - apport, installed by default, which registers itself as the core dump handler in
+    `kernel.core_pattern` and stores crash reports, core dump included, in `/var/crash/`.
+
+  This control sets a hard `core` limit of 0 for every login session, and, with systemd-coredump,
+  `Storage=none` and `ProcessSizeMax=0`. Apport is turned off by CB-UBU-BOOT-015.
+rationale: |
+  The memory of a crashed process holds whatever it was working on: passwords typed by a user,
+  session tokens, private keys, documents. Core files are often readable by more people than the
+  original process, are collected by support tools, and are rarely cleaned up.
+impact: |
+  Crashes cannot be analysed from a core dump. When a crash must be debugged, raise the limit for
+  that one session (`ulimit -c unlimited` after removing the hard limit) on a test system.
+notes: |
+  Ubuntu sets a soft limit of 0 but leaves the hard limit `unlimited` (26.04 sets it
+  explicitly in `/etc/security/limits.d/10-coredump-debian.conf`), so any user can turn dumps
+  back on with `ulimit -c`. The file written by the fix sorts after it and wins.
+
+  A core dump handler declared in `kernel.core_pattern` (a line starting with `|`) receives the
+  memory of the crashed process whatever its `core` limit: the kernel does not apply the limit to
+  a pipe, and what is kept is up to the handler. This is why the session limit is not enough on
+  Ubuntu while apport runs. Core dumps of setuid programs
+  are covered separately by CB-UBU-BOOT-005.
+
+setting:
+  location: /etc/security/limits.d/, /etc/systemd/coredump.conf.d/
+  default_value: Soft limit 0, hard limit unlimited
+  recommended_value: Hard limit 0; with systemd-coredump, Storage=none and ProcessSizeMax=0
+
+audit:
+  manual: |
+    1. Run `su -s /bin/sh nobody -c 'ulimit -Hc'`. It must print `0`.
+    2. If systemd-coredump is installed, run `systemd-analyze cat-config systemd/coredump.conf`:
+       the last `Storage=` must be `none` and the last `ProcessSizeMax=` must be `0`.
+  checks:
+    - id: session-limit
+      engine: shell
+      description: Hard core size limit applied to a login session.
+      spec:
+        script: |
+          v=$(su -s /bin/sh nobody -c 'ulimit -Hc' 2>/dev/null) || exit 3
+          echo "hard core limit: $v"
+          [ "$v" = 0 ]
+    - id: coredump-storage
+      engine: shell
+      description: Effective Storage= of systemd-coredump.
+      facts: [systemd-coredump]
+      spec:
+        script: |
+          v=$(systemd-analyze cat-config systemd/coredump.conf 2>/dev/null | sed -n 's/^[[:space:]]*Storage=//p' | tail -n 1)
+          echo "Storage=${v:-external (default)}"
+          [ "$v" = none ]
+    - id: coredump-size
+      engine: shell
+      description: Effective ProcessSizeMax= of systemd-coredump.
+      facts: [systemd-coredump]
+      spec:
+        script: |
+          v=$(systemd-analyze cat-config systemd/coredump.conf 2>/dev/null | sed -n 's/^[[:space:]]*ProcessSizeMax=//p' | tail -n 1)
+          echo "ProcessSizeMax=${v:-default}"
+          [ "$v" = 0 ]
+
+remediation:
+  manual: |
+    1. Create `/etc/security/limits.d/60-cirsec.conf` with:
+       ```
+       *    hard core 0
+       root hard core 0
+       ```
+    2. If systemd-coredump is installed, create `/etc/systemd/coredump.conf.d/60-cirsec.conf` with:
+       ```
+       [Coredump]
+       Storage=none
+       ProcessSizeMax=0
+       ```
+    3. Log out and back in for the session limit to apply.
+  effects:
+    restart: session
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Delete the two files. New sessions get the previous limits back.
+  scripts:
+    - id: session-limit
+      engine: shell
+      content: |
+        f=/etc/security/limits.d/60-cirsec.conf
+        cb_backup "$f"
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-BOOT-013' '*    hard core 0' 'root hard core 0' >"$f"
+        chmod 644 "$f"
+    - id: coredump-conf
+      engine: shell
+      facts: [systemd-coredump]
+      content: |
+        f=/etc/systemd/coredump.conf.d/60-cirsec.conf
+        cb_backup "$f"
+        mkdir -p /etc/systemd/coredump.conf.d
+        printf '%s\n' '# Written by CIRSEC Baselines CB-UBU-BOOT-013' '[Coredump]' 'Storage=none' 'ProcessSizeMax=0' >"$f"
+        chmod 644 "$f"
+
+references:
+  - title: limits.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/limits.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: coredump.conf(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/coredump.conf.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: core(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/core.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.5.3"
+    relation: partial
+    note: The benchmark item also covers fs.suid_dumpable, which is CB-UBU-BOOT-005.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.5.4"
+    relation: stricter
+    note: Ours also covers systemd-coredump.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.10"
+    relation: stricter
+    note: Ours also covers systemd-coredump (1.5.11 and 1.5.12).
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.11"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.12"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.10"
+    relation: stricter
+    note: Ours also covers systemd-coredump (1.5.11 and 1.5.12).
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.11"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.12"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1003
+  - framework: cwe
+    id: CWE-528
+related_controls:
+  - id: CB-UBU-BOOT-005
+    type: related
+  - id: CB-UBU-BOOT-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Fails on a fresh install (hard core limit unlimited); fix writes limits.d; kept after reboot; systemd-coredump not installed, its checks report not_applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Fails on a fresh install (hard core limit unlimited); fix writes limits.d; kept after reboot; systemd-coredump not installed, its checks report not_applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Fails on a fresh install (hard core limit unlimited); fix writes limits.d; kept after reboot; systemd-coredump not installed, its checks report not_applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Fails on a fresh install (hard core limit unlimited); fix writes limits.d; kept after reboot; systemd-coredump not installed, its checks report not_applicable."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

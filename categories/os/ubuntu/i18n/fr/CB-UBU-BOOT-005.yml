@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-005
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les fichiers core des programmes setuid
+finding:
+  title: Des programmes privilégiés peuvent écrire leur mémoire dans des fichiers core
+  description: Un programme setuid qui plante peut laisser des secrets, comme des empreintes de mots de passe, dans un fichier core.
+description: |
+  Le sysctl `fs.suid_dumpable` détermine si un processus qui a changé de privilèges (programmes
+  setuid ou setgid, ou programmes ayant abandonné des privilèges) peut produire un fichier core
+  quand il plante. Avec `0`, ces processus n'en produisent jamais.
+rationale: |
+  Les programmes setuid comme `passwd` ou `su` manipulent des secrets avec les privilèges root.
+  Un fichier core de leur mémoire peut exposer des empreintes de mots de passe, des clés ou des
+  jetons, et un attaquant capable de les faire planter peut parvenir à le lire.
+impact: |
+  Les plantages des programmes setuid ne peuvent plus être analysés à partir d'un fichier core.
+  Les déboguer sur un système de test.
+notes: |
+  `1` les traite comme n'importe quel processus et `2` produit un fichier lisible par root seul.
+  Les deux sont dangereux en production. Les fichiers core des processus ordinaires sont un sujet distinct.
+
+  Sur Ubuntu, apport écrit `2` dans `fs.suid_dumpable` à son démarrage, après l'application de
+  `/etc/sysctl.d/`, et `0` à son arrêt. La valeur posée par la correction ne survit donc à un
+  redémarrage que si apport est désactivé (CB-UBU-BOOT-015).
+setting:
+  location: sysctl `fs.suid_dumpable`, rendu persistant dans `/etc/sysctl.d/`
+  recommended_value: "0"
+audit:
+  manual: |
+    Lancer `sysctl fs.suid_dumpable`. La valeur doit être `0`.
+    Vérifier ensuite qu'aucun fichier de configuration sysctl ne fixe une autre valeur.
+remediation:
+  manual: |
+    Créer `/etc/sysctl.d/60-cirsec.conf` contenant `fs.suid_dumpable = 0`,
+    supprimer toute autre affectation de cette clé, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer la ligne de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl --system`.

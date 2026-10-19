@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-009
+title: Stop unconfined unprivileged processes from switching AppArmor profiles
+finding:
+  title: Unprivileged unconfined processes can move to a more permissive AppArmor profile
+  description: A process with no profile can use aa-exec or change_profile to pick a profile that grants rights it should not have.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [apparmor, mac, sysctl]
+
+applicability:
+  versions: ["24.04", "26.04"]
+  conditions: |
+    The sysctl only exists in kernels that carry the AppArmor unprivileged restriction
+    feature: Ubuntu kernels from 23.10 on. The 20.04 and 22.04 kernels do not have it.
+
+description: |
+  `kernel.apparmor_restrict_unprivileged_unconfined` turns on the AppArmor restrictions for
+  processes that are both unprivileged and unconfined (running without any profile). With `1`,
+  such a process cannot use `change_profile` (for example through `aa-exec`) to move itself to
+  another profile.
+rationale: |
+  Some AppArmor profiles grant rights that unconfined processes do not have by default, such as
+  creating user namespaces. Without this restriction, any local process could switch to such a
+  profile and use those rights, which bypasses the policy.
+impact: |
+  Unprivileged users can no longer run programs under a chosen profile with `aa-exec`.
+  Programs launched normally get their profile attached as usual.
+notes: |
+  Ubuntu 26.04 turns it on by default in `/usr/lib/sysctl.d/10-apparmor.conf`; Ubuntu 24.04
+  leaves it off. The companion setting `kernel.apparmor_restrict_unprivileged_userns` is
+  CB-UBU-BOOT-016.
+
+setting:
+  location: sysctl `kernel.apparmor_restrict_unprivileged_unconfined`, persisted in `/etc/sysctl.d/`
+  default_value: "0 on 24.04, 1 on 26.04"
+  recommended_value: "1"
+
+audit:
+  manual: |
+    Run `sysctl kernel.apparmor_restrict_unprivileged_unconfined`. The value must be `1`.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of kernel.apparmor_restrict_unprivileged_unconfined.
+      spec: { key: kernel.apparmor_restrict_unprivileged_unconfined, value: 1 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing
+    `kernel.apparmor_restrict_unprivileged_unconfined = 1`, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run
+    `sysctl --system` (back to the distribution default).
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Ubuntu blog - Restricted unprivileged user namespaces are coming to Ubuntu 23.10
+    url: https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: AppArmor wiki - unprivileged unconfined restriction
+    url: https://gitlab.com/apparmor/apparmor/-/wikis/unprivileged_unconfined_restriction
+    publisher: AppArmor project
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.3.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.3.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1548
+related_controls:
+  - id: CB-UBU-BOOT-008
+    type: requires
+  - id: CB-UBU-BOOT-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Fails on a fresh install (0); generated fix sets 1; kept after reboot; fix idempotent; 20.04 and 22.04 report not_applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install (1, distribution default); still passes after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
