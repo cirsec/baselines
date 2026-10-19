@@ -139,7 +139,7 @@ cb_fix_auth_tries() {
 }
 
 cb_fix_telnet() {
-  DEBIAN_FRONTEND=noninteractive apt-get purge -y -q telnetd
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y -q telnetd
 }
 
 cb_fix_avahi() {

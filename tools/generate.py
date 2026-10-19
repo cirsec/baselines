@@ -119,8 +119,8 @@ def package_check(s: dict) -> str:
 
 def package_fix(s: dict) -> str:
     if s["state"] == "installed":
-        return f"DEBIAN_FRONTEND=noninteractive apt-get install -y -q {q(s['name'])}"
-    return f"DEBIAN_FRONTEND=noninteractive apt-get purge -y -q {q(s['name'])}"
+        return f"DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -q {q(s['name'])}"
+    return f"DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 purge -y -q {q(s['name'])}"
 
 
 def systemd_check(s: dict) -> str:
