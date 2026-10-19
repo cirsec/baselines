@@ -162,7 +162,7 @@ excluded() {
 
 printf '{"format":"cirsec-baselines-result","standard":%s,"version":%s,"profile":%s,' \
   '"lab"' '"0.1.0"' '"strict"'
-CB_PRODUCT_VERSION=${CB_PRODUCT_VERSION-$( (. /etc/os-release && printf '%s' "${VERSION_ID%%.*}") 2>/dev/null)}
+CB_PRODUCT_VERSION=${CB_PRODUCT_VERSION-$( (. /etc/os-release && printf '%s' "$VERSION_ID") 2>/dev/null)}
 export CB_PRODUCT_VERSION
 printf '"target":{"name":%s,"product_version":%s},' "$(json "$(hostname)")" "$(json "$CB_PRODUCT_VERSION")"
 printf '"scanner":{"name":"cirsec-audit.sh","version":%s},"started":%s,"results":[' \
