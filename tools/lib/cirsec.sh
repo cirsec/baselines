@@ -178,14 +178,13 @@ cb_exit_code() {
 cb_main() {
   case ${1:-} in
     check)
-      if [ "$CB_ASSESSMENT" = manual ]; then
-        printf 'control\t%s\tmanual\n' "$CB_CONTROL"
-        exit 4
-      fi
       cb_applicable
       _r=$?
       if [ "$_r" -ne 0 ]; then
         [ "$_r" -eq 2 ] && _s=not_applicable || _s=error
+      elif [ "$CB_ASSESSMENT" = manual ]; then
+        printf 'control\t%s\tmanual\n' "$CB_CONTROL"
+        exit 4
       else
         CB_P=0 CB_F=0 CB_E=0
         cb_run_checks

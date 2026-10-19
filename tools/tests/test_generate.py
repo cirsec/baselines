@@ -208,6 +208,14 @@ def test_cb_version_in(target, listed, rc):
     assert r.returncode == rc
 
 
+@pytest.mark.parametrize("applicable,status,rc", [(0, "manual", 4), (2, "not_applicable", 2)])
+def test_manual_control_respects_applicability(applicable, status, rc):
+    script = (f'. "{LIB}"; CB_CONTROL=demo CB_ASSESSMENT=manual; '
+              f'cb_applicable() {{ return {applicable}; }}; cb_main check')
+    r = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env={**os.environ, "CB_PRODUCT_VERSION": "x"})
+    assert r.returncode == rc and f"control\tdemo\t{status}" in r.stdout
+
+
 def test_fix_skipped_when_check_errors(tmp_path):
     marker = tmp_path / "touched"
     script = (f'. "{LIB}"; CB_APPLY=1 CB_RC=0; '
