@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-DESK-008
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller les sessions inactives hors GNOME, via logind et le verrouilleur d'écran de KDE
+finding:
+  title: Les sessions inactives des bureaux autres que GNOME peuvent ne jamais se verrouiller
+  description: Sans action d'inactivité au niveau du système ni réglage verrouillé du bureau, une session laissée sans surveillance reste ouverte aussi longtemps que l'utilisateur l'a décidé.
+description: |
+  Deux réglages verrouillent les sessions inactives indépendamment de GNOME (couvert par
+  CB-UBU-DESK-003) :
+
+  - systemd-logind : `IdleAction=lock` avec `IdleActionSec` demande à chaque session de se
+    verrouiller une fois le système inactif depuis ce délai. Les bureaux qui signalent leur
+    inactivité à logind (GNOME, KDE Plasma) le respectent ;
+  - KDE Plasma : le verrouilleur d'écran lit `Autolock`, `Timeout` (minutes) et `Lock` dans le
+    groupe `[Daemon]` de `kscreenlockerrc`. Le fichier système `/etc/xdg/kscreenlockerrc` les
+    définit et marque le groupe immuable avec `[Daemon][$i]`, pour que les fichiers des
+    utilisateurs ne puissent pas les remplacer.
+rationale: |
+  Une session déverrouillée laissée sans surveillance donne ses accès à n'importe quel passant.
+  L'action d'inactivité de logind est un filet de sécurité qui ne dépend pas des réglages propres
+  à chaque bureau, et le verrouillage KDE empêche les utilisateurs d'allonger ou de désactiver le
+  délai.
+impact: |
+  Les sessions se verrouillent après {{ idle_minutes }} minutes sans saisie. Les utilisateurs de
+  KDE Plasma ne peuvent pas modifier les réglages de verrouillage.
+notes: |
+  Xfce n'a pas de réglage qu'un script puisse verrouiller de façon fiable : configurer
+  `xfce4-screensaver` (verrouillage activé, délai d'au plus {{ idle_minutes }} minutes) ou
+  `light-locker` et le vérifier à la main. Le réglage logind s'applique au prochain démarrage
+  (systemd 245 à 255, dans Ubuntu 20.04 à 24.04, ne sait pas recharger logind, et le
+  redémarrer ferme les sessions graphiques). Le contrôle KDE a été écrit d'après
+  la documentation de KDE et n'a pas été testé en laboratoire ; il n'a pas de correctif
+  automatique.
+setting:
+  location: /etc/systemd/logind.conf.d/60-cirsec.conf ; /etc/xdg/kscreenlockerrc
+  recommended_value: "IdleAction=lock, IdleActionSec au plus {{ idle_minutes }} min ; KDE [Daemon][$i] Autolock=true, Timeout au plus {{ idle_minutes }}"
+parameters:
+  idle_minutes: Nombre maximal de minutes d'inactivité avant le verrouillage de la session.
+audit:
+  manual: |
+    1. `systemd-analyze cat-config systemd/logind.conf` doit aboutir à `IdleAction=lock` et à un
+       `IdleActionSec` d'au plus {{ idle_minutes }} minutes.
+    2. Avec KDE Plasma, `/etc/xdg/kscreenlockerrc` doit contenir un groupe `[Daemon][$i]` où
+       `Autolock` et `Lock` ne valent pas false et `Timeout` vaut au plus {{ idle_minutes }}.
+    3. Avec Xfce, vérifier les réglages d'économiseur d'écran de chaque utilisateur.
+remediation:
+  manual: |
+    1. Créer `/etc/systemd/logind.conf.d/60-cirsec.conf` :
+       ```
+       [Login]
+       IdleAction=lock
+       IdleActionSec={{ idle_minutes }}min
+       ```
+       Il s'applique au prochain démarrage.
+    2. Avec KDE Plasma, créer `/etc/xdg/kscreenlockerrc` :
+       ```
+       [Daemon][$i]
+       Autolock=true
+       Lock=true
+       LockOnResume=true
+       Timeout={{ idle_minutes }}
+       ```
+    3. Avec Xfce, activer le verrouillage dans les réglages d'économiseur d'écran de chaque
+       utilisateur.
+  rollback: |
+    Supprimer `/etc/systemd/logind.conf.d/60-cirsec.conf` et `/etc/xdg/kscreenlockerrc`.

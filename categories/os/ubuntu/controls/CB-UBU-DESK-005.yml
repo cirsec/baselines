@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-005
+title: Disable XDMCP in the display manager
+finding:
+  title: The display manager accepts XDMCP remote logins
+  description: XDMCP sends the login screen, passwords and the whole session unencrypted over the network.
+status: draft
+profiles: [desktop]
+risk:
+  severity: high
+assessment: automated
+tags: [gdm, lightdm, xdmcp, network]
+
+description: |
+  XDMCP (X Display Manager Control Protocol) lets a remote X terminal request a login screen
+  from the display manager. It is off by default in GDM (`[xdmcp] Enable` in
+  `/etc/gdm3/custom.conf`) and in LightDM (`[XDMCPServer] enabled`). This control checks that
+  nobody turned it on.
+
+  From Ubuntu 26.04 (GDM 50), GDM is built without XDMCP and the Ubuntu desktop session runs on
+  Wayland only, so the GDM check applies to 20.04, 22.04 and 24.04. LightDM, used with
+  desktops that still run on Xorg, is checked on every version.
+rationale: |
+  XDMCP and the X11 session it opens are not encrypted or authenticated: anyone on the network
+  path can read the password typed at login and every keystroke after. Remote graphical access
+  should go through an encrypted channel such as SSH or a VPN.
+impact: |
+  None with the defaults. Thin clients that rely on XDMCP stop working.
+notes: |
+  Ubuntu's GDM reads `/etc/gdm3/custom.conf`, not `daemon.conf` as on Debian: a
+  `daemon.conf` file is ignored. SDDM has no XDMCP server. The LightDM check reads
+  `/usr/share/lightdm/lightdm.conf.d/`, `/etc/xdg/lightdm/lightdm.conf.d/`,
+  `/etc/lightdm/lightdm.conf.d/` and `/etc/lightdm/lightdm.conf` in that order; the last value
+  wins. The automated fix covers GDM only; the LightDM check was written from its documentation and not tested in a lab.
+
+setting:
+  location: /etc/gdm3/custom.conf [xdmcp] Enable; LightDM [XDMCPServer] enabled
+  default_value: "false"
+  recommended_value: false or unset
+
+audit:
+  manual: |
+    1. GDM: in `/etc/gdm3/custom.conf`, the `[xdmcp]` section must not set `Enable=true`.
+    2. LightDM: no file of `/etc/lightdm/lightdm.conf.d/` or `/etc/lightdm/lightdm.conf` may set
+       `enabled=true` in an `[XDMCPServer]` section.
+  checks:
+    - id: gdm
+      engine: shell
+      description: GDM does not enable XDMCP.
+      versions: ["20.04", "22.04", "24.04"]
+      facts: [gdm]
+      spec:
+        script: |
+          [ -f /etc/gdm3/custom.conf ] || { echo "no /etc/gdm3/custom.conf"; exit 0; }
+          v=$(awk '/^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[xdmcp]"); next }
+            s && /^[ \t]*Enable[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+            END { print v }' /etc/gdm3/custom.conf)
+          echo "[xdmcp] Enable=${v:-unset}"
+          case $v in [Tt][Rr][Uu][Ee] | 1) exit 1 ;; esac
+    - id: lightdm
+      engine: shell
+      description: LightDM does not enable its XDMCP server.
+      facts: [lightdm]
+      spec:
+        script: |
+          set -- /usr/share/lightdm/lightdm.conf.d/*.conf /etc/xdg/lightdm/lightdm.conf.d/*.conf \
+            /etc/lightdm/lightdm.conf.d/*.conf /etc/lightdm/lightdm.conf
+          files=
+          for f in "$@"; do [ -f "$f" ] && files="$files $f"; done
+          [ -n "$files" ] || { echo "no LightDM configuration file"; exit 0; }
+          # shellcheck disable=SC2086 # one word per file
+          v=$(awk 'FNR == 1 { s = 0 } /^[ \t]*\[/ { h = $0; gsub(/^[ \t]+|[ \t]+$/, "", h); s = (h == "[XDMCPServer]"); next }
+            s && /^[ \t]*enabled[ \t]*=/ { v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t]+$/, "", v) }
+            END { print v }' $files)
+          echo "[XDMCPServer] enabled=${v:-unset}"
+          case $v in [Tt][Rr][Uu][Ee] | 1) exit 1 ;; esac
+
+remediation:
+  manual: |
+    - GDM: in `/etc/gdm3/custom.conf`, set `Enable=false` in the `[xdmcp]` section (or remove the
+      line), then restart GDM at a convenient time (`systemctl restart gdm` closes every
+      graphical session).
+    - LightDM: remove `enabled=true` from the `[XDMCPServer]` sections, then restart LightDM.
+  effects:
+    restart: reboot
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Restore `/etc/gdm3/custom.conf` from the backup directory.
+  scripts:
+    - id: gdm
+      engine: shell
+      versions: ["20.04", "22.04", "24.04"]
+      facts: [gdm]
+      file: fix.sh
+
+references:
+  - title: gdm3(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/gdm3.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu 25.10 drops support for GNOME on Xorg
+    url: https://discourse.ubuntu.com/t/ubuntu-25-10-drops-support-for-gnome-on-xorg/62538
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: GDM - configuration keys (gdm.schemas)
+    url: https://gitlab.gnome.org/GNOME/gdm/-/blob/main/data/gdm.schemas.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.7.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.7.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.7.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.7.6"
+    relation: equivalent
+    note: Met by design on 26.04, where GDM has no XDMCP support; only LightDM is checked there.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1040
+  - framework: cwe
+    id: CWE-319
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 3.36, gdm3), Ubuntu 20.04.6, kernel 5.4.0-216-generic
+    notes: "GDM check and fix tested (desktop-hardened) in /etc/gdm3/custom.conf, including Enable=true in [xdmcp] turned off without touching [debug]; GDM starts after reboot. The LightDM check was not tested (no LightDM machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 42, gdm3), Ubuntu 22.04.5, kernel 5.15.0-198-generic
+    notes: "GDM check and fix tested (desktop-hardened) in /etc/gdm3/custom.conf, including Enable=true in [xdmcp] turned off without touching [debug]; GDM starts after reboot. The LightDM check was not tested (no LightDM machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 46, gdm3), Ubuntu 24.04.5, kernel 6.8.0-147-generic
+    notes: "GDM check and fix tested (desktop-hardened) in /etc/gdm3/custom.conf, including Enable=true in [xdmcp] turned off without touching [debug]; GDM starts after reboot. The LightDM check was not tested (no LightDM machine), only reported not applicable."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM with Ubuntu Desktop (GNOME 50, gdm3), Ubuntu 26.04.1, kernel 7.0.0-38-generic
+    notes: "GDM 50 has no XDMCP: the GDM check and fix are reported not applicable. The LightDM check was not tested (no LightDM machine), only reported not applicable."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-DESK-010
+title: Decide whether to turn off Wayland sessions in GDM (recommended - skip)
+finding:
+  title: GDM starts Wayland sessions, which run X11 programs through Xwayland
+  description: X11 programs running under Xwayland can read each other's input and windows, so one compromised X11 program can log the keys typed in the others.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [gdm, wayland, xwayland, x11]
+
+applicability:
+  versions: ["20.04", "22.04", "24.04"]
+  facts: [gdm]
+
+description: |
+  With `WaylandEnable=false` in the `[daemon]` section of `/etc/gdm3/custom.conf`, GDM runs the
+  login screen and user sessions on the Xorg server instead of Wayland, and Xwayland is never
+  started. This is the configuration the CIS benchmarks check for their Xwayland item.
+
+  The control does not apply to Ubuntu 26.04: since 25.10, GNOME Shell only runs on Wayland,
+  GDM 50 no longer has a `WaylandEnable` key and the Xorg server is not installed. The Ubuntu
+  file is `custom.conf`, not `daemon.conf` as on Debian.
+rationale: |
+  Xwayland gives X11 programs a shared X server: any of them can snoop the keyboard input and
+  window contents of the others. CIS removes Xwayland by turning Wayland sessions off. Note
+  that a full Xorg session has the same weakness for every program, not only X11 ones: this
+  control trades Xwayland's attack surface for Xorg's, and only makes sense where the
+  benchmark is a requirement.
+impact: |
+  Sessions run on Xorg: no Wayland isolation between programs, no Wayland-only features
+  (fractional scaling, per-monitor refresh rate). The Xorg server (`xserver-xorg-core` and its
+  drivers) must be installed, or GDM has no display server and no graphical login is possible;
+  Ubuntu Desktop 20.04 to 24.04 installs it. Xwayland itself stays installed: `ubuntu-session`
+  depends on it.
+notes: |
+  **Recommendation: skip this control** (exclude it in the tailoring file, with the reason below)
+  unless an audit against the CIS benchmark requires it. On a GNOME desktop, a Wayland session
+  isolates native programs from each other and only X11 programs share Xwayland; turning Wayland
+  off puts every program on Xorg, which removes that isolation for all of them. The control is
+  kept, as a manual decision, so that the choice is recorded and the CIS item can be mapped.
+
+  ```yaml
+  exclude:
+    - control: CB-UBU-DESK-010
+      reason: Wayland isolation is kept on purpose; Xorg would expose every program.
+  ```
+
+setting:
+  location: /etc/gdm3/custom.conf, section [daemon]
+  default_value: WaylandEnable=true (unset)
+  recommended_value: WaylandEnable=false
+
+audit:
+  manual: |
+    In `/etc/gdm3/custom.conf`, the `[daemon]` section must contain `WaylandEnable=false`.
+
+remediation:
+  manual: |
+    Only if the decision is to follow the CIS item:
+    1. Install the Xorg server (`apt install xserver-xorg`) and check that an Xorg session works.
+    2. In `/etc/gdm3/custom.conf`, section `[daemon]`, set `WaylandEnable=false`.
+    3. Restart GDM at a convenient time (`systemctl restart gdm` closes every graphical session).
+  rollback: |
+    Remove `WaylandEnable=false` from `/etc/gdm3/custom.conf` and restart GDM.
+
+references:
+  - title: gdm3(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/gdm3.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu 25.10 drops support for GNOME on Xorg
+    url: https://discourse.ubuntu.com/t/ubuntu-25-10-drops-support-for-gnome-on-xorg/62538
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: GDM - configuration keys (gdm.schemas)
+    url: https://gitlab.gnome.org/GNOME/gdm/-/blob/main/data/gdm.schemas.in
+    publisher: The GNOME Project
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.7.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.7.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.7.7"
+    relation: equivalent
+    note: Met by design on 26.04, where GNOME runs only on Wayland and GDM has no Xorg mode; the control applies to 20.04 to 24.04.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1056.001
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
