@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-BOOT-017
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les FIFO et les fichiers ordinaires dans les répertoires sticky accessibles en écriture
+finding:
+  title: Des programmes peuvent être amenés à ouvrir des FIFO ou des fichiers déposés par d'autres utilisateurs dans /tmp
+  description: Un programme privilégié qui ouvre un fichier existant dans un répertoire partagé peut écrire dans, ou lire depuis, un fichier qu'un attaquant y a créé.
+description: |
+  `fs.protected_fifos` et `fs.protected_regular` restreignent les ouvertures avec `O_CREAT` de FIFO et
+  de fichiers ordinaires qui existent déjà dans un répertoire sticky et n'appartiennent pas au
+  processus :
+
+  - `1` : refusées dans les répertoires sticky accessibles en écriture à tous (comme `/tmp`) quand le
+    fichier n'appartient ni au processus ni au propriétaire du répertoire ;
+  - `2` : la même règle s'applique aussi aux répertoires sticky accessibles en écriture au groupe.
+rationale: |
+  Un programme qui « crée » un fichier dans `/tmp` avec un nom prévisible, sans `O_EXCL`, ouvre en
+  fait le fichier qu'un attaquant y a placé avant lui. Avec une FIFO, l'attaquant lit ce que le
+  programme écrit ou lui fournit des données ; avec un fichier ordinaire, il en contrôle ou en lit le
+  contenu. Ces réglages bloquent l'attaque dans le noyau, quelle que soit la qualité du programme.
+impact: |
+  `1` n'a pas d'impact connu et c'est la valeur par défaut d'Ubuntu. Avec `2`, les programmes qui
+  partagent des fichiers ou des FIFO entre les utilisateurs d'un groupe via un répertoire sticky
+  accessible en écriture au groupe doivent les ouvrir sans `O_CREAT` ou tourner sous leur
+  propriétaire.
+notes: |
+  Ubuntu livre `fs.protected_fifos = 1` et `fs.protected_regular = 2` (`99-protect-links.conf` de
+  procps, ou `50-default.conf` de systemd en 26.04) : les profils socle passent sur une installation
+  neuve et les profils renforcés montent `fs.protected_fifos` à `2`.
+setting:
+  location: sysctl `fs.protected_fifos` et `fs.protected_regular`, rendus persistants dans `/etc/sysctl.d/`
+  recommended_value: "Les deux au moins à {{ protection_level }}"
+parameters:
+  protection_level: Valeur minimale de fs.protected_fifos et fs.protected_regular. 1 couvre les répertoires sticky accessibles en écriture à tous, 2 ajoute ceux accessibles en écriture au groupe.
+audit:
+  manual: |
+    Lancer `sysctl fs.protected_fifos fs.protected_regular`. Les deux valeurs doivent être au moins
+    {{ protection_level }}. Vérifier ensuite qu'aucun fichier de configuration sysctl ne fixe une
+    valeur plus basse.
+remediation:
+  manual: |
+    Pour chaque clé sous {{ protection_level }}, ajouter `<clé> = {{ protection_level }}` à
+    `/etc/sysctl.d/zz-cirsec.conf`, puis lancer `sysctl --system`. Le fichier doit être trié après
+    `/usr/lib/sysctl.d/99-protect-links.conf` (`protect-links.conf`, sans numéro, en 20.04), qui fixe
+    les deux clés : un fichier nommé `60-*.conf` ou `99-*.conf` serait écrasé au démarrage suivant.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/zz-cirsec.conf` et lancer `sysctl --system`.

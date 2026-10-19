@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-007
+title: Protect hard links to files the user does not own
+finding:
+  title: Users can create hard links to files they do not own
+  description: Hard links to privileged files enable link-based races and keep vulnerable binaries reachable after an update.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, filesystem, toctou]
+
+description: |
+  With `fs.protected_hardlinks = 1`, a user can only create a hard link to a file they own, or
+  to a file they can both read and write. Linking to other files needs the `CAP_FOWNER` capability.
+rationale: |
+  Hard links to files owned by other users enable races similar to symlink attacks. They also
+  let an attacker keep a copy of a vulnerable setuid binary that survives its replacement by a
+  package update, and exploit it later.
+impact: |
+  None known for normal use. Tools that hard link files they do not own (some backup or
+  deduplication tools run as a regular user) must run with the needed privileges.
+notes: |
+  Ubuntu enables it by default, through `/usr/lib/sysctl.d/99-protect-links.conf` (procps) or
+  `/usr/lib/sysctl.d/50-default.conf` (systemd), and `/etc/sysctl.d/10-link-restrictions.conf` on 20.04.
+
+setting:
+  location: sysctl `fs.protected_hardlinks`, persisted in `/etc/sysctl.d/`
+  default_value: "1"
+  recommended_value: "1"
+
+audit:
+  manual: |
+    Run `sysctl fs.protected_hardlinks`. The value must be `1`.
+    Then check that no sysctl configuration file sets it to `0`.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of fs.protected_hardlinks.
+      spec: { key: fs.protected_hardlinks, value: 1 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `fs.protected_hardlinks = 1`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl --system`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Ubuntu Security documentation - File handling
+    url: https://documentation.ubuntu.com/security/security-features/process-memory/file-handling/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Linux kernel documentation - Documentation for /proc/sys/fs/ (protected_hardlinks)
+    url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R14)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R14
+    relation: partial
+    note: R14 lists several filesystem settings; this control covers fs.protected_hardlinks.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.1"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-59
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

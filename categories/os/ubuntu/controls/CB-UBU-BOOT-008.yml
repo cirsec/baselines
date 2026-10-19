@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-008
+title: Install and enable AppArmor
+finding:
+  title: AppArmor mandatory access control is not active
+  description: Without a mandatory access control system, a compromised service keeps every right of its Unix user.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [apparmor, mac, lsm]
+
+description: |
+  AppArmor is the mandatory access control (MAC) system of Ubuntu. It confines programs with
+  per-program profiles that list the files, capabilities and network access they may use, on top
+  of the classic Unix permissions. It needs the `apparmor` package (parser and profiles) and the
+  AppArmor security module enabled in the running kernel.
+rationale: |
+  Unix permissions only depend on the user a program runs as. A compromised service confined by
+  an AppArmor profile cannot read or write outside what its profile allows, even as root, which
+  limits what an attacker can do after exploiting it.
+impact: |
+  None known on a default install: Ubuntu ships AppArmor installed and enabled on every
+  release, and its profiles are written not to break the packaged programs.
+notes: |
+  AppArmor is the default security module of the Ubuntu kernels, so no `apparmor=1` or
+  `security=apparmor` boot parameter is needed. If it was disabled with `apparmor=0` or a
+  `security=` / `lsm=` kernel parameter, remove that parameter from `GRUB_CMDLINE_LINUX` in
+  `/etc/default/grub`, run `update-grub` and reboot.
+
+setting:
+  location: Package `apparmor`; kernel security modules (`/sys/kernel/security/lsm`)
+  default_value: Installed and enabled
+  recommended_value: Installed and enabled
+
+audit:
+  manual: |
+    1. Run `dpkg -s apparmor`. The package must be installed.
+    2. Run `aa-enabled`. It must print `Yes`.
+  checks:
+    - id: package
+      engine: package
+      description: The apparmor package is installed.
+      spec: { name: apparmor, state: installed }
+    - id: enabled
+      engine: file-content
+      description: The AppArmor kernel module reports itself enabled.
+      spec: { path: /sys/module/apparmor/parameters/enabled, pattern: "^Y$" }
+
+remediation:
+  manual: |
+    1. Install the package: `apt install apparmor`.
+    2. If `aa-enabled` still says it is disabled, remove `apparmor=0`, `security=` or `lsm=`
+       from the kernel command line in `/etc/default/grub`, run `update-grub` and reboot.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    AppArmor can be disabled for one boot with the `apparmor=0` kernel parameter.
+  scripts:
+    - id: install
+      from_check: package
+
+references:
+  - title: Ubuntu Server documentation - AppArmor
+    url: https://documentation.ubuntu.com/server/how-to/security/apparmor/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: aa-status(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/aa-status.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R45)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R45
+    relation: partial
+    note: R45 also asks to put every profile in enforce mode, which is CB-UBU-BOOT-010.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.3.1.1"
+    relation: partial
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "1.3.1.2"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.3.1.1"
+    relation: partial
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "1.3.1.2"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.3.1.1"
+    relation: partial
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.3.1.2"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.3.1.1"
+    relation: partial
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.3.1.2"
+    relation: partial
+threats:
+  - framework: mitre-attack
+    id: T1068
+related_controls:
+  - id: CB-UBU-BOOT-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Check passes on a fresh install; still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Check passes on a fresh install; still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Check passes on a fresh install; still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Check passes on a fresh install; still passes after remediation and reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

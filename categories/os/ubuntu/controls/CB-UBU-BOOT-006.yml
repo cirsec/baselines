@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-BOOT-006
+title: Protect symbolic links in world-writable sticky directories
+finding:
+  title: Symbolic links in shared temporary directories are followed for any user
+  description: An attacker can plant a symlink in /tmp and make a privileged program overwrite an arbitrary file.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [kernel, sysctl, filesystem, toctou]
+
+description: |
+  With `fs.protected_symlinks = 1`, the kernel only follows a symbolic link located in a
+  world-writable sticky directory (such as `/tmp`) when the process following it owns the link,
+  or when the link owner also owns the directory.
+rationale: |
+  A classic attack plants a symbolic link in `/tmp` with the name a privileged program is about
+  to create, pointing to a sensitive file. When the program writes "its" file, it overwrites the
+  target instead. This setting blocks the whole class of time-of-check to time-of-use races
+  based on symlinks in shared directories.
+impact: |
+  None known for normal use. Programs that rely on following other users' symlinks in `/tmp`
+  are rare and already unsafe.
+notes: |
+  Ubuntu enables it by default, through `/usr/lib/sysctl.d/99-protect-links.conf` (procps) or
+  `/usr/lib/sysctl.d/50-default.conf` (systemd), and `/etc/sysctl.d/10-link-restrictions.conf` on 20.04.
+
+setting:
+  location: sysctl `fs.protected_symlinks`, persisted in `/etc/sysctl.d/`
+  default_value: "1"
+  recommended_value: "1"
+
+audit:
+  manual: |
+    Run `sysctl fs.protected_symlinks`. The value must be `1`.
+    Then check that no sysctl configuration file sets it to `0`.
+  checks:
+    - id: running
+      engine: sysctl
+      description: Running value of fs.protected_symlinks.
+      spec: { key: fs.protected_symlinks, value: 1 }
+
+remediation:
+  manual: |
+    Create `/etc/sysctl.d/60-cirsec.conf` containing `fs.protected_symlinks = 1`,
+    remove any other assignment of this key, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the line from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl --system`.
+  scripts:
+    - id: set
+      from_check: running
+
+references:
+  - title: Ubuntu Security documentation - File handling
+    url: https://documentation.ubuntu.com/security/security-features/process-memory/file-handling/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Linux kernel documentation - Documentation for /proc/sys/fs/ (protected_symlinks)
+    url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R14)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R14
+    relation: partial
+    note: R14 lists several filesystem settings; this control covers fs.protected_symlinks.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "1.5.2"
+    relation: equivalent
+    note: The benchmark puts it in its higher level; we apply it everywhere since Ubuntu already does.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "1.5.2"
+    relation: equivalent
+    note: The benchmark puts it in its higher level; we apply it everywhere since Ubuntu already does.
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: cwe
+    id: CWE-59
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install (1); still passes after remediation and reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
