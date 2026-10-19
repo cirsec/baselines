@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-FS-002
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les modules noyau de stockage USB et FireWire
+finding:
+  title: Les périphériques de stockage USB et FireWire sont utilisables
+  description: Toute personne ayant un accès physique peut copier des données sur un disque USB, apporter des outils ou utiliser l'accès direct à la mémoire de FireWire.
+description: |
+  `usb-storage` est le pilote des disques et clés USB, `firewire-core` la base de la pile FireWire
+  (IEEE 1394). Ce contrôle bloque les modules de `{{ modules }}` : chacun reçoit une règle
+  `install <module> /bin/false`, qui fait échouer tout chargement, et une règle `blacklist`. Un
+  module livré par aucun noyau installé est conforme.
+rationale: |
+  Le stockage amovible est un moyen courant de sortir des données d'un système et d'y introduire
+  des logiciels malveillants. Les contrôleurs FireWire peuvent lire et écrire directement la mémoire
+  de l'hôte, ce qui permet à un périphérique d'extraire des clés ou de contourner l'authentification.
+  Un serveur a rarement besoin de l'un ou de l'autre.
+impact: |
+  Les disques et clés USB ne sont plus utilisables. Claviers, souris et autres périphériques USB
+  continuent de fonctionner. Sur un poste renforcé, échanger les fichiers par le réseau ou un canal
+  approuvé, ou retirer `usb-storage` de `{{ modules }}` et contrôler les périphériques avec USBGuard.
+notes: |
+  Le noyau générique d'Ubuntu livre `usb-storage` dans `linux-modules` sur toutes les versions : le
+  contrôle échoue tant que la correction n'est pas passée. `firewire-core` vient avec
+  `linux-modules-extra` de 20.04 à 24.04 (absent des images cloud et minimales) et avec
+  `linux-modules` en 26.04. Le fichier `/etc/modprobe.d/blacklist-firewire.conf` d'Ubuntu ne cite
+  que les anciens pilotes ieee1394 (`ohci1394`, `sbp2`...), pas la pile FireWire actuelle.
+  `uas` (USB Attached SCSI) dépend de `usb-storage` et se trouve bloqué avec lui.
+setting:
+  location: /etc/modprobe.d/60-cirsec-usb-firewire.conf
+  recommended_value: "install /bin/false et blacklist pour : {{ modules }}"
+parameters:
+  modules: Modules noyau à bloquer, avec leur nom modprobe.
+audit:
+  manual: |
+    Pour chaque module de `{{ modules }}` :
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>'` doit afficher
+       `install <module> /bin/false` et `blacklist <module>` (les tirets apparaissent en soulignés),
+       ou `find /lib/modules -name '<module>.ko*'` ne doit rien trouver.
+    2. `grep '^<module> ' /proc/modules` (avec des soulignés) ne doit rien trouver.
+remediation:
+  manual: |
+    1. Créer `/etc/modprobe.d/60-cirsec-usb-firewire.conf` avec, pour chaque module de `{{ modules }}` :
+       ```
+       install <module> /bin/false
+       blacklist <module>
+       ```
+    2. Débrancher les périphériques et décharger les modules avec `modprobe -r <module>`, ou redémarrer.
+  rollback: |
+    Supprimer `/etc/modprobe.d/60-cirsec-usb-firewire.conf`. Les modules se chargent de nouveau au branchement d'un périphérique.

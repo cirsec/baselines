@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-FS-005
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Placer /home, /var, /var/tmp, /var/log et /var/log/audit sur des systèmes de fichiers séparés
+finding:
+  title: Les données utilisateurs, les données variables et les journaux partagent le système de fichiers racine
+  description: Un utilisateur ou un service qui remplit l'un de ces répertoires remplit tout le système, et ils ne peuvent pas recevoir leurs propres options de montage.
+description: |
+  Chaque répertoire de `{{ separate_mounts }}` est le point de montage de son propre système de
+  fichiers (partition, volume logique LVM, ou montage lié d'un volume dédié), et non un simple
+  répertoire du système de fichiers racine.
+rationale: |
+  Des systèmes de fichiers séparés contiennent la saturation du disque : des journaux ou fichiers
+  utilisateurs qui grossissent sans limite s'arrêtent à leur volume, et le système continue de
+  fonctionner et de journaliser. C'est aussi le seul moyen de donner à ces arborescences des options
+  de montage restrictives (`nodev`, `nosuid`, `noexec`, voir CB-UBU-FS-006), et de garder les
+  journaux d'audit disponibles quand d'autres données remplissent le disque.
+impact: |
+  Le partitionnement se choisit à l'installation. Le modifier ensuite impose d'ajouter des disques
+  ou de réduire des volumes, de déplacer les données et de modifier `/etc/fstab`, avec une
+  interruption. Des volumes trop petits se remplissent plus vite : les dimensionner d'après les
+  volumes de journaux et de données attendus, et préférer LVM pour pouvoir les agrandir.
+notes: |
+  Les images cloud d'Ubuntu n'ont qu'une partition racine (plus `/boot` depuis 24.04) : ce contrôle
+  y échoue par construction. Les schémas guidés des installeurs Ubuntu mettent tout dans un seul
+  système de fichiers racine ou un seul volume logique LVM : choisir « Custom storage layout » dans
+  l'installeur serveur, ou décrire les volumes dans la section `storage` d'un fichier autoinstall,
+  et garder de l'espace libre dans le groupe de volumes LVM pour les agrandir plus tard.
+setting:
+  location: /etc/fstab
+  recommended_value: "Systèmes de fichiers séparés pour : {{ separate_mounts }}"
+parameters:
+  separate_mounts: Répertoires qui doivent être le point de montage de leur propre système de fichiers.
+audit:
+  manual: |
+    Pour chaque répertoire de `{{ separate_mounts }}`, lancer `findmnt -kn <répertoire>`. La commande
+    doit afficher une ligne.
+remediation:
+  manual: |
+    À l'installation, créer une partition ou un volume logique LVM pour chaque répertoire de
+    `{{ separate_mounts }}`.
+
+    Sur un système installé, pour chaque répertoire manquant :
+    1. Créer le volume et son système de fichiers (par exemple `lvcreate` puis `mkfs.ext4`).
+    2. En mode mono-utilisateur ou services concernés arrêtés, le monter sur un répertoire temporaire
+       et y copier les données avec `cp -a` (ou `rsync -aHAX`) en conservant propriétaires et droits.
+    3. Ajouter la ligne dans `/etc/fstab` avec les options de CB-UBU-FS-006, le monter sur le
+       répertoire cible, vérifier, puis supprimer l'ancienne copie cachée sous le point de montage.
+    4. Redémarrer et vérifier que tous les services démarrent.
