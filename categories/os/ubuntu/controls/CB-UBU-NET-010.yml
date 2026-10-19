@@ -1,0 +1,362 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-010
+title: Ignore ICMP redirects and source-routed packets, and send no redirects
+finding:
+  title: The kernel accepts route changes or routing instructions from the network
+  description: ICMP redirects and source routing let a host on the local network divert or steer the system's traffic.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sysctl, network, routing, ipv6]
+
+description: |
+  These kernel settings decide whether the network may change how the system routes its traffic:
+
+  - `accept_redirects` (IPv4 and IPv6) and `secure_redirects` (IPv4, redirects from known
+    gateways): whether ICMP redirect messages update the routing table;
+  - `accept_source_route` (IPv4 and IPv6): whether packets carrying their own route are accepted;
+  - `send_redirects` (IPv4): whether the system sends redirects, which only routers should do.
+
+  This control sets them all to `0`, for `all` and for `default` (interfaces created later).
+rationale: |
+  An attacker on the local network can send forged ICMP redirects to make the system send its
+  traffic through the attacker's host (man in the middle). Source routing lets a packet choose its
+  own path, which can bypass filtering. A host that sends redirects is acting as a router and
+  gives away information about the network.
+impact: |
+  None known for hosts. Routers that must send redirects are covered by tailoring this control
+  out together with CB-UBU-NET-009.
+notes: |
+  Ubuntu ships `accept_redirects`, `secure_redirects` and `send_redirects` enabled. ufw, when
+  active, also sets the `accept_redirects` keys to `0` from `/etc/ufw/sysctl.conf`. IPv6 checks
+  only run when the IPv6 stack is present.
+
+setting:
+  location: sysctl `net.ipv4.conf.{all,default}.{accept_redirects,secure_redirects,accept_source_route,send_redirects}`, `net.ipv6.conf.{all,default}.{accept_redirects,accept_source_route}`, persisted in `/etc/sysctl.d/`
+  default_value: accept_redirects, secure_redirects and send_redirects 1
+  recommended_value: "0"
+
+audit:
+  manual: |
+    Run `sysctl -a 2>/dev/null | grep -E 'conf\.(all|default)\.(accept_redirects|secure_redirects|accept_source_route|send_redirects) '`.
+    Every listed value must be `0`, for IPv4 and IPv6. Then check that no file in
+    `/etc/sysctl.d/`, `/run/sysctl.d/`, `/usr/lib/sysctl.d/` or `/etc/sysctl.conf` sets another value.
+  checks:
+    - id: ipv4-all-accept-redirects
+      engine: sysctl
+      description: net.ipv4.conf.all.accept_redirects.
+      spec: { key: net.ipv4.conf.all.accept_redirects, value: 0 }
+    - id: ipv4-default-accept-redirects
+      engine: sysctl
+      description: net.ipv4.conf.default.accept_redirects.
+      spec: { key: net.ipv4.conf.default.accept_redirects, value: 0 }
+    - id: ipv4-all-secure-redirects
+      engine: sysctl
+      description: net.ipv4.conf.all.secure_redirects.
+      spec: { key: net.ipv4.conf.all.secure_redirects, value: 0 }
+    - id: ipv4-default-secure-redirects
+      engine: sysctl
+      description: net.ipv4.conf.default.secure_redirects.
+      spec: { key: net.ipv4.conf.default.secure_redirects, value: 0 }
+    - id: ipv4-all-send-redirects
+      engine: sysctl
+      description: net.ipv4.conf.all.send_redirects.
+      spec: { key: net.ipv4.conf.all.send_redirects, value: 0 }
+    - id: ipv4-default-send-redirects
+      engine: sysctl
+      description: net.ipv4.conf.default.send_redirects.
+      spec: { key: net.ipv4.conf.default.send_redirects, value: 0 }
+    - id: ipv4-all-source-route
+      engine: sysctl
+      description: net.ipv4.conf.all.accept_source_route.
+      spec: { key: net.ipv4.conf.all.accept_source_route, value: 0 }
+    - id: ipv4-default-source-route
+      engine: sysctl
+      description: net.ipv4.conf.default.accept_source_route.
+      spec: { key: net.ipv4.conf.default.accept_source_route, value: 0 }
+    - id: ipv6-all-accept-redirects
+      engine: sysctl
+      description: net.ipv6.conf.all.accept_redirects.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.all.accept_redirects, value: 0 }
+    - id: ipv6-default-accept-redirects
+      engine: sysctl
+      description: net.ipv6.conf.default.accept_redirects.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.default.accept_redirects, value: 0 }
+    - id: ipv6-all-source-route
+      engine: sysctl
+      description: net.ipv6.conf.all.accept_source_route.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.all.accept_source_route, value: 0 }
+    - id: ipv6-default-source-route
+      engine: sysctl
+      description: net.ipv6.conf.default.accept_source_route.
+      facts: [ipv6]
+      spec: { key: net.ipv6.conf.default.accept_source_route, value: 0 }
+
+remediation:
+  manual: |
+    Add to `/etc/sysctl.d/60-cirsec.conf`, for `all` and `default`, IPv4 and IPv6:
+    ```
+    net.ipv4.conf.all.accept_redirects = 0
+    net.ipv4.conf.all.secure_redirects = 0
+    net.ipv4.conf.all.send_redirects = 0
+    net.ipv4.conf.all.accept_source_route = 0
+    net.ipv6.conf.all.accept_redirects = 0
+    net.ipv6.conf.all.accept_source_route = 0
+    ```
+    (and the same lines with `default`), remove other assignments, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf` and set the previous values with `sysctl -w`.
+  scripts:
+    - id: ipv4-all-accept-redirects
+      from_check: ipv4-all-accept-redirects
+    - id: ipv4-default-accept-redirects
+      from_check: ipv4-default-accept-redirects
+    - id: ipv4-all-secure-redirects
+      from_check: ipv4-all-secure-redirects
+    - id: ipv4-default-secure-redirects
+      from_check: ipv4-default-secure-redirects
+    - id: ipv4-all-send-redirects
+      from_check: ipv4-all-send-redirects
+    - id: ipv4-default-send-redirects
+      from_check: ipv4-default-send-redirects
+    - id: ipv4-all-source-route
+      from_check: ipv4-all-source-route
+    - id: ipv4-default-source-route
+      from_check: ipv4-default-source-route
+    - id: ipv6-all-accept-redirects
+      from_check: ipv6-all-accept-redirects
+    - id: ipv6-default-accept-redirects
+      from_check: ipv6-default-accept-redirects
+    - id: ipv6-all-source-route
+      from_check: ipv6-all-source-route
+    - id: ipv6-default-source-route
+      from_check: ipv6-default-source-route
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: RFC 5095 - Deprecation of Type 0 Routing Headers in IPv6
+    url: https://www.rfc-editor.org/rfc/rfc5095
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R12)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R12
+    relation: partial
+    note: R12 lists many IPv4 settings; this control covers redirects and source routing.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.9"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.14"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.15"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.6"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-940
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Fails on a fresh install (accept, secure and send redirects 1); ufw sets accept_redirects 0, generated fixes set the others; kept after reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Fails on a fresh install (accept, secure and send redirects 1); ufw sets accept_redirects 0, generated fixes set the others; kept after reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Fails on a fresh install (accept, secure and send redirects 1); ufw sets accept_redirects 0, generated fixes set the others; kept after reboot; second remediate leaves it alone."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Fails on a fresh install (accept, secure and send redirects 1); ufw sets accept_redirects 0, generated fixes set the others; kept after reboot; second remediate leaves it alone."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

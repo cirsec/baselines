@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-008
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux fichiers de configuration du pare-feu et d'IPsec
+finding:
+  title: Des fichiers de configuration du pare-feu ou d'IPsec sont modifiables ou lisibles par des utilisateurs autres que root
+  description: Qui peut écrire les règles du pare-feu peut ouvrir l'hôte au prochain rechargement ; qui peut lire les secrets IPsec peut se faire passer pour l'hôte dans son VPN.
+description: |
+  Les règles chargées au démarrage par ufw (`/etc/ufw/*.rules`), nftables (`/etc/nftables.conf`) et
+  iptables-persistent (`/etc/iptables/rules.v4`, `rules.v6`), et la configuration IPsec
+  (`/etc/ipsec.conf`, `/etc/ipsec.d/`, `/etc/ipsec.secrets`) doivent appartenir à root et ne pas être
+  modifiables par les autres utilisateurs. Les secrets et clés privées IPsec ne doivent être lisibles
+  que par root. Chaque vérification est sans objet quand ses fichiers sont absents.
+rationale: |
+  Ces fichiers décident de ce qui atteint l'hôte et des clés qui authentifient les tunnels VPN. Un
+  fichier de règles modifiable est un contournement du pare-feu qui attend le prochain redémarrage ;
+  une clé partagée ou une clé privée lisible permet à un attaquant de monter une fausse extrémité de
+  tunnel.
+impact: |
+  Aucun connu. Les paquets créent ces fichiers avec des droits plus stricts ou égaux.
+setting:
+  location: /etc/ufw, /etc/nftables.conf, /etc/iptables, /etc/ipsec.*
+  recommended_value: Propriété de root, règles au plus 0644 (nftables.conf 0755), secrets et clés privées 0600/0700
+audit:
+  manual: |
+    Lancer `stat -c '%n %U:%G %a' /etc/ufw/*.rules /etc/nftables.conf /etc/iptables/rules.v* /etc/ipsec.conf /etc/ipsec.d /etc/ipsec.d/private /etc/ipsec.secrets 2>/dev/null`.
+    Chaque fichier doit appartenir à root:root ; `ipsec.secrets` au plus 0600, `ipsec.d/private` au
+    plus 0700, `nftables.conf` au plus 0755, les autres au plus 0644 (0755 pour le répertoire
+    `ipsec.d`).
+remediation:
+  manual: |
+    Lancer `chown root:root` sur les fichiers ci-dessus, puis `chmod 600 /etc/ipsec.secrets`,
+    `chmod 700 /etc/ipsec.d/private` et `chmod go-w` sur les autres.
+  rollback: |
+    Remettre l'ancien propriétaire et les anciens droits avec `chown` et `chmod`.

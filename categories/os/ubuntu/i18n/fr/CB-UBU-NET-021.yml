@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-021
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les connexions SSH aux utilisateurs et groupes qui en ont besoin
+finding:
+  title: Tout compte disposant d'un identifiant valide peut se connecter en SSH
+  description: Des comptes de service, des utilisateurs temporaires ou des comptes dont une clé a fuité peuvent ouvrir un shell à distance alors qu'ils ne le devraient jamais.
+description: |
+  Les options `AllowGroups`, `AllowUsers`, `DenyGroups` et `DenyUsers` du serveur OpenSSH restreignent
+  les comptes autorisés à se connecter, quels que soient leurs identifiants. Une configuration typique
+  autorise un groupe, par exemple `AllowGroups ssh-users`, auquel on ajoute les personnes qui
+  administrent ou utilisent l'hôte.
+rationale: |
+  Beaucoup de comptes existent sur un système pour des services, des applications ou d'anciens
+  projets. Une liste d'autorisation fait de l'accès SSH une décision délibérée pour chaque compte :
+  une clé ou un mot de passe laissé sur un compte qui ne devrait pas se connecter à distance devient
+  inutile pour un attaquant.
+impact: |
+  Les comptes hors de la liste, y compris ceux d'automatisation, ne peuvent plus se connecter. La liste
+  doit suivre les arrivées et les départs. La bonne liste dépend de l'hôte, d'où l'absence de
+  correction automatique.
+audit:
+  manual: |
+    Lancer `sshd -T | grep -E '^(allowusers|allowgroups|denyusers|denygroups) '`. Au moins une de ces
+    options doit être définie, et les comptes ou groupes autorisés doivent correspondre à la liste des
+    personnes et outils qui ont besoin d'un accès SSH à cet hôte.
+remediation:
+  manual: |
+    1. Créer un groupe (`groupadd ssh-users`) et y ajouter les comptes qui ont besoin de SSH
+       (`usermod -aG ssh-users <compte>`), en commençant par le sien.
+    2. Ajouter `AllowGroups ssh-users` à `/etc/ssh/sshd_config.d/00-cirsec.conf`.
+    3. Vérifier avec `sshd -t`, lancer `systemctl reload ssh` et tester une nouvelle connexion avant de
+       fermer la session en cours.
+  rollback: |
+    Retirer la ligne `AllowGroups` et lancer `systemctl reload ssh`.

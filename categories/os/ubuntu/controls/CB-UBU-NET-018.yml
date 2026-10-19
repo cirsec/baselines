@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-018
+title: Disable SSH forwarding
+finding:
+  title: SSH sessions can forward ports, sockets, X11 and the SSH agent
+  description: Forwarding turns any SSH account into a tunnel through the firewall, in either direction.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: medium
+assessment: automated
+tags: [ssh, forwarding, tunneling]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  `DisableForwarding yes` in the OpenSSH server turns off every kind of forwarding at once: TCP
+  port forwarding (`ssh -L`, `-R`, `-D`), Unix socket forwarding, X11 forwarding and SSH agent
+  forwarding, whatever the other `*Forwarding` options say.
+rationale: |
+  With forwarding, a user or an attacker holding any SSH account can open tunnels to internal
+  services that the firewall does not expose, or expose the server's network to the outside
+  (reverse tunnels). X11 and agent forwarding let a compromised server act on the client's
+  display or reuse its keys.
+impact: |
+  Administrators lose `ssh -L/-R/-D` tunnels, `ssh -A` (agent forwarding, used to hop to other
+  hosts or to `git` with the local key) and `ssh -X`. To reach other hosts, use `ProxyJump`
+  (`ssh -J`) through a dedicated bastion instead of agent forwarding. Bastions need TCP forwarding
+  for `ProxyJump`: exclude this control there, or allow it for a group of users with a
+  `Match Group` block.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  default_value: "no"
+  recommended_value: "yes"
+
+audit:
+  manual: |
+    Run `sshd -T | grep '^disableforwarding '`. It must print `disableforwarding yes`.
+  checks:
+    - id: disable-forwarding
+      engine: sshd-config
+      description: DisableForwarding.
+      spec: { key: disableforwarding, value: "yes" }
+
+remediation:
+  manual: |
+    Add `DisableForwarding yes` to `/etc/ssh/sshd_config.d/00-cirsec.conf`, check with `sshd -t`,
+    then run `systemctl reload ssh`.
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Remove the line and run `systemctl reload ssh`.
+  scripts:
+    - id: disable-forwarding
+      from_check: disable-forwarding
+
+references:
+  - title: sshd_config(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/sshd_config.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.8"
+    relation: equivalent
+    note: Same setting; we only require it in the hardened profiles, since it blocks agent, port and X11 forwarding used for administration.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.8"
+    relation: equivalent
+    note: Same setting; we only require it in the hardened profiles, since it blocks agent, port and X11 forwarding used for administration.
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.8"
+    relation: equivalent
+    note: Same setting; we only require it in the hardened profiles, since it blocks agent, port and X11 forwarding used for administration.
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.9"
+    relation: equivalent
+    note: Same setting; we only require it in the hardened profiles, since it blocks agent, port and X11 forwarding used for administration.
+threats:
+  - framework: mitre-attack
+    id: T1572
+  - framework: mitre-attack
+    id: T1090
+  - framework: cwe
+    id: CWE-284
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Profile server-hardened; generated fix; SSH by key still accepted after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Profile server-hardened; generated fix; SSH by key still accepted after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Profile server-hardened; generated fix; SSH by key still accepted after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Profile server-hardened; generated fix; SSH by key still accepted after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

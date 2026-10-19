@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-023
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux fichiers de configuration netplan
+finding:
+  title: Les fichiers de configuration netplan sont lisibles ou modifiables par d'autres que root
+  description: Les fichiers netplan contiennent des phrases de passe Wi-Fi, des clés VPN et l'adressage de l'hôte ; une copie lisible ou modifiable fait fuiter des secrets ou permet à n'importe qui de changer le réseau au prochain apply.
+description: |
+  Ubuntu décrit sa configuration réseau dans des fichiers YAML sous `/etc/netplan/`, que netplan
+  traduit au démarrage en configuration systemd-networkd ou NetworkManager. Les images cloud y écrivent
+  `50-cloud-init.yaml`, et les postes y enregistrent les connexions créées dans les paramètres GNOME
+  sous la forme `90-NM-*.yaml`. Ce contrôle exige que chaque fichier `/etc/netplan/*.yaml` appartienne
+  à `root:root` avec un mode `0600` au plus.
+rationale: |
+  Ces fichiers peuvent contenir des phrases de passe Wi-Fi (`password` sous `wifis`), des clés privées
+  WireGuard, des identifiants 802.1X et des routes statiques. Netplan recommande lui-même des fichiers
+  réservés à root et avertit, à chaque `netplan apply`, des fichiers que d'autres utilisateurs peuvent
+  lire. Un fichier modifiable par un autre utilisateur change les adresses, routes ou serveurs DNS de
+  l'hôte au prochain démarrage.
+impact: |
+  Les utilisateurs autres que root ne peuvent plus lire la configuration réseau avec `cat` ;
+  `netplan get` et `ip address` montrent toujours les réglages actifs.
+notes: |
+  Ubuntu 22.04 et suivants créent `50-cloud-init.yaml` en mode `0600` ; 20.04 le crée en `0644`, d'où
+  l'échec de ce contrôle sur une installation neuve. Netplan ne lit que les fichiers `*.yaml`. Les
+  fichiers de `/run/netplan/` et `/lib/netplan/` sont générés ou livrés par les paquets et ne sont pas
+  couverts.
+setting:
+  location: /etc/netplan/*.yaml
+  recommended_value: root:root, 0600
+audit:
+  manual: |
+    Lancer `stat -c '%n %U:%G %a' /etc/netplan/*.yaml`. Chaque fichier doit être `root:root` avec un
+    mode `600` ou plus strict.
+remediation:
+  manual: |
+    Lancer `chown root:root /etc/netplan/*.yaml` et `chmod 600 /etc/netplan/*.yaml`, puis
+    `netplan generate` pour vérifier qu'aucun avertissement de droits ne reste.
+  rollback: |
+    Lancer `chmod 644 /etc/netplan/<fichier>.yaml` pour remettre l'ancien mode.

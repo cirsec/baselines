@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-003
+title: Disable wireless network interfaces on servers
+finding:
+  title: A wireless network interface is available on a server
+  description: A wireless interface can connect the server to a network outside the firewall and monitoring of the data center.
+status: draft
+profiles: [server]
+risk:
+  severity: medium
+assessment: automated
+tags: [wireless, network, hardware]
+
+description: |
+  Servers are connected by cable to known networks. A Wi-Fi interface, often present on the
+  mainboard or added by a USB adapter, shows up under `/sys/class/net/` with a `wireless`
+  directory or a `phy80211` link once its driver is loaded. This control checks that no such
+  interface exists, which means the driver of any Wi-Fi hardware is not loaded.
+rationale: |
+  A wireless interface lets someone near the building reach the server, or lets the server reach
+  an uncontrolled network, bypassing the network firewall and its logs. Not loading the driver
+  removes the interface and the driver code from the attack surface.
+impact: |
+  Wi-Fi stops working. Do not apply it to a server whose only network link is wireless.
+
+audit:
+  manual: |
+    Run `ls -d /sys/class/net/*/wireless /sys/class/net/*/phy80211 2>/dev/null`. It must print
+    nothing. `iw dev`, when installed, must not list any interface.
+  checks:
+    - id: interfaces
+      engine: shell
+      description: Network interfaces with a wireless extension.
+      spec:
+        script: |
+          found=
+          for d in /sys/class/net/*; do
+            if [ -e "$d/wireless" ] || [ -e "$d/phy80211" ]; then found="$found ${d##*/}"; fi
+          done
+          if [ -n "$found" ]; then echo "wireless interfaces:$found"; exit 1; fi
+          echo 'no wireless interface'
+
+remediation:
+  manual: |
+    1. Find the driver of each wireless interface:
+       `basename "$(readlink -f /sys/class/net/<interface>/device/driver/module)"`.
+    2. Create `/etc/modprobe.d/60-cirsec-wireless.conf` with, for each driver,
+       `install <driver> /bin/false` and `blacklist <driver>`.
+    3. Bring the interface down (`ip link set <interface> down`) and reboot.
+    Disabling the device in the firmware setup, or removing it, is better when possible.
+  rollback: |
+    Delete `/etc/modprobe.d/60-cirsec-wireless.conf` and reboot.
+
+references:
+  - title: iw(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/iw.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: modprobe.d(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/modprobe.d.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-18
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.1.2"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1011
+  - framework: cwe
+    id: CWE-1188
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "No wireless interface on the lab VM, check passes; remediation is manual."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

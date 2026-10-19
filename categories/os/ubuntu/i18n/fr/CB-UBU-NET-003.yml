@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-003
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les interfaces réseau sans fil sur les serveurs
+finding:
+  title: Une interface réseau sans fil est disponible sur un serveur
+  description: Une interface sans fil peut relier le serveur à un réseau situé hors du pare-feu et de la supervision du centre de données.
+description: |
+  Les serveurs sont raccordés par câble à des réseaux connus. Une interface Wi-Fi, souvent présente
+  sur la carte mère ou ajoutée par un adaptateur USB, apparaît dans `/sys/class/net/` avec un
+  répertoire `wireless` ou un lien `phy80211` dès que son pilote est chargé. Ce contrôle vérifie
+  qu'aucune interface de ce type n'existe, c'est-à-dire que le pilote du matériel Wi-Fi n'est pas
+  chargé.
+rationale: |
+  Une interface sans fil permet à quelqu'un proche du bâtiment d'atteindre le serveur, ou au serveur
+  d'atteindre un réseau non maîtrisé, en contournant le pare-feu réseau et ses journaux. Ne pas charger
+  le pilote retire l'interface et le code du pilote de la surface d'attaque.
+impact: |
+  Le Wi-Fi cesse de fonctionner. Ne pas l'appliquer à un serveur dont le seul lien réseau est sans fil.
+audit:
+  manual: |
+    Lancer `ls -d /sys/class/net/*/wireless /sys/class/net/*/phy80211 2>/dev/null`. La commande ne
+    doit rien afficher. `iw dev`, s'il est installé, ne doit lister aucune interface.
+remediation:
+  manual: |
+    1. Trouver le pilote de chaque interface sans fil :
+       `basename "$(readlink -f /sys/class/net/<interface>/device/driver/module)"`.
+    2. Créer `/etc/modprobe.d/60-cirsec-wireless.conf` avec, pour chaque pilote,
+       `install <pilote> /bin/false` et `blacklist <pilote>`.
+    3. Désactiver l'interface (`ip link set <interface> down`) et redémarrer.
+    Désactiver le périphérique dans le micrologiciel, ou le retirer, est préférable quand c'est possible.
+  rollback: |
+    Supprimer `/etc/modprobe.d/60-cirsec-wireless.conf` et redémarrer.

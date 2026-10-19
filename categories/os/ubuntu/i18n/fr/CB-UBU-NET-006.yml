@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-006
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rejeter par défaut le trafic entrant et routé, en autorisant SSH
+finding:
+  title: Le pare-feu local accepte le trafic entrant ou routé qu'aucune règle n'autorise
+  description: Un pare-feu dont la politique par défaut accepte le trafic ne bloque que ce à quoi quelqu'un a pensé à l'avance.
+description: |
+  La politique par défaut d'un pare-feu s'applique aux paquets qui ne correspondent à aucune règle. Ce
+  contrôle exige que la politique des paquets entrants et routés les rejette, tandis que les ports SSH
+  utilisés par `sshd` restent autorisés pour que les administrateurs gardent l'accès :
+
+  - avec ufw : `Default: deny (incoming)` et `deny`, `reject` ou `disabled (routed)` dans
+    `ufw status verbose`, et une règle autorisant chaque port SSH ;
+  - avec nftables (quand `nftables.service` est activé et ufw inactif) : une chaîne de base sur le
+    crochet `input` et une sur le crochet `forward` avec `policy drop`, et une règle `accept` pour
+    chaque port SSH ;
+  - avec iptables-persistent (quand `netfilter-persistent.service` est activé et que ni ufw ni
+    nftables ne le sont) : politiques `INPUT` et `FORWARD` à `DROP` pour iptables et, avec IPv6,
+    ip6tables, et une règle `ACCEPT` pour chaque port SSH.
+rationale: |
+  Le rejet par défaut transforme le pare-feu en liste d'autorisations : un service démarré par erreur,
+  ou installé par un paquet, n'est joignable que lorsque quelqu'un l'a décidé. Rejeter les paquets
+  routés empêche l'hôte de relayer du trafic entre réseaux. Vérifier que SSH est autorisé évite une
+  politique qui bloque les administrateurs au prochain rechargement.
+impact: |
+  Les connexions entrantes vers les services sans règle d'autorisation sont rejetées. Les conteneurs
+  et machines virtuelles qui passent par le routage de l'hôte (Docker, libvirt) gèrent leurs propres
+  règles de routage ; les vérifier après le changement.
+notes: |
+  ufw sur Ubuntu livre `DEFAULT_INPUT_POLICY="DROP"` et `DEFAULT_FORWARD_POLICY="DROP"` : une fois
+  activé (CB-UBU-NET-005), seule la règle SSH compte. La correction automatique ne traite que ufw :
+  elle ajoute une règle d'autorisation pour chaque port SSH qui n'en a pas, puis passe les politiques
+  entrante et routée à deny. Les jeux de règles nftables et iptables s'écrivent à la main. Les
+  vérifications de la règle SSH cherchent le numéro de port dans une règle d'acceptation ; les jeux
+  de règles complexes (ensembles, tables de correspondance, sauts, chaînes utilisateur) peuvent
+  demander une revue manuelle. Les ports SSH viennent de `sshd -T`, qui échoue à partir de 24.04
+  tant qu'une première connexion n'a pas démarré `ssh.service` (`/run/sshd` absent) : les
+  vérifications signalent alors une erreur, et la correction crée le répertoire d'abord.
+audit:
+  manual: |
+    - ufw : `ufw status verbose` affiche `deny (incoming)` et `deny`, `reject` ou `disabled (routed)`,
+      et `ufw status` liste une règle `ALLOW` ou `LIMIT` pour chaque port de `sshd -T | grep '^port '`.
+    - nftables : `nft list ruleset` contient une chaîne avec `hook input` et `policy drop`, une chaîne
+      avec `hook forward` et `policy drop`, et une règle acceptant `tcp dport` pour chaque port SSH.
+    - iptables-persistent : `iptables -S` et `ip6tables -S` affichent `-P INPUT DROP` et
+      `-P FORWARD DROP`, et `iptables -S INPUT` a une règle `ACCEPT` sur le `--dport` de chaque port
+      SSH.
+remediation:
+  manual: |
+    - ufw : autoriser SSH d'abord, puis régler les politiques par défaut :
+      ```
+      ufw allow 22/tcp
+      ufw default deny incoming
+      ufw default deny routed
+      ```
+    - nftables : écrire `/etc/nftables.conf` avec, au minimum :
+      ```
+      table inet filter {
+        chain input {
+          type filter hook input priority filter; policy drop;
+          ct state established,related accept
+          iif lo accept
+          meta l4proto { icmp, ipv6-icmp } accept
+          tcp dport 22 accept
+        }
+        chain forward {
+          type filter hook forward priority filter; policy drop;
+        }
+      }
+      ```
+      Le vérifier avec `nft -c -f /etc/nftables.conf`, puis lancer `systemctl reload nftables` depuis
+      une console, ou avec un retour arrière programmé, au cas où la règle SSH serait fausse.
+    - iptables-persistent : ajouter `iptables -A INPUT -p tcp --dport 22 -j ACCEPT` (avec les règles
+      de boucle locale et `-m conntrack --ctstate ESTABLISHED,RELATED`) avant `iptables -P INPUT DROP`
+      et `iptables -P FORWARD DROP`, faire de même avec ip6tables, puis enregistrer avec
+      `netfilter-persistent save`.
+  rollback: |
+    ufw : `ufw default allow incoming` et `ufw default allow routed` (ou restaurer la sauvegarde de
+    `/etc/default/ufw` et lancer `ufw reload`). nftables : restaurer l'ancien `/etc/nftables.conf` et
+    recharger.

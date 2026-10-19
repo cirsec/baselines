@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-005
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner un et un seul pare-feu local
+finding:
+  title: Aucun pare-feu local n'est actif, ou plusieurs outils se disputent les mêmes règles
+  description: Sans pare-feu local, tout service en écoute est joignable depuis le réseau ; avec plusieurs, les règles s'écrasent d'une façon que personne n'a prévue.
+description: |
+  Le noyau Linux filtre les paquets avec netfilter. Sur Ubuntu, ses règles sont gérées par l'un de ces
+  outils, chacun lancé au démarrage par son propre service :
+
+  - `ufw`, une interface simple, actif quand `ufw status` affiche `Status: active` ;
+  - `nftables`, règles chargées depuis `/etc/nftables.conf` par `nftables.service` ;
+  - `firewalld` ;
+  - `iptables-persistent`, règles restaurées par `netfilter-persistent.service`.
+
+  Ce contrôle exige qu'un seul d'entre eux soit activé. Sa politique par défaut est traitée par
+  CB-UBU-NET-006.
+rationale: |
+  Un pare-feu local limite les services joignables depuis le réseau à ceux qui doivent l'être, même
+  quand un paquet démarre un nouveau service ou qu'un service écoute par erreur sur toutes les adresses.
+  Deux outils de pare-feu vident ou réordonnent les règles l'un de l'autre au rechargement, ce qui
+  laisse l'hôte grand ouvert ou inaccessible après un redémarrage.
+impact: |
+  La correction automatique installe et active ufw quand aucun pare-feu n'est actif. Elle autorise
+  d'abord les ports SSH, mais ufw bloque ensuite toute autre connexion entrante : les services comme
+  les serveurs web ou de bases de données deviennent injoignables tant qu'ils ne sont pas autorisés
+  avec `ufw allow <port>/<protocole>`. Elle est désactivée par défaut ; lister les services en écoute
+  avec `ss -tulpn` et les autoriser avant de l'activer.
+notes: |
+  ufw est installé par défaut sur toutes les versions d'Ubuntu mais laissé inactif (`ENABLED=no` dans
+  `/etc/ufw/ufw.conf`) ; `ufw.service` est pourtant activé, d'où la lecture de `ufw status` plutôt que
+  de l'état de l'unité. Ubuntu documente ufw et les CIS Benchmarks le privilégient ; nftables,
+  firewalld et iptables-persistent sont aussi acceptés. Depuis 22.04, iptables est la variante
+  `iptables-nft`, donc les règles ufw apparaissent aussi dans `nft list ruleset` : cela ne compte pas
+  comme un second pare-feu tant que `nftables.service` n'est pas activé. 20.04 utilise l'ancien moteur
+  iptables (legacy). Docker et libvirt ajoutent leurs propres règles à côté du pare-feu local ; elles
+  ne sont pas comptées. La correction lit les ports SSH dans `sshd -T` ; à partir de 24.04, où sshd
+  est lancé par `ssh.socket`, elle crée d'abord `/run/sshd` si aucune connexion n'a encore démarré le
+  service, et s'arrête sans activer ufw si elle ne trouve aucun port.
+audit:
+  manual: |
+    1. `ufw status` (si installé) : `Status: active` compte pour un.
+    2. `systemctl is-enabled nftables.service firewalld.service netfilter-persistent.service` :
+       chaque `enabled` compte pour un.
+    Le total doit être exactement un.
+remediation:
+  manual: |
+    - Aucun pare-feu : ufw est installé par défaut (sinon `apt install ufw`). Autoriser SSH et les
+      autres services qui doivent rester joignables, puis l'activer :
+      ```
+      ufw allow 22/tcp
+      ufw enable
+      ```
+      Ou écrire `/etc/nftables.conf` (voir CB-UBU-NET-006) et lancer `systemctl enable --now nftables`.
+    - Plusieurs outils : en garder un, puis désactiver les autres, par exemple `ufw disable`,
+      `systemctl disable --now nftables` ou `apt purge iptables-persistent`.
+  rollback: |
+    Lancer `ufw disable`. Les paquets installés peuvent rester.

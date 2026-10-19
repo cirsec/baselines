@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-013
+title: Restrict ARP answers and ignore gratuitous ARP
+finding:
+  title: The kernel answers and accepts ARP messages beyond what the local network needs
+  description: Permissive ARP handling helps an attacker on the local network to map the host and poison its neighbour table.
+status: draft
+profiles: [server-hardened, desktop-hardened]
+risk:
+  severity: low
+assessment: automated
+tags: [sysctl, network, arp]
+
+description: |
+  These kernel settings limit how IPv4 hosts on the same link can influence the system through
+  ARP:
+
+  - `arp_filter = 1`: answer an ARP request only on the interface the reply would be routed
+    through;
+  - `arp_ignore = 2`: answer only when the requested address is configured on the receiving
+    interface and the sender is in the same subnet;
+  - `drop_gratuitous_arp = 1`: ignore unsolicited ARP announcements;
+  - `shared_media = 0` (`all` and `default`): do not send ICMP redirects between subnets sharing
+    the same link.
+rationale: |
+  ARP has no authentication. Answering on every interface leaks the host's addresses across
+  networks, and accepting gratuitous ARP lets anyone on the link redirect the host's traffic to
+  their own machine (ARP poisoning).
+impact: |
+  Ignoring gratuitous ARP delays the takeover of a virtual IP address by its standby (VRRP,
+  keepalived, Pacemaker) until the neighbour entry expires, including for the default gateway.
+  `arp_ignore = 2` breaks hosts that answer for addresses of other subnets on one interface. This
+  is why the control is limited to the hardened profiles.
+notes: |
+  ANSSI lists these settings for every host; they are hardened-only here because of their side
+  effects on high availability setups.
+
+setting:
+  location: sysctl `net.ipv4.conf.all.{arp_filter,arp_ignore,drop_gratuitous_arp}`, `net.ipv4.conf.{all,default}.shared_media`, persisted in `/etc/sysctl.d/`
+  default_value: 0, 0, 0, 1
+  recommended_value: 1, 2, 1, 0
+
+audit:
+  manual: |
+    Run `sysctl net.ipv4.conf.all.arp_filter net.ipv4.conf.all.arp_ignore net.ipv4.conf.all.drop_gratuitous_arp net.ipv4.conf.all.shared_media net.ipv4.conf.default.shared_media`.
+    The values must be `1`, `2`, `1`, `0` and `0`. Check that no sysctl file sets other values.
+  checks:
+    - id: arp-filter
+      engine: sysctl
+      description: net.ipv4.conf.all.arp_filter.
+      spec: { key: net.ipv4.conf.all.arp_filter, value: 1 }
+    - id: arp-ignore
+      engine: sysctl
+      description: net.ipv4.conf.all.arp_ignore.
+      spec: { key: net.ipv4.conf.all.arp_ignore, value: 2 }
+    - id: drop-gratuitous-arp
+      engine: sysctl
+      description: net.ipv4.conf.all.drop_gratuitous_arp.
+      spec: { key: net.ipv4.conf.all.drop_gratuitous_arp, value: 1 }
+    - id: all-shared-media
+      engine: sysctl
+      description: net.ipv4.conf.all.shared_media.
+      spec: { key: net.ipv4.conf.all.shared_media, value: 0 }
+    - id: default-shared-media
+      engine: sysctl
+      description: net.ipv4.conf.default.shared_media.
+      spec: { key: net.ipv4.conf.default.shared_media, value: 0 }
+
+remediation:
+  manual: |
+    Add to `/etc/sysctl.d/60-cirsec.conf`:
+    ```
+    net.ipv4.conf.all.arp_filter = 1
+    net.ipv4.conf.all.arp_ignore = 2
+    net.ipv4.conf.all.drop_gratuitous_arp = 1
+    net.ipv4.conf.all.shared_media = 0
+    net.ipv4.conf.default.shared_media = 0
+    ```
+    remove other assignments, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf` and set the previous values with `sysctl -w`.
+  scripts:
+    - id: arp-filter
+      from_check: arp-filter
+    - id: arp-ignore
+      from_check: arp-ignore
+    - id: drop-gratuitous-arp
+      from_check: drop-gratuitous-arp
+    - id: all-shared-media
+      from_check: all-shared-media
+    - id: default-shared-media
+      from_check: default-shared-media
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R12)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R12
+    relation: partial
+    note: R12 lists many IPv4 settings; this control covers ARP ones.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557.002
+  - framework: cwe
+    id: CWE-290
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Profile server-hardened; ARP values reported, generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Profile server-hardened; ARP values reported, generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Profile server-hardened; ARP values reported, generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Profile server-hardened; ARP values reported, generated fixes; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
