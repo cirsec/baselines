@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-012
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Durcir le traitement ICMP et TCP contre les inondations et les paquets invalides
+finding:
+  title: Les réglages ICMP et TCP du noyau laissent le système exposé aux inondations simples et aux abus de protocole
+  description: Les pings en diffusion, les fausses erreurs ICMP et les inondations SYN peuvent épuiser le système ou servir à amplifier des attaques contre d'autres.
+description: |
+  Ces réglages du noyau rendent la pile IPv4 résistante aux abus courants :
+
+  - `net.ipv4.icmp_echo_ignore_broadcasts = 1` : ne pas répondre aux pings envoyés en diffusion ou en
+    multidiffusion ;
+  - `net.ipv4.icmp_ignore_bogus_error_responses = 1` : ne pas journaliser les erreurs ICMP non
+    conformes à la RFC 1122 ;
+  - `net.ipv4.tcp_syncookies = 1` : répondre avec des SYN cookies quand la file des connexions
+    semi-ouvertes est pleine ;
+  - `net.ipv4.tcp_rfc1337 = 1` : protéger les sockets en état TIME-WAIT contre les réinitialisations
+    par des paquets égarés (RFC 1337) ;
+  - `net.ipv4.ip_local_port_range = 32768 65535` : utiliser la plus large plage de ports éphémères,
+    ce qui rend les ports sources plus difficiles à deviner.
+rationale: |
+  Répondre aux pings en diffusion fait de l'hôte un amplificateur d'attaques smurf. Les messages
+  d'erreur invalides peuvent remplir les journaux. Les SYN cookies gardent l'hôte joignable pendant une
+  inondation SYN (RFC 4987). La protection RFC 1337 et une large plage de ports éphémères rendent plus
+  difficiles le détournement de connexion et l'usurpation à l'aveugle.
+impact: |
+  Aucun connu. La plage élargie peut entrer en conflit avec un service qui écoute sur un port entre
+  61000 et 65535 ; réserver ces ports avec `net.ipv4.ip_local_reserved_ports`.
+notes: |
+  Ubuntu livre déjà les trois premières valeurs. Les deux dernières viennent de l'ANSSI.
+setting:
+  location: sysctl `net.ipv4.icmp_echo_ignore_broadcasts`, `net.ipv4.icmp_ignore_bogus_error_responses`, `net.ipv4.tcp_syncookies`, `net.ipv4.tcp_rfc1337`, `net.ipv4.ip_local_port_range`, persistés dans `/etc/sysctl.d/`
+  recommended_value: 1, 1, 1, 1, 32768 65535
+audit:
+  manual: |
+    Lancer `sysctl net.ipv4.icmp_echo_ignore_broadcasts net.ipv4.icmp_ignore_bogus_error_responses net.ipv4.tcp_syncookies net.ipv4.tcp_rfc1337 net.ipv4.ip_local_port_range`
+    et comparer avec les valeurs recommandées. Vérifier qu'aucun fichier sysctl ne fixe d'autres valeurs.
+remediation:
+  manual: |
+    Ajouter à `/etc/sysctl.d/60-cirsec.conf` :
+    ```
+    net.ipv4.icmp_echo_ignore_broadcasts = 1
+    net.ipv4.icmp_ignore_bogus_error_responses = 1
+    net.ipv4.tcp_syncookies = 1
+    net.ipv4.tcp_rfc1337 = 1
+    net.ipv4.ip_local_port_range = 32768 65535
+    ```
+    retirer les autres affectations, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf` et remettre les anciennes valeurs avec `sysctl -w`.

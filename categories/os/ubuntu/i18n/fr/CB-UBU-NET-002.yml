@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-002
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher le chargement des modules de protocoles réseau inutilisés
+finding:
+  title: Des modules de protocoles réseau rarement utilisés peuvent être chargés à la demande
+  description: N'importe quel utilisateur peut faire charger ces modules par le noyau en ouvrant une socket de leur protocole, ce qui expose du code au lourd passif de vulnérabilités.
+description: |
+  Le noyau Ubuntu fournit des protocoles réseau sous forme de modules chargés automatiquement la
+  première fois qu'un programme ouvre une socket de cette famille : DCCP, SCTP, RDS, TIPC, ATM et CAN.
+  Ce contrôle fait refuser leur chargement par `modprobe` (`install <module> /bin/false`), les
+  exclut du chargement automatique (`blacklist <module>`) et vérifie qu'aucun n'est chargé.
+rationale: |
+  Ces protocoles servent rarement sur les serveurs et les postes, mais leur code est atteignable par
+  n'importe quel processus non privilégié grâce au chargement automatique. Plusieurs ont eu des
+  vulnérabilités d'élévation de privilèges locale (par exemple DCCP, RDS et SCTP). Un code qui ne peut
+  pas être chargé ne peut pas être exploité.
+impact: |
+  Les applications qui ont besoin de l'un de ces protocoles cessent de fonctionner : SCTP pour certains
+  logiciels télécom et de grappe, CAN pour les bus automobiles et industriels, RDS pour certaines
+  grappes de bases de données. Retirer le module du paramètre `net_modules` sur ces systèmes.
+notes: |
+  Les modules absents du noyau en cours (RDS manque aux noyaux de 20.04 à 24.04, DCCP a été retiré
+  du noyau de 26.04) sont configurés quand même, pour qu'un changement de noyau ne les rouvre pas. D'autres protocoles inutilisés
+  peuvent être ajoutés à la liste.
+setting:
+  location: /etc/modprobe.d/60-cirsec-net.conf
+  recommended_value: "install /bin/false et blacklist pour : {{ net_modules }}"
+parameters:
+  net_modules: Modules noyau de protocoles réseau qui ne doivent pas être chargés.
+audit:
+  manual: |
+    Pour chaque module de `{{ net_modules }}` :
+    1. `modprobe --showconfig | grep -E '^(install|blacklist) <module>( |$)'` affiche
+       `install <module> /bin/false` (ou `/bin/true`) et `blacklist <module>` ;
+    2. `lsmod | grep '^<module> '` n'affiche rien.
+    Passer aussi en revue `lsmod` pour repérer d'autres modules de protocoles réseau inutiles.
+remediation:
+  manual: |
+    Créer `/etc/modprobe.d/60-cirsec-net.conf` avec deux lignes par module :
+    ```
+    install dccp /bin/false
+    blacklist dccp
+    ```
+    puis décharger ceux qui sont chargés avec `modprobe -r <module>` (ou redémarrer).
+  rollback: |
+    Supprimer `/etc/modprobe.d/60-cirsec-net.conf`. Les modules se chargent de nouveau à la demande.

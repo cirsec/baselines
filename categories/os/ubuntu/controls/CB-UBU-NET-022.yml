@@ -1,0 +1,201 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-022
+title: Protect the SSH server configuration and host keys
+finding:
+  title: SSH server configuration or host keys can be read or changed by non-root users
+  description: A readable host private key lets an attacker impersonate the server; a writable configuration lets anyone open it wider.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [ssh, permissions, keys]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  The OpenSSH server reads its configuration from `/etc/ssh/sshd_config` and the drop-in files
+  of `/etc/ssh/sshd_config.d/`, and proves its identity with the host private keys
+  `/etc/ssh/ssh_host_*_key`. This control requires all of them to belong to `root:root`, the
+  configuration and private keys with mode `0600` at most, the drop-in directory `0755` at most,
+  and the public keys `0644` at most.
+rationale: |
+  A copy of a host private key lets an attacker on the network path pose as the server without
+  any warning on the clients, and collect passwords or hijack sessions. Write access to the
+  configuration is equivalent to root access at the next reload. Read access shows which
+  accounts and methods are allowed, which helps target an attack.
+impact: |
+  Users other than root can no longer read `sshd_config`; `sshd -T` already needs root.
+notes: |
+  Ubuntu creates host private keys with mode `0600`, and `sshd_config` and the cloud image
+  drop-in `60-cloudimg-settings.conf` with `0644`. Files written
+  by the other SSH fixes of this standard (`00-cirsec.conf`) are covered too, which is why this
+  control comes last among them.
+
+setting:
+  location: /etc/ssh/
+  default_value: sshd_config 0644, private keys 0600, public keys 0644
+  recommended_value: root:root; sshd_config and drop-ins 0600, private keys 0600, public keys 0644
+
+audit:
+  manual: |
+    Run `stat -c '%n %U:%G %a' /etc/ssh/sshd_config /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*`.
+    Every entry must be `root:root`; `sshd_config`, the `.conf` drop-ins and the private keys at
+    most `600`, the directory at most `755`, the `.pub` files at most `644`.
+  checks:
+    - id: sshd-config
+      engine: file-perms
+      description: Main SSH server configuration.
+      spec: { path: /etc/ssh/sshd_config, owner: root, group: root, mode: "0600" }
+    - id: dropin-dir
+      engine: file-perms
+      description: Drop-in configuration directory.
+      spec: { path: /etc/ssh/sshd_config.d, owner: root, group: root, mode: "0755" }
+    - id: dropins
+      engine: file-perms
+      description: Drop-in configuration files.
+      spec: { path: /etc/ssh/sshd_config.d/*.conf, owner: root, group: root, mode: "0600" }
+    - id: private-keys
+      engine: file-perms
+      description: Host private keys.
+      spec: { path: /etc/ssh/ssh_host_*_key, owner: root, group: root, mode: "0600" }
+    - id: public-keys
+      engine: file-perms
+      description: Host public keys.
+      spec: { path: /etc/ssh/ssh_host_*_key.pub, owner: root, group: root, mode: "0644" }
+
+remediation:
+  manual: |
+    ```
+    chown root:root /etc/ssh/sshd_config /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*
+    chmod 600 /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf /etc/ssh/ssh_host_*_key
+    chmod go-w /etc/ssh/sshd_config.d
+    chmod 644 /etc/ssh/ssh_host_*_key.pub
+    ```
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the previous modes with `chmod 644 /etc/ssh/sshd_config` (Ubuntu default).
+  scripts:
+    - id: sshd-config
+      from_check: sshd-config
+    - id: dropin-dir
+      from_check: dropin-dir
+    - id: dropins
+      from_check: dropins
+    - id: private-keys
+      from_check: private-keys
+    - id: public-keys
+      from_check: public-keys
+
+references:
+  - title: sshd(8), Ubuntu manual pages (FILES)
+    url: https://manpages.ubuntu.com/manpages/noble/man8/sshd.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers the SSH server ones.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.1"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.2"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.4"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1552.004
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "sshd_config and 60-cloudimg-settings.conf 0644 reported and fixed to 0600, 00-cirsec.conf covered; SSH by key still accepted; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "sshd_config and 60-cloudimg-settings.conf 0644 reported and fixed to 0600, 00-cirsec.conf covered; SSH by key still accepted; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "sshd_config and 60-cloudimg-settings.conf 0644 reported and fixed to 0600, 00-cirsec.conf covered; SSH by key still accepted; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "sshd_config and 60-cloudimg-settings.conf 0644 reported and fixed to 0600, 00-cirsec.conf covered; SSH by key still accepted; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

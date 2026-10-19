@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-008
+title: Restrict access to firewall and IPsec configuration files
+finding:
+  title: Firewall or IPsec configuration files can be changed or read by non-root users
+  description: Whoever can write the firewall rules can open the host at the next reload; whoever can read IPsec secrets can impersonate the host in its VPN.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [firewall, ipsec, permissions]
+
+description: |
+  The rules loaded at boot by ufw (`/etc/ufw/*.rules`), nftables (`/etc/nftables.conf`) and
+  iptables-persistent (`/etc/iptables/rules.v4`, `rules.v6`), and the IPsec configuration
+  (`/etc/ipsec.conf`, `/etc/ipsec.d/`, `/etc/ipsec.secrets`) must belong to root and must not be
+  writable by other users. IPsec secrets and private keys must only be readable by root.
+  Each check is not applicable when its files are absent.
+rationale: |
+  These files decide what reaches the host and with which keys VPN tunnels are authenticated. A
+  writable rules file is a firewall bypass waiting for the next reboot; a readable pre-shared key
+  or private key lets an attacker set up a rogue tunnel endpoint.
+impact: |
+  None known. Packages create these files with stricter or equal permissions.
+
+setting:
+  location: /etc/ufw, /etc/nftables.conf, /etc/iptables, /etc/ipsec.*
+  recommended_value: Owned by root, rules at most 0644 (nftables.conf 0755), secrets and private keys 0600/0700
+
+audit:
+  manual: |
+    Run `stat -c '%n %U:%G %a' /etc/ufw/*.rules /etc/nftables.conf /etc/iptables/rules.v* /etc/ipsec.conf /etc/ipsec.d /etc/ipsec.d/private /etc/ipsec.secrets 2>/dev/null`.
+    Every file must be owned by root:root; `ipsec.secrets` at most 0600, `ipsec.d/private` at most
+    0700, `nftables.conf` at most 0755, the others at most 0644 (0755 for the `ipsec.d` directory).
+  checks:
+    - id: ufw-rules
+      engine: file-perms
+      description: ufw rules files.
+      spec: { path: /etc/ufw/*.rules, owner: root, group: root, mode: "0644" }
+    - id: nftables-conf
+      engine: file-perms
+      description: nftables configuration loaded at boot.
+      spec: { path: /etc/nftables.conf, owner: root, group: root, mode: "0755" }
+    - id: iptables-rules
+      engine: file-perms
+      description: Rules restored by iptables-persistent.
+      spec: { path: /etc/iptables/rules.v*, owner: root, group: root, mode: "0644" }
+    - id: ipsec-conf
+      engine: file-perms
+      description: IPsec main configuration.
+      spec: { path: /etc/ipsec.conf, owner: root, group: root, mode: "0644" }
+    - id: ipsec-dir
+      engine: file-perms
+      description: IPsec configuration directory.
+      spec: { path: /etc/ipsec.d, owner: root, group: root, mode: "0755" }
+    - id: ipsec-private
+      engine: file-perms
+      description: IPsec private keys directory.
+      spec: { path: /etc/ipsec.d/private, owner: root, group: root, mode: "0700" }
+    - id: ipsec-secrets
+      engine: file-perms
+      description: IPsec pre-shared keys and private key passphrases.
+      spec: { path: /etc/ipsec.secrets, owner: root, group: root, mode: "0600" }
+
+remediation:
+  manual: |
+    Run `chown root:root` on the files listed above, then `chmod 600 /etc/ipsec.secrets`,
+    `chmod 700 /etc/ipsec.d/private`, `chmod go-w` on the others.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Restore the previous owner and mode with `chown` and `chmod`.
+  scripts:
+    - id: ufw-rules
+      from_check: ufw-rules
+    - id: nftables-conf
+      from_check: nftables-conf
+    - id: iptables-rules
+      from_check: iptables-rules
+    - id: ipsec-conf
+      from_check: ipsec-conf
+    - id: ipsec-dir
+      from_check: ipsec-dir
+    - id: ipsec-private
+      from_check: ipsec-private
+    - id: ipsec-secrets
+      from_check: ipsec-secrets
+
+references:
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R50)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+  - title: ipsec.secrets(5), Ubuntu manual pages (strongSwan)
+    url: https://manpages.ubuntu.com/manpages/noble/man5/ipsec.secrets.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: ufw(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/ufw.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R50
+    relation: partial
+    note: R50 covers every sensitive file; this control covers firewall and IPsec files.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1562.004
+  - framework: cwe
+    id: CWE-732
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "Passes on a fresh install (ufw rules 0640); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Passes on a fresh install (ufw rules 0640, nftables.conf 0755); still passes after remediation and reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Passes on a fresh install (ufw rules 0640, nftables.conf 0755); a 0666 ufw rules file is reported and fixed to 0644."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "Passes on a fresh install (ufw rules 0640, nftables.conf 0755); a 0666 ufw rules file is reported and fixed to 0644."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

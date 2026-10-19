@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-009
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le routage IP sauf sur les routeurs
+finding:
+  title: Le système relaie des paquets entre réseaux
+  description: Un hôte qui relaie des paquets peut servir à atteindre des réseaux qui devraient être séparés de celui où se trouve l'attaquant.
+description: |
+  Avec le routage IP, le noyau transmet les paquets reçus sur une interface vers une autre, comme un
+  routeur. Il est réglé par `net.ipv4.ip_forward` (alias de `net.ipv4.conf.all.forwarding`),
+  `net.ipv4.conf.default.forwarding` pour les interfaces créées ensuite, et
+  `net.ipv6.conf.all.forwarding` / `net.ipv6.conf.default.forwarding` pour IPv6. Ubuntu livre le
+  routage désactivé. Ce contrôle compare les cinq valeurs au paramètre `ip_forward`.
+rationale: |
+  Un hôte qui n'est pas censé router ne doit jamais relayer de trafic : le routage permet à un
+  attaquant qui contrôle l'un de ses réseaux d'atteindre les autres à travers lui, en contournant le
+  filtrage réseau.
+impact: |
+  Les hôtes qui routent légitimement en ont besoin : routeurs, passerelles VPN, et hôtes de conteneurs
+  ou de machines virtuelles en NAT (Docker, libvirt, LXC l'activent au démarrage). Sur ceux-ci, mettre
+  le paramètre `ip_forward` à `1` dans le fichier d'adaptation, et filtrer le trafic routé dans le
+  pare-feu (CB-UBU-NET-006).
+notes: |
+  Écrire `net.ipv4.ip_forward` réinitialise aussi plusieurs réglages par interface (la documentation
+  du noyau le qualifie de spécial) ; la correction l'écrit donc en premier. Les vérifications IPv6 ne
+  s'exécutent que si la pile IPv6 est présente.
+setting:
+  location: sysctl `net.ipv4.ip_forward`, `net.ipv4.conf.{all,default}.forwarding`, `net.ipv6.conf.{all,default}.forwarding`, persistés dans `/etc/sysctl.d/`
+  recommended_value: "{{ ip_forward }} (0 sauf sur les routeurs)"
+parameters:
+  ip_forward: État attendu du routage, 0 pour un hôte, 1 pour un routeur ou un hôte de conteneurs.
+audit:
+  manual: |
+    Lancer `sysctl net.ipv4.ip_forward net.ipv4.conf.all.forwarding net.ipv4.conf.default.forwarding net.ipv6.conf.all.forwarding net.ipv6.conf.default.forwarding`.
+    Chaque valeur doit être `{{ ip_forward }}`. Vérifier ensuite qu'aucun fichier de `/etc/sysctl.d/`,
+    `/run/sysctl.d/`, `/usr/lib/sysctl.d/` ou `/etc/sysctl.conf` ne fixe une autre valeur.
+remediation:
+  manual: |
+    Ajouter à `/etc/sysctl.d/60-cirsec.conf`, `net.ipv4.ip_forward` en premier :
+    ```
+    net.ipv4.ip_forward = {{ ip_forward }}
+    net.ipv4.conf.all.forwarding = {{ ip_forward }}
+    net.ipv4.conf.default.forwarding = {{ ip_forward }}
+    net.ipv6.conf.all.forwarding = {{ ip_forward }}
+    net.ipv6.conf.default.forwarding = {{ ip_forward }}
+    ```
+    Retirer les autres affectations de ces clés, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf` et remettre les anciennes valeurs avec `sysctl -w`.

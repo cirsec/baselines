@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-NET-014
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ignorer les annonces de routeur IPv6
+finding:
+  title: Le noyau configure des adresses et routes IPv6 à partir de n'importe quelle annonce de routeur
+  description: N'importe qui sur le réseau local peut s'annoncer comme routeur IPv6 et recevoir le trafic de l'hôte.
+description: |
+  Les routeurs IPv6 annoncent les préfixes et routes par défaut au moyen d'annonces de routeur (RA).
+  Avec `accept_ra` actif, le noyau s'en sert pour ajouter de lui-même des adresses et une route par
+  défaut. Ce contrôle met `net.ipv6.conf.all.accept_ra` et `net.ipv6.conf.default.accept_ra`
+  (interfaces créées ensuite) à `0`, pour que les adresses et routes IPv6 soient uniquement celles
+  configurées volontairement.
+rationale: |
+  Les annonces de routeur ne sont pas authentifiées. Une RA malveillante, envoyée par un attaquant ou
+  par une machine mal configurée, fait passer le trafic IPv6 de l'hôte, souvent préféré à IPv4, par
+  l'émetteur (homme du milieu) ou lui fait perdre la connectivité.
+impact: |
+  Les hôtes qui obtiennent leur adresse et leur route IPv6 par SLAAC les perdent sur les interfaces
+  activées après le changement. Configurer IPv6 de façon statique, ou laisser le gestionnaire réseau
+  traiter les RA sur les seules interfaces de confiance (systemd-networkd `IPv6AcceptRA=`,
+  NetworkManager `ipv6.method`).
+notes: |
+  systemd-networkd traite lui-même les RA et garde à `0` l'`accept_ra` noyau des liens qu'il gère :
+  ce réglage n'empêche donc pas networkd d'utiliser les RA quand sa configuration le demande.
+  La désactivation complète d'IPv6 se décide dans CB-UBU-NET-001.
+setting:
+  location: sysctl `net.ipv6.conf.{all,default}.accept_ra`, persistés dans `/etc/sysctl.d/`
+  recommended_value: "0"
+audit:
+  manual: |
+    Lancer `sysctl net.ipv6.conf.all.accept_ra net.ipv6.conf.default.accept_ra`. Les deux doivent
+    valoir `0`. Vérifier qu'aucun fichier sysctl ne fixe une autre valeur.
+remediation:
+  manual: |
+    Ajouter à `/etc/sysctl.d/60-cirsec.conf` :
+    ```
+    net.ipv6.conf.all.accept_ra = 0
+    net.ipv6.conf.default.accept_ra = 0
+    ```
+    retirer les autres affectations, puis lancer `sysctl --system`.
+  rollback: |
+    Retirer les lignes de `/etc/sysctl.d/60-cirsec.conf` et lancer `sysctl -w net.ipv6.conf.all.accept_ra=1 net.ipv6.conf.default.accept_ra=1`.

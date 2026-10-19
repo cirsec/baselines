@@ -1,0 +1,209 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-012
+title: Harden ICMP and TCP handling against floods and bogus packets
+finding:
+  title: The kernel ICMP and TCP settings leave the system open to simple floods and protocol abuse
+  description: Broadcast pings, bogus ICMP errors and SYN floods can be used to exhaust the system or to amplify attacks against others.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [sysctl, network, icmp, tcp, denial-of-service]
+
+description: |
+  These kernel settings make the IPv4 stack resist common abuse:
+
+  - `net.ipv4.icmp_echo_ignore_broadcasts = 1`: do not answer pings sent to broadcast or
+    multicast addresses;
+  - `net.ipv4.icmp_ignore_bogus_error_responses = 1`: do not log ICMP errors that violate
+    RFC 1122;
+  - `net.ipv4.tcp_syncookies = 1`: answer with SYN cookies when the queue of half-open
+    connections is full;
+  - `net.ipv4.tcp_rfc1337 = 1`: protect sockets in TIME-WAIT state from being reset by stray
+    packets (RFC 1337);
+  - `net.ipv4.ip_local_port_range = 32768 65535`: use the widest range of ephemeral ports, which
+    makes source ports harder to guess.
+rationale: |
+  Answering broadcast pings turns the host into an amplifier for smurf attacks. Bogus error
+  messages can fill the logs. SYN cookies keep the host reachable during a SYN flood (RFC 4987).
+  RFC 1337 protection and a wide ephemeral port range make connection hijacking and blind
+  spoofing harder.
+impact: |
+  None known. The wider port range can collide with a service listening on a port between 61000
+  and 65535; reserve such ports with `net.ipv4.ip_local_reserved_ports`.
+notes: |
+  Ubuntu already ships the first three values. The last two come from ANSSI.
+
+setting:
+  location: sysctl `net.ipv4.icmp_echo_ignore_broadcasts`, `net.ipv4.icmp_ignore_bogus_error_responses`, `net.ipv4.tcp_syncookies`, `net.ipv4.tcp_rfc1337`, `net.ipv4.ip_local_port_range`, persisted in `/etc/sysctl.d/`
+  default_value: 1, 1, 1, 0, 32768 60999
+  recommended_value: 1, 1, 1, 1, 32768 65535
+
+audit:
+  manual: |
+    Run `sysctl net.ipv4.icmp_echo_ignore_broadcasts net.ipv4.icmp_ignore_bogus_error_responses net.ipv4.tcp_syncookies net.ipv4.tcp_rfc1337 net.ipv4.ip_local_port_range`
+    and compare with the recommended values. Check that no sysctl file sets other values.
+  checks:
+    - id: echo-ignore-broadcasts
+      engine: sysctl
+      description: net.ipv4.icmp_echo_ignore_broadcasts.
+      spec: { key: net.ipv4.icmp_echo_ignore_broadcasts, value: 1 }
+    - id: ignore-bogus-errors
+      engine: sysctl
+      description: net.ipv4.icmp_ignore_bogus_error_responses.
+      spec: { key: net.ipv4.icmp_ignore_bogus_error_responses, value: 1 }
+    - id: syncookies
+      engine: sysctl
+      description: net.ipv4.tcp_syncookies.
+      spec: { key: net.ipv4.tcp_syncookies, value: 1 }
+    - id: rfc1337
+      engine: sysctl
+      description: net.ipv4.tcp_rfc1337.
+      spec: { key: net.ipv4.tcp_rfc1337, value: 1 }
+    - id: local-port-range
+      engine: sysctl
+      description: net.ipv4.ip_local_port_range.
+      spec: { key: net.ipv4.ip_local_port_range, value: "32768 65535" }
+
+remediation:
+  manual: |
+    Add to `/etc/sysctl.d/60-cirsec.conf`:
+    ```
+    net.ipv4.icmp_echo_ignore_broadcasts = 1
+    net.ipv4.icmp_ignore_bogus_error_responses = 1
+    net.ipv4.tcp_syncookies = 1
+    net.ipv4.tcp_rfc1337 = 1
+    net.ipv4.ip_local_port_range = 32768 65535
+    ```
+    remove other assignments, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: none
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf` and set the previous values with `sysctl -w`.
+  scripts:
+    - id: echo-ignore-broadcasts
+      from_check: echo-ignore-broadcasts
+    - id: ignore-bogus-errors
+      from_check: ignore-bogus-errors
+    - id: syncookies
+      from_check: syncookies
+    - id: rfc1337
+      from_check: rfc1337
+    - id: local-port-range
+      from_check: local-port-range
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: RFC 4987 - TCP SYN Flooding Attacks and Common Mitigations
+    url: https://www.rfc-editor.org/rfc/rfc4987
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-19
+  - title: RFC 1337 - TIME-WAIT Assassination Hazards in TCP
+    url: https://www.rfc-editor.org/rfc/rfc1337
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-19
+  - title: ANSSI-BP-028 v2.0 - Recommandations de configuration d'un système GNU/Linux (R12)
+    url: https://messervices.cyber.gouv.fr/documents-guides/fr_np_linux_configuration-v2.0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R12
+    relation: partial
+    note: R12 lists many IPv4 settings; this control covers ICMP and TCP ones.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.10"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.6"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.1.18"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1498
+  - framework: cwe
+    id: CWE-400
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "tcp_rfc1337 0 and port range 32768 60999 reported; generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "tcp_rfc1337 0 and port range 32768 60999 reported; generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "tcp_rfc1337 0 and port range 32768 60999 reported; generated fixes; kept after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "tcp_rfc1337 0 and port range 32768 60999 reported; generated fixes; kept after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

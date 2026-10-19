@@ -1,0 +1,372 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-006
+title: Drop incoming and forwarded traffic by default, with SSH allowed
+finding:
+  title: The host firewall accepts incoming or forwarded traffic that no rule allows
+  description: A firewall whose default policy accepts traffic only blocks what someone thought of in advance.
+status: draft
+profiles: [core]
+risk:
+  severity: high
+assessment: automated
+tags: [firewall, ufw, nftables, network, ssh]
+
+description: |
+  The default policy of a firewall applies to packets that match no rule. This control requires
+  the policy for incoming and forwarded packets to drop or reject them, while the SSH ports used by
+  `sshd` stay allowed so that administrators keep access:
+
+  - with ufw: `Default: deny (incoming)` and `deny`, `reject` or `disabled (routed)` in
+    `ufw status verbose`, and a rule allowing each SSH port;
+  - with nftables (when `nftables.service` is enabled and ufw is not active): a base chain on the
+    `input` hook and one on the `forward` hook with `policy drop`, and an `accept` rule for each
+    SSH port;
+  - with iptables-persistent (when `netfilter-persistent.service` is enabled and neither ufw nor
+    nftables is): `INPUT` and `FORWARD` policies `DROP` for iptables and, with IPv6, ip6tables,
+    and an `ACCEPT` rule for each SSH port.
+rationale: |
+  Default deny turns the firewall into an allow list: a service started by mistake, or a new one
+  installed by a package, is not reachable until someone decides it should be. Dropping forwarded
+  packets keeps the host from relaying traffic between networks. Checking that SSH is allowed
+  avoids a policy that locks administrators out at the next reload.
+impact: |
+  Incoming connections to services without an allow rule are dropped. Containers and virtual
+  machines that rely on forwarding through the host (Docker, libvirt) manage their own forward
+  rules; check them after the change.
+notes: |
+  ufw on Ubuntu ships `DEFAULT_INPUT_POLICY="DROP"` and `DEFAULT_FORWARD_POLICY="DROP"`, so once
+  it is enabled (CB-UBU-NET-005) only the SSH rule matters. The automatic fix only handles ufw: it
+  adds an allow rule for each SSH port that has none, then sets the incoming and routed defaults
+  to deny. nftables and iptables rulesets are written by hand. The SSH rule checks look for the
+  port number in an accept rule; complex rulesets (sets, maps, jumps, user chains) may need a
+  manual review. The SSH ports come from `sshd -T`, which fails on 24.04 and later until a first
+  connection has started `ssh.service` (missing `/run/sshd`): the checks then report an error,
+  and the fix creates the directory first.
+
+audit:
+  manual: |
+    - ufw: `ufw status verbose` shows `deny (incoming)` and `deny`, `reject` or `disabled (routed)`,
+      and `ufw status` lists an `ALLOW` or `LIMIT` rule for each port of `sshd -T | grep '^port '`.
+    - nftables: `nft list ruleset` has a chain with `hook input` and `policy drop`, a chain with
+      `hook forward` and `policy drop`, and a rule accepting `tcp dport` for each SSH port.
+    - iptables-persistent: `iptables -S` and `ip6tables -S` show `-P INPUT DROP` and
+      `-P FORWARD DROP`, and `iptables -S INPUT` has an `ACCEPT` rule for `--dport` of each SSH port.
+  checks:
+    - id: ufw-defaults
+      engine: shell
+      description: ufw default policies for incoming and routed traffic.
+      facts: [ufw]
+      spec:
+        script: |
+          ufw status 2>/dev/null | grep -q '^Status: active' || { echo 'ufw is not active'; exit 2; }
+          d=$(ufw status verbose 2>/dev/null | sed -n 's/^Default: //p')
+          echo "$d"
+          printf '%s' "$d" | grep -Eq '(deny|reject) \(incoming\)' &&
+            printf '%s' "$d" | grep -Eq '(deny|reject|disabled) \(routed\)'
+    - id: ufw-ssh
+      engine: shell
+      description: ufw rule allowing each SSH port.
+      facts: [ufw, openssh-server]
+      spec:
+        script: |
+          s=$(ufw status 2>/dev/null)
+          printf '%s\n' "$s" | grep -q '^Status: active' || { echo 'ufw is not active'; exit 2; }
+          ports=$(PATH="$PATH:/usr/sbin" sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+          [ -n "$ports" ] || exit 3
+          rc=0
+          for p in $ports; do
+            if printf '%s\n' "$s" | grep -Eq "^($p(/tcp)?|OpenSSH)[[:space:]]+(ALLOW|LIMIT)"; then
+              echo "SSH port $p allowed"
+            else
+              echo "SSH port $p not allowed"; rc=1
+            fi
+          done
+          exit "$rc"
+    - id: nft-defaults
+      engine: shell
+      description: nftables input and forward base chains with policy drop.
+      facts: [nftables]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] || { echo 'nftables.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          r=$(nft list ruleset 2>/dev/null) || exit 3
+          rc=0
+          for h in input forward; do
+            if printf '%s\n' "$r" | grep -Eq "hook $h .*policy drop"; then echo "$h: policy drop"; else echo "$h: no chain with policy drop"; rc=1; fi
+          done
+          exit "$rc"
+    - id: nft-ssh
+      engine: shell
+      description: nftables accept rule for each SSH port.
+      facts: [nftables, openssh-server]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] || { echo 'nftables.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          r=$(nft list ruleset 2>/dev/null) || exit 3
+          ports=$(PATH="$PATH:/usr/sbin" sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+          [ -n "$ports" ] || exit 3
+          rc=0
+          for p in $ports; do
+            if printf '%s\n' "$r" | grep -E 'tcp dport .*accept' | grep -Eq "(^|[^0-9])$p([^0-9]|$)"; then
+              echo "SSH port $p accepted"
+            else
+              echo "SSH port $p not accepted"; rc=1
+            fi
+          done
+          exit "$rc"
+    - id: iptables-defaults
+      engine: shell
+      description: iptables and ip6tables INPUT and FORWARD policies with iptables-persistent.
+      spec:
+        script: |
+          [ "$(systemctl is-enabled netfilter-persistent.service 2>/dev/null)" = enabled ] || { echo 'netfilter-persistent.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] && { echo 'nftables manages the firewall'; exit 2; }
+          PATH="$PATH:/usr/sbin"
+          rc=0
+          for t in iptables ip6tables; do
+            [ "$t" = ip6tables ] && [ ! -d /proc/sys/net/ipv6 ] && continue
+            r=$($t -S 2>/dev/null) || exit 3
+            for c in INPUT FORWARD; do
+              if printf '%s\n' "$r" | grep -Eq "^-P $c (DROP|REJECT)$"; then echo "$t $c: DROP"; else echo "$t $c: not DROP"; rc=1; fi
+            done
+          done
+          exit "$rc"
+    - id: iptables-ssh
+      engine: shell
+      description: iptables accept rule for each SSH port with iptables-persistent.
+      facts: [openssh-server]
+      spec:
+        script: |
+          [ "$(systemctl is-enabled netfilter-persistent.service 2>/dev/null)" = enabled ] || { echo 'netfilter-persistent.service is not enabled'; exit 2; }
+          if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo 'ufw manages the firewall'; exit 2
+          fi
+          [ "$(systemctl is-enabled nftables.service 2>/dev/null)" = enabled ] && { echo 'nftables manages the firewall'; exit 2; }
+          PATH="$PATH:/usr/sbin"
+          r=$(iptables -S INPUT 2>/dev/null) || exit 3
+          ports=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+          [ -n "$ports" ] || exit 3
+          rc=0
+          for p in $ports; do
+            if printf '%s\n' "$r" | grep -E -- '-j ACCEPT' | grep -Eq -- "--dports? ([0-9,:]*[,:])?$p([,:][0-9,:]*)?( |$)"; then
+              echo "SSH port $p accepted"
+            else
+              echo "SSH port $p not accepted"; rc=1
+            fi
+          done
+          exit "$rc"
+
+remediation:
+  manual: |
+    - ufw: allow SSH first, then set the defaults:
+      ```
+      ufw allow 22/tcp
+      ufw default deny incoming
+      ufw default deny routed
+      ```
+    - nftables: write `/etc/nftables.conf` with, at least:
+      ```
+      table inet filter {
+        chain input {
+          type filter hook input priority filter; policy drop;
+          ct state established,related accept
+          iif lo accept
+          meta l4proto { icmp, ipv6-icmp } accept
+          tcp dport 22 accept
+        }
+        chain forward {
+          type filter hook forward priority filter; policy drop;
+        }
+      }
+      ```
+      Check it with `nft -c -f /etc/nftables.conf`, then run `systemctl reload nftables` from a
+      console, or with a scheduled rollback, in case the SSH rule is wrong.
+    - iptables-persistent: add `iptables -A INPUT -p tcp --dport 22 -j ACCEPT` (with the loopback
+      and `-m conntrack --ctstate ESTABLISHED,RELATED` rules) before `iptables -P INPUT DROP` and
+      `iptables -P FORWARD DROP`, do the same with ip6tables, then save with
+      `netfilter-persistent save`.
+  effects:
+    restart: none
+    disruption: high
+    lockout_risk: true
+  rollback: |
+    ufw: `ufw default allow incoming` and `ufw default allow routed` (or restore the backed up
+    `/etc/default/ufw` and run `ufw reload`). nftables: restore the previous `/etc/nftables.conf`
+    and reload.
+  scripts:
+    - id: ufw-policy
+      engine: shell
+      facts: [ufw]
+      file: fix.sh
+
+references:
+  - title: ufw(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/ufw.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: nft(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/nft.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: iptables(8), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man8/iptables.8.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: Ubuntu Server documentation - Firewalls
+    url: https://documentation.ubuntu.com/server/how-to/security/firewalls/
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: NIST SP 800-41 Rev. 1 - Guidelines on Firewalls and Firewall Policy
+    url: https://csrc.nist.gov/pubs/sp/800/41/r1/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.2.5"
+    relation: partial
+    note: Loopback rules are not checked; CB-UBU-NET-006 checks the default policy and the SSH rule.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.2.7"
+    relation: partial
+    note: Ours only checks that each SSH port is allowed; other listening services are reviewed by hand.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.2.8"
+    relation: looser
+    note: Ours requires deny for incoming and forwarded traffic in core; outgoing deny is CB-UBU-NET-007, in the hardened profiles.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.3.4"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.3.5"
+    relation: partial
+    note: Ours checks the input and forward base chains; the output chain is checked by CB-UBU-NET-007.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.3.6"
+    relation: partial
+    note: Loopback rules are not checked; CB-UBU-NET-006 checks the default policy and the SSH rule.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.3.8"
+    relation: looser
+    note: Ours requires deny for incoming and forwarded traffic in core; outgoing deny is CB-UBU-NET-007, in the hardened profiles.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.3.10"
+    relation: partial
+    note: Ours checks the rules loaded at run time; persistence comes from nftables.service being enabled (CB-UBU-NET-005).
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.2.1"
+    relation: looser
+    note: Ours requires deny for incoming and forwarded traffic in core; outgoing deny is CB-UBU-NET-007, in the hardened profiles.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.2.2"
+    relation: partial
+    note: Loopback rules are not checked; CB-UBU-NET-006 checks the default policy and the SSH rule.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.2.4"
+    relation: partial
+    note: Ours only checks that each SSH port is allowed; other listening services are reviewed by hand.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.3.1"
+    relation: looser
+    note: Ours requires deny for incoming and forwarded traffic in core; outgoing deny is CB-UBU-NET-007, in the hardened profiles.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.3.2"
+    relation: partial
+    note: Loopback rules are not checked; CB-UBU-NET-006 checks the default policy and the SSH rule.
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "4.4.3.4"
+    relation: partial
+    note: Ours only checks that each SSH port is allowed; other listening services are reviewed by hand.
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "4.1.5"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "4.1.3"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "4.1.5"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1046
+  - framework: mitre-attack
+    id: T1190
+  - framework: cwe
+    id: CWE-284
+related_controls:
+  - id: CB-UBU-NET-005
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "ufw defaults and SSH rule pass once ufw is enabled; nftables (drop with and without SSH rule) and iptables-persistent on legacy iptables (drop, SSH rule, multiport rule, missing rule) checks tested; SSH by key works after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "Not applicable while no firewall is active; ufw defaults and SSH rule pass after NET-005; SSH by key works after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "Not applicable while no firewall is active; ufw defaults and SSH rule pass after NET-005; SSH by key works after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "ufw defaults and SSH rule pass after NET-005; nftables (drop with and without SSH rule) and iptables-persistent (drop, SSH rule, multiport rule, missing rule) checks tested; SSH by key works after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

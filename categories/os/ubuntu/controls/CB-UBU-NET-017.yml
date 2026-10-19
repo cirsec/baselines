@@ -1,0 +1,226 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-017
+title: Limit SSH connections and close dead sessions
+finding:
+  title: The SSH server keeps dead sessions open and accepts many concurrent unauthenticated connections
+  description: Unbounded connection and session counts let a single client exhaust the SSH server, and dead sessions stay open for anyone who takes over the network path.
+status: draft
+profiles: [core]
+risk:
+  severity: low
+assessment: automated
+tags: [ssh, session, denial-of-service]
+
+applicability:
+  facts: [openssh-server]
+
+description: |
+  These OpenSSH server options limit resources used per client and detect dead connections:
+
+  - `ClientAliveInterval` (1 to {{ ssh_client_alive_interval }} seconds) and
+    `ClientAliveCountMax` (1 to {{ ssh_client_alive_count_max }}): the server checks that the
+    client still answers, and closes the session after `ClientAliveCountMax` unanswered checks;
+  - `MaxStartups` at most `10:30:60`: beyond 10 unauthenticated connections, new ones are refused
+    with a probability of 30 %, rising to 100 % at 60;
+  - `MaxSessions` at most {{ ssh_max_sessions }}: shells, commands and subsystems multiplexed on
+    one connection.
+rationale: |
+  Sessions whose client has gone away (laptop closed, network cut) keep a shell open on the server;
+  closing them limits what a later session hijack can reach. Connection limits keep a brute force
+  tool or a flood of half-open connections from making the server unreachable for administrators.
+impact: |
+  Sessions of clients that stop answering for more than {{ ssh_client_alive_interval }} ×
+  {{ ssh_client_alive_count_max }} seconds are closed. Automation that opens many parallel
+  connections or multiplexed sessions (Ansible pipelining, `ControlMaster`) may hit the limits;
+  raise them through tailoring if needed.
+notes: |
+  OpenSSH's own default for `ClientAliveInterval` is `0` (no check), and Ubuntu keeps it, cloud
+  images included. Idle shell sessions are closed by `TMOUT` (CB-UBU-AUTH-020), not by these options, since
+  a live client always answers keepalive checks. The fix only changes the options that are out of
+  bounds, in `/etc/ssh/sshd_config.d/00-cirsec.conf`.
+
+setting:
+  location: /etc/ssh/sshd_config.d/00-cirsec.conf
+  default_value: ClientAliveInterval 0, ClientAliveCountMax 3, MaxStartups 10:30:100, MaxSessions 10
+  recommended_value: "ClientAliveInterval 1-{{ ssh_client_alive_interval }}, ClientAliveCountMax 1-{{ ssh_client_alive_count_max }}, MaxStartups <= 10:30:60, MaxSessions <= {{ ssh_max_sessions }}"
+
+parameters:
+  - name: ssh_client_alive_interval
+    type: integer
+    description: Maximum interval between two keepalive checks of the client.
+    unit: seconds
+    default: 300
+    minimum: 1
+    maximum: 900
+  - name: ssh_client_alive_count_max
+    type: integer
+    description: Maximum number of unanswered keepalive checks before the session is closed.
+    default: 3
+    minimum: 1
+    maximum: 10
+  - name: ssh_max_sessions
+    type: integer
+    description: Maximum sessions per SSH connection.
+    default: 10
+    minimum: 1
+    maximum: 10
+
+audit:
+  manual: |
+    Run `sshd -T | grep -E '^(clientaliveinterval|clientalivecountmax|maxstartups|maxsessions) '`.
+    `clientaliveinterval` must be between 1 and {{ ssh_client_alive_interval }},
+    `clientalivecountmax` between 1 and {{ ssh_client_alive_count_max }}, each field of
+    `maxstartups` at most `10:30:60`, and `maxsessions` at most {{ ssh_max_sessions }}.
+  checks:
+    - id: client-alive-interval-set
+      engine: sshd-config
+      description: ClientAliveInterval is not 0 (keepalive off).
+      spec: { key: clientaliveinterval, operator: ">=", value: 1 }
+    - id: client-alive-interval
+      engine: sshd-config
+      description: ClientAliveInterval upper bound.
+      spec: { key: clientaliveinterval, operator: "<=", value: "{{ ssh_client_alive_interval }}" }
+    - id: client-alive-count-set
+      engine: sshd-config
+      description: ClientAliveCountMax is not 0.
+      spec: { key: clientalivecountmax, operator: ">=", value: 1 }
+    - id: client-alive-count
+      engine: sshd-config
+      description: ClientAliveCountMax upper bound.
+      spec: { key: clientalivecountmax, operator: "<=", value: "{{ ssh_client_alive_count_max }}" }
+    - id: max-startups
+      engine: sshd-config
+      description: MaxStartups at most 10:30:60.
+      spec:
+        key: maxstartups
+        operator: match
+        value: '^([1-9]|10):([1-9]|[12][0-9]|30):([1-9]|[1-5][0-9]|60)$'
+    - id: max-sessions
+      engine: sshd-config
+      description: MaxSessions upper bound.
+      spec: { key: maxsessions, operator: "<=", value: "{{ ssh_max_sessions }}" }
+
+remediation:
+  manual: |
+    Add to `/etc/ssh/sshd_config.d/00-cirsec.conf`:
+    ```
+    ClientAliveInterval {{ ssh_client_alive_interval }}
+    ClientAliveCountMax {{ ssh_client_alive_count_max }}
+    MaxStartups 10:30:60
+    MaxSessions {{ ssh_max_sessions }}
+    ```
+    Check with `sshd -t`, then run `systemctl reload ssh` (on 24.04 and later, when `ssh.service`
+    is not running yet, the next connection starts it with the new settings).
+  effects:
+    restart: service
+    services: [ssh]
+    disruption: low
+    lockout_risk: true
+  rollback: |
+    Remove the lines from `/etc/ssh/sshd_config.d/00-cirsec.conf` and run `systemctl reload ssh`.
+  scripts:
+    - id: limits
+      engine: shell
+      file: fix.sh
+
+references:
+  - title: sshd_config(5), Ubuntu manual pages
+    url: https://manpages.ubuntu.com/manpages/noble/man5/sshd_config.5.html
+    publisher: Canonical
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: NIST IR 7966 - Security of Interactive and Automated Access Management Using Secure Shell (SSH)
+    url: https://csrc.nist.gov/pubs/ir/7966/final
+    publisher: NIST
+    kind: guide
+    accessed: 2026-10-19
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-10
+    relation: partial
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "5.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "5.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.17"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "5.1.18"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.19"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "5.1.20"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1499
+  - framework: cwe
+    id: CWE-400
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "ClientAliveInterval 0 and MaxStartups 10:30:100 reported; fix.sh sets 300 and 10:30:60; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "ClientAliveInterval 0 and MaxStartups 10:30:100 reported; fix.sh sets 300 and 10:30:60; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "ClientAliveInterval 0 and MaxStartups 10:30:100 reported; fix.sh sets 300 and 10:30:60; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "ClientAliveInterval 0 and MaxStartups 10:30:100 reported; fix.sh sets 300 and 10:30:60; SSH by key of a non-root user accepted on localhost and port 22 reachable from the lab host after the fix and after reboot."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19

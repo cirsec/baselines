@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-UBU-NET-014
+title: Ignore IPv6 router advertisements
+finding:
+  title: The kernel configures IPv6 addresses and routes from any router advertisement
+  description: Anyone on the local network can announce themselves as an IPv6 router and receive the host's traffic.
+status: draft
+profiles: [core]
+risk:
+  severity: medium
+assessment: automated
+tags: [sysctl, network, ipv6]
+
+applicability:
+  facts: [ipv6]
+
+description: |
+  IPv6 routers announce prefixes and default routes with router advertisements (RA). With
+  `accept_ra` on, the kernel uses them to add addresses and a default route on its own. This
+  control sets `net.ipv6.conf.all.accept_ra` and `net.ipv6.conf.default.accept_ra` (interfaces
+  created later) to `0`, so that IPv6 addresses and routes are only those configured on purpose.
+rationale: |
+  Router advertisements are not authenticated. A rogue RA, sent by an attacker or by a
+  misconfigured machine, makes the host route its IPv6 traffic, often preferred over IPv4,
+  through the sender (man in the middle) or lose connectivity.
+impact: |
+  Hosts that get their IPv6 address and route from SLAAC lose them for interfaces brought up after
+  the change. Configure IPv6 statically, or let the network manager handle RAs on the trusted
+  interfaces only (systemd-networkd `IPv6AcceptRA=`, NetworkManager `ipv6.method`).
+notes: |
+  systemd-networkd processes RAs itself and keeps the kernel `accept_ra` of the links it manages
+  at `0`, so this setting does not prevent networkd from using RAs when its configuration asks
+  for it. Disabling IPv6 altogether is decided in CB-UBU-NET-001.
+
+setting:
+  location: sysctl `net.ipv6.conf.{all,default}.accept_ra`, persisted in `/etc/sysctl.d/`
+  default_value: "1"
+  recommended_value: "0"
+
+audit:
+  manual: |
+    Run `sysctl net.ipv6.conf.all.accept_ra net.ipv6.conf.default.accept_ra`. Both must be `0`.
+    Check that no sysctl file sets another value.
+  checks:
+    - id: all-accept-ra
+      engine: sysctl
+      description: net.ipv6.conf.all.accept_ra.
+      spec: { key: net.ipv6.conf.all.accept_ra, value: 0 }
+    - id: default-accept-ra
+      engine: sysctl
+      description: net.ipv6.conf.default.accept_ra.
+      spec: { key: net.ipv6.conf.default.accept_ra, value: 0 }
+
+remediation:
+  manual: |
+    Add to `/etc/sysctl.d/60-cirsec.conf`:
+    ```
+    net.ipv6.conf.all.accept_ra = 0
+    net.ipv6.conf.default.accept_ra = 0
+    ```
+    remove other assignments, then run `sysctl --system`.
+  effects:
+    restart: none
+    disruption: low
+    lockout_risk: false
+  rollback: |
+    Remove the lines from `/etc/sysctl.d/60-cirsec.conf` and run `sysctl -w net.ipv6.conf.all.accept_ra=1 net.ipv6.conf.default.accept_ra=1`.
+  scripts:
+    - id: all-accept-ra
+      from_check: all-accept-ra
+    - id: default-accept-ra
+      from_check: default-accept-ra
+
+references:
+  - title: Linux kernel documentation - IP Sysctl
+    url: https://docs.kernel.org/networking/ip-sysctl.html
+    publisher: The Linux Kernel Organization
+    kind: vendor-doc
+    accessed: 2026-10-19
+  - title: RFC 4861 - Neighbor Discovery for IP version 6 (IPv6)
+    url: https://www.rfc-editor.org/rfc/rfc4861
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-19
+mappings:
+  - framework: anssi-linux
+    framework_version: "2.0"
+    id: R13
+    relation: related
+    note: R13 asks to disable IPv6 when unused, and to secure it otherwise.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: cis-ubuntu-2004
+    framework_version: "3.0.0"
+    id: "3.3.11"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2204
+    framework_version: "3.0.0"
+    id: "3.3.2.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2404
+    framework_version: "2.0.0"
+    id: "3.3.2.8"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.7"
+    relation: equivalent
+  - framework: cis-ubuntu-2604
+    framework_version: "1.0.0"
+    id: "3.3.2.8"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: cwe
+    id: CWE-290
+related_controls:
+  - id: CB-UBU-NET-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+verified:
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["20.04"]
+    environment: Proxmox VM, Ubuntu 20.04 cloud image, kernel 5.4.0-216-generic, BIOS boot
+    notes: "accept_ra 1 reported; generated fixes; kept after reboot; DHCP connectivity through networkd unaffected."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["22.04"]
+    environment: Proxmox VM, Ubuntu 22.04 cloud image, kernel 5.15.0-198-generic, BIOS boot
+    notes: "accept_ra 1 reported; generated fixes; kept after reboot; DHCP connectivity through networkd unaffected."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["24.04"]
+    environment: Proxmox VM, Ubuntu 24.04 cloud image, kernel 6.8.0-147-generic, BIOS boot
+    notes: "accept_ra 1 reported; generated fixes; kept after reboot; DHCP connectivity through networkd unaffected."
+  - date: 2026-10-19
+    by: Sn0wAlice
+    versions: ["26.04"]
+    environment: Proxmox VM, Ubuntu 26.04 cloud image, kernel 7.0.0-38-generic, BIOS boot
+    notes: "accept_ra 1 reported; generated fixes; kept after reboot; DHCP connectivity through networkd unaffected."
+introduced_in: 0.1.0
+created: 2026-10-19
+updated: 2026-10-19
