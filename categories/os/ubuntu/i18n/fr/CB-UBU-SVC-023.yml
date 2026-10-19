@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-023
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le serveur d'impression CUPS et la découverte d'imprimantes
+finding:
+  title: Le service d'impression CUPS tourne sur un système qui n'imprime pas
+  description: CUPS et cups-browsed analysent des travaux d'impression et des annonces d'imprimantes, et ont eu des failles exploitables à distance.
+description: |
+  CUPS est démarré par `cups.service`, `cups.socket` et `cups.path` ; `cups-browsed.service`
+  découvre les imprimantes réseau et les ajoute automatiquement.
+
+  Le contrôle est conforme quand chaque unité est masquée ou n'est pas installée du tout.
+rationale: |
+  La chaîne d'impression analyse des documents complexes et des annonces réseau. Des failles de
+  `cups-browsed` ont permis l'exécution de code à distance en annonçant une imprimante malveillante.
+  Les serveurs impriment rarement.
+impact: |
+  Le système ne peut plus imprimer, et les imprimantes réseau ne sont plus découvertes. Les
+  serveurs d'impression et les postes qui impriment gardent CUPS : le contrôle n'est que dans les
+  profils serveur et poste renforcé, et peut être exclu dans le fichier de personnalisation.
+notes: |
+  Les unités socket et path peuvent démarrer `cupsd` à elles seules : elles sont donc masquées aussi.
+audit:
+  manual: |
+    Lancer `systemctl is-enabled cups.service cups.socket cups.path cups-browsed.service`. Chacune
+    doit afficher `masked`, ou échouer parce que l'unité n'existe pas.
+remediation:
+  manual: |
+    Lancer `systemctl mask --now cups-browsed.service cups.socket cups.path cups.service`, ou
+    `apt purge cups cups-daemon cups-browsed` si rien n'en dépend.
+  rollback: |
+    Lancer `systemctl unmask cups-browsed.service cups.socket cups.path cups.service` puis
+    `systemctl enable --now cups.service cups-browsed.service`.

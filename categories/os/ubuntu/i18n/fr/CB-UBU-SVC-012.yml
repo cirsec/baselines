@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-012
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Seuls des services approuvés écoutent sur les interfaces réseau
+finding:
+  title: Des services que personne n'a approuvés acceptent des connexions depuis le réseau
+  description: Chaque socket en écoute est un point d'entrée ; ceux qui sont inconnus ne sont ni mis à jour ni supervisés.
+description: |
+  Chaque socket TCP ou UDP en écoute sur une adresse autre que le bouclage doit appartenir à un
+  service que le système doit fournir, et n'écouter que sur les interfaces où ce service est
+  nécessaire.
+rationale: |
+  Les services qu'un attaquant peut atteindre depuis le réseau définissent la surface d'attaque
+  distante. Les services qui écoutent par défaut (LLMNR dans systemd-resolved, serveurs de
+  développement, agents) sont faciles à oublier et l'élargissent sans que personne ne le remarque.
+impact: |
+  Arrêter ou restreindre un service le rend injoignable pour les clients distants ; vérifier
+  d'abord avec son responsable.
+notes: |
+  La vérification liste les sockets en écoute hors bouclage sous la forme `protocole/port
+  processus` et réussit toujours : le contrôle se termine donc en `review`, et une personne doit
+  comparer la liste avec les services approuvés pour le rôle du système. Sur une image cloud
+  Ubuntu neuve, la liste contient le serveur SSH (tcp/22, affiché `systemd` depuis 24.04 car
+  `ssh.socket` écoute pour lui) et le client DHCP de `systemd-networkd` (udp/68).
+  `systemd-resolved` et `chronyd` n'écoutent que sur le bouclage.
+audit:
+  manual: |
+    1. Lancer `ss -Hltunp` en root.
+    2. Pour chaque socket qui n'est pas lié à `127.0.0.0/8` ou `::1`, vérifier que le processus est un
+       service approuvé pour ce système et qu'il n'écoute que sur les adresses nécessaires.
+remediation:
+  manual: |
+    Pour chaque socket non approuvé : arrêter et masquer le service (`systemctl mask --now
+    <unité>`) ou supprimer son paquet. Pour un service approuvé qui écoute trop largement, le lier à
+    l'adresse nécessaire dans sa configuration, et filtrer le port avec le pare-feu local.

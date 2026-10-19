@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-011
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rediriger le courrier de root vers une boîte surveillée
+finding:
+  title: Le courrier envoyé à root reste non lu sur le système
+  description: Les alertes de cron, unattended-upgrades, smartd ou mdadm n'atteignent personne.
+description: |
+  Les services système envoient leurs rapports et alertes au compte `root` par courrier. Une
+  ligne `root:` dans `/etc/aliases` redirige ce courrier vers la boîte d'une personne ou d'une
+  équipe, réellement lue.
+rationale: |
+  Les tâches en échec, les erreurs disque, les échecs de mises à jour de sécurité et les alertes
+  d'audit sont signalés par courrier. S'ils restent dans `/var/mail/root`, les problèmes et les
+  intrusions passent inaperçus.
+impact: |
+  Le courrier de root quitte le système : la destination doit être de confiance, car les rapports
+  peuvent contenir des noms d'hôtes, des chemins et des erreurs.
+notes: |
+  Ubuntu n'installe aucun MTA par défaut, le contrôle est donc en général non applicable ; quand
+  Postfix ou exim4 est installé ensuite, `/etc/aliases` n'a pas de ligne `root:`. Le destinataire dépend du site, la
+  correction est donc manuelle.
+audit:
+  manual: |
+    Lancer `grep -E '^[[:space:]]*root[[:space:]]*:' /etc/aliases`. La commande doit renvoyer une
+    ligne avec un destinataire autre que root lui-même.
+remediation:
+  manual: |
+    Ajouter ou modifier la ligne `root: <adresse ou compte de l'administrateur>` dans `/etc/aliases`,
+    puis lancer `newaliases`. Tester avec `echo test | mail -s test root` (paquet `bsd-mailx`).
+  rollback: |
+    Supprimer la ligne `root:` de `/etc/aliases` et lancer `newaliases`.

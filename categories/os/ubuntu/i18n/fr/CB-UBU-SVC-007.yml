@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-007
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer les serveurs telnet, rsh et talk et désactiver les super-serveurs inetd
+finding:
+  title: Des serveurs d'accès distant en clair ou un super-serveur inetd sont présents
+  description: telnet et rsh transmettent les mots de passe et des sessions entières en clair ; inetd lance ces serveurs à la demande.
+description: |
+  Les serveurs d'accès distant historiques sont lancés par un super-serveur inetd, pas par des
+  unités systemd propres :
+
+  - serveurs telnet : `telnetd`, `inetutils-telnetd`, `telnetd-ssl` ;
+  - serveurs rsh, rlogin et rexec : `rsh-server`, `rsh-redone-server` (jusqu'à 24.04) ;
+  - serveurs talk : `talkd`, `inetutils-talkd`.
+
+  Le contrôle exige que ces paquets soient absents, et que les super-serveurs qui les lanceraient
+  (`xinetd.service`, `inetd.service` d'`openbsd-inetd`, `inetutils-inetd.service`) soient masqués
+  ou non installés.
+rationale: |
+  telnet et rsh transmettent les mots de passe et chaque frappe en clair, et rsh fait confiance à
+  l'adresse et au nom d'utilisateur du client. SSH les remplace tous. Un super-serveur accepte
+  les connexions pour chaque service listé dans sa configuration, ce qui facilite l'exposition
+  d'un service par erreur.
+impact: |
+  Supprime les paquets serveur listés. Masquer un super-serveur inetd arrête tous les services
+  qu'il lance ; vérifier `/etc/inetd.conf` et `/etc/xinetd.d/` avant d'appliquer.
+notes: |
+  `telnetd` est un paquet de transition qui installe `inetutils-telnetd` ; les deux sont vérifiés.
+  L'accès SSH n'est pas concerné.
+audit:
+  manual: |
+    1. `dpkg-query -W -f='${Status}\n' telnetd inetutils-telnetd telnetd-ssl rsh-server
+       rsh-redone-server talkd inetutils-talkd` ne doit afficher aucun `install ok installed`.
+    2. `systemctl is-enabled xinetd.service inetd.service inetutils-inetd.service` doit afficher
+       `masked` ou échouer parce que l'unité n'existe pas.
+remediation:
+  manual: |
+    1. Lancer `apt purge telnetd inetutils-telnetd telnetd-ssl rsh-server rsh-redone-server talkd
+       inetutils-talkd`.
+    2. Lancer `systemctl mask --now <unité>` pour chaque super-serveur installé, ou supprimer son
+       paquet (`apt purge xinetd openbsd-inetd inetutils-inetd`) quand rien d'autre n'en dépend.
+  rollback: |
+    Réinstaller le paquet nécessaire avec `apt install`, et `systemctl unmask` le super-serveur.

@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-029
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas envoyer de données d'usage à Canonical (popularity-contest, ubuntu-report, ubuntu-insights)
+finding:
+  title: Le système peut envoyer sa liste de paquets ou les détails de son matériel à Canonical
+  description: Des données d'inventaire quittent l'organisation vers un tiers sans accord de traitement des données.
+description: |
+  Trois outils Ubuntu peuvent envoyer des informations sur le système à Canonical :
+
+  - `popularity-contest` envoie chaque semaine la liste des paquets installés et leur date de
+    dernière utilisation, quand `PARTICIPATE="yes"` est défini dans `/etc/popularity-contest.conf`.
+    Il est installé par défaut sur 20.04, via le métapaquet `ubuntu-standard` ;
+  - `ubuntu-report` (jusqu'à 24.04) envoie les détails du matériel, de la version, de la langue et
+    de l'écran collectés à la première connexion d'Ubuntu Desktop, quand l'utilisateur accepte ;
+  - `ubuntu-insights` (depuis 26.04) le remplace : il collecte chaque semaine des rapports sur le
+    matériel et l'usage et les envoie quand l'utilisateur a consenti ; quand l'utilisateur a
+    refusé, il envoie tout de même un avis de refus.
+
+  Le contrôle exige `PARTICIPATE="no"` quand popularity-contest est installé, et l'absence de
+  `ubuntu-report` et `ubuntu-insights`.
+rationale: |
+  La liste des paquets décrit la pile logicielle et ses versions : elle est utile à un attaquant et
+  fait partie de la description du système d'information de l'organisation. Les rapports de
+  matériel et d'usage partent chez un tiers sans contrat ni analyse au titre du RGPD. La décision
+  revient à l'organisation, pas à la personne qui répond à la question de la première connexion.
+impact: |
+  Canonical ne reçoit plus de statistiques du système ; rien ne change pour ses utilisateurs.
+  Supprimer `ubuntu-report` et `ubuntu-insights` ne supprime pas les métapaquets du bureau, qui ne
+  font que les recommander.
+notes: |
+  popularity-contest reste installé sur 20.04 car le supprimer supprime aussi le métapaquet
+  `ubuntu-standard` ; avec `PARTICIPATE="no"`, sa tâche hebdomadaire n'envoie rien. La correction
+  règle aussi la réponse debconf à `false`, pour qu'une reconfiguration du paquet garde le
+  réglage. `ubuntu-insights system-opt-out` arrête la collecte pour tous les utilisateurs sans
+  supprimer le paquet, mais laisse la décision sur chaque machine : la suppression est plus facile
+  à auditer. Les rapports de plantage (apport, whoopsie) sont traités par CB-UBU-BOOT-015, et le
+  message du jour récupéré sur le réseau par CB-UBU-AUTH-030.
+setting:
+  location: /etc/popularity-contest.conf ; paquets ubuntu-report, ubuntu-insights
+  recommended_value: "PARTICIPATE=\"no\" ; ubuntu-report et ubuntu-insights absents"
+audit:
+  manual: |
+    1. Si popularity-contest est installé (`dpkg-query -W popularity-contest`),
+       `grep PARTICIPATE /etc/popularity-contest.conf` doit afficher `PARTICIPATE="no"`.
+    2. `dpkg-query -W -f='${Status}\n' ubuntu-report ubuntu-insights` ne doit pas afficher
+       `install ok installed`.
+remediation:
+  manual: |
+    1. popularity-contest : définir `PARTICIPATE="no"` dans `/etc/popularity-contest.conf`, ou
+       lancer `dpkg-reconfigure popularity-contest` et répondre non.
+    2. Lancer `apt purge ubuntu-report ubuntu-insights`.
+  rollback: |
+    Lancer `dpkg-reconfigure popularity-contest` et répondre oui, ou réinstaller `ubuntu-report` ou
+    `ubuntu-insights` avec `apt install`.

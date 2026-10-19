@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-UBU-SVC-027
+locale: fr
+source_updated: 2026-10-19
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer les outils clients NFS quand aucun partage NFS n'est monté
+finding:
+  title: Les outils clients NFS sont installés sur un système qui ne monte aucun partage NFS
+  description: La pile client NFS ajoute des utilitaires setuid et des démons RPC inutiles.
+description: |
+  `nfs-common` fournit les outils clients NFS : l'utilitaire setuid `mount.nfs`, `rpc.statd`
+  (verrouillage NFSv3), `rpc.gssd` et `rpc.idmapd`. Il n'est nécessaire que pour monter des
+  partages NFS.
+rationale: |
+  Un logiciel inutile est du code supplémentaire à maintenir à jour. `mount.nfs` tourne avec les
+  privilèges root, et `rpc.statd` écoute des requêtes RPC quand il est démarré.
+impact: |
+  Les partages NFS ne peuvent plus être montés. Supprimer `nfs-common` supprime aussi
+  `nfs-kernel-server` s'il est installé. Les systèmes qui montent des partages NFS doivent exclure
+  ce contrôle dans leur fichier de personnalisation.
+notes: |
+  Non installé sur les images cloud Ubuntu ; souvent présent sur les installations serveur
+  complètes ou installé avec `autofs`. Le serveur NFS et rpcbind sont traités par CB-UBU-SVC-003.
+audit:
+  manual: |
+    Lancer `dpkg-query -W -f='${Status}\n' nfs-common`. La commande ne doit pas afficher
+    `install ok installed`.
+remediation:
+  manual: |
+    Vérifier que `findmnt -t nfs,nfs4` ne liste rien et qu'aucune entrée NFS ne reste dans
+    `/etc/fstab`, puis lancer `apt purge nfs-common`.
+  rollback: |
+    Lancer `apt install nfs-common`.
