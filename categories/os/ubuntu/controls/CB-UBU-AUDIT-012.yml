@@ -48,8 +48,8 @@ audit:
   manual: |
     1. Run `cat /proc/cmdline`. It must contain `audit=1` and `audit_backlog_limit=` with a value of
        at least {{ backlog_limit }}.
-    2. Run `grep -E '^\s*linux' /boot/grub/grub.cfg`. Every line must contain the same two
-       parameters, so they survive the next reboot.
+    2. Run `grep -E '^\s*linux' /boot/grub/grub.cfg | grep -v memtest`. Every line must contain
+       the same two parameters, so they survive the next reboot (memtest86+ entries are not kernels).
   checks:
     - id: running
       engine: shell
@@ -75,7 +75,7 @@ audit:
             case " $l " in *" audit=1 "*) ;; *) b= ;; esac
             if [ -z "$b" ] || [ "$b" -lt "$CB_BACKLOG_LIMIT" ]; then bad=$((bad + 1)); fi
           done <<EOF
-          $(grep -E '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg 2>/dev/null)
+          $(grep -E '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg 2>/dev/null | grep -v memtest)
           EOF
           echo "$n kernel entries, $bad without audit=1 audit_backlog_limit>=$CB_BACKLOG_LIMIT"
           [ "$n" -gt 0 ] && [ "$bad" = 0 ]
