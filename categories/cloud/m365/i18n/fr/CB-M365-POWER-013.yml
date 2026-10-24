@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre la publication Power BI sur le web
+finding:
+  title: Tout utilisateur peut publier des rapports Power BI sur le web public
+  description: Les utilisateurs peuvent générer des codes d'incorporation qui rendent un rapport et ses données lisibles par n'importe qui sur internet, sans authentification.
+description: |
+  Le paramètre du locataire Fabric **Publish to web** (publier sur le web), dans les paramètres
+  d'exportation et de partage, est **Désactivé**, ou **Activé** uniquement pour un groupe de
+  sécurité précis d'utilisateurs autorisés à publier du contenu public, avec **Choose how embed
+  codes work** réglé sur **Allow only existing embed codes** pour que chaque nouveau code passe par
+  un administrateur. La page **Codes d'incorporation** du portail d'administration est revue
+  régulièrement et les codes qui exposent des données internes sont supprimés.
+rationale: |
+  Un code d'incorporation « Publier sur le web » rend le rapport public : quiconque possède l'URL, y
+  compris moteurs de recherche et services d'archivage, peut le consulter ainsi que les données
+  visibles dans ses visuels, sans connexion ni trace de qui l'a consulté. Les utilisateurs le
+  confondent souvent avec une fonction de partage. Le désactiver, ou le limiter à un groupe revu,
+  évite les fuites publiques de données.
+impact: |
+  Les utilisateurs hors du groupe autorisé ne voient plus **Publier sur le web**. Si le paramètre est
+  désactivé pour toute l'organisation, les codes d'incorporation publics existants cessent de
+  fonctionner ; s'il est restreint à des groupes, les rapports existants continuent de s'afficher.
+  Revoir la liste des **Codes d'incorporation** avant le changement pour repérer les rapports publics
+  légitimes (par exemple des pages de données ouvertes).
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres d'exportation et de partage > Publish to web
+  recommended_value: Désactivé, ou Activé pour un groupe de sécurité précis avec codes d'incorporation existants uniquement
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric.
+    2. Ouvrir **Paramètres** > **Portail d'administration** > **Paramètres du locataire** >
+       **Paramètres d'exportation et de partage** et développer **Publish to web**.
+    3. Vérifier qu'il est **Désactivé**, ou **Activé** pour des **Groupes de sécurité spécifiques**
+       seulement.
+    4. Ouvrir **Portail d'administration** > **Codes d'incorporation** et examiner les codes actifs :
+       chacun doit correspondre à du contenu approuvé pour une diffusion publique.
+    5. Alternative en lecture seule : dans `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       lire l'entrée `PublishToWeb` ; `GET https://api.powerbi.com/v1.0/myorg/admin/widelySharedArtifacts/publishedToWeb`
+       liste les rapports publiés.
+    6. Échec si le paramètre est activé pour toute l'organisation, ou si un code d'incorporation actif
+       expose du contenu non public.
+remediation:
+  manual: |
+    1. Dans **Portail d'administration** > **Codes d'incorporation**, supprimer les codes qui exposent
+       du contenu interne.
+    2. Dans **Paramètres du locataire** > **Paramètres d'exportation et de partage** > **Publish to
+       web**, sélectionner **Désactivé**, ou **Activé** avec **Groupes de sécurité spécifiques** et
+       **Allow only existing embed codes**. Sélectionner **Appliquer**. Rôle : administrateur Fabric.
+    3. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/PublishToWeb/update` avec l'état
+       cible.
+  rollback: |
+    Remettre le paramètre à son étendue précédente. Les codes d'incorporation supprimés ne se
+    restaurent pas ; le propriétaire du rapport doit republier.

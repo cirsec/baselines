@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-027
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver la conversation de réunion pour les participants anonymes
+finding:
+  title: Les participants anonymes peuvent lire et écrire dans la conversation des réunions Teams
+  description: Des participants non authentifiés voient les fichiers et liens partagés dans la conversation de réunion et peuvent y publier leurs propres liens.
+description: |
+  La conversation de réunion est activée pour tous sauf les participants anonymes
+  (`MeetingChatEnabledType` = `EnabledExceptAnonymous`), ou désactivée (`Disabled`), dans chaque
+  stratégie de réunion. Les participants anonymes admis ne peuvent ni lire ni publier de messages.
+rationale: |
+  La conversation de réunion contient souvent des documents, liens et décisions qui survivent à la
+  réunion. Un participant anonyme n'a pas d'identité responsable et peut publier des liens
+  d'hameçonnage qui semblent faire partie de la réunion. Retirer la conversation aux anonymes limite à
+  la fois l'exposition et les abus tout en gardant l'audio, la vidéo et le partage d'écran.
+impact: |
+  Les participants anonymes (par exemple des clients sans compte) ne peuvent pas utiliser la
+  conversation, y compris pour poser des questions ; utiliser les Q&R ou les inviter comme invités.
+  Aucun impact connu pour les participants authentifiés.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Engagement en réunion > Conversation de réunion
+  recommended_value: Activée pour tout le monde sauf les utilisateurs anonymes (EnabledExceptAnonymous), ou Désactivée
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Engagement en réunion**, vérifier que **Conversation de réunion** est **Activée
+       pour tout le monde sauf les utilisateurs anonymes** ou **Désactivée**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, MeetingChatEnabledType`.
+    5. Échec si une stratégie renvoie `Enabled`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Engagement en réunion**, régler **Conversation de réunion** sur **Activée pour
+       tout le monde sauf les utilisateurs anonymes** puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -MeetingChatEnabledType EnabledExceptAnonymous`
+       (répéter avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements
+       peuvent prendre jusqu'à 24 heures.

@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-028
+title: Require a fresh sign-in with MFA for every Intune device enrollment
+finding:
+  title: Devices can be enrolled in Intune with an existing session, without a fresh sign-in
+  description: An attacker holding a user's session or refresh token can enroll a device of their own and make it look managed to Conditional Access.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [intune, enrollment, conditional-access, mfa, sign-in-frequency, devices]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+    - "Microsoft Intune"
+
+description: |
+  A Conditional Access policy targets the **Microsoft Intune Enrollment** resource for all users,
+  requires multifactor authentication (or an authentication strength) and sets the session control
+  **Sign-in frequency** to **Every time**. Each enrollment then needs a new interactive sign-in with
+  MFA, whatever session the user already holds.
+rationale: |
+  An enrolled device becomes a trusted object: it can be marked compliant, receive certificates and
+  Wi-Fi or VPN profiles, and satisfy device-based Conditional Access (CB-M365-AUTH-020). Attackers
+  who stole a session use device enrollment to persist and to bypass those policies. A fresh MFA at
+  enrollment means a stolen token alone is not enough.
+impact: |
+  Users complete one MFA prompt during each enrollment. Corporate devices enrolled through Apple
+  automated device enrollment or Android Enterprise fully managed need a second device or a
+  Temporary Access Pass to answer the prompt. Do not add device-based grant controls to this
+  policy, or enrollment of new devices fails.
+notes: |
+  The **Microsoft Intune Enrollment** resource is not created automatically in new tenants. If it is
+  missing from the resource picker, create its service principal (application ID
+  `d4ebce55-015a-49b5-a083-c84d1797ae8c`) with `New-MgServicePrincipal -AppId d4ebce55-015a-49b5-a083-c84d1797ae8c`.
+  Selecting **Microsoft Intune** instead also prompts at every Company Portal sign-in.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where:
+       - **Users** > **Include** is **All users** (emergency access accounts may be excluded);
+       - **Target resources** includes **Microsoft Intune Enrollment** (or **All resources**);
+       - **Grant** requires multifactor authentication or an authentication strength;
+       - **Session** > **Sign-in frequency** is set to **Every time**.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.SessionControls.SignInFrequency.FrequencyInterval -eq 'everyTime' } | Select-Object DisplayName, State, @{n='Apps';e={$_.Conditions.Applications.IncludeApplications}}`
+       and look for application ID `d4ebce55-015a-49b5-a083-c84d1797ae8c`.
+    5. Fail if no enabled policy combines the enrollment resource, MFA and **Every time**.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator
+       (the same screens are available in the Intune admin center under **Devices** >
+       **Conditional Access**).
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `ALL - Intune enrollment - MFA every time`.
+    4. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    5. **Target resources** > **Resources** > **Select resources**: **Microsoft Intune Enrollment**.
+    6. **Grant** > **Grant access** > **Require multifactor authentication** (or **Require
+       authentication strength**).
+    7. **Session** > **Sign-in frequency** > **Every time**.
+    8. Set **Enable policy** to **Report-only**, check enrollments in the sign-in logs, then switch
+       to **On**.
+  rollback: |
+    Set the policy to **Report-only** or **Off**.
+
+references:
+  - title: Require multifactor authentication for Intune device enrollment
+    url: https://learn.microsoft.com/intune/device-enrollment/configure-multifactor-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access adaptive session lifetime - Require reauthentication every time
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.11"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.005
+  - framework: mitre-attack
+    id: T1550.001
+related_controls:
+  - id: CB-M365-AUTH-025
+    type: related
+  - id: CB-M365-AUTH-020
+    type: related
+  - id: CB-M365-AUTH-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

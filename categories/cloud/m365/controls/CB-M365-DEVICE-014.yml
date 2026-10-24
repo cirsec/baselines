@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-014
+title: Open legacy Office file formats in Protected View
+finding:
+  title: Legacy Office file formats open outside Protected View
+  description: Old binary Word, Excel and PowerPoint formats, whose parsers are prone to memory corruption, open with full editing even from trusted locations.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [microsoft-365-apps, baseline-security-mode, cloud-policy, protected-view, file-block]
+
+description: |
+  Two Baseline Security Mode settings are turned on in the Microsoft 365 admin center:
+
+  - **Open ancient legacy formats in Protected View and disallow editing**: Word 2 and earlier,
+    Word 6.0 and Word 95 binary documents, Excel 2 to 4 worksheets and macrosheets, and Excel 4
+    workbooks open read-only in Protected View; saving in these formats is blocked;
+  - **Open old legacy formats in Protected View and save as modern format**: Word 97 to 2003
+    binary documents, PowerPoint 97-2003 files, Excel 95 to 2003 workbooks and legacy converters
+    open in Protected View; users can edit after leaving Protected View and must save in a modern
+    format.
+
+  Both settings also enable the Cloud Policy policies **File Block includes trusted files** and
+  **File Block includes external link files**, so trusted locations do not bypass the block.
+rationale: |
+  The parsers for these binary formats date from the 1990s and early 2000s and remain a frequent
+  target for memory corruption exploits delivered as email attachments. Protected View opens the
+  file in a sandbox without active content, which contains an exploit attempt. Few organizations
+  still create files in these formats, so the operational cost is low.
+impact: |
+  Users opening old binary files see them in Protected View; ancient formats cannot be edited, and
+  old formats must be saved as .docx, .xlsx or .pptx. In Excel, new external links to these formats
+  return `#BLOCKED` and existing links stop refreshing. Business processes that still produce .xls
+  or .doc files (exports from old applications) must be identified with the impact reports and
+  converted, or excluded through a scoped Cloud Policy configuration.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Baseline security
+       mode**.
+    3. Check that **Open ancient legacy formats in Protected View and disallow editing** and **Open
+       old legacy formats in Protected View and save as modern format** are both turned on.
+    4. In the Office Cloud Policy service (https://config.office.com), **Customization** > **Policy
+       Management**, review any higher-priority policy configuration that sets the file block
+       policies of these formats to another value: each must be a documented, scoped exception.
+    5. Fail if either setting is off, or if an exception applies to all users.
+
+remediation:
+  manual: |
+    1. In **Settings** > **Org settings** > **Security & privacy** > **Baseline security mode**,
+       download the impact reports of both settings to find users and processes that still open or
+       save legacy formats.
+    2. Convert recurring legacy files to modern formats, or prepare a scoped Cloud Policy exception
+       for the processes that cannot change yet.
+    3. Turn on both settings. Role: Office Apps Administrator.
+    4. Alternative: configure the file block policies listed in the Microsoft pages (for example
+       **Word 97 binary documents and templates** set to **Allow editing and open in Protected
+       View**) in the Office Cloud Policy service. No PowerShell cmdlet exists.
+  rollback: |
+    Turn the settings off in Baseline security mode, or set the Cloud Policy file block policies back
+    to not configured.
+
+references:
+  - title: Open ancient legacy formats in Protected View and disallow editing
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/open-ancient-legacy-formats-protected-view-disallow-editing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Open old legacy formats in Protected View and save as modern format
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/open-old-legacy-formats-protected-view-disallow-editing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1203
+  - framework: mitre-attack
+    id: T1566.001
+related_controls:
+  - id: CB-M365-DEVICE-013
+    type: related
+  - id: CB-M365-DEVICE-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

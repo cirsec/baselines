@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-009
+title: Disable self-service sign-up to the tenant
+finding:
+  title: People can join the tenant or sign up for services by themselves
+  description: Anyone with a mailbox on a verified domain, or any external user through a user flow, can create an account in the directory without an administrator.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, self-service-sign-up, authorization-policy, external-identities]
+
+description: |
+  Self-service account creation is off:
+
+  - `allowedToSignUpEmailBasedSubscriptions` = `false`: users cannot sign up for email-based
+    subscriptions (free trials, Power BI, viral sign-ups) that create accounts in the tenant;
+  - `allowEmailVerifiedUsersToJoinOrganization` = `false`: people who verify an email address on
+    one of the tenant's domains cannot join the directory as members;
+  - **Enable guest self-service sign up via user flows** is **No** in the external collaboration
+    settings: external users cannot create guest accounts through a sign-up user flow.
+rationale: |
+  Accounts created outside the joiner process have no owner, no HR link and no offboarding. A
+  former employee or contractor who still receives mail on a company domain could join the tenant.
+  Self-service guest sign-up lets external people create accounts that bypass invitation
+  restrictions.
+impact: |
+  Users can no longer start some free trials or self-service sign-ups that create accounts; those
+  go through IT. Self-service purchases and trials are governed separately
+  (CB-M365-TENANT-015).
+notes: |
+  The two directory properties have no portal toggle. Guest sign-up through user flows also needs
+  a user flow enabled on an application; turning the switch off disables all of them.
+
+audit:
+  manual: |
+    1. Connect to Microsoft Graph PowerShell with a Global Reader account (scope
+       `Policy.Read.All`) and run:
+       ```
+       Get-MgPolicyAuthorizationPolicy |
+         Select-Object AllowedToSignUpEmailBasedSubscriptions, AllowEmailVerifiedUsersToJoinOrganization
+       ```
+       (or `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy`).
+    2. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com), browse to
+       **Entra ID** > **External Identities** > **External collaboration settings** and read
+       **Enable guest self-service sign up via user flows**.
+    3. Fail if either property is `true` or if guest self-service sign-up is **Yes**.
+
+remediation:
+  manual: |
+    1. Connect to Microsoft Graph PowerShell as at least a Privileged Role Administrator (scope
+       `Policy.ReadWrite.Authorization`) and run:
+       ```
+       Update-MgPolicyAuthorizationPolicy -AllowedToSignUpEmailBasedSubscriptions:$false `
+         -AllowEmailVerifiedUsersToJoinOrganization:$false
+       ```
+    2. With an External Identity Provider Administrator or Global Administrator, browse to
+       **Entra ID** > **External Identities** > **External collaboration settings**, set
+       **Enable guest self-service sign up via user flows** to **No** and **Save**.
+  rollback: |
+    Set the properties back to `true` and the switch back to **Yes**.
+
+references:
+  - title: Self-service sign-up for email-verified users
+    url: https://learn.microsoft.com/entra/identity/users/directory-self-service-signup
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure external collaboration settings
+    url: https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: authorizationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/authorizationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1136.003
+related_controls:
+  - id: CB-M365-TENANT-001
+    type: related
+  - id: CB-M365-TENANT-015
+    type: related
+  - id: CB-M365-TENANT-011
+    type: related
+  - id: CB-M365-APPS-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

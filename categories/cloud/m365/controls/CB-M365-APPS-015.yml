@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-015
+title: Require user assignment for third-party enterprise applications
+finding:
+  title: Third-party applications let any user of the tenant sign in
+  description: When assignment is not required, every account, including a compromised one, can sign in to the application and use the permissions consented for it.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, enterprise-apps, assignment, least-privilege]
+
+description: |
+  Enterprise applications published by third parties (service principals whose
+  `appOwnerOrganizationId` is neither the tenant nor Microsoft) have **Assignment required?** set
+  to **Yes**. Access is granted to groups that match the business need. Applications meant for all
+  staff are assigned to an all-employees group rather than left open.
+rationale: |
+  An application open to all users extends the reach of every compromised account: the attacker
+  can sign in to it, obtain tokens with the consented delegated permissions and use the
+  application as a data path. Requiring assignment also gives an access list that can be reviewed
+  and removed when people leave.
+impact: |
+  Users who are not assigned get an error when they sign in. Assign groups before switching the
+  setting, and check the application's sign-in logs to find current users.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **All applications**, filter on **Application
+       type** = **Enterprise applications**, and for each third-party application open
+       **Properties** and read **Assignment required?**.
+    3. In Microsoft Graph PowerShell (scope `Application.Read.All`), run
+       `Get-MgServicePrincipal -All -Property displayName,appId,appOwnerOrganizationId,appRoleAssignmentRequired,accountEnabled`
+       and keep entries whose `appOwnerOrganizationId` differs from your tenant ID and from
+       `f8cdef31-a31e-4b4a-93e4-5f571e91255a` (Microsoft).
+    4. Fail if an enabled third-party application has `appRoleAssignmentRequired` = `false` without
+       a documented exception.
+
+remediation:
+  manual: |
+    1. Find the current users in **Enterprise apps** > the application > **Sign-in logs**.
+    2. Under **Users and groups**, assign the groups that need access.
+    3. Under **Properties**, set **Assignment required?** to **Yes** and select **Save**.
+    4. Graph alternative (scope `Application.ReadWrite.All`):
+       `Update-MgServicePrincipal -ServicePrincipalId <id> -AppRoleAssignmentRequired:$true`.
+    5. Role required: Cloud Application Administrator or Application Administrator.
+  rollback: |
+    Set **Assignment required?** back to **No**.
+
+references:
+  - title: Assign users and groups to an enterprise application
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/assign-user-or-group-access-portal
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test catalogue (MT.1075)
+    url: https://maester.dev/docs/tests/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-APPS-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

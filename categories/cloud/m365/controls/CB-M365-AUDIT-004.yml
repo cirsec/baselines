@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-004
+title: Enable Audit Premium events for all users
+finding:
+  title: Mailbox access and search events needed for incident response are not recorded for all users
+  description: Without Audit Premium events such as MailItemsAccessed, Send and SearchQueryInitiated, investigators cannot tell which emails an attacker read or searched for.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [audit, logging, audit-premium, purview, exchange, incident-response]
+
+applicability:
+  requires:
+    - "Microsoft Purview E5 Compliance"
+
+description: |
+  Every user mailbox is licensed for Microsoft Purview Audit (Premium) and records the intelligent
+  audit events:
+
+  - `MailItemsAccessed` and `Send` (recorded by default for licensed mailboxes when mailbox audit is
+    on, CB-M365-AUDIT-005);
+  - `SearchQueryInitiatedExchange` and `SearchQueryInitiatedSharePoint`, which must be added to
+    the owner audit actions of each mailbox (`SearchQueryInitiated`).
+rationale: |
+  In mail compromise cases, including state-sponsored intrusions into cloud mailboxes, the key
+  question is which messages were read and what the attacker searched for. These events answer it
+  and also help limit regulatory notification to the data actually accessed. Without them, the
+  organization must assume that the whole mailbox was exposed.
+impact: |
+  Requires an Audit Premium licence (E5, E5 Compliance or the eDiscovery and Audit add-on) for each
+  user. Search events increase audit volume. Since 2024 Microsoft also records `MailItemsAccessed`
+  and `Send` for Audit Standard customers; this control remains useful for search events and
+  longer native retention.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader and check under **Billing** > **Licenses** that every user mailbox holds a licence that
+       includes Microsoft Purview Audit (Premium).
+    2. In Exchange Online PowerShell (View-Only Organization Management), check owner audit actions:
+       `Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox | Where-Object { $_.AuditOwner -notcontains 'MailItemsAccessed' -or $_.AuditOwner -notcontains 'SearchQueryInitiated' } | Select-Object UserPrincipalName,AuditOwner`.
+    3. In the Microsoft Purview portal, run an **Audit** search for the activities **Accessed mailbox
+       items** and **Performed email search** over the last week and check that results exist.
+    4. Fail if user mailboxes lack the licence, or if any licensed mailbox does not record
+       `MailItemsAccessed` or `SearchQueryInitiated`.
+
+remediation:
+  manual: |
+    1. Assign a licence that includes Audit Premium to all users (group-based licensing is
+       recommended).
+    2. Make sure mailbox audit is on (CB-M365-AUDIT-005).
+    3. In Exchange Online PowerShell (Organization Management or Audit Logs role), add the search
+       action to every user mailbox:
+       `Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox | Set-Mailbox -AuditOwner @{Add='SearchQueryInitiated'}`.
+    4. If `MailItemsAccessed` was removed from a mailbox, add it back the same way for `AuditOwner`,
+       `AuditDelegate` and `AuditAdmin`.
+    5. Repeat step 3 for new mailboxes, for example in the provisioning process.
+  rollback: |
+    `Set-Mailbox -AuditOwner @{Remove='SearchQueryInitiated'}`.
+
+references:
+  - title: Microsoft Purview Audit (Premium)
+    url: https://learn.microsoft.com/purview/audit-premium
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set up Microsoft Purview Audit (Premium)
+    url: https://learn.microsoft.com/purview/audit-premium-setup
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-Mailbox
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-mailbox
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.DEFENDER.6.2v1
+    relation: equivalent
+    note: Policy withdrawn from SCuBA 2.0; kept in the hardened profile for incident response.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.17.2v1
+    relation: equivalent
+    note: Policy withdrawn from SCuBA 2.0; kept in the hardened profile for incident response.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.002
+related_controls:
+  - id: CB-M365-AUDIT-001
+    type: requires
+  - id: CB-M365-AUDIT-003
+    type: related
+  - id: CB-M365-AUDIT-005
+    type: requires
+  - id: CB-M365-AUDIT-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

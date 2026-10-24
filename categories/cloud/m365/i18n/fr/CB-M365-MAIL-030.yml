@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-030
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer les actions anti-courrier indésirable entrant recommandées, sans expéditeurs ni domaines autorisés
+finding:
+  title: Les stratégies anti-courrier indésirable entrant remettent du hameçonnage ou mettent en liste blanche des expéditeurs et domaines
+  description: Le hameçonnage et le spam à haut niveau de confiance peuvent arriver dans le Courrier indésirable ou la boîte de réception, et les expéditeurs autorisés échappent au filtrage même usurpés.
+description: |
+  Chaque stratégie anti-courrier indésirable entrant qui s'applique à des utilisateurs (stratégie par
+  défaut, stratégies personnalisées et stratégies prédéfinies) a au moins les valeurs Standard :
+
+  - **Courrier indésirable** : **Déplacer le message vers le dossier Courrier indésirable** ou
+    **Mettre le message en quarantaine** ;
+  - **Courrier indésirable à haut niveau de confiance**, **Hameçonnage** et **Hameçonnage à haut
+    niveau de confiance** : **Mettre le message en quarantaine**, avec **AdminOnlyAccessPolicy** pour
+    le hameçonnage à haut niveau de confiance ;
+  - **Seuil de courrier en nombre** à {{ bulk_threshold }} ou moins, courrier en nombre déplacé dans
+    le Courrier indésirable ou mis en quarantaine, `MarkAsSpamBulkMail On` ;
+  - **Conserver le courrier indésirable en quarantaine pendant ce nombre de jours** : 30
+    (`QuarantineRetentionPeriod`) ;
+  - conseils de sécurité anti-spam activés (`InlineSafetyTipsEnabled $true`) ;
+  - paramètres du filtre anti-spam avancé (ASF) désactivés, comme le recommande Microsoft ;
+  - **Expéditeurs autorisés** et **Domaines autorisés** vides (`AllowedSenders`,
+    `AllowedSenderDomains`), et jamais l'un des domaines de l'organisation ;
+  - des stratégies de quarantaine avec notifications pour les verdicts mis en quarantaine que les
+    utilisateurs peuvent libérer (**DefaultFullAccessWithNotificationPolicy**), pour que les
+    utilisateurs sachent qu'un message est retenu.
+rationale: |
+  Un message de hameçonnage dans le Courrier indésirable reste à un clic de l'utilisateur. La
+  quarantaine le met hors de portée et la quarantaine réservée aux administrateurs empêche la
+  libération des verdicts les plus dangereux. Les expéditeurs et domaines autorisés font sauter le
+  filtrage du spam pour tout message qui revendique cette adresse, y compris usurpé, et sont l'une des
+  mauvaises configurations les plus courantes dans les tenants.
+impact: |
+  Plus de messages sont mis en quarantaine ; les utilisateurs reçoivent des notifications de
+  quarantaine et peuvent libérer eux-mêmes le spam et le courrier en nombre. Les expéditeurs retirés
+  des listes d'autorisation passent par le filtrage normal ; utiliser la liste d'autorisation et de
+  blocage du client pour les rares faux positifs confirmés.
+parameters:
+  bulk_threshold: Seuil maximal de niveau de plainte en nombre (BCL) autorisé ; plus bas est plus strict.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-courrier indésirable** et ouvrir chaque stratégie entrante (**Stratégie de courrier
+       indésirable entrant (par défaut)** et stratégies personnalisées). Comparer **Seuil de courrier
+       en nombre et propriétés du courrier indésirable**, **Actions** et **Liste d'autorisation et de
+       blocage** aux valeurs ci-dessus.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-HostedContentFilterPolicy | Format-List Name, SpamAction, HighConfidenceSpamAction, PhishSpamAction, HighConfidencePhishAction,
+         HighConfidencePhishQuarantineTag, BulkSpamAction, BulkThreshold, MarkAsSpamBulkMail, QuarantineRetentionPeriod,
+         InlineSafetyTipsEnabled, AllowedSenders, AllowedSenderDomains, IncreaseScoreWith*, MarkAsSpam*
+       Get-HostedContentFilterRule | Format-Table Name, State, Priority
+       ```
+    4. Échec si une stratégie qui s'applique à des utilisateurs remet le hameçonnage ou le spam à haut
+       niveau de confiance hors quarantaine, a un seuil de courrier en nombre supérieur à
+       {{ bulk_threshold }}, une rétention inférieure à 30 jours, les conseils de sécurité désactivés,
+       ou un expéditeur ou domaine autorisé.
+remediation:
+  manual: |
+    1. Préférer la stratégie prédéfinie : appliquer la stratégie Standard à tous les destinataires
+       (CB-M365-MAIL-019), puis aligner la stratégie par défaut, qui s'applique toujours aux
+       destinataires hors stratégies prédéfinies.
+    2. Dans le portail Defender, modifier chaque stratégie entrante (Administrateur de la sécurité) :
+       régler les actions, le seuil de courrier en nombre, la rétention et les conseils de sécurité
+       ci-dessus, et retirer chaque expéditeur et domaine autorisé (remplacer les faux positifs
+       confirmés par des entrées de la liste d'autorisation et de blocage du client).
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-HostedContentFilterPolicy -Identity Default -SpamAction MoveToJmf -HighConfidenceSpamAction Quarantine `
+         -PhishSpamAction Quarantine -HighConfidencePhishAction Quarantine -HighConfidencePhishQuarantineTag AdminOnlyAccessPolicy `
+         -BulkSpamAction MoveToJmf -BulkThreshold 6 -MarkAsSpamBulkMail On -QuarantineRetentionPeriod 30 `
+         -InlineSafetyTipsEnabled $true -AllowedSenders $null -AllowedSenderDomains $null `
+         -HighConfidenceSpamQuarantineTag DefaultFullAccessWithNotificationPolicy -PhishQuarantineTag DefaultFullAccessWithNotificationPolicy
+       ```
+  rollback: |
+    Restaurer les valeurs précédentes de la stratégie ; garder les listes d'autorisation vides.

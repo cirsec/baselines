@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir périodiquement Secure Score et les recommandations Entra
+finding:
+  title: Les recommandations de sécurité Microsoft pour le tenant ne sont pas revues
+  description: Les nouvelles faiblesses signalées par Microsoft Secure Score et les recommandations Microsoft Entra s'accumulent sans être vues entre deux audits.
+description: |
+  Au moins tous les **{{ posture_review_interval_days }}** jours, l'équipe sécurité revoit
+  Microsoft Secure Score (portail Microsoft Defender) et les recommandations Microsoft Entra. Chaque
+  recommandation ouverte est soit corrigée, soit planifiée avec un responsable et une date, soit
+  acceptée comme risque avec une justification consignée (état **Risque accepté** ou **Planifié**
+  dans Secure Score, **Ignorée** ou **Reportée** avec motif dans Entra). L'évolution du score et les
+  décisions sont présentées au RSSI.
+rationale: |
+  Microsoft ajoute des vérifications au fil des évolutions de la plateforme (nouvelles
+  fonctionnalités, nouvelles techniques d'attaque). Une baseline appliquée une fois dérive : des
+  réglages sont modifiés, de nouveaux usages arrivent. Une revue régulière des recommandations de
+  l'éditeur est un moyen peu coûteux de repérer la dérive entre deux audits complets et de garder les
+  exceptions documentées.
+impact: |
+  Quelques heures de travail par revue. Certaines recommandations Entra exigent Entra ID P2 pour être
+  affichées.
+parameters:
+  posture_review_interval_days: Nombre maximal de jours entre deux revues de Secure Score et des recommandations Entra.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité, aller dans **Gestion de l'exposition** > **Degré de sécurisation** (ou
+       **Secure Score**) > **Actions recommandées**, et vérifier que les actions ouvertes ont un état
+       autre que **À traiter** ou une entrée d'historique récente.
+    2. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général, aller dans **Entra ID** > **Vue d'ensemble** >
+       **Recommandations**, et vérifier que les recommandations actives sont traitées ou ignorées
+       avec un motif.
+    3. Alternative Graph (lecture seule) :
+       `GET https://graph.microsoft.com/v1.0/security/secureScores?$top=1` et
+       `GET https://graph.microsoft.com/beta/directory/recommendations`.
+    4. Demander la trace de la dernière revue (compte rendu, ticket, rapport).
+    5. Échec si aucune revue n'a eu lieu dans les {{ posture_review_interval_days }} derniers jours,
+       ou si des recommandations à fort impact restent **À traiter** sans responsable ni décision.
+remediation:
+  manual: |
+    1. Planifier une revue récurrente tous les {{ posture_review_interval_days }} jours avec un
+       responsable dans l'équipe sécurité.
+    2. À chaque revue, traiter chaque recommandation nouvelle ou ouverte : corriger, planifier avec
+       un responsable, ou passer en **Risque accepté** avec justification dans Secure Score et ignorer
+       avec motif dans les recommandations Entra.
+    3. Consigner l'évolution du score et les décisions, et les présenter au RSSI.
+    4. Rôles requis pour modifier les états : Administrateur de la sécurité (Secure Score),
+       Administrateur de la sécurité ou Administrateur général (recommandations Entra).
+  rollback: |
+    Sans objet.

@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-024
+title: Keep zero-hour auto purge on for malware, phishing and spam
+finding:
+  title: Messages found to be malicious after delivery stay in mailboxes
+  description: When a verdict changes after delivery, the malicious message remains in the user's inbox instead of being moved out automatically.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online-protection, zap, anti-malware, anti-spam, post-delivery]
+
+description: |
+  Zero-hour auto purge (ZAP) is on in every policy that applies to users:
+
+  - anti-malware policies: `ZapEnabled $true`;
+  - anti-spam policies: `PhishZapEnabled $true` and `SpamZapEnabled $true`, with spam and phishing
+    actions that ZAP can carry out (**Move message to Junk Email folder** or **Quarantine
+    message**, not **Add X-header**, **Prepend subject line** or **Redirect**);
+  - with Defender for Office 365, the Microsoft Teams protection policy: `ZapEnabled $true`.
+rationale: |
+  Many campaigns are only recognized minutes or hours after the first messages are delivered, for
+  example when a link turns malicious after delivery. ZAP pulls those messages out of mailboxes
+  retroactively. It is on by default, which makes a disabled ZAP a sign of an old troubleshooting
+  change that was never reverted.
+impact: |
+  None known. A message moved by mistake can be released from quarantine or Junk Email.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies**. In
+       **Anti-malware**, check **Enable zero-hour auto purge for malware** in every policy. In
+       **Anti-spam**, check **Zero-hour auto purge (ZAP)** for phishing and spam in every inbound
+       policy and the spam and phishing actions.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-MalwareFilterPolicy | Format-Table Name, ZapEnabled
+       Get-HostedContentFilterPolicy | Format-Table Name, PhishZapEnabled, SpamZapEnabled, SpamAction, PhishSpamAction, HighConfidencePhishAction
+       Get-TeamsProtectionPolicy | Format-Table Name, ZapEnabled
+       ```
+    4. Fail if one of the ZAP values is `False` in a policy that applies to users, or if a spam or
+       phishing action is `AddXHeader`, `ModifySubject` or `Redirect`.
+
+remediation:
+  manual: |
+    1. In the Defender portal, edit each anti-malware and anti-spam policy, turn the ZAP options on
+       and set the actions as in CB-M365-MAIL-030.
+    2. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Get-MalwareFilterPolicy | Set-MalwareFilterPolicy -ZapEnabled $true
+       Get-HostedContentFilterPolicy | Set-HostedContentFilterPolicy -PhishZapEnabled $true -SpamZapEnabled $true
+       Set-TeamsProtectionPolicy -Identity "Teams Protection Policy" -ZapEnabled $true
+       ```
+       (Preset policies cannot be edited and already have ZAP on.)
+
+references:
+  - title: Zero-hour auto purge (ZAP) in Exchange Online
+    url: https://learn.microsoft.com/defender-office-365/zero-hour-auto-purge
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommended settings for EOP and Microsoft Defender for Office 365 security
+    url: https://learn.microsoft.com/defender-office-365/recommended-settings-for-eop-and-office365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-120, ORCA-121)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.1.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-030
+    type: related
+  - id: CB-M365-MAIL-034
+    type: related
+  - id: CB-M365-COLLAB-033
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

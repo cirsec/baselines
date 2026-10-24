@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-032
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Définir les emplacements réseau approuvés de l'organisation
+finding:
+  title: Aucun emplacement réseau approuvé n'est défini dans l'accès conditionnel
+  description: Les stratégies ne peuvent pas distinguer les adresses de sortie de l'entreprise du reste d'internet, et ID Protection perd un signal pour évaluer le risque de connexion.
+description: |
+  Les plages d'adresses IP publiques utilisées par l'organisation pour joindre Microsoft 365 (sorties
+  internet des sites, centres de données, concentrateurs VPN, proxy cloud) sont déclarées comme
+  emplacements nommés de type **Plages d'adresses IP** dans l'accès conditionnel et marquées comme
+  **approuvées**. La liste appartient à l'équipe réseau et est revue à chaque changement de point de
+  sortie.
+rationale: |
+  Les emplacements approuvés réduisent les faux positifs d'ID Protection (les connexions qui en
+  proviennent sont jugées moins risquées) et permettent d'écrire des stratégies précises, par exemple
+  restreindre l'inscription des informations de sécurité ou les comptes de service au réseau de
+  l'entreprise (CB-M365-AUTH-019). Une liste absente ou obsolète conduit à des exclusions larges.
+impact: |
+  Aucun en soi : un emplacement nommé ne change rien tant qu'aucune stratégie ne l'utilise. Ne pas se
+  servir d'un emplacement approuvé pour dispenser tout le monde de MFA ; un attaquant sur le réseau de
+  l'entreprise, ou sur un appareil compromis qui s'y trouve, la contournerait.
+notes: |
+  Seules les adresses de sortie publiques comptent ; les plages privées (10.0.0.0/8 et similaires) ne
+  sont jamais vues par Microsoft Entra ID. Avec un proxy cloud ou une solution SSE, déclarer les plages
+  de sortie du proxy, ou utiliser la restauration de l'IP source de Global Secure Access.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Emplacements nommés**.
+    3. Vérifier qu'au moins un emplacement **Plages d'adresses IP** existe avec **Approuvé** à
+       **Oui**, et que ses plages correspondent à la liste actuelle des adresses de sortie fournie par
+       l'équipe réseau.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessNamedLocation | Where-Object { $_.AdditionalProperties.isTrusted } | Select-Object DisplayName, @{n='Ranges';e={$_.AdditionalProperties.ipRanges.cidrAddress}}`
+    5. Échec si aucun emplacement IP approuvé n'existe, ou s'il contient des plages que l'organisation
+       ne possède pas ou n'utilise plus.
+remediation:
+  manual: |
+    1. Obtenir de l'équipe réseau la liste des plages d'adresses IP publiques de sortie.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    3. Aller dans **Entra ID** > **Accès conditionnel** > **Emplacements nommés** > **Emplacement des
+       plages IP**.
+    4. Saisir un nom, ajouter chaque plage en notation CIDR, cocher **Marquer comme emplacement
+       approuvé** et **Créer**.
+    5. Noter le propriétaire de la liste et la revoir à chaque changement réseau.
+
+    En PowerShell : `New-MgIdentityConditionalAccessNamedLocation` avec `@odata.type`
+    `#microsoft.graph.ipNamedLocation`, `ipRanges` et `isTrusted = $true`.
+  rollback: |
+    Décocher **Marquer comme emplacement approuvé**, ou supprimer l'emplacement quand plus aucune
+    stratégie ne le référence.

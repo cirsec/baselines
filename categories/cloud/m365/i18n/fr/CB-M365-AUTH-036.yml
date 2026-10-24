@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-036
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une liste personnalisée de mots de passe interdits avec les termes propres à l'organisation
+finding:
+  title: Les mots de passe construits sur le nom de l'entreprise ou de ses marques sont acceptés
+  description: Les attaquants pulvérisent d'abord des mots de passe comme Entreprise2026!, et seule la liste globale de Microsoft bloque les plus courants.
+description: |
+  Dans Microsoft Entra Password Protection, **Appliquer la liste personnalisée** est sur **Oui** et la
+  **Liste de mots de passe interdits personnalisés** contient les termes propres à l'organisation :
+  noms de l'entreprise et du groupe, marques et produits, principaux sites, noms de projets internes,
+  clubs sportifs locaux, et les termes listés dans `{{ banned_password_terms }}`.
+
+  Microsoft Entra ID vérifie chaque changement et chaque réinitialisation de mot de passe par rapport
+  à la liste globale et à cette liste personnalisée, avec normalisation (casse, substitutions
+  courantes comme 0 pour o) et correspondance approximative, puis note les caractères restants.
+rationale: |
+  La pulvérisation de mots de passe et les essais ciblés commencent par des mots liés à la victime.
+  La liste globale de Microsoft ne peut pas connaître les marques ou la ville d'une entreprise. Une
+  courte liste personnalisée bloque les variantes que les utilisateurs en tirent naturellement, sans
+  coût.
+impact: |
+  Les utilisateurs qui choisissent un mot de passe contenant un terme interdit reçoivent une erreur et
+  doivent en choisir un autre. La liste contient au plus 1 000 termes de 4 à 16 caractères ; les
+  modifications peuvent mettre plusieurs heures à s'appliquer. Pour les utilisateurs synchronisés, la
+  liste n'est appliquée en local qu'avec CB-M365-AUTH-037.
+notes: |
+  Ne pas ajouter de mots génériques déjà couverts par la liste globale, ni les noms des salariés en
+  masse : le but est une courte liste de termes à forte valeur. La liste n'est visible que des
+  administrateurs.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Protection par mot de passe > Mots de passe interdits personnalisés
+  recommended_value: Appliquer la liste personnalisée = Oui, la liste contient les termes de l'organisation
+parameters:
+  banned_password_terms: Termes propres à l'organisation à interdire (noms de l'entreprise, des marques et des produits, sites). À renseigner lors de l'adaptation.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Protection par mot de passe**.
+    3. Sous **Mots de passe interdits personnalisés**, vérifier que **Appliquer la liste
+       personnalisée** est sur **Oui** et que la **Liste de mots de passe interdits personnalisés**
+       contient les noms et marques de l'organisation, et chaque terme de
+       {{ banned_password_terms }}.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Directory.Read.All`) :
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       affiche `EnableBannedPasswordCheck` = `True` et les termes dans `BannedPasswordList`. Aucun
+       objet signifie les réglages par défaut (liste personnalisée désactivée).
+    5. Échec si la liste personnalisée n'est pas appliquée, est vide, ou ne contient pas le nom de
+       l'entreprise.
+remediation:
+  manual: |
+    1. Établir la liste avec les équipes communication et métiers (marques, produits, sites).
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Protection par mot de passe**.
+    4. Sous **Mots de passe interdits personnalisés**, régler **Appliquer la liste personnalisée** sur
+       **Oui** et saisir un terme par ligne dans **Liste de mots de passe interdits personnalisés**.
+    5. Sélectionner **Enregistrer**. Tester en essayant de changer le mot de passe d'un utilisateur
+       de test pour une variante d'un terme interdit.
+  rollback: |
+    Régler **Appliquer la liste personnalisée** sur **Non** et enregistrer.

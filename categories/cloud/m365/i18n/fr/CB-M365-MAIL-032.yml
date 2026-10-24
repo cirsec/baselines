@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-032
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder vide la liste d'adresses IP autorisées du filtre de connexion et la liste sûre désactivée
+finding:
+  title: Le filtre de connexion fait sauter le filtrage anti-spam au courrier d'adresses IP listées ou de la liste sûre de Microsoft
+  description: Les messages de ces sources échappent au filtrage du spam et à une partie de la détection d'usurpation, quel que soit leur contenu.
+description: |
+  La stratégie de filtrage des connexions par défaut a :
+
+  - une liste **Toujours autoriser les messages provenant des adresses IP ou plages d'adresses
+    suivantes** vide (`IPAllowList`) ;
+  - **Activer la liste sûre** décoché (`EnableSafeList $false`).
+
+  Le courrier de systèmes de confiance passe par un connecteur entrant (CB-M365-MAIL-036), le filtrage
+  amélioré (CB-M365-MAIL-018) ou la stratégie de remise avancée, pas par un contournement du filtrage.
+rationale: |
+  Les adresses IP autorisées échappent au filtrage du spam, et des plages d'hébergement mutualisé ou
+  cloud ajoutées pour un partenaire laissent entrer n'importe quel client de ce fournisseur. La liste
+  sûre est une liste tierce d'expéditeurs que Microsoft ne contrôle pas pour le tenant. Les deux créent
+  des angles morts exploitables par des attaquants utilisant la même infrastructure.
+impact: |
+  Les messages des adresses IP auparavant autorisées passent par le filtrage normal et certains
+  peuvent être marqués comme indésirables jusqu'à ce que l'expéditeur corrige son authentification ou
+  qu'une exception plus étroite soit mise en place.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-courrier indésirable** > **Stratégie de filtrage des connexions (par défaut)**.
+    3. Vérifier que **Toujours autoriser les messages provenant des adresses IP ou plages d'adresses
+       suivantes** est vide et que **Activer la liste sûre** est décoché.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-HostedConnectionFilterPolicy | Format-List Name, IPAllowList, EnableSafeList
+       ```
+    5. Échec si `IPAllowList` contient une entrée ou si `EnableSafeList` vaut `True`.
+remediation:
+  manual: |
+    1. Pour chaque adresse IP autorisée, trouver quel expéditeur elle sert et mettre en place un chemin
+       adapté (connecteur, filtrage amélioré, entrée de la liste d'autorisation et de blocage du client
+       pour l'expéditeur).
+    2. Dans le portail Defender, modifier **Stratégie de filtrage des connexions (par défaut)**
+       (Administrateur de la sécurité), retirer les adresses IP, décocher **Activer la liste sûre** et
+       enregistrer.
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-HostedConnectionFilterPolicy -Identity Default -IPAllowList $null -EnableSafeList $false
+       ```
+  rollback: |
+    Réajouter l'adresse IP (`-IPAllowList @{Add="192.0.2.10"}`) le temps de mettre en place le chemin
+    adapté.

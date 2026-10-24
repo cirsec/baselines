@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre le consentement des utilisateurs aux applications
+finding:
+  title: Les utilisateurs peuvent donner à n'importe quelle application l'accès aux données de l'organisation
+  description: Un attaquant peut envoyer un lien de consentement vers une application multitenant malveillante et obtenir un jeton sur la messagerie, les fichiers ou l'annuaire de la victime sans jamais connaître de mot de passe.
+description: |
+  Le consentement des utilisateurs aux applications est limité au niveau **{{ user_consent }}** :
+
+  - `low-risk` : les utilisateurs ne peuvent consentir qu'aux applications d'éditeurs vérifiés ou
+    inscrites dans le tenant, et seulement pour les permissions classées à faible impact (stratégie
+    intégrée `microsoft-user-default-low`) ;
+  - `none` : les utilisateurs ne peuvent consentir à aucune application ; chaque demande part vers
+    un administrateur via le workflow de consentement administrateur (CB-M365-APPS-005).
+
+  L'ancien réglage **Autoriser le consentement de l'utilisateur pour les applications**
+  (`microsoft-user-default-legacy`) n'est jamais utilisé.
+rationale: |
+  L'octroi de consentement illicite est une technique d'hameçonnage qui contourne entièrement le mot
+  de passe et la MFA : la victime se connecte sur la vraie page Microsoft et approuve des permissions
+  pour l'application de l'attaquant, qui conserve ensuite un jeton d'actualisation. Limiter le
+  consentement aux éditeurs vérifiés et aux permissions à faible impact écarte la plupart de ces
+  leurres ; supprimer le consentement utilisateur les écarte tous.
+impact: |
+  Avec `low-risk`, les utilisateurs peuvent encore connecter les applications courantes qui ne
+  demandent que la connexion et le profil de base. Classer d'abord les permissions à faible impact
+  (**Classifications des autorisations**), sinon la liste est vide et chaque demande passe par un
+  administrateur. Avec `none`, chaque nouvelle application demande une décision d'administrateur :
+  dimensionner l'équipe de revue avant de basculer.
+notes: |
+  Les consentements existants ne sont pas retirés quand le réglage change. Les revoir dans
+  **Applications d'entreprise** > **Autorisations** et révoquer ceux qui ne sont pas utiles
+  (CB-M365-APPS-011).
+setting:
+  location: Centre d'administration Entra > Entra ID > Applications d'entreprise > Consentement et autorisations > Paramètres de consentement de l'utilisateur (Graph authorizationPolicy.defaultUserRolePermissions.permissionGrantPoliciesAssigned)
+  recommended_value: "{{ user_consent }}"
+parameters:
+  user_consent: Niveau maximal de consentement utilisateur autorisé. low-risk n'autorise que les éditeurs vérifiés et les permissions à faible impact ; none désactive le consentement utilisateur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et autorisations** >
+       **Paramètres de consentement de l'utilisateur**.
+    3. Vérifier **Consentement de l'utilisateur pour les applications** :
+       - pour `low-risk` : **Autoriser le consentement de l'utilisateur pour les applications des
+         éditeurs vérifiés, pour les autorisations sélectionnées** ou **Ne pas autoriser le
+         consentement de l'utilisateur** ;
+       - pour `none` : **Ne pas autoriser le consentement de l'utilisateur**.
+    4. Avec `low-risk`, ouvrir **Classifications des autorisations** et vérifier que seules des
+       permissions déléguées à faible impact (par exemple `openid`, `profile`, `email`,
+       `offline_access`, `User.Read`) y figurent.
+    5. Alternative en Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.PermissionGrantPoliciesAssigned`.
+       Les entrées qui commencent par `ManagePermissionGrantsForSelf.` définissent le consentement
+       utilisateur : `microsoft-user-default-low` correspond à `low-risk` ; aucune entrée de ce type
+       correspond à `none`.
+    6. Échec si **Autoriser le consentement de l'utilisateur pour les applications** est sélectionné
+       (`microsoft-user-default-legacy`), si une stratégie personnalisée
+       `ManagePermissionGrantsForSelf.*` va au-delà des permissions à faible impact, ou si le niveau
+       est moins strict que `{{ user_consent }}`.
+remediation:
+  manual: |
+    1. Activer d'abord le workflow de consentement administrateur (CB-M365-APPS-005) pour que les
+       utilisateurs bloqués puissent demander l'accès.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de rôle privilégié (le rôle Administrateur général est exigé pour la page du portail).
+    3. Pour `low-risk`, aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et
+       autorisations** > **Classifications des autorisations** et ajouter les permissions déléguées
+       à faible impact.
+    4. Aller dans **Paramètres de consentement de l'utilisateur** et sélectionner **Autoriser le
+       consentement de l'utilisateur pour les applications des éditeurs vérifiés, pour les
+       autorisations sélectionnées** (`low-risk`) ou **Ne pas autoriser le consentement de
+       l'utilisateur** (`none`). Sélectionner **Enregistrer**.
+    5. Alternative en Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) : lire
+       la valeur actuelle de `PermissionGrantPoliciesAssigned`, conserver les entrées
+       `ManagePermissionGrantsForOwnedResource.*`, et remplacer l'entrée
+       `ManagePermissionGrantsForSelf.*` par
+       `ManagePermissionGrantsForSelf.microsoft-user-default-low` (ou la retirer pour `none`) avec
+       `Update-MgPolicyAuthorizationPolicy`.
+  rollback: |
+    Resélectionner l'option de consentement précédente. Ne pas revenir à **Autoriser le
+    consentement de l'utilisateur pour les applications**.

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les stratégies d'alerte Microsoft 365 essentielles et les diriger vers une destination supervisée
+finding:
+  title: Des stratégies d'alerte de sécurité essentielles sont désactivées ou n'envoient leurs alertes à personne
+  description: Transferts suspects, envois compromis, abus de connecteurs ou clics sur des URL malveillantes déclenchent des alertes que personne ne reçoit ; la réponse commence tard, voire jamais.
+description: |
+  Dans le portail Microsoft Defender, au moins les stratégies d'alerte de **{{ alert_policies }}**
+  sont activées. Leurs alertes parviennent à l'équipe sécurité via une boîte aux lettres ou une liste
+  de distribution supervisée dans les paramètres de notification par e-mail, ou via le connecteur
+  SIEM des incidents Microsoft Defender XDR (CB-M365-AUDIT-002).
+rationale: |
+  Ces stratégies intégrées détectent des signes courants de compromission d'une boîte aux lettres ou
+  du tenant : un compte qui envoie du spam ou de l'hameçonnage, un connecteur nouveau ou modifié
+  utilisé pour relayer des messages, un transfert massif de messages, un utilisateur qui clique sur
+  un lien malveillant. Les garder actives ne coûte rien, mais elles ne servent que si quelqu'un voit
+  l'alerte.
+impact: |
+  Les alertes ajoutent de la charge à l'équipe sécurité. Ajuster les seuils de notification et les
+  diriger vers la file d'incidents habituelle plutôt que vers des boîtes personnelles.
+parameters:
+  alert_policies: Stratégies d'alerte intégrées qui doivent être activées et dirigées vers l'équipe sécurité (noms tels qu'affichés dans le portail Defender).
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec le rôle
+       View-Only Manage Alerts (ou Lecteur Sécurité).
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégie d'alerte**.
+    3. Pour chaque stratégie de {{ alert_policies }}, vérifier que l'**État** est **Activé** et
+       l'ouvrir pour vérifier les **Destinataires de l'e-mail** (boîte ou liste supervisée), sauf si
+       les alertes sont exploitées dans le SIEM.
+    4. Si le SIEM est utilisé, vérifier avec le SOC que les alertes Defender XDR de ces stratégies y
+       apparaissent.
+    5. Alternative en PowerShell Sécurité et conformité :
+       `Get-ProtectionAlert | Where-Object Name -in @(<liste>) | Format-List Name,Disabled,NotificationEnabled,NotifyUser,Severity`.
+    6. Échec si une stratégie listée est désactivée, ou si ses alertes n'atteignent ni une adresse
+       supervisée ni le SIEM.
+remediation:
+  manual: |
+    1. Se connecter au portail Microsoft Defender avec le rôle Manage Alerts (ou Organization
+       Configuration).
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégie d'alerte**.
+    3. Activer chaque stratégie listée et, dans **Modifier la stratégie** > **Définir vos
+       destinataires**, ajouter la boîte supervisée de l'équipe sécurité.
+    4. Alternative en PowerShell Sécurité et conformité :
+       `Set-ProtectionAlert -Identity "<stratégie>" -Disabled $false -NotificationEnabled $true -NotifyUser soc@example.com`.
+    5. Connecter Microsoft Defender XDR au SIEM (CB-M365-AUDIT-002).
+  rollback: |
+    Désactiver la stratégie ou retirer le destinataire.

@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-030
+title: Block or force secure remediation for users at high risk
+finding:
+  title: Users flagged as high risk by ID Protection keep full access
+  description: An account that Microsoft considers likely compromised (leaked credentials, attacker activity) can still sign in and use the tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [conditional-access, id-protection, user-risk, compromised-accounts]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+description: |
+  A Conditional Access policy targets all users on all resources with the **User risk** condition
+  set to **High**, and applies the action chosen in `{{ user_risk_action }}`:
+
+  - `remediate`: grant access with **Require risk remediation** (an authentication strength is
+    selected with it, and **Sign-in frequency - Every time** is enforced). The user must perform a
+    secure password change, or for passwordless users a fresh strong sign-in, before going on. The
+    older combination **Require multifactor authentication** + **Require password change** is
+    accepted while it is still available.
+  - `block`: **Block access**. An administrator investigates, then resets the password and dismisses
+    the risk.
+
+  Both options satisfy this control. The policy excludes only the emergency access accounts.
+rationale: |
+  User risk aggregates signals that the account itself is compromised: credentials found in leaks,
+  sign-ins from attacker infrastructure, token anomalies, Microsoft threat intelligence. Without a
+  policy, these detections only feed a report that nobody may read. Acting automatically shortens
+  the time an attacker can use the account from days to the next sign-in.
+impact: |
+  With `remediate`, users must already be registered for MFA (and SSPR for password users),
+  otherwise they are blocked until an administrator helps. With `block`, every high-risk user
+  waits for the help desk or the security team; plan an on-call process. Password remediation
+  needs password writeback for synchronized users.
+notes: |
+  Microsoft is rolling out Microsoft-managed policies for high-risk users ("Block access for
+  high-risk users", "Require remediation for high-risk users"; message center MC1507808, end of
+  October 2026). A managed policy left in **Report-only** is turned on by Microsoft after about 30
+  days. Review it: either keep it **On** as the policy that meets this control, or turn it **Off**
+  if your own policy covers the same scope. When several risk policies apply, **Block** overrides
+  remediation.
+
+parameters:
+  - name: user_risk_action
+    type: enum
+    description: Action for users at high risk. "remediate" requires a secure self-remediation, "block" blocks access until an administrator acts.
+    default: remediate
+    allowed: [remediate, block]
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy (custom or Microsoft-managed) with **State** set to **On** where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the emergency
+         access accounts or their group;
+       - **Target resources** includes **All resources**;
+       - **Conditions** > **User risk** includes **High**;
+       - **Grant** is **Block access**, or **Require risk remediation** (or **Require multifactor
+         authentication** + **Require password change**).
+    4. Browse to **ID Protection** > **Risky users** and check that high-risk users do not stay in
+       the **At risk** state for long.
+    5. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.UserRiskLevels -contains 'high' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Fail if no enabled policy acts on high user risk for all users and all resources.
+
+remediation:
+  manual: |
+    1. Make sure users are registered for MFA (CB-M365-AUTH-018) and, for password users, for SSPR
+       (CB-M365-AUTH-039).
+    2. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    3. If a Microsoft-managed high-risk user policy exists in **Report-only**, review its impact,
+       exclude the emergency access accounts and set it to **On**. Otherwise create a policy:
+    4. **New policy**, name it for example `ALL - High user risk`.
+    5. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    6. **Target resources** > **Include**: **All resources**.
+    7. **Conditions** > **User risk** > **Configure**: **Yes**, select **High**.
+    8. **Grant**: for `remediate`, **Grant access** > **Require risk remediation** and pick an
+       authentication strength; for `block`, **Block access**.
+    9. Set **Enable policy** to **Report-only**, review the sign-ins it would affect, then switch to
+       **On**.
+  rollback: |
+    Set the policy to **Report-only** or **Off**. Unblock a user by resetting the password and
+    dismissing the risk in **ID Protection** > **Risky users**.
+
+references:
+  - title: Require remediation for risky users
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-user
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed Conditional Access policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.6"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.2.1v1
+    relation: looser
+    note: SCuBA requires blocking high-risk users; ours also accepts a secure self-remediation (parameter user_risk_action).
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(12)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1110.003
+related_controls:
+  - id: CB-M365-AUTH-031
+    type: related
+  - id: CB-M365-AUTH-018
+    type: requires
+  - id: CB-M365-AUTH-039
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-AUTH-008
+    type: related
+  - id: CB-M365-AUDIT-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

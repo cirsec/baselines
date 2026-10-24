@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-012
+title: Block Basic authentication prompts in Microsoft 365 apps
+finding:
+  title: Microsoft 365 apps can show Basic authentication prompts
+  description: Users can allow Office apps to display Basic authentication sign-in prompts, which send credentials in a reusable form and are a common phishing vector.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [microsoft-365-apps, baseline-security-mode, basic-authentication, cloud-policy, phishing]
+
+description: |
+  The Baseline Security Mode setting **Block Basic authentication prompts** is turned on in the
+  Microsoft 365 admin center. Microsoft 365 apps then refuse to open files from servers that only
+  offer Basic authentication, and users cannot re-enable the prompts in the Trust Center.
+
+  In the Office Cloud Policy service, the matching policies are **Allow Basic authentication
+  prompts from network proxies** and **Allow specified hosts to show Basic authentication prompts
+  to Office apps**. They stay not configured or disabled, except for an explicit, reviewed host
+  list.
+rationale: |
+  A Basic authentication prompt asks for the user's password in a generic dialog that any server,
+  proxy or attacker-controlled document link can trigger. Users cannot tell a legitimate prompt
+  from a fake one, and the password travels to the server in a reusable form. Microsoft 365 apps
+  block these prompts by default; enforcing the block by policy removes the user override that
+  phishing documents ask for.
+impact: |
+  Files hosted on servers that only support Basic authentication (old WebDAV shares, some
+  third-party document servers) no longer open in Microsoft 365 apps. Run the Baseline Security
+  Mode impact report first, and migrate those servers to modern authentication or allow them by
+  host name through Cloud Policy.
+notes: |
+  The settings listed under Baseline Security Mode depend on the tenant's licences; this setting
+  may not appear in every tenant. In that case, configure the two Cloud Policy policies above
+  directly. This control covers Office client prompts; blocking legacy authentication protocols at
+  sign-in is a Conditional Access control.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Baseline security
+       mode**.
+    3. Check that **Block Basic authentication prompts** is turned on (listed as applied).
+    4. If the setting is not listed, sign in to the Office Cloud Policy service
+       (https://config.office.com) and, under **Customization** > **Policy Management**, check the
+       tenant policy configuration: **Allow Basic authentication prompts from network proxies** must
+       be not configured or **Disabled**, and **Allow specified hosts to show Basic authentication
+       prompts to Office apps** must be not configured or list only approved hosts.
+    5. Fail if the setting is off, or if a Cloud Policy configuration allows Basic authentication
+       prompts broadly.
+
+remediation:
+  manual: |
+    1. In **Settings** > **Org settings** > **Security & privacy** > **Baseline security mode**,
+       open **Block Basic authentication prompts** and download the impact report to find users and
+       servers that still rely on Basic authentication.
+    2. Migrate or allow those servers by host name (Cloud Policy policy **Allow specified hosts to
+       show Basic authentication prompts to Office apps**).
+    3. Turn the setting on. Role: Office Apps Administrator.
+    4. No PowerShell cmdlet exists for this setting; the Office Cloud Policy service is the only
+       alternative.
+  rollback: |
+    Turn the setting off in Baseline security mode, or set the two Cloud Policy policies back to not
+    configured.
+
+references:
+  - title: Block Basic authentication
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-basic-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+  - framework: mitre-attack
+    id: T1056.002
+related_controls:
+  - id: CB-M365-DEVICE-013
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

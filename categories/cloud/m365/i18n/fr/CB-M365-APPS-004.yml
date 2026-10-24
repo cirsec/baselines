@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les propriétaires de groupes de consentir à des applications pour leurs groupes
+finding:
+  title: Les propriétaires de groupes peuvent donner à des applications l'accès aux données de leur groupe
+  description: Le propriétaire d'un groupe Microsoft 365 ou d'une équipe, souvent un simple utilisateur, peut approuver une application qui lit ensuite les fichiers, conversations et calendrier du groupe.
+description: |
+  Les propriétaires de groupes ne peuvent pas accorder de consentement spécifique aux ressources à des
+  applications pour les groupes ou équipes qu'ils possèdent. Aucune stratégie de consentement de
+  groupe `ManagePermissionGrantsForOwnedResource.*` n'est attribuée au rôle utilisateur par défaut,
+  et l'ancien paramètre d'annuaire `EnableGroupSpecificConsent` vaut `False`.
+rationale: |
+  Le consentement spécifique au groupe contourne les paramètres de consentement du tenant pour les
+  données d'un groupe : un propriétaire piégé par un lien d'hameçonnage par consentement expose tous
+  les fichiers et messages du groupe, même quand le consentement utilisateur est restreint
+  (CB-M365-APPS-002). Les propriétaires de groupes ne sont pas contrôlés comme des administrateurs,
+  et dans la plupart des tenants tout utilisateur peut créer un groupe et en devenir propriétaire.
+impact: |
+  Les applications Teams qui ont besoin de permissions de consentement spécifique aux ressources
+  (RSC) sur une équipe doivent être approuvées par un administrateur. Les stratégies d'autorisation
+  des applications Teams et le centre d'administration Teams continuent de fonctionner.
+notes: |
+  Microsoft a déplacé ce réglage de l'ancien objet d'annuaire **Consent Policy Settings** vers les
+  stratégies de consentement d'application. Vérifier les deux endroits : certains tenants portent
+  encore l'ancienne valeur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et autorisations** >
+       **Paramètres de consentement de l'utilisateur** et vérifier que **Consentement du
+       propriétaire du groupe pour les applications accédant aux données** vaut **Ne pas autoriser
+       le consentement du propriétaire du groupe** (si la section est affichée).
+    3. En Microsoft Graph PowerShell (étendue `Policy.Read.All`), exécuter
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.PermissionGrantPoliciesAssigned`
+       et chercher les entrées commençant par `ManagePermissionGrantsForOwnedResource.` qui pointent
+       vers une stratégie de consentement de groupe (par exemple
+       `microsoft-all-application-permissions-for-group` ou `microsoft-pre-approval-apps-for-group`).
+    4. Exécuter `Get-MgBetaDirectorySetting -All | Where-Object TemplateId -eq
+       'dffd5d46-495d-40a9-8e21-954ff55e198a' | Select-Object -ExpandProperty Values` et lire
+       `EnableGroupSpecificConsent`.
+    5. Échec si une stratégie de consentement de groupe est attribuée au rôle utilisateur par défaut,
+       ou si `EnableGroupSpecificConsent` vaut `True`.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de rôle privilégié (Administrateur général pour la page du portail).
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et autorisations** >
+       **Paramètres de consentement de l'utilisateur**, sélectionner **Ne pas autoriser le
+       consentement du propriétaire du groupe** puis **Enregistrer**.
+    3. En Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`), lire
+       `PermissionGrantPoliciesAssigned`, retirer les entrées de consentement de groupe et garder les
+       autres, puis appliquer la liste avec `Update-MgPolicyAuthorizationPolicy`.
+    4. Si l'ancien objet **Consent Policy Settings** existe, passer `EnableGroupSpecificConsent` à
+       `False` avec `Update-MgBetaDirectorySetting`, en transmettant toutes ses autres valeurs sans
+       les modifier.
+  rollback: |
+    Rétablir l'option de consentement du propriétaire du groupe précédente.

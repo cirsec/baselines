@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-009
+title: Complete the migration to the Authentication methods policy
+finding:
+  title: Legacy MFA and SSPR policies still decide which methods users can use
+  description: While the migration state is not Migration Complete, a method disabled in the Authentication methods policy can stay usable through the legacy MFA or SSPR settings.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [authentication-methods, mfa, sspr, migration]
+
+description: |
+  The Authentication methods policy is the only place that decides which methods users can
+  register and use: its **Manage migration** state is **Migration Complete**. The legacy per-user
+  MFA service settings (verification options) and the legacy SSPR methods are then ignored.
+
+  Every method that users still need is enabled in the Authentication methods policy before the
+  switch, and the other controls of this standard on methods (SMS, Voice call, Email OTP,
+  Software OATH tokens, Passkey (FIDO2), Temporary Access Pass) are set there.
+rationale: |
+  During migration, Entra ID honours the union of the legacy policies and the new one. A weak
+  method disabled in the new policy, such as SMS, stays usable if the legacy MFA or SSPR policy
+  still allows it. Microsoft stopped managing methods in the legacy policies on 30 September
+  2025; finishing the migration removes the ambiguity.
+impact: |
+  Users lose any method that was only allowed by the legacy policies. Compare both sides first,
+  or run the automated migration guide, which copies the legacy settings into the new policy.
+  Security questions for SSPR stay in the legacy SSPR policy.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Policies > Manage migration
+  default_value: Pre-migration on older tenants
+  recommended_value: Migration Complete
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies**.
+    3. Read the migration banner or select **Manage migration** to see the current state.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthenticationMethodPolicy).PolicyMigrationState`
+       (Graph: `GET https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy`).
+    5. Fail if the state is not **Migration Complete** (`migrationComplete`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Record the legacy settings: **Entra ID** > **Users** > **Per-user MFA** > **service
+       settings** (verification options) and **Entra ID** > **Password reset** >
+       **Authentication methods**.
+    3. Browse to **Entra ID** > **Authentication methods** > **Policies** and either run the
+       automated migration guide, or enable by hand each method still needed, for the right
+       groups.
+    4. Select **Manage migration** > **Migration in progress**, check sign-ins and password resets
+       for a few days, then select **Migration Complete** and save.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy` with
+    `"policyMigrationState": "migrationComplete"`.
+  rollback: |
+    Set **Manage migration** back to **Migration in progress**; the legacy policies apply again.
+
+references:
+  - title: How to migrate MFA and SSPR policy settings to the Authentication methods policy
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-methods-manage
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage authentication methods for Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-methods-manage
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.4v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-007
+    type: related
+  - id: CB-M365-AUTH-010
+    type: related
+  - id: CB-M365-AUTH-011
+    type: related
+  - id: CB-M365-AUTH-039
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

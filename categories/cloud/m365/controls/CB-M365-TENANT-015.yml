@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-015
+title: Prevent users from adding Store apps and starting trials
+finding:
+  title: Users can install Office Store add-ins and start trials for the organization
+  description: Users can bring unvetted add-ins and trial services into the tenant, which may read their mail and documents.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [microsoft-365, user-owned-apps, office-store, trials, shadow-it]
+
+description: |
+  In **User owned apps and services**, both options are cleared:
+
+  - **Let users access the Office Store** (`isOfficeStoreEnabled` = `false`);
+  - **Let users start trials on behalf of your organization** (`isAppAndServicesTrialEnabled` =
+    `false`).
+
+  Add-ins that users need are deployed centrally from **Integrated apps** after review.
+rationale: |
+  Store add-ins run with the user's access to mail and documents and are published by third
+  parties of varying trust. Trials started by users activate services the organization has not
+  assessed, with their own data processing terms. Central deployment keeps both under review.
+impact: |
+  Users can no longer install add-ins from the Office Store or start trials themselves; they ask
+  IT. Add-ins already installed keep working until removed. Outlook add-ins are also governed by
+  Exchange user roles (MAIL domain).
+notes: |
+  Self-service purchases of products (Power BI Pro, Copilot and others) are managed separately,
+  per product, in **Billing** > **Self-service purchases** or with the `MSCommerce` module.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Services** > **User owned apps and
+       services**.
+    3. Read-only alternative with Microsoft Graph (beta, scope `OrgSettings-AppsAndServices.Read.All`):
+       `GET https://graph.microsoft.com/beta/admin/appsAndServices` and read
+       `settings.isOfficeStoreEnabled` and `settings.isAppAndServicesTrialEnabled`.
+    4. Fail if either option is checked (`true`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center as at least a Global Administrator.
+    2. Browse to **Settings** > **Org settings** > **Services** > **User owned apps and
+       services**.
+    3. Clear **Let users access the Office Store** and **Let users start trials on behalf of your
+       organization**, then **Save**.
+    4. Equivalent with Microsoft Graph (beta, scope `OrgSettings-AppsAndServices.ReadWrite.All`):
+       `PATCH https://graph.microsoft.com/beta/admin/appsAndServices` with
+       `{"settings": {"isOfficeStoreEnabled": false, "isAppAndServicesTrialEnabled": false}}`.
+  rollback: |
+    Check the options again.
+
+references:
+  - title: appsAndServicesSettings resource type
+    url: https://learn.microsoft.com/graph/api/resources/appsandservicessettings?view=graph-rest-beta
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage add-ins in the Microsoft 365 admin center
+    url: https://learn.microsoft.com/microsoft-365/admin/manage/manage-addins-in-the-admin-center
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage self-service purchases and trials (for admins)
+    url: https://learn.microsoft.com/microsoft-365/commerce/subscriptions/manage-self-service-purchases-admins
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-M365-TENANT-009
+    type: related
+  - id: CB-M365-MAIL-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

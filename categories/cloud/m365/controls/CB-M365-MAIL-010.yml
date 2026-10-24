@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-010
+title: Reject Direct Send messages that claim to come from the organization
+finding:
+  title: Anyone on the internet can send unauthenticated mail as an internal domain through Direct Send
+  description: Attackers deliver phishing that appears to come from a colleague by sending anonymously to the tenant MX endpoint with an internal sender address.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, direct-send, spoofing, mail-flow, connectors]
+
+description: |
+  Exchange Online rejects Direct Send (`RejectDirectSend $true`): anonymous messages received on
+  the tenant MX endpoint whose envelope sender (`5321.MailFrom`) is one of the organization's
+  accepted domains are refused when they do not match an inbound connector (by sender IP address or
+  certificate).
+
+  Devices and applications that legitimately send as an internal address (printers, scanners,
+  line-of-business applications, third-party services) go through a partner inbound connector
+  restricted to their IP address or certificate, or through authenticated submission.
+rationale: |
+  Direct Send was designed for multifunction devices but needs no authentication at all. Attackers
+  use it to drop phishing that carries an internal sender address straight on the MX endpoint;
+  internal-looking messages get less scrutiny from users and some filters. Rejecting Direct Send
+  removes this path while keeping legitimate senders on an explicit connector.
+impact: |
+  Every device or service that relies on Direct Send stops delivering mail as soon as the setting
+  is on. Before the change, find these senders in message trace (anonymous inbound messages with
+  an internal sender) and create a partner inbound connector for each of them. Microsoft plans to
+  make rejection the default for new tenants; the control may move to the baseline profile then.
+
+audit:
+  manual: |
+    1. There is no portal page for this setting. Connect to Exchange Online PowerShell as at least a
+       Global Reader.
+    2. Run (read-only):
+       ```powershell
+       Get-OrganizationConfig | Format-List RejectDirectSend
+       Get-InboundConnector | Format-Table Name, Enabled, ConnectorType, SenderIPAddresses, TlsSenderCertificateName
+       ```
+    3. Fail if `RejectDirectSend` is `False`.
+
+remediation:
+  manual: |
+    1. Identify the devices and services that use Direct Send: in the Exchange admin center, run a
+       message trace on inbound messages whose sender is in an accepted domain and that were received
+       anonymously, or ask the teams that own printers, scanners and applications.
+    2. For each one, create a partner inbound connector in **Mail flow** > **Connectors** that
+       identifies it by its public IP address or its TLS certificate.
+    3. Connect to Exchange Online PowerShell as an Exchange Administrator and run:
+       ```powershell
+       Set-OrganizationConfig -RejectDirectSend $true
+       ```
+    4. Watch message trace and NDRs for a few days for forgotten senders.
+  rollback: |
+    `Set-OrganizationConfig -RejectDirectSend $false`.
+
+references:
+  - title: Set-OrganizationConfig (RejectDirectSend)
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: How to set up a multifunction device or application to send email using Microsoft 365
+    url: https://learn.microsoft.com/exchange/mail-flow-best-practices/how-to-set-up-a-multifunction-device-or-application-to-send-email-using-microsoft-365-or-office-365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1062
+    url: https://maester.dev/docs/tests/MT.1062
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.5.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-009
+    type: related
+  - id: CB-M365-MAIL-036
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

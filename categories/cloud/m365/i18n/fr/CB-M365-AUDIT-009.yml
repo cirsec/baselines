@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Alerter à chaque utilisation des comptes d'accès d'urgence
+finding:
+  title: Les connexions avec les comptes d'accès d'urgence ne déclenchent aucune alerte
+  description: Les comptes d'accès d'urgence contournent l'accès conditionnel et sont administrateurs généraux ; si l'un d'eux est utilisé par un attaquant ou hors procédure, personne n'est prévenu.
+description: |
+  Toute tentative de connexion (réussie ou échouée) et tout événement d'audit réalisé par un compte
+  d'accès d'urgence (bris de glace) déclenche en quelques minutes une alerte vers l'équipe sécurité et
+  plusieurs administrateurs, par e-mail et par un second canal (SMS, appel, outil d'incident). La
+  règle s'appuie sur les ID d'objet des comptes, pas sur leurs noms, et est testée au moins deux fois
+  par an lors de l'exercice d'accès d'urgence.
+rationale: |
+  Les comptes d'accès d'urgence sont exclus de la plupart des stratégies d'accès conditionnel et ont
+  des droits permanents d'administrateur général (CB-M365-ADMIN-002). Leur usage doit être rare et
+  planifié ; tout usage inattendu est soit une urgence que l'équipe doit connaître, soit une
+  compromission. L'alerte immédiate est la mesure compensatoire de leurs exclusions.
+impact: |
+  Exige les journaux de connexion Microsoft Entra dans un espace de travail Log Analytics, Microsoft
+  Sentinel ou un autre SIEM (CB-M365-AUDIT-002), ou des détections personnalisées Defender XDR. Les
+  exercices planifiés déclenchent l'alerte : les annoncer au SOC.
+audit:
+  manual: |
+    1. Obtenir des administrateurs les ID d'objet des comptes d'accès d'urgence (**Entra ID** >
+       **Utilisateurs** > le compte > **ID d'objet**).
+    2. Dans le portail Azure (https://portal.azure.com) avec au moins le rôle Lecteur de
+       surveillance, aller dans **Moniteur** > **Alertes** > **Règles d'alerte** (ou dans Microsoft
+       Sentinel, **Analyse** ; ou dans le portail Microsoft Defender, **Repérage** > **Règles de
+       détection personnalisées**) et trouver une règle qui interroge `SigninLogs` (et
+       `AADNonInteractiveUserSignInLogs`, `AuditLogs`) sur ces ID d'objet, s'exécute au moins toutes
+       les 5 à 15 minutes, et se déclenche dès un résultat.
+    3. Ouvrir le groupe d'actions et vérifier qu'il prévient l'équipe sécurité et plusieurs
+       administrateurs par au moins deux canaux.
+    4. Demander le compte rendu du dernier exercice montrant que l'alerte s'est déclenchée.
+    5. Échec si aucune règle n'existe, si elle omet un compte ou n'utilise que le nom d'affichage, si
+       elle s'exécute moins souvent que toutes les 15 minutes, ou si elle n'a jamais été testée.
+remediation:
+  manual: |
+    1. Envoyer les journaux de connexion et d'audit Microsoft Entra vers un espace de travail Log
+       Analytics ou un SIEM (CB-M365-AUDIT-002).
+    2. Dans le portail Azure avec au moins le rôle Contributeur de surveillance, aller dans
+       **Moniteur** > **Alertes** > **Créer** > **Règle d'alerte**, sélectionner l'espace de travail
+       Log Analytics, et utiliser une recherche de journal personnalisée comme :
+       `SigninLogs | where UserId in ("<objectId1>", "<objectId2>")` (à répéter pour
+       `AADNonInteractiveUserSignInLogs` et pour `AuditLogs` sur `InitiatedBy.user.id`).
+    3. Régler **Valeur de seuil** sur 0 avec l'opérateur **Supérieur à**, et la fréquence sur 5
+       minutes.
+    4. Associer un groupe d'actions qui envoie un e-mail à l'équipe sécurité et aux administrateurs et
+       un SMS, ou qui crée un incident.
+    5. Tester la règle en se connectant avec chaque compte lors d'un exercice planifié.
+  rollback: |
+    Désactiver la règle d'alerte (déconseillé).

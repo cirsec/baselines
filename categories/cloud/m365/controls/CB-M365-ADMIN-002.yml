@@ -1,0 +1,166 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-002
+title: Keep two protected emergency access accounts
+finding:
+  title: No reliable emergency access to the tenant
+  description: A Conditional Access mistake, an identity provider outage or the loss of the administrators' devices can lock every administrator out of the tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, break-glass, emergency-access, conditional-access, resilience]
+
+parameters:
+  - name: emergency_access_accounts
+    type: list
+    description: User principal names of the emergency access accounts. Other Conditional Access controls exclude exactly these accounts.
+    default: []
+
+description: |
+  The tenant has exactly two emergency access ("break-glass") accounts, listed in
+  `{{ emergency_access_accounts }}`. Each account:
+
+  - is cloud-only, with a user principal name on the `*.onmicrosoft.com` domain, and is not
+    tied to a person;
+  - holds the Global Administrator role as a **permanent active** assignment, directly (not through
+    a group and not as eligible in Privileged Identity Management);
+  - authenticates with a phishing-resistant method (FIDO2 security key or certificate) that is
+    independent of the administrators' usual methods and devices;
+  - is excluded from every Conditional Access policy, except at most one policy that only requires
+    phishing-resistant MFA for these accounts;
+  - has its credentials (security keys, password if any) stored in sealed form in a safe, in two
+    separate locations, under a documented custody procedure;
+  - is tested at least every 90 days and its sign-ins raise an alert (CB-M365-AUDIT-009).
+rationale: |
+  Conditional Access policies, MFA services, federation and Privileged Identity Management can all
+  fail or be misconfigured, and the result is that no administrator can sign in. Two independent
+  accounts that do not depend on these mechanisms are the only way to recover the tenant. Since
+  Microsoft enforces MFA on admin portals, emergency accounts need a phishing-resistant method that
+  works without the usual devices. Two accounts avoid a single point of failure.
+impact: |
+  The accounts are permanent Global Administrators, so their credentials must be guarded like the
+  most sensitive secret of the organization. Every Conditional Access policy must exclude them,
+  which adds a step to each new policy. Physical custody and regular tests cost some operational
+  time.
+notes: |
+  Other controls of this standard (Conditional Access, PIM, Global Administrator count) refer to
+  these accounts by the parameter. A FIDO2 key per account, kept in a safe, is the simplest method
+  that meets the admin portal MFA requirement.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader (Security Reader for Conditional Access).
+    2. Browse to **Entra ID** > **Roles & admins** > **Global Administrator** > **Assignments**:
+       both accounts of `{{ emergency_access_accounts }}` appear as **Active**, with no end date,
+       assigned directly.
+    3. Open each account: **On-premises sync enabled** is **No**, the user principal name ends
+       with `.onmicrosoft.com`, and **Authentication methods** shows a FIDO2 security key or a
+       certificate.
+    4. Browse to **Entra ID** > **Conditional Access** > **Policies** and open each policy: both
+       accounts (or their group) are in **Users** > **Exclude**, except a single policy that only
+       requires phishing-resistant MFA for them.
+    5. Check the custody register: storage of the credentials and date of the last test (90 days
+       or less).
+    6. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       ```
+       Get-MgIdentityConditionalAccessPolicy -All |
+         Select-Object DisplayName, State, @{n='ExcludedUsers';e={$_.Conditions.Users.ExcludeUsers -join ','}}
+       ```
+    7. Fail if there are fewer or more than two accounts, if one is synchronized, eligible only,
+       without a phishing-resistant method, included in a policy that could block it, or not
+       tested in the last 90 days.
+
+remediation:
+  manual: |
+    1. With a Global Administrator, create two users in **Entra ID** > **Users** > **New user**,
+       on the `*.onmicrosoft.com` domain, with neutral names and no license.
+    2. Assign each one the Global Administrator role as **Active**, **Permanent**, in **Roles &
+       admins** (with PIM: **Assignment type** **Active**, **Permanently assigned**).
+    3. Register a FIDO2 security key (or a certificate) on each account; keep the keys and any
+       password in sealed envelopes in two separate safes.
+    4. Add both accounts to a dedicated group and exclude that group from every Conditional
+       Access policy. Set the parameter to their user principal names.
+    5. Create the sign-in alert (CB-M365-AUDIT-009) and schedule a test sign-in every 90 days.
+  rollback: |
+    Not applicable: removing the emergency accounts removes the recovery path.
+
+references:
+  - title: Manage emergency access admin accounts in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Protect your Microsoft 365 global administrator accounts
+    url: https://learn.microsoft.com/microsoft-365/enterprise/protect-your-global-administrator-accounts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD's Blueprint for Secure Cloud, break glass accounts
+    url: https://blueprint.asd.gov.au/configuration/entra-id/users/break-glass-accounts/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.1.2"
+    relation: equivalent
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R35"
+    relation: partial
+    note: Applied to the emergency access credentials only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CP-2
+    relation: related
+related_controls:
+  - id: CB-M365-ADMIN-003
+    type: related
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-AUTH-034
+    type: related
+  - id: CB-M365-AUTH-030
+    type: related
+  - id: CB-M365-AUTH-031
+    type: related
+  - id: CB-M365-AUTH-033
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-005
+    type: related
+  - id: CB-M365-AUTH-019
+    type: related
+  - id: CB-M365-AUTH-020
+    type: related
+  - id: CB-M365-AUTH-021
+    type: related
+  - id: CB-M365-AUTH-022
+    type: related
+  - id: CB-M365-AUTH-023
+    type: related
+  - id: CB-M365-AUTH-024
+    type: related
+  - id: CB-M365-AUDIT-009
+    type: related
+  - id: CB-M365-DEVICE-009
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

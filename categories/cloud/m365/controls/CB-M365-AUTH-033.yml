@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-033
+title: Block sign-ins from outside the approved countries
+finding:
+  title: Users can sign in from any country
+  description: Stolen credentials can be used from any country, including those where the organization has no staff or business.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [conditional-access, named-locations, geo-blocking, countries]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A **Countries location** named location lists the countries where the organization operates
+  ({{ allowed_countries }}). A Conditional Access policy targets all users on all resources,
+  includes **Any location**, excludes that named location (and the trusted IP locations), and
+  applies **Block access**. Unknown countries are not part of the allowed list, so they are blocked.
+
+  Users who travel to other countries are handled by a time-limited exception group, managed by the
+  help desk.
+rationale: |
+  Most password spray and credential stuffing traffic comes from hosting providers and countries
+  outside the organization's footprint. Geo-blocking removes a large share of that noise and of the
+  real attempts, and makes the remaining ones more visible.
+impact: |
+  Travelers and staff abroad are blocked unless added to the exception group. Location is derived
+  from the public IP address: consumer VPNs, mobile roaming and cloud proxies can make a user appear
+  in another country. Exclude service accounts that run from cloud regions outside the list.
+  Attackers can use proxies inside allowed countries, so this does not replace MFA or risk
+  policies.
+notes: |
+  Determine the location by IP address; GPS-based locations need Microsoft Authenticator and do not
+  work with passwordless methods. Guests from foreign partner tenants are also blocked: scope the
+  policy to members, or add their countries, if collaboration requires it.
+
+parameters:
+  - name: allowed_countries
+    type: list
+    description: ISO 3166-1 alpha-2 codes of the countries from which sign-ins are allowed. Default is the European Union.
+    default: [AT, BE, BG, CY, CZ, DE, DK, EE, ES, FI, FR, GR, HR, HU, IE, IT, LT, LU, LV, MT, NL, PL, PT, RO, SE, SI, SK]
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Named locations** and open the countries
+       location; check that it contains {{ allowed_countries }} and that **Include unknown
+       countries/regions** is not selected.
+    3. Browse to **Conditional Access** > **Policies** and find a policy with **State** **On**:
+       **Users** > **All users** (exclusions limited to emergency access accounts and the travel
+       exception group); **Target resources** > **All resources**; **Conditions** > **Network** >
+       **Include** **Any network or location**, **Exclude** the allowed countries location;
+       **Grant** > **Block access**.
+    4. Review the members of the travel exception group: each entry must have an end date.
+    5. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessNamedLocation | Where-Object { $_.AdditionalProperties.countriesAndRegions } | Select-Object DisplayName, @{n='Countries';e={$_.AdditionalProperties.countriesAndRegions}}`
+    6. Fail if no such enabled block policy exists, or if the exception group holds permanent
+       members without justification.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    2. Browse to **Entra ID** > **Conditional Access** > **Named locations** > **Countries
+       location**, name it (for example `Allowed countries`), select **Determine location by IP
+       address**, tick {{ allowed_countries }} and **Create**.
+    3. Create a group for travel exceptions, with a process that removes members at the end of the
+       trip (an access package with an expiry date works well).
+    4. **Policies** > **New policy**: **Users** > **All users**, exclude the emergency access
+       accounts and the exception group; **Target resources** > **All resources**; **Network** >
+       **Include** **Any network or location**, **Exclude** **Selected networks and locations** > the
+       allowed countries and the trusted IP locations; **Grant** > **Block access**.
+    5. Start in **Report-only**; review blocked sign-ins for legitimate users for two weeks, then
+       switch to **On**.
+  rollback: |
+    Set the policy to **Report-only** or **Off**, or add the affected users to the exception group.
+
+references:
+  - title: Block access by location
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-block-by-location
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Network-based Conditional Access - countries
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-assignment-network
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.15"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1110.003
+related_controls:
+  - id: CB-M365-AUTH-032
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

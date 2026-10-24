@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-002
+title: Block Intune enrollment of personally owned devices by default
+finding:
+  title: Personally owned devices can enroll in Intune
+  description: Users can enroll their own phones and computers, which then count as managed corporate devices for access decisions.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [intune, enrollment, byod, device-management]
+
+applicability:
+  requires:
+    - "Microsoft Intune"
+
+description: |
+  The default Intune **Device platform restriction** policy (the one with the lowest priority,
+  named **All users**) blocks **Personally owned** devices for every platform in use: Windows,
+  macOS, iOS/iPadOS and Android Enterprise work profile. Platforms the organization does not use
+  are blocked entirely. Exceptions for specific groups are granted by a higher-priority restriction
+  policy, never by loosening the default one.
+
+  Corporate devices still enroll through corporate methods: Windows Autopilot, Apple Automated
+  Device Enrollment, corporate device identifiers, bulk provisioning or a device enrollment manager
+  account.
+rationale: |
+  A personal device enrolled in Intune becomes a managed, possibly compliant device in Entra ID. It
+  then passes Conditional Access checks meant for corporate devices, while the organization does
+  not control its hardware, its other users or its lifecycle. Blocking personal enrollment by
+  default keeps "managed" meaning "owned by the organization", and pushes personal devices to app
+  protection policies (MAM) instead.
+impact: |
+  Users can no longer enroll personal devices through the Company Portal or the Windows "Add work
+  account" flow. Organizations with a BYOD program must create a higher-priority platform
+  restriction for the BYOD group, or move those users to app protection policies without
+  enrollment. iOS/iPadOS and macOS devices are classified as personal unless they enroll through
+  Automated Device Enrollment or are registered by serial number: register corporate devices first.
+notes: |
+  Microsoft states that enrollment restrictions are not a security boundary: a compromised device
+  can misreport its ownership. They prevent accidental enrollment and are combined with
+  Conditional Access and compliance policies. Userless enrollments (Autopilot self-deploying,
+  bulk enrollment, co-management) always use the default policy.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Devices** > **Device onboarding** > **Enrollment** > **Device platform
+       restriction**.
+    3. For each platform tab (Windows, macOS, iOS/iPadOS, Android), open the **All users** default
+       policy and check under **Platform settings** that **Personally owned devices** is **Block**
+       for every allowed platform.
+    4. Review higher-priority restriction policies that allow personal devices: each must target a
+       named group with an approved BYOD exception.
+    5. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       "https://graph.microsoft.com/beta/deviceManagement/deviceEnrollmentConfigurations"` and read
+       `personalDeviceEnrollmentBlocked` in the platform restriction objects of the default
+       configuration (priority 0).
+    6. Fail if the default policy allows personally owned devices on any platform in use.
+
+remediation:
+  manual: |
+    1. Register existing corporate iOS/iPadOS and macOS devices by serial number, or enroll them
+       through Automated Device Enrollment, so they are not reclassified as personal.
+    2. In the Intune admin center, browse to **Devices** > **Device onboarding** > **Enrollment** >
+       **Device platform restriction**.
+    3. On each platform tab, open the **All users** default policy, select **Properties** >
+       **Platform settings** > **Edit**, and set **Personally owned devices** to **Block** (block
+       the platform itself if it is not used). Save. Role: Intune Administrator, or a custom role
+       with the **Enrollment programs** update permission.
+    4. If a BYOD program exists, create a restriction policy with a higher priority that allows
+       personal devices for the BYOD group only.
+  rollback: |
+    Set **Personally owned devices** back to **Allow** in the default restriction policy of the
+    affected platform.
+
+references:
+  - title: Overview of enrollment restrictions
+    url: https://learn.microsoft.com/intune/device-enrollment/restrictions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "4.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+related_controls:
+  - id: CB-M365-DEVICE-001
+    type: related
+  - id: CB-M365-DEVICE-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

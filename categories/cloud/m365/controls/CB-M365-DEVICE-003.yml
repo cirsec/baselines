@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-003
+title: Restrict who can join devices to Microsoft Entra ID
+finding:
+  title: Every user can join devices to Microsoft Entra ID
+  description: Any user, or an attacker holding any user's credentials, can join an arbitrary Windows, macOS or Linux machine to the tenant.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, device-join, device-registration, least-privilege]
+
+description: |
+  The device setting **Users may join devices to Microsoft Entra** is set to **Selected**, with
+  a group of users who provision devices (IT staff, enrollment accounts), or to **None** when all
+  corporate devices are joined through userless flows.
+
+  The setting covers user-driven Microsoft Entra join on Windows 10 or later, macOS and Linux. It
+  does not apply to Microsoft Entra hybrid join, Azure virtual machines joined at creation, or
+  Windows Autopilot self-deploying mode, which run without a user context.
+rationale: |
+  An Entra-joined device obtains a Primary Refresh Token and a device identity that Conditional
+  Access, Intune and other services trust. An attacker with a stolen user password can join a
+  machine they control and use it to persist in the tenant, satisfy device-based conditions, or
+  harvest tokens. Limiting join to provisioning staff removes that path for regular accounts.
+impact: |
+  Users outside the selected group can no longer join new devices themselves, so user-driven
+  out-of-box setup breaks for them. Windows Autopilot user-driven mode and Intune automatic
+  enrollment run as the end user: either add those users to the allowed group or switch to
+  self-deploying or pre-provisioned Autopilot. Existing joined devices are not affected.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Users may join devices to Microsoft Entra
+  default_value: All
+  recommended_value: Selected (provisioning group) or None
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**.
+    3. Check that **Users may join devices to Microsoft Entra** is **Selected** with a named
+       provisioning group, or **None**.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` (scope
+       `Policy.Read.DeviceConfiguration`) and read `azureADJoin.allowedToJoin`: the `@odata.type`
+       must be `#microsoft.graph.enumeratedDeviceRegistrationMembership` or
+       `#microsoft.graph.noDeviceRegistrationMembership`.
+    5. Fail if the setting is **All** (`allDeviceRegistrationMembership`).
+
+remediation:
+  manual: |
+    1. Create a security group holding the accounts allowed to join devices (IT technicians,
+       enrollment accounts, or the users targeted by Autopilot user-driven profiles).
+    2. In the Microsoft Entra admin center, browse to **Entra ID** > **Devices** >
+       **Device settings**. Role: Cloud Device Administrator.
+    3. Set **Users may join devices to Microsoft Entra** to **Selected**, select the group, and
+       save.
+    4. Graph equivalent: `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       with the full policy object, `azureADJoin.allowedToJoin` set to an
+       `enumeratedDeviceRegistrationMembership` listing the group ID.
+  rollback: |
+    Set **Users may join devices to Microsoft Entra** back to **All**.
+
+references:
+  - title: Manage devices in Microsoft Entra ID - Configure device settings
+    url: https://learn.microsoft.com/entra/identity/devices/manage-device-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: deviceRegistrationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/deviceregistrationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.005
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-DEVICE-002
+    type: related
+  - id: CB-M365-DEVICE-004
+    type: related
+  - id: CB-M365-DEVICE-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter SharePoint et OneDrive à un accès web depuis les appareils non gérés
+finding:
+  title: Les appareils non gérés peuvent télécharger et synchroniser le contenu SharePoint et OneDrive
+  description: Des fichiers arrivent sur des appareils personnels ou inconnus que l'organisation ne peut ni effacer, ni chiffrer, ni surveiller.
+description: |
+  Les utilisateurs sur des appareils ni conformes dans Intune ni joints en hybride ont un accès limité
+  au navigateur pour SharePoint et OneDrive : ils peuvent consulter (et, sauf restriction, modifier
+  dans le navigateur) mais ni télécharger, ni imprimer, ni synchroniser, ni utiliser les applications
+  de bureau ou mobiles (`ConditionalAccessPolicy` = `AllowLimitedAccess`, ou `BlockAccess` pour un
+  réglage plus strict).
+
+  Le paramètre du centre d'administration SharePoint crée les stratégies d'accès conditionnel Entra
+  qui l'appliquent (restrictions appliquées par l'application pour l'accès navigateur et blocage des
+  applications clientes sur les appareils non gérés).
+rationale: |
+  Une fois un fichier téléchargé sur un appareil non géré, l'organisation en perd le contrôle : aucune
+  garantie de chiffrement, pas d'effacement à distance, pas de DLP sur le poste, et il peut atteindre
+  des sauvegardes ou d'autres utilisateurs de l'appareil. L'accès web seul garde les personnes
+  productives depuis leurs appareils personnels tout en laissant les données dans le service.
+impact: |
+  Sur les appareils non gérés, les utilisateurs ne peuvent ni ouvrir les fichiers dans les
+  applications de bureau, ni utiliser le client de synchronisation OneDrive ou les applications
+  mobiles, ni télécharger, ni imprimer. Les images chargées dans des pages classiques peuvent ne pas
+  s'afficher. Les invités qui s'authentifient par code de vérification sont aussi concernés, sauf
+  exemption avec `Set-SPOTenant -ApplyAppEnforcedRestrictionsToAdHocRecipients $false`. Les liens
+  **Tout le monde** ne sont pas couverts : les garder désactivés (CB-M365-COLLAB-003). Le changement
+  peut prendre jusqu'à 24 heures. Une stratégie d'accès conditionnel exigeant un appareil géré pour
+  toutes les ressources (CB-M365-AUTH-020) offre une couverture plus large.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Contrôle d'accès > Appareils non gérés
+  recommended_value: Autoriser un accès limité, web uniquement (ConditionalAccessPolicy = AllowLimitedAccess) ou Bloquer l'accès
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Contrôle d'accès** > **Appareils non gérés** et vérifier que
+       **Autoriser un accès limité, web uniquement** ou **Bloquer l'accès** est sélectionné.
+    3. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Accès conditionnel**
+       > **Stratégies** et vérifier que les stratégies créées par le centre d'administration SharePoint
+       (noms commençant par `[SharePoint admin center]`) sont **Activées** et n'ont pas été modifiées
+       pour exclure de larges groupes.
+    4. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object ConditionalAccessPolicy` doit renvoyer `AllowLimitedAccess` ou
+       `BlockAccess`.
+    5. Échec si les appareils non gérés ont un accès complet, ou si les stratégies d'accès conditionnel
+       sont désactivées ou en mode Rapport seul.
+remediation:
+  manual: |
+    1. Vérifier que les appareils gérés sont conformes dans Intune ou joints en hybride, et que leurs
+       utilisateurs emploient un navigateur pris en charge ; sinon ils ont eux aussi un accès limité.
+    2. Bloquer d'abord l'authentification héritée (CB-M365-COLLAB-001), car les clients hérités
+       contournent les restrictions d'appareil.
+    3. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Contrôle d'accès** >
+       **Appareils non gérés**, sélectionner **Autoriser un accès limité, web uniquement** puis
+       **Enregistrer**. Rôles : Administrateur SharePoint, plus Administrateur de l'accès conditionnel
+       pour les stratégies créées par la page.
+    4. Équivalent PowerShell : `Set-SPOTenant -ConditionalAccessPolicy AllowLimitedAccess`. Facultatif :
+       `-AllowEditing $false` pour un accès navigateur en lecture seule.
+    5. Pour un pilote, créer d'abord dans Entra la stratégie de restrictions appliquées par
+       l'application pour un groupe de test et limiter l'accès sur quelques sites avec
+       `Set-SPOSite -Identity <URL> -ConditionalAccessPolicy AllowLimitedAccess`.
+  rollback: |
+    Sélectionner **Autoriser l'accès complet à partir des applications de bureau, des applications
+    mobiles et du web**, ou exécuter `Set-SPOTenant -ConditionalAccessPolicy AllowFullAccess`. Cela peut
+    prendre jusqu'à 24 heures.

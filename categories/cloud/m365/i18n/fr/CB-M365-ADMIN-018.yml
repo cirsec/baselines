@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder désactivé l'accès élevé de l'administrateur général aux ressources Azure
+finding:
+  title: Un administrateur général détient Administrateur de l'accès utilisateur sur la racine Azure du tenant
+  description: L'élévation laissée active donne à un administrateur Entra ID le contrôle total de tous les abonnements et groupes d'administration Azure.
+description: |
+  Un administrateur général peut activer **Gestion de l'accès pour les ressources Azure** dans les
+  propriétés du tenant. Microsoft attribue alors à cet utilisateur le rôle Azure **Administrateur de
+  l'accès utilisateur** à l'étendue racine (`/`), au-dessus de tous les groupes d'administration et
+  abonnements. L'élévation est prévue pour une opération de récupération ponctuelle et doit être
+  désactivée juste après.
+
+  Aucun utilisateur ne détient Administrateur de l'accès utilisateur à la racine hors d'une
+  intervention documentée.
+rationale: |
+  Un attaquant qui prend le contrôle d'un compte administrateur général peut utiliser l'élévation
+  pour s'attribuer Propriétaire sur chaque abonnement, atteindre les machines virtuelles, coffres de
+  clés et stockages, et rebondir de Microsoft 365 vers les charges Azure. Une attribution racine
+  oubliée échappe aussi aux revues de rôles faites au niveau des abonnements.
+impact: |
+  Aucun connu. L'élévation peut être réactivée quand une opération de récupération l'exige.
+notes: |
+  Le réglage est propre à chaque utilisateur : il n'affiche et ne modifie que l'état de
+  l'administrateur général connecté. Pour trouver tous les détenteurs, lister les attributions de
+  rôle à l'étendue `/`. Un tenant sans abonnement Azure reste exposé si un abonnement est créé plus
+  tard.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Vue d'ensemble > Propriétés > Gestion de l'accès pour les ressources Azure
+  recommended_value: "Non"
+audit:
+  manual: |
+    1. Se connecter au portail Azure (https://portal.azure.com) avec un compte qui peut lire les
+       attributions de rôle à la racine (par exemple un administrateur général qui s'élève
+       temporairement, ou un Lecteur sur le groupe d'administration racine).
+    2. Lancer dans Azure Cloud Shell (lecture seule) :
+       `Get-AzRoleAssignment -Scope "/" | Where-Object RoleDefinitionName -eq 'User Access Administrator'`
+       ou `az role assignment list --scope "/" --role "User Access Administrator"`.
+    3. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Vue
+       d'ensemble** > **Propriétés** et lire **Gestion de l'accès pour les ressources Azure** pour
+       chaque compte administrateur général utilisé.
+    4. Échec si un utilisateur détient Administrateur de l'accès utilisateur à l'étendue `/` sans
+       intervention ouverte et documentée.
+remediation:
+  manual: |
+    1. Chaque administrateur général qui l'a activé se connecte au centre d'administration Microsoft
+       Entra, va dans **Entra ID** > **Vue d'ensemble** > **Propriétés**, règle **Gestion de l'accès
+       pour les ressources Azure** sur **Non** et sélectionne **Enregistrer**.
+    2. Pour un ancien détenteur qui ne peut pas se connecter, retirer l'attribution avec
+       `Remove-AzRoleAssignment -SignInName <upn> -RoleDefinitionName 'User Access Administrator' -Scope "/"`.
+    3. Créer une alerte sur l'événement d'élévation (journal d'activité Azure Monitor, opération
+       `Microsoft.Authorization/elevateAccess/action`) et l'envoyer au SOC.

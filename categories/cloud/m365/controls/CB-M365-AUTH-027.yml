@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-027
+title: Hide the "Stay signed in" option at sign-in
+finding:
+  title: Users can choose to keep a persistent sign-in session in the browser
+  description: Answering yes to "Stay signed in?" writes a persistent cookie, so the session survives browser restarts on any device, including shared ones.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [session, kmsi, persistent-session, browser]
+
+description: |
+  The tenant-wide **Show keep user signed in** setting is set to **No**. Users no longer see the
+  **Stay signed in?** prompt after signing in, and Microsoft Entra ID issues a session cookie that
+  ends when the browser is closed instead of a persistent one.
+rationale: |
+  A persistent sign-in cookie is the easiest session to steal or reuse: it stays on the disk of
+  whatever device the user signed in from, including home and shared computers, and it bypasses the
+  idle session timeout (CB-M365-AUTH-026). Removing the choice means a closed browser ends the
+  session.
+impact: |
+  Users are asked to sign in more often in the browser on devices without single sign-on. Microsoft
+  notes that some older SharePoint and Office 2010 features rely on the option and can show extra
+  prompts. Single sign-on on Microsoft Entra joined or hybrid joined devices is not affected.
+notes: |
+  For a finer scope, the Conditional Access session control **Persistent browser session** set to
+  **Never persistent** removes the prompt for selected users only; CB-M365-AUTH-024 uses it for
+  administrators.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Users > User settings > Show keep user signed in
+  default_value: "Yes"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Check that **Show keep user signed in** is set to **No**.
+    4. Fail if it is set to **Yes**.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as a Global Administrator (Microsoft documents
+       this role for the setting).
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Set **Show keep user signed in** to **No** and select **Save**.
+    4. Tell users that the prompt disappears and that they may sign in more often in the browser.
+  rollback: |
+    Set **Show keep user signed in** back to **Yes**.
+
+references:
+  - title: Manage the 'Stay signed in' prompt in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/fundamentals/how-to-manage-stay-signed-in-prompt
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure adaptive session lifetime policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/howto-conditional-access-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.2.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1539
+related_controls:
+  - id: CB-M365-AUTH-025
+    type: related
+  - id: CB-M365-AUTH-026
+    type: related
+  - id: CB-M365-AUTH-048
+    type: related
+  - id: CB-M365-AUTH-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

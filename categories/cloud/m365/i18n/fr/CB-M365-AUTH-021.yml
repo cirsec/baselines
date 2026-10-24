@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-021
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les plateformes d'appareils inconnues ou non prises en charge
+finding:
+  title: Les connexions depuis des plateformes d'appareils inconnues sont autorisées
+  description: Les requêtes dont l'agent utilisateur ne correspond à aucune plateforme prise en charge, typiques des scripts, outils d'attaque et systèmes inhabituels, ne sont pas bloquées.
+description: |
+  Une stratégie d'accès conditionnel pour **Tous les utilisateurs** sur **Toutes les ressources**
+  bloque l'accès depuis **N'importe quel appareil**, en excluant seulement les plateformes que
+  l'organisation prend en charge : `{{ allowed_device_platforms }}`. Linux, Windows Phone et les
+  plateformes inconnues sont alors refusés sauf autorisation explicite.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence.
+parameters:
+  allowed_device_platforms: Plateformes d'appareils exclues du blocage, telles que nommées dans l'accès conditionnel.
+rationale: |
+  Beaucoup d'outils de vol de jetons et de pulvérisation de mots de passe présentent des agents
+  utilisateur qui ne correspondent à aucune plateforme prise en charge. Les bloquer réduit la
+  surface d'attaque et empêche de contourner les stratégies fondées sur l'appareil par une
+  plateforme qu'elles n'évaluent pas.
+impact: |
+  Les utilisateurs d'une plateforme non listée, par exemple des postes Linux, sont bloqués :
+  l'ajouter au paramètre si elle est prise en charge. La condition de plateforme repose sur l'agent
+  utilisateur, qu'un attaquant peut falsifier : ce contrôle complète CB-M365-AUTH-020, il ne le
+  remplace pas.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où **Utilisateurs** inclut **Tous les
+       utilisateurs** (seuls les comptes d'accès d'urgence exclus), **Ressources cibles** inclut
+       **Toutes les ressources**, **Conditions** > **Plateformes d'appareils** inclut **N'importe
+       quel appareil** et exclut exactement `{{ allowed_device_platforms }}`, et **Accorder** vaut
+       **Bloquer l'accès**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Platforms.IncludePlatforms -contains 'all' } | Select-Object DisplayName, State, @{n='Excluded';e={$_.Conditions.Platforms.ExcludePlatforms}}, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    5. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si elle exclut une plateforme absente de la liste.
+remediation:
+  manual: |
+    1. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**.
+    2. La nommer, par exemple `ALL - Block unknown platforms`.
+    3. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    4. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    5. **Conditions** > **Plateformes d'appareils** : **Configurer** sur **Oui**, **Inclure**
+       **N'importe quel appareil**, **Exclure** les plateformes de `{{ allowed_device_platforms }}`.
+    6. **Accorder** : **Bloquer l'accès**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, examiner les plateformes bloquées dans
+       les journaux de connexion, puis passer à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `conditions.platforms.includePlatforms` à `all`, `excludePlatforms` à la liste et
+    `grantControls.builtInControls` à `block`.
+  rollback: |
+    Passer la stratégie en **Rapport seul**, ou ajouter la plateforme manquante aux exclusions.

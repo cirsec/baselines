@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-036
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger TLS et restreindre les partenaires sur les connecteurs Exchange Online
+finding:
+  title: Les connecteurs Exchange Online acceptent ou envoient du courrier partenaire sans TLS imposé ni restriction de l'expéditeur
+  description: Le courrier échangé avec les partenaires peut circuler en clair ou être intercepté, et un connecteur entrant trop large peut être abusé par quiconque y correspond.
+description: |
+  Chaque connecteur activé est défini aussi étroitement que possible :
+
+  - les connecteurs entrants partenaires et sur site exigent TLS (`RequireTls $true`) et identifient
+    l'expéditeur par son certificat (`TlsSenderCertificateName`, `RestrictDomainsToCertificate $true`)
+    ou par ses adresses IP (`SenderIPAddresses`, `RestrictDomainsToIPAddresses $true`) ;
+    `SenderDomains` liste des domaines nommés, pas `*`, sauf si le connecteur est restreint par
+    certificat ou adresse IP ;
+  - les connecteurs sortants vers des partenaires ou des hôtes actifs utilisent TLS avec validation
+    du certificat (`TlsSettings` à `CertificateValidation` ou `DomainValidation`, jamais vide ni
+    `EncryptionOnly`) et listent des domaines destinataires nommés ;
+  - les connecteurs qui ne servent plus sont supprimés.
+rationale: |
+  Les connecteurs partenaires portent en général des échanges sensibles (finance, juridique,
+  filiales). Sans TLS imposé ni vérification de certificat, le trafic peut être lu ou détourné par un
+  attaquant réseau. Un connecteur entrant qui fait confiance à un domaine sans vérifier la source
+  permet à n'importe qui d'envoyer au nom de ce domaine avec la confiance accordée par le connecteur.
+impact: |
+  Les partenaires dont les serveurs ne présentent pas de certificat valide, ou dont les adresses IP ont
+  changé, ne peuvent plus livrer via le connecteur. Convenir des certificats et adresses avec chaque
+  partenaire et tester avec une validation avant d'appliquer.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Flux de courrier** > **Connecteurs** et ouvrir chaque connecteur activé.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-InboundConnector | Format-List Name, Enabled, ConnectorType, SenderDomains, SenderIPAddresses, RequireTls,
+         TlsSenderCertificateName, RestrictDomainsToCertificate, RestrictDomainsToIPAddresses
+       Get-OutboundConnector | Format-List Name, Enabled, ConnectorType, RecipientDomains, SmartHosts, UseMXRecord, TlsSettings, TlsDomain
+       ```
+    4. Échec si un connecteur entrant partenaire ou sur site a `RequireTls` à `False`, ou n'est
+       restreint ni par certificat ni par adresse IP ; si un connecteur sortant a `TlsSettings` vide ou
+       `EncryptionOnly` ; ou si un connecteur activé n'a pas de responsable documenté.
+remediation:
+  manual: |
+    1. Pour chaque connecteur, confirmer son objet, son responsable et son partenaire avec les
+       métiers ; supprimer ceux qui ne servent plus.
+    2. Dans le centre d'administration Exchange, **Flux de courrier** > **Connecteurs**, modifier le
+       connecteur (Administrateur Exchange) : exiger TLS, identifier le partenaire par certificat ou
+       adresse IP, et pour les connecteurs sortants exiger un certificat approuvé (et le nom de domaine
+       attendu).
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-InboundConnector -Identity "<partner>" -RequireTls $true -TlsSenderCertificateName "mail.partner.example" -RestrictDomainsToCertificate $true
+       Set-OutboundConnector -Identity "<partner>" -TlsSettings DomainValidation -TlsDomain "mail.partner.example"
+       ```
+    4. Lancer **Valider ce connecteur** dans le centre d'administration Exchange après chaque
+       modification.
+  rollback: |
+    Restaurer les paramètres précédents du connecteur (`-RequireTls $false`, `-TlsSettings EncryptionOnly`)
+    le temps que le partenaire corrige son certificat.

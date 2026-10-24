@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-017
+title: Limit Temporary Access Pass to one-time use
+finding:
+  title: Temporary Access Passes can be used several times
+  description: A pass that stays valid for repeated sign-ins during its lifetime can be reused by anyone who intercepts it, for example from a help desk ticket or a chat message.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [temporary-access-pass, onboarding, passwordless, authentication-methods]
+
+description: |
+  When the **Temporary Access Pass** method is enabled in the Authentication methods policy, its
+  configuration has **One-time use** set to **Yes**, so every pass created in the tenant works for
+  a single sign-in, and **Maximum lifetime** stays at 8 hours or less.
+
+  The method itself is recommended: it is the safe way to register a first passkey or to recover
+  a user who lost every method. This control does not apply if the method is disabled.
+rationale: |
+  A Temporary Access Pass satisfies MFA on its own. A reusable pass behaves like a strong
+  credential for its whole lifetime; a one-time pass limits the window to the registration it was
+  issued for.
+impact: |
+  A user whose registration fails half-way needs a new pass. Windows Autopilot and some device
+  setup flows sign in several times: issue a pass right before use, or scope a separate
+  procedure for them.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Policies > Temporary Access Pass > Configure
+  default_value: One-time use No, maximum lifetime 8 hours
+  recommended_value: One-time use Yes, maximum lifetime 8 hours or less
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** and select **Temporary
+       Access Pass**.
+    3. If it is enabled, open **Configure** and read **One-time use** and **Maximum lifetime**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId TemporaryAccessPass | Select-Object State -ExpandProperty AdditionalProperties`
+       (look at `isUsableOnce` and `maximumLifetimeInMinutes`).
+    5. Fail if the method is enabled and **One-time use** is **No** (`isUsableOnce` is `false`),
+       or if the maximum lifetime exceeds 480 minutes.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Temporary Access
+       Pass** > **Configure**.
+    3. Set **One-time use** to **Yes**, keep **Maximum lifetime** at 8 hours or less, select
+       **Update**, then **Save**.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/TemporaryAccessPass`
+    with `{"@odata.type": "#microsoft.graph.temporaryAccessPassAuthenticationMethodConfiguration", "isUsableOnce": true}`.
+  rollback: |
+    Set **One-time use** back to **No**.
+
+references:
+  - title: Configure a Temporary Access Pass in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-authentication-temporary-access-pass
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-004
+    type: related
+  - id: CB-M365-AUTH-015
+    type: related
+  - id: CB-M365-AUTH-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

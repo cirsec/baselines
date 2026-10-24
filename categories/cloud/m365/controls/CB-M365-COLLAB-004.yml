@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-004
+title: Restrict OneDrive external sharing to authenticated guests
+finding:
+  title: OneDrive allows external sharing beyond the approved level
+  description: Users can share personal OneDrive content with anyone holding a link, or with any external address, outside the governance applied to team sites.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [external-sharing, anonymous-links, onedrive, guest-access]
+
+description: |
+  The organization-level external sharing level for OneDrive is at most `{{ onedrive_sharing_level }}`
+  and never more permissive than the SharePoint level (CB-M365-COLLAB-003). The baseline allows new
+  and existing guests (no **Anyone** links); the hardened profile turns OneDrive external sharing off
+  (**Only people in your organization**), so external collaboration happens in team sites where owners
+  and labels govern it.
+rationale: |
+  OneDrive holds personal working copies, often the least classified and least reviewed content in the
+  tenant. Sharing from OneDrive bypasses site owners, site-level sharing settings and team membership
+  reviews. **Anyone** links from OneDrive are a common source of data leaks. Turning OneDrive external
+  sharing off moves external collaboration to governed sites.
+impact: |
+  In the baseline, users can still share OneDrive items with authenticated guests, but **Anyone**
+  links and **File requests** stop working. In the hardened profile, users cannot share OneDrive
+  content externally at all; existing external shares stop working. Provide a team site or a shared
+  channel for external projects before the change. Per-user exceptions are possible with
+  `Set-SPOSite -Identity <OneDrive URL> -SharingCapability`.
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > External sharing > OneDrive
+  default_value: Anyone (ExternalUserAndGuestSharing)
+  recommended_value: "{{ onedrive_sharing_level }} or more restrictive"
+parameters:
+  - name: onedrive_sharing_level
+    type: enum
+    description: Most permissive OneDrive external sharing level allowed (OneDriveSharingCapability value).
+    default: ExternalUserSharingOnly
+    profile_defaults:
+      hardened: "Disabled"
+    allowed: ["ExternalUserSharingOnly", "ExistingExternalUserSharingOnly", "Disabled"]
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing**. Under **External sharing**, read the OneDrive slider.
+    3. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object OneDriveSharingCapability, SharingCapability`.
+    4. Optionally list OneDrive sites with a more permissive level:
+       `Get-SPOSite -IncludePersonalSite $true -Limit All -Filter "Url -like '-my.sharepoint.com/personal/'" | Where-Object SharingCapability -ne 'Disabled'`.
+    5. Fail if the OneDrive level is more permissive than `{{ onedrive_sharing_level }}` (order:
+       `ExternalUserAndGuestSharing` > `ExternalUserSharingOnly` > `ExistingExternalUserSharingOnly` >
+       `Disabled`).
+
+remediation:
+  manual: |
+    1. Identify users who share from OneDrive externally (audit log activities
+       `SharingInvitationCreated` and `AnonymousLinkCreated` on `-my.sharepoint.com` URLs) and agree on
+       where external work moves.
+    2. In the SharePoint admin center, browse to **Policies** > **Sharing** and move the OneDrive slider
+       to the level matching `{{ onedrive_sharing_level }}`. Select **Save**. Role: SharePoint
+       Administrator.
+    3. PowerShell equivalent: `Set-SPOTenant -OneDriveSharingCapability {{ onedrive_sharing_level }}`.
+  rollback: |
+    Move the OneDrive slider back to the previous level, or grant a single user an exception with
+    `Set-SPOSite -Identity <OneDrive URL> -SharingCapability ExternalUserSharingOnly`.
+
+references:
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Change the external sharing setting for a user's OneDrive
+    url: https://learn.microsoft.com/onedrive/user-external-sharing-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.4"
+    relation: looser
+    note: CIS (level 2) turns OneDrive external sharing off; that is our hardened value, the baseline still allows authenticated guests.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.1.2v1
+    relation: looser
+    note: SCuBA requires existing guests or organization only; the hardened profile meets it, the baseline also allows new guests.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-COLLAB-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

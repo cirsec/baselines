@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-012
+title: Restrict and protect owners of privileged applications
+finding:
+  title: Privileged applications are owned by accounts weaker than the application itself
+  description: A user who owns an application can add a credential to it and act with all its permissions, so an unprotected owner account is a shortcut to the application's privileges.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [applications, workload-identities, ownership, privileged-access, mfa]
+
+description: |
+  Ownership of application registrations and service principals follows two rules:
+
+  - applications that hold privileged API permissions (CB-M365-APPS-011) or a privileged directory
+    role have no user owners; they are managed by administrators through roles;
+  - every owner of any other application is an active member account with MFA registered.
+rationale: |
+  Owners can manage credentials of their applications without holding any admin role. If a
+  standard user owns an application that has `RoleManagement.ReadWrite.Directory` or the
+  Privileged Role Administrator role, compromising that user is enough to become Global
+  Administrator. Removing owners from privileged applications and requiring MFA from all owners
+  closes this escalation path.
+impact: |
+  Former owners of privileged applications must ask an Application Administrator or Cloud
+  Application Administrator to change credentials or settings.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. For each privileged application identified in CB-M365-APPS-011 and each service principal
+       listed under **Entra ID** > **Roles & admins** with a privileged role, open **App
+       registrations** > the application > **Owners** and **Enterprise apps** > the application >
+       **Owners**.
+    3. In Microsoft Graph PowerShell (scopes `Application.Read.All`, `Directory.Read.All`), list
+       owners with `Get-MgApplicationOwner -ApplicationId <id>` and
+       `Get-MgServicePrincipalOwner -ServicePrincipalId <id>`.
+    4. For the owners of other applications, check MFA registration under **Entra ID** >
+       **Authentication methods** > **User registration details** (or
+       `Get-MgReportAuthenticationMethodUserRegistrationDetail`, field `isMfaRegistered`).
+    5. Fail if a privileged application has a user owner, or if any owner is disabled, a guest
+       without justification, or has no MFA method registered.
+
+remediation:
+  manual: |
+    1. Remove user owners from privileged applications: **App registrations** > the application >
+       **Owners** > **Remove owners**, and the same under **Enterprise apps**. Graph alternative:
+       `Remove-MgApplicationOwnerByRef` and `Remove-MgServicePrincipalOwnerByRef`.
+    2. Delegate management of these applications through Application Administrator or Cloud
+       Application Administrator roles, scoped to the application where possible, and eligible
+       through PIM.
+    3. For other applications, ask owners without MFA to register a method, or replace them.
+    4. Role required: Cloud Application Administrator (Privileged Role Administrator for
+       applications holding privileged roles).
+  rollback: |
+    Add the previous owner back under **Owners**.
+
+references:
+  - title: Overview of enterprise application ownership
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/overview-assign-app-owners
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test catalogue (MT.1063, MT.1077, MT.1078)
+    url: https://maester.dev/docs/tests/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.001
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-APPS-011
+    type: related
+  - id: CB-M365-AUTH-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

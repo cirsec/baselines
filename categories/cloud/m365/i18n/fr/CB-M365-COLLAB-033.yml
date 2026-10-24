@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-033
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder la purge automatique zéro heure activée pour les messages Teams
+finding:
+  title: Les messages Teams malveillants ne sont pas retirés après remise
+  description: Un message de conversation identifié ensuite comme logiciel malveillant ou hameçonnage à haut niveau de confiance reste dans la conversation, où les utilisateurs peuvent encore l'ouvrir.
+description: |
+  La purge automatique zéro heure (ZAP) est activée dans la stratégie de protection Teams
+  (`ZapEnabled` = `True`) : quand un message de conversation ou de canal Teams est identifié comme
+  logiciel malveillant ou hameçonnage à haut niveau de confiance après remise, il est bloqué pour les
+  destinataires et placé en quarantaine. Aucune règle de protection Teams n'exclut d'utilisateurs, de
+  groupes ou de domaines sans raison documentée.
+rationale: |
+  Les verdicts arrivent souvent après la remise, une fois une URL analysée ou une campagne reconnue.
+  ZAP retire le message a posteriori : c'est la seule correction qui atteint chaque destinataire avant
+  qu'il ne clique. Elle est activée par défaut ; le contrôle protège contre sa désactivation ou son
+  contournement par de larges exclusions.
+impact: |
+  Les messages purgés par ZAP disparaissent de la conversation pour les destinataires et apparaissent
+  en quarantaine, d'où les administrateurs peuvent libérer les faux positifs. Aucun autre impact
+  connu.
+setting:
+  location: Portail Microsoft Defender > E-mail et collaboration > Stratégies et règles > Stratégies de menace > Protection Teams > Purge automatique zéro heure (ZAP)
+  recommended_value: Activée (ZapEnabled = True), sans exclusion non documentée
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le rôle
+       Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Protection Teams**.
+    3. Vérifier que **Purge automatique zéro heure (ZAP)** est **Activée** et revoir la section
+       **Exclure ces participants**.
+    4. Avec Exchange Online PowerShell (View-Only Organization Management ou Lecteur général) :
+       `Get-TeamsProtectionPolicy | Format-List ZapEnabled` et
+       `Get-TeamsProtectionPolicyRule | Format-List ExceptIfSentTo, ExceptIfSentToMemberOf, ExceptIfRecipientDomainIs`.
+    5. Échec si `ZapEnabled` vaut `False`, ou si des exclusions couvrent des utilisateurs ou groupes
+       sans raison documentée.
+remediation:
+  manual: |
+    1. Dans le portail Defender, aller dans **E-mail et collaboration** > **Stratégies et règles** >
+       **Stratégies de menace** > **Protection Teams**, sélectionner **Modifier** dans la section ZAP,
+       activer **ZAP**, retirer les exclusions injustifiées puis **Enregistrer**. Rôle : Administrateur
+       de la sécurité.
+    2. Équivalent PowerShell :
+       `Set-TeamsProtectionPolicy -Identity "Teams Protection Policy" -ZapEnabled $true`.
+    3. Vérifier que les stratégies de quarantaine des logiciels malveillants et de l'hameçonnage Teams
+       permettent aux administrateurs de revoir les messages purgés.

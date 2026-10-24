@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-016
+title: Allow only approved third-party cloud storage in Teams
+finding:
+  title: Teams lets users connect unapproved third-party cloud storage
+  description: Users can attach Dropbox, Box, Google Drive, Citrix ShareFile or Egnyte storage to teams, moving files outside Microsoft 365 retention, DLP and audit.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, cloud-storage, data-loss-prevention, shadow-it]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  In the Teams client configuration, only the third-party storage providers in
+  `{{ approved_cloud_storage }}` are enabled (`AllowDropBox`, `AllowBox`, `AllowGoogleDrive`,
+  `AllowShareFile`, `AllowEgnyte`). With the default empty list, all five are off and files in Teams
+  live in SharePoint and OneDrive only.
+rationale: |
+  Files stored in a third-party service through Teams escape sensitivity labels, DLP, retention,
+  eDiscovery and the Microsoft 365 audit log, and their sharing follows the other provider's rules.
+  Limiting providers to approved ones keeps team content under the organization's data governance.
+impact: |
+  Teams that added a disabled provider as a tab lose access to it from Teams; the files remain in the
+  third-party service. Move them to SharePoint before the change.
+
+setting:
+  location: Teams admin center > Teams > Teams settings > Files
+  default_value: All providers On
+  recommended_value: "Only {{ approved_cloud_storage }} On"
+parameters:
+  - name: approved_cloud_storage
+    type: list
+    description: "Third-party storage providers allowed in Teams (any of: DropBox, Box, GoogleDrive, ShareFile, Egnyte)."
+    default: []
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Teams** > **Teams settings** > **Files** and check that only the providers in
+       `{{ approved_cloud_storage }}` are **On**.
+    3. With Microsoft Teams PowerShell (`Connect-MicrosoftTeams`, Global Reader is enough):
+       `Get-CsTeamsClientConfiguration -Identity Global | Select-Object AllowDropBox, AllowBox, AllowGoogleDrive, AllowShareFile, AllowEgnyte`.
+    4. Fail if a provider outside `{{ approved_cloud_storage }}` is `True`.
+
+remediation:
+  manual: |
+    1. Find teams that use third-party storage tabs and agree a migration to SharePoint.
+    2. In the Teams admin center, browse to **Teams** > **Teams settings** > **Files**, turn off each
+       provider that is not approved and **Save**. Role: Teams Administrator.
+    3. PowerShell equivalent:
+       `Set-CsTeamsClientConfiguration -Identity Global -AllowDropBox $false -AllowBox $false -AllowGoogleDrive $false -AllowShareFile $false -AllowEgnyte $false`
+       (keep `$true` for approved providers).
+
+references:
+  - title: Set-CsTeamsClientConfiguration
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsclientconfiguration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Teams settings and policies reference
+    url: https://learn.microsoft.com/microsoftteams/settings-policies-reference
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.1.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-TENANT-017
+    type: related
+  - id: CB-M365-MAIL-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Attribuer des rôles à moindre privilège plutôt qu'Administrateur général
+finding:
+  title: Administrateur général est utilisé là où des rôles plus restreints suffiraient
+  description: Des administrateurs détiennent le contrôle total du tenant pour des tâches qu'un rôle propre à un service couvre, si bien que chacun de leurs comptes mène à une compromission complète.
+description: |
+  Les tâches d'administration sont déléguées avec le rôle intégré ou personnalisé le plus restreint
+  qui les couvre (Administrateur Exchange, Administrateur SharePoint, Administrateur
+  d'utilisateurs, Administrateur du support technique, Opérateur de sécurité...), limité à une
+  unité administrative quand c'est possible. Administrateur général est réservé aux rares tâches
+  que lui seul peut effectuer.
+
+  Cible mesurable : les titulaires d'Administrateur général représentent moins de la moitié des
+  principaux détenant un rôle privilégié (actif ou éligible).
+rationale: |
+  L'essentiel de l'administration courante n'utilise qu'une fraction des permissions
+  d'Administrateur général. Des rôles restreints limitent ce qu'une session d'administration volée
+  peut faire et rendent la piste d'audit plus lisible. Un tenant où la plupart des utilisateurs
+  privilégiés sont administrateurs généraux n'a en pratique aucune séparation des rôles.
+impact: |
+  Des administrateurs peuvent avoir besoin de plusieurs rôles, ou d'un rôle personnalisé
+  (Microsoft Entra ID P1) pour un ensemble précis de permissions. Certaines pages des centres
+  d'administration exigent un rôle spécifique ; tester chaque délégation avec la personne qui
+  l'utilisera.
+notes: |
+  Le ratio est un signal, pas un objectif : un tenant avec deux administrateurs généraux et deux
+  autres administrateurs passe, mais la conception des rôles mérite tout de même une revue.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Rôles et administrateurs** > **Rôles et administrateurs**,
+       filtrer sur les rôles **Privilégiés** et noter les titulaires actifs et éligibles de chacun,
+       en développant les groupes.
+    3. Compter les principaux distincts détenant Administrateur général (G) et les principaux
+       distincts détenant un rôle privilégié quelconque (P).
+    4. Alternative PowerShell en lecture seule (Microsoft Graph, étendue
+       `RoleManagement.Read.Directory`) :
+       ```
+       $priv = Get-MgRoleManagementDirectoryRoleDefinition -All | Where-Object IsPrivileged
+       $all  = Get-MgRoleManagementDirectoryRoleAssignment -All | Where-Object RoleDefinitionId -in $priv.Id
+       ```
+       Ajouter les attributions éligibles avec `Get-MgRoleManagementDirectoryRoleEligibilitySchedule`.
+    5. Échec si G vaut la moitié de P ou plus, ou si l'activité d'un administrateur général
+       (journaux d'audit) ne concerne qu'un seul service.
+remediation:
+  manual: |
+    1. Pour chaque administrateur général, lister les tâches effectuées sur les 90 derniers jours
+       dans **Entra ID** > **Supervision et intégrité** > **Journaux d'audit** et les centres
+       d'administration utilisés.
+    2. Faire correspondre ces tâches à des rôles intégrés (voir la page des rôles à moindre
+       privilège par tâche) ou créer un rôle personnalisé.
+    3. Attribuer les rôles restreints, en éligible via PIM quand la licence le permet, avec un
+       Administrateur de rôle privilégié.
+    4. Retirer l'attribution Administrateur général une fois que la personne confirme que les
+       nouveaux rôles fonctionnent.
+  rollback: |
+    Réattribuer temporairement Administrateur général via PIM le temps de corriger la conception
+    des rôles.

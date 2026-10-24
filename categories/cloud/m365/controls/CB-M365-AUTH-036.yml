@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-036
+title: Enforce a custom banned password list with the organization's own terms
+finding:
+  title: Passwords built on the company name or brands are accepted
+  description: Attackers spray passwords such as Company2026! first, and only Microsoft's global list blocks the most common ones.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [passwords, password-protection, banned-passwords, password-spray]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  In Microsoft Entra Password Protection, **Enforce custom list** is set to **Yes** and the **Custom
+  banned password list** contains the terms specific to the organization: company and group names,
+  brands and products, main locations, internal project names, local sports teams, and the terms
+  listed in `{{ banned_password_terms }}`.
+
+  Microsoft Entra ID checks every password change and reset against the global banned list and
+  this custom list, with normalization (case, common substitutions such as 0 for o) and fuzzy
+  matching, then scores the remaining characters.
+rationale: |
+  Password spray and targeted guessing start with words linked to the victim. Microsoft's global list
+  cannot know a company's brands or city. A short custom list blocks the variants users naturally
+  build from them, at no cost.
+impact: |
+  Users who pick a password containing a banned term get an error and must choose another one. The
+  list holds up to 1,000 terms of 4 to 16 characters; changes can take several hours to apply. For
+  synchronized users, the list is enforced on-premises only with CB-M365-AUTH-037.
+notes: |
+  Do not add generic words already covered by the global list, or names of individual employees in
+  bulk: the goal is a short list of high-value terms. The list is visible to administrators only.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Password protection > Custom banned passwords
+  default_value: Enforce custom list = No
+  recommended_value: Enforce custom list = Yes, list contains the organization's terms
+
+parameters:
+  - name: banned_password_terms
+    type: list
+    description: Organization-specific terms to ban (company, brand and product names, locations). Filled in during tailoring.
+    default: []
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Password protection**.
+    3. Under **Custom banned passwords**, check that **Enforce custom list** is **Yes** and that the
+       **Custom banned password list** contains the organization's names and brands, and every term of
+       {{ banned_password_terms }}.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Directory.Read.All`):
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       shows `EnableBannedPasswordCheck` = `True` and the terms in `BannedPasswordList`. No object
+       means the default settings (custom list off).
+    5. Fail if the custom list is not enforced, is empty, or misses the company name.
+
+remediation:
+  manual: |
+    1. Draw up the list with the communication and business teams (brands, products, sites).
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Authentication methods** > **Password protection**.
+    4. Under **Custom banned passwords**, set **Enforce custom list** to **Yes** and enter one term
+       per line in **Custom banned password list**.
+    5. Select **Save**. Test by trying to change a test user's password to a variant of a banned
+       term.
+  rollback: |
+    Set **Enforce custom list** to **No** and save.
+
+references:
+  - title: "Tutorial: Configure custom banned passwords for Microsoft Entra password protection"
+    url: https://learn.microsoft.com/entra/identity/authentication/tutorial-configure-custom-password-protection
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Eliminate bad passwords using Microsoft Entra Password Protection
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-password-ban-bad
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.2"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R27"
+    relation: partial
+    note: ANSSI asks for a strength check at password creation; Microsoft's global list does most of it and ours adds organization-specific terms.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1110.001
+related_controls:
+  - id: CB-M365-AUTH-035
+    type: related
+  - id: CB-M365-AUTH-037
+    type: related
+  - id: CB-M365-AUTH-038
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer l'isolation du locataire Power Platform
+finding:
+  title: L'isolation du locataire Power Platform est désactivée
+  description: Les applications et flux peuvent ouvrir des connexions de ce tenant vers d'autres tenants Microsoft Entra, et les utilisateurs d'autres tenants peuvent se connecter aux données de celui-ci, avec des identifiants valides et sans contrôle des administrateurs.
+description: |
+  L'isolation du locataire Power Platform (**Restreindre les connexions entre locataires**) est
+  **Activée**. Power Platform bloque alors les connexions entrantes et sortantes qui utilisent des
+  connecteurs à authentification Microsoft Entra ID (Office 365 Outlook, SharePoint, OneDrive
+  Entreprise, Dataverse...) entre ce tenant et tout autre tenant, sauf les tenants déclarés en
+  exception.
+
+  L'isolation du locataire est propre aux connexions Power Platform. Elle ne remplace ni les
+  paramètres d'accès inter-tenant de Microsoft Entra ni les restrictions de tenant, et ne couvre pas
+  les connecteurs qui n'utilisent pas l'authentification Entra.
+rationale: |
+  Sans isolation, un concepteur peut créer un flux qui copie des fichiers SharePoint ou des courriels
+  vers un site SharePoint ou une boîte aux lettres d'un autre tenant qu'il contrôle, simplement en se
+  connectant au second tenant dans la fenêtre de connexion. L'inverse fonctionne aussi : un
+  utilisateur d'un autre tenant peut se connecter aux données de ce tenant depuis son propre
+  environnement. L'isolation ferme ce canal d'exfiltration et oblige à déclarer les intégrations
+  inter-tenant.
+impact: |
+  Les applications et flux existants qui utilisent des connexions inter-tenant échouent à
+  l'exécution environ une heure après l'activation, et les concepteurs ne peuvent plus créer de
+  telles connexions. Lancer d'abord le rapport d'isolation inter-tenant et ajouter en exception les
+  tenants partenaires nécessaires (CB-M365-POWER-006). Le connecteur Azure DevOps est une lacune
+  connue : l'isolation ne s'y applique pas, le limiter par des stratégies de données.
+setting:
+  location: Centre d'administration Power Platform > Sécurité > Identité et accès > Isolation du locataire > Restreindre les connexions entre locataires
+  recommended_value: Activé
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général.
+    2. Aller dans **Sécurité** > **Identité et accès** > **Isolation du locataire**.
+    3. Vérifier que **Restreindre les connexions entre locataires** est **Activé**.
+    4. Alternative en lecture seule (administrateur Power Platform) : `Add-PowerAppsAccount`, puis
+       `Get-PowerAppTenantIsolationPolicy -TenantId <ID du tenant>` et lire
+       `properties.isDisabled` (doit valoir `False`).
+    5. Échec si l'isolation du locataire est désactivée.
+remediation:
+  manual: |
+    1. Lancer le rapport d'isolation inter-tenant (page d'isolation du locataire du centre
+       d'administration ou API de rapport) pour lister les connexions inter-tenant existantes.
+    2. Dans **Sécurité** > **Identité et accès** > **Isolation du locataire**, ajouter les exceptions
+       pour les tenants partenaires et sens nécessaires (CB-M365-POWER-006). Rôle : administrateur
+       Power Platform.
+    3. Passer **Restreindre les connexions entre locataires** sur **Activé** et enregistrer.
+    4. Équivalent PowerShell : lire la stratégie avec `Get-PowerAppTenantIsolationPolicy`, régler
+       `properties.isDisabled` sur `$false` et l'appliquer avec `Set-PowerAppTenantIsolationPolicy`.
+  rollback: |
+    Passer **Restreindre les connexions entre locataires** sur **Désactivé**, ou ajouter une exception
+    temporaire pour le tenant concerné.

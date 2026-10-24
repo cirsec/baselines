@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-030
+title: Apply the recommended inbound anti-spam actions with no allowed senders or domains
+finding:
+  title: Inbound anti-spam policies deliver phishing or allow-list senders and domains
+  description: Phishing and high confidence spam can reach the Junk Email folder or the inbox, and allow-listed senders skip filtering even when spoofed.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online-protection, anti-spam, quarantine, allow-list, bulk-mail]
+
+description: |
+  Every inbound anti-spam policy that applies to users (the default policy, custom policies and the
+  presets) has at least the Standard values:
+
+  - **Spam**: **Move message to Junk Email folder** or **Quarantine message**;
+  - **High confidence spam**, **Phishing** and **High confidence phishing**: **Quarantine message**,
+    with **AdminOnlyAccessPolicy** for high confidence phishing;
+  - **Bulk email threshold** at {{ bulk_threshold }} or lower, bulk messages moved to Junk Email or
+    quarantined, `MarkAsSpamBulkMail On`;
+  - **Retain spam in quarantine for this many days**: 30 (`QuarantineRetentionPeriod`);
+  - spam safety tips on (`InlineSafetyTipsEnabled $true`);
+  - Advanced Spam Filter (ASF) settings off, as Microsoft recommends;
+  - **Allowed senders** and **Allowed domains** empty (`AllowedSenders`, `AllowedSenderDomains`),
+    and never one of the organization's own domains;
+  - quarantine policies with notifications for the quarantined verdicts users may release
+    (**DefaultFullAccessWithNotificationPolicy**), so users learn about held messages.
+rationale: |
+  A phishing message in the Junk Email folder is still one click away from the user. Quarantine
+  keeps it out of reach and admin-only quarantine prevents release of the most dangerous verdicts.
+  Allowed senders and domains bypass spam filtering for any message that claims that address,
+  including spoofed ones, and are one of the most common misconfigurations found in tenants.
+impact: |
+  More messages are quarantined; users receive quarantine notifications and can release spam and
+  bulk themselves. Senders removed from the allow lists go through normal filtering; use the Tenant
+  Allow/Block List for the rare confirmed false positives.
+
+parameters:
+  - name: bulk_threshold
+    type: integer
+    description: Highest bulk complaint level (BCL) threshold allowed; lower is stricter.
+    default: 6
+    minimum: 1
+    maximum: 9
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-spam** and open every inbound policy (**Anti-spam inbound policy (Default)** and custom
+       policies). Check **Bulk email threshold & spam properties**, **Actions** and **Allow & block
+       list** against the values above.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-HostedContentFilterPolicy | Format-List Name, SpamAction, HighConfidenceSpamAction, PhishSpamAction, HighConfidencePhishAction,
+         HighConfidencePhishQuarantineTag, BulkSpamAction, BulkThreshold, MarkAsSpamBulkMail, QuarantineRetentionPeriod,
+         InlineSafetyTipsEnabled, AllowedSenders, AllowedSenderDomains, IncreaseScoreWith*, MarkAsSpam*
+       Get-HostedContentFilterRule | Format-Table Name, State, Priority
+       ```
+    4. Fail if a policy that applies to users delivers phishing or high confidence spam outside
+       quarantine, has a bulk threshold above {{ bulk_threshold }}, a retention below 30 days, safety
+       tips off, or any allowed sender or domain.
+
+remediation:
+  manual: |
+    1. Prefer the preset: apply the Standard preset to all recipients (CB-M365-MAIL-019), then align
+       the default policy, which still applies to recipients outside the presets.
+    2. In the Defender portal, edit each inbound policy (Security Administrator): set the actions,
+       bulk threshold, retention and safety tips above, and remove every allowed sender and domain
+       (replace confirmed false positives with Tenant Allow/Block List entries).
+    3. PowerShell equivalent:
+       ```powershell
+       Set-HostedContentFilterPolicy -Identity Default -SpamAction MoveToJmf -HighConfidenceSpamAction Quarantine `
+         -PhishSpamAction Quarantine -HighConfidencePhishAction Quarantine -HighConfidencePhishQuarantineTag AdminOnlyAccessPolicy `
+         -BulkSpamAction MoveToJmf -BulkThreshold 6 -MarkAsSpamBulkMail On -QuarantineRetentionPeriod 30 `
+         -InlineSafetyTipsEnabled $true -AllowedSenders $null -AllowedSenderDomains $null `
+         -HighConfidenceSpamQuarantineTag DefaultFullAccessWithNotificationPolicy -PhishQuarantineTag DefaultFullAccessWithNotificationPolicy
+       ```
+  rollback: |
+    Restore the previous values on the policy; keep the allow lists empty.
+
+references:
+  - title: Configure anti-spam policies in EOP
+    url: https://learn.microsoft.com/defender-office-365/anti-spam-policies-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommended settings for EOP and Microsoft Defender for Office 365 security
+    url: https://learn.microsoft.com/defender-office-365/recommended-settings-for-eop-and-office365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Quarantine policies
+    url: https://learn.microsoft.com/defender-office-365/quarantine-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-100 to 109, 118-1, 118-3, 139 to 143, 231)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.14"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.6.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.6.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-002
+    type: related
+  - id: CB-M365-MAIL-019
+    type: related
+  - id: CB-M365-MAIL-024
+    type: related
+  - id: CB-M365-MAIL-032
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

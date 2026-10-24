@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Publier pour chaque domaine une stratégie DMARC appliquée avec rapports
+finding:
+  title: Certains domaines n'ont pas de stratégie DMARC, ou une stratégie qui ne met pas en quarantaine ni ne rejette le courrier usurpé
+  description: Les messages qui forgent les domaines de l'organisation dans l'adresse From visible peuvent encore atteindre leurs destinataires, et personne ne reçoit de rapport sur cette usurpation.
+description: |
+  Chaque domaine possédé par l'organisation publie un enregistrement TXT DMARC à `_dmarc.<domaine>`
+  avec :
+
+  - `p={{ dmarc_policy }}` pour les domaines qui envoient du courrier, et `p=reject` pour ceux qui n'en
+    envoient jamais (domaines parqués) ;
+  - pas de balise `pct`, ou `pct=100` ;
+  - une stratégie de sous-domaine (`sp`) absente ou pas plus faible que `p` ;
+  - les rapports agrégés (`rua`) envoyés à {{ dmarc_report_address }}.
+
+  SPF (CB-M365-MAIL-014) et DKIM (CB-M365-MAIL-015) doivent réussir et être alignés pour les
+  expéditeurs légitimes avant que la stratégie soit appliquée.
+rationale: |
+  DMARC est le seul standard qui protège l'adresse From que voient réellement les utilisateurs. Avec
+  `p=none`, les destinataires ne font que signaler les usurpations ; avec `quarantine` ou `reject`, ils
+  les arrêtent, ce qui protège salariés, clients et partenaires du hameçonnage utilisant le nom de
+  l'organisation. Les rapports montrent les tentatives d'usurpation et les expéditeurs légitimes
+  oubliés.
+impact: |
+  Les expéditeurs légitimes qui échouent à l'alignement SPF et DKIM (outil marketing oublié,
+  partenaire qui envoie au nom de l'organisation) voient leurs messages mis en quarantaine ou rejetés.
+  Commencer par `p=none`, lire les rapports quelques semaines, corriger les expéditeurs, puis passer à
+  `quarantine` et `reject`. Un service tiers d'analyse DMARC rend les rapports exploitables.
+parameters:
+  dmarc_policy: Stratégie DMARC exigée pour les domaines qui envoient du courrier.
+  dmarc_report_address: Boîte aux lettres ou service qui reçoit les rapports agrégés DMARC.
+audit:
+  manual: |
+    1. Lister les domaines comme dans CB-M365-MAIL-014 (centre d'administration Microsoft 365 >
+       **Paramètres** > **Domaines**, plus l'inventaire du bureau d'enregistrement).
+    2. Pour chaque domaine, interroger le DNS (aucun rôle sur le tenant n'est nécessaire) :
+       ```powershell
+       Get-AcceptedDomain | ForEach-Object {
+         Resolve-DnsName -Name "_dmarc.$($_.DomainName)" -Type TXT -ErrorAction SilentlyContinue | Select-Object Name, Strings
+       }
+       ```
+    3. Échec si un domaine n'a pas d'enregistrement DMARC, si la stratégie d'un domaine d'envoi est plus
+       faible que `{{ dmarc_policy }}`, si un domaine parqué n'est pas en `p=reject`, si `pct` est
+       inférieur à 100, si `sp` est plus faible que la stratégie requise, ou s'il n'y a pas d'adresse
+       `rua`.
+remediation:
+  manual: |
+    1. Publier d'abord un enregistrement de surveillance, par exemple
+       `v=DMARC1; p=none; rua=mailto:dmarc@example.com`, et analyser les rapports agrégés.
+    2. Corriger SPF et DKIM pour chaque expéditeur légitime trouvé dans les rapports.
+    3. Chez l'hébergeur DNS, mettre à jour l'enregistrement TXT à `_dmarc.<domaine>` :
+       ```text
+       v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com
+       ```
+       puis `p=reject` là où le paramètre l'exige.
+    4. Pour les domaines parqués, publier directement `v=DMARC1; p=reject`.
+  rollback: |
+    Abaisser la stratégie à `p=none` le temps d'analyser un problème de remise.

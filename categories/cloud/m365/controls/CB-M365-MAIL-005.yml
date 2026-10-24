@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-005
+title: Prevent users from adding personal email accounts and calendars in Outlook
+finding:
+  title: Users can connect personal mail accounts and calendars to their work Outlook
+  description: Work and personal mail mix in the same client, which makes it easy to move company data to a personal account and brings personal phishing into the work session.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, outlook, owa-policy, personal-accounts, data-leakage]
+
+description: |
+  Every Outlook on the web mailbox policy in use has:
+
+  - `PersonalAccountsEnabled` set to `$false`: users cannot add Outlook.com, Gmail, Yahoo or other
+    personal accounts in the new Outlook for Windows and Outlook on the web;
+  - `PersonalAccountCalendarsEnabled` set to `$false`: users cannot connect a personal Outlook.com
+    or Google calendar.
+rationale: |
+  With a personal account in the same client, dragging a message or attachment from the work
+  mailbox to the personal one takes one move and bypasses data loss prevention, retention and
+  audit. Mail received on the personal account is not filtered by the organization's protections
+  but is read in the trusted work client.
+impact: |
+  Users who read personal mail in the new Outlook must use a separate client or browser profile.
+  Personal accounts already added are removed from the client once the policy applies.
+
+audit:
+  manual: |
+    1. These settings are not shown in the Exchange admin center. Connect to Exchange Online
+       PowerShell as at least a Global Reader.
+    2. Run (read-only):
+       ```powershell
+       Get-OwaMailboxPolicy | Format-Table Name, IsDefault, PersonalAccountsEnabled, PersonalAccountCalendarsEnabled
+       Get-CASMailbox -ResultSize Unlimited | Group-Object OwaMailboxPolicy | Select-Object Name, Count
+       ```
+       An empty `OwaMailboxPolicy` means the default policy applies.
+    3. Fail if a policy used by at least one mailbox has `PersonalAccountsEnabled` or
+       `PersonalAccountCalendarsEnabled` set to `True`.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell as an Exchange Administrator.
+    2. For each policy in use (the default one is usually `OwaMailboxPolicy-Default`):
+       ```powershell
+       Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -PersonalAccountsEnabled $false -PersonalAccountCalendarsEnabled $false
+       ```
+    3. Changes can take up to a few hours to reach the clients.
+  rollback: |
+    Set both parameters back to `$true` on the policy.
+
+references:
+  - title: Set-OwaMailboxPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-owamailboxpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud - Outlook web app policies
+    url: https://blueprint.asd.gov.au/configuration/exchange-online/roles/outlook-web-app-policies/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.3.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-MAIL-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-025
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une nouvelle connexion des utilisateurs au moins tous les {{ user_signin_frequency_days }} jours
+finding:
+  title: Les sessions utilisateur peuvent rester valides jusqu'à 90 jours sans nouvelle connexion
+  description: Un jeton d'actualisation ou un cookie de session volé reste utilisable des semaines, car rien n'oblige l'utilisateur à se réauthentifier.
+description: |
+  Une stratégie d'accès conditionnel applique le contrôle de session **Fréquence de connexion** à
+  tous les utilisateurs sur toutes les ressources, avec une réauthentification périodique d'au plus
+  {{ user_signin_frequency_days }} jours. Sans cette stratégie, Microsoft Entra ID utilise une
+  fenêtre glissante de 90 jours : une session est renouvelée tant qu'elle sert, et l'utilisateur
+  n'est jamais invité à se réauthentifier.
+
+  Les administrateurs ont une fréquence plus courte via CB-M365-AUTH-024 ; ce contrôle couvre tous
+  les autres. Il n'exclut que les comptes d'accès d'urgence.
+rationale: |
+  Le vol de jetons (maliciel voleur d'informations, hameçonnage adversary-in-the-middle, appareil
+  perdu déverrouillé) donne à l'attaquant une session qui ne survit à un changement de mot de passe
+  que jusqu'à la prochaine connexion forcée. Une réauthentification périodique borne la durée
+  d'utilité d'un jeton d'actualisation ou d'une session de navigateur volés, et oblige l'utilisateur
+  à prouver de nouveau qu'il détient le mot de passe et la méthode MFA.
+impact: |
+  Les utilisateurs doivent se connecter et réaliser la MFA une fois tous les
+  {{ user_signin_frequency_days }} jours sur chaque appareil et application. Sur les postes Windows
+  joints à Microsoft Entra ou joints hybrides avec Windows Hello Entreprise, l'invite est en général
+  transparente. Des valeurs plus courtes provoquent de la lassitude MFA et des appels au support.
+notes: |
+  La fréquence de connexion s'applique aux connexions interactives et aux jetons d'actualisation.
+  Elle ne s'applique pas aux principaux de service ni aux identités managées. Si plusieurs stratégies
+  fixent une fréquence, la plus courte l'emporte.
+parameters:
+  user_signin_frequency_days: Nombre maximal de jours entre deux connexions interactives pour les utilisateurs ordinaires.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes d'accès d'urgence ou leur groupe ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Session** > **Fréquence de connexion** est activée, en **Réauthentification périodique**,
+         avec une valeur de {{ user_signin_frequency_days }} jours ou moins (ou l'équivalent en
+         heures).
+    4. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.SessionControls.SignInFrequency.IsEnabled } | Select-Object DisplayName, State, @{n='Frequency';e={$_.SessionControls.SignInFrequency.Value, $_.SessionControls.SignInFrequency.Type}}`
+    5. Échec si aucune stratégie active ne couvre tous les utilisateurs et toutes les ressources avec
+       une fréquence de {{ user_signin_frequency_days }} jours ou moins.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle
+       stratégie**.
+    3. La nommer, par exemple `ALL - Sign-in frequency`.
+    4. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Session** > **Fréquence de connexion** > **Réauthentification périodique** : saisir
+       {{ user_signin_frequency_days }} et sélectionner **Jours**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion quelques jours.
+    8. Passer **Activer la stratégie** à **Activé**.
+
+    La même stratégie peut être créée avec `New-MgIdentityConditionalAccessPolicy` et un bloc
+    `sessionControls.signInFrequency` (`value`, `type: days`, `isEnabled: true`).
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

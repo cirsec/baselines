@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-014
+title: Disable Microsoft Authenticator on companion applications
+finding:
+  title: Outlook mobile can act as an MFA authenticator
+  description: Authenticator Lite lets users approve MFA prompts or read codes inside Outlook mobile, an app that is not managed as an authenticator and runs on the same device as the mailbox.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [mfa, microsoft-authenticator, authenticator-lite, authentication-methods]
+
+description: |
+  In the Microsoft Authenticator configuration of the Authentication methods policy, **Microsoft
+  Authenticator on companion applications** (Authenticator Lite) is set to **Disabled**. Users
+  complete MFA in Microsoft Authenticator itself or with another allowed method, not inside
+  Outlook mobile.
+
+  The default is **Microsoft managed**, whose current value is enabled.
+rationale: |
+  Authenticator Lite puts the second factor inside the application it protects: whoever controls
+  the phone and Outlook has both the mailbox session and the approval. It also does not support
+  passkeys and depends on Outlook versions that the organisation may not manage.
+impact: |
+  Users who registered Authenticator Lite in Outlook must install Microsoft Authenticator or use
+  another method. Check **User registration details** first.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Policies > Microsoft Authenticator > Configure > Microsoft Authenticator on companion applications
+  default_value: Microsoft managed (enabled)
+  recommended_value: Disabled
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Microsoft
+       Authenticator**.
+    3. On the **Configure** tab, read **Microsoft Authenticator on companion applications**.
+    4. Read-only alternative with Microsoft Graph (beta, scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`,
+       property `featureSettings.companionAppAllowedState.state`.
+    5. Fail if the state is **Enabled** or **Microsoft managed** (`default`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Microsoft
+       Authenticator** > **Configure**.
+    3. Set **Microsoft Authenticator on companion applications** to **Disabled** and save.
+    Graph equivalent: `PATCH https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`
+    with `featureSettings.companionAppAllowedState.state` set to `disabled` (send the whole
+    configuration back).
+  rollback: |
+    Set the setting back to **Microsoft managed**.
+
+references:
+  - title: Enable Authenticator Lite for Outlook mobile
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-authenticator-lite
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.10"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

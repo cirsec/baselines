@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Publier pour chaque domaine un enregistrement SPF qui fait échouer les expéditeurs non autorisés
+finding:
+  title: Certains domaines n'ont pas d'enregistrement SPF, ou un enregistrement qui ne fait pas échouer les expéditeurs non autorisés
+  description: Les systèmes de messagerie destinataires ne peuvent pas savoir qu'un message utilisant le domaine dans son expéditeur d'enveloppe vient d'un serveur non autorisé, ce qui facilite l'usurpation.
+description: |
+  Chaque domaine accepté du tenant, et chaque autre domaine possédé par l'organisation, publie dans
+  le DNS exactement un enregistrement TXT SPF qui :
+
+  - ne liste que les sources réelles de courrier du domaine (pour Microsoft 365,
+    `include:spf.protection.outlook.com` ; serveurs sur site et expéditeurs tiers par adresse IP ou
+    `include:`) ;
+  - se termine par la règle d'application `{{ spf_qualifier }}` (jamais `+all` ni `?all`) ;
+  - ne demande pas plus de 10 requêtes DNS.
+
+  Les domaines qui n'envoient jamais de courrier (domaines parqués) publient `v=spf1 -all` quelle
+  que soit la valeur du paramètre. Le domaine `*.onmicrosoft.com` est géré par Microsoft et hors
+  périmètre.
+rationale: |
+  SPF est le premier des trois contrôles d'authentification (SPF, DKIM, DMARC) qui permettent aux
+  destinataires, y compris Exchange Online lui-même, de rejeter le courrier forgé avec les domaines de
+  l'organisation. Sans SPF qui applique un échec, DMARC ne peut s'appuyer que sur DKIM et les messages
+  usurpés ont plus de chances d'être remis. Microsoft recommande `-all` pour les domaines qui ont
+  aussi DKIM et DMARC.
+impact: |
+  Un expéditeur manquant dans l'enregistrement (plateforme marketing, outil de ticketing, relais sur
+  site) voit ses messages échouer à SPF ; avec DMARC en application, ils peuvent être rejetés.
+  Recenser les expéditeurs avec les rapports agrégés DMARC avant de durcir l'enregistrement. Placer
+  les expéditeurs tiers sur un sous-domaine garde le domaine principal sous la limite des 10
+  requêtes.
+parameters:
+  spf_qualifier: Règle d'application à la fin de l'enregistrement SPF des domaines qui envoient du courrier.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au
+       moins le rôle Lecteur général, aller dans **Paramètres** > **Domaines** et lister les domaines.
+       Ajouter les domaines possédés hors du tenant (inventaire du bureau d'enregistrement).
+    2. Pour chaque domaine, interroger le DNS (aucun rôle sur le tenant n'est nécessaire) :
+       ```powershell
+       Get-AcceptedDomain | ForEach-Object {
+         Resolve-DnsName -Name $_.DomainName -Type TXT -ErrorAction SilentlyContinue |
+           Where-Object { $_.Strings -like 'v=spf1*' } | Select-Object Name, Strings
+       }
+       ```
+       (`nslookup -type=TXT example.com` ou `dig TXT example.com` donnent le même résultat.)
+    3. Échec si un domaine n'a pas d'enregistrement SPF, en a plusieurs, se termine par `+all` ou
+       `?all`, se termine par `~all` alors que le paramètre exige `-all`, dépasse 10 requêtes DNS, ou si
+       un domaine parqué ne publie pas `v=spf1 -all`.
+remediation:
+  manual: |
+    1. Recenser les systèmes qui envoient du courrier avec chaque domaine (les rapports agrégés DMARC
+       aident).
+    2. Chez l'hébergeur DNS, créer ou mettre à jour l'unique enregistrement TXT à la racine du domaine,
+       par exemple :
+       ```text
+       v=spf1 include:spf.protection.outlook.com -all
+       ```
+       Ajouter des entrées `ip4:`, `ip6:` ou `include:` pour les autres expéditeurs réels, et n'utiliser
+       `~all` que si le paramètre le permet.
+    3. Pour les domaines parqués, publier `v=spf1 -all` (et, si l'hébergeur le permet, un
+       enregistrement TXT générique de même valeur pour les sous-domaines).
+    4. Vérifier l'enregistrement avec un compteur de requêtes, et surveiller les échecs SPF dans les
+       rapports DMARC.
+  rollback: |
+    Restaurer la valeur précédente de l'enregistrement TXT chez l'hébergeur DNS.

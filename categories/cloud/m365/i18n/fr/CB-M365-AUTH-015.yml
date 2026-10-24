@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les passkeys et imposer l'attestation pour les administrateurs
+finding:
+  title: Les passkeys ne sont pas disponibles, ou les administrateurs peuvent enregistrer des passkeys non attestées
+  description: Sans la méthode Passkey (FIDO2) activée, personne ne peut enregistrer la méthode résistante au hameçonnage qu'exige la stratégie des administrateurs, et sans attestation n'importe quel authentificateur logiciel peut se faire passer pour une clé de sécurité.
+description: |
+  Dans la stratégie des méthodes d'authentification, la méthode **Passkey (FIDO2)** est activée
+  pour **Tous les utilisateurs** avec **Autoriser la configuration en libre-service** sur **Oui**.
+  Chaque profil de clé d'accès qui s'applique aux administrateurs (les groupes ou titulaires de
+  rôles couverts par CB-M365-AUTH-004) a **Appliquer l'attestation** sur **Oui** et n'autorise que
+  les passkeys **liées à l'appareil** : clés de sécurité FIDO2, passkeys dans Microsoft
+  Authenticator, passkeys Windows.
+
+  Les profils des autres utilisateurs peuvent aussi autoriser les passkeys synchronisées (Apple,
+  Google, gestionnaires d'identifiants tiers), qui ne peuvent pas être attestées mais restent
+  résistantes au hameçonnage.
+rationale: |
+  La stratégie MFA résistante au hameçonnage des administrateurs ne peut être respectée que si une
+  méthode résistante peut être enregistrée. L'attestation prouve à l'enregistrement que
+  l'authentificateur est un modèle authentique d'un fabricant connu, et c'est le seul moyen de
+  savoir que la passkey d'un administrateur est liée à l'appareil et non copiée dans un compte
+  cloud personnel.
+impact: |
+  Les administrateurs doivent enregistrer une passkey liée à l'appareil : clé de sécurité, passkey
+  dans Microsoft Authenticator ou Windows Hello. Les passkeys enregistrées avant l'application de
+  l'attestation continuent de fonctionner ; demander aux administrateurs de les réenregistrer.
+  L'activation des profils de clé d'accès est irréversible. Depuis septembre 2026, Microsoft active
+  automatiquement les passkeys pour les utilisateurs SMS et voix avec un profil qui autorise tous
+  les types de passkeys ; revoir ce profil.
+notes: |
+  Les utilisateurs doivent avoir fait une MFA dans les cinq dernières minutes pour enregistrer une
+  passkey. Un Temporary Access Pass (CB-M365-AUTH-017) couvre le premier enregistrement.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et sélectionner
+       **Passkey (FIDO2)**.
+    3. Dans **Activer et cibler**, vérifier que la méthode est activée pour **Tous les
+       utilisateurs** (ou pour chaque groupe contenant des utilisateurs) et noter quel profil de clé
+       d'accès s'applique aux administrateurs.
+    4. Dans **Configurer**, vérifier que **Autoriser la configuration en libre-service** vaut
+       **Oui**, et que chaque profil appliqué aux administrateurs a **Appliquer l'attestation** sur
+       **Oui** et des **Types de passkeys** limités à **Liées à l'appareil**.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Fido2 | Select-Object State -ExpandProperty AdditionalProperties`
+       (les profils de clé d'accès sont exposés sur le point de terminaison bêta de la même
+       ressource).
+    6. Échec si la méthode est désactivée, si la configuration en libre-service est désactivée, ou
+       si les administrateurs peuvent enregistrer une passkey sans attestation.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Passkey
+       (FIDO2)** et activer les profils de clé d'accès depuis le bandeau si ce n'est pas fait.
+    3. Dans **Configurer**, régler **Autoriser la configuration en libre-service** sur **Oui**.
+       Sélectionner **Ajouter un profil de clé d'accès**, le nommer par exemple `Admins -
+       device-bound attested`, régler **Appliquer l'attestation** sur **Oui** et **Types de
+       passkeys** sur **Liées à l'appareil**, puis enregistrer.
+    4. Dans **Activer et cibler**, ajouter le groupe des administrateurs avec ce profil, et **Tous
+       les utilisateurs** avec le profil par défaut. Enregistrer.
+    5. Demander aux administrateurs d'enregistrer une passkey sur
+       https://mysignins.microsoft.com/security-info.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Fido2`
+    avec `"state": "enabled"`, `"isSelfServiceRegistrationAllowed": true` et
+    `"isAttestationEnforced": true` (ou les paramètres de profil de clé d'accès en bêta).
+  rollback: |
+    Remettre **Appliquer l'attestation** sur **Non** dans le profil des administrateurs. Ne pas
+    désactiver la méthode : les administrateurs perdraient leur méthode résistante au hameçonnage.

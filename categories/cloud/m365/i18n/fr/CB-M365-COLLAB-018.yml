@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter l'accès externe Teams aux domaines approuvés
+finding:
+  title: Les utilisateurs Teams peuvent converser, appeler et se réunir avec les utilisateurs de n'importe quelle organisation externe
+  description: N'importe quel tenant Microsoft 365, y compris un tenant créé par un attaquant, peut contacter directement les utilisateurs dans Teams avec un nom et un logo crédibles.
+description: |
+  L'accès externe Teams (fédération) n'est autorisé qu'avec les domaines de
+  `{{ allowed_federation_domains }}` : le paramètre d'organisation **Utilisateurs Teams et Skype
+  Entreprise d'organisations externes** vaut **Autoriser uniquement des domaines externes
+  spécifiques** (`AllowFederatedUsers` = `True`, `AllowedDomains` = la liste). Bloquer tous les
+  domaines externes respecte aussi le contrôle.
+
+  La baseline garde la fédération ouverte mais bloque les comptes non gérés et les tenants d'essai
+  (CB-M365-COLLAB-019 à CB-M365-COLLAB-021).
+rationale: |
+  La fédération ouverte permet à n'importe quel tenant d'engager une conversation avec n'importe quel
+  utilisateur. Des attaquants créent ou compromettent des tenants, les nomment comme un support
+  informatique ou une équipe sécurité, et utilisent les conversations et appels Teams pour
+  l'hameçonnage, la diffusion de logiciels malveillants et l'ingénierie sociale de type support. Une
+  liste d'autorisation limite les contacts Teams aux partenaires choisis par l'organisation.
+impact: |
+  Les utilisateurs ne peuvent plus converser, appeler ou voir la présence des personnes
+  d'organisations hors liste ; ces personnes rejoignent les réunions comme participants anonymes
+  (soumis à la salle d'attente). Chaque nouveau partenaire demande une modification par un
+  administrateur. La liste accepte jusqu'à 4 000 domaines. Des stratégies d'accès externe
+  personnalisées peuvent accorder d'autres listes de domaines à certains utilisateurs.
+setting:
+  location: Centre d'administration Teams > Utilisateurs > Accès externe > Paramètres de l'organisation > Utilisateurs Teams et Skype Entreprise d'organisations externes
+  recommended_value: "Autoriser uniquement des domaines externes spécifiques : {{ allowed_federation_domains }}"
+parameters:
+  allowed_federation_domains: Domaines externes avec lesquels les utilisateurs peuvent converser, appeler et se réunir dans Teams.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Utilisateurs** > **Accès externe** (**Collaboration externe** > **Accès externe**
+       dans la nouvelle navigation) > **Paramètres de l'organisation**.
+    3. Vérifier que **Utilisateurs Teams et Skype Entreprise d'organisations externes** vaut **Autoriser
+       uniquement des domaines externes spécifiques** (ou **Bloquer tous les domaines externes**) et
+       comparer la liste à `{{ allowed_federation_domains }}`.
+    4. Avec Microsoft Teams PowerShell :
+       `Get-CsTenantFederationConfiguration | Select-Object AllowFederatedUsers, AllowedDomains, BlockedDomains`.
+       `AllowedDomains` doit être une liste de domaines, pas `AllowAllKnownDomains`.
+    5. Contrôler les stratégies d'accès externe personnalisées (`Get-CsExternalAccessPolicy`) : aucune
+       valeur de `CommunicationWithExternalOrgs` ne doit ouvrir davantage de domaines.
+    6. Échec si la fédération est ouverte à tous les domaines ou seulement restreinte par une liste de
+       blocage, ou si la liste contient un domaine non approuvé.
+remediation:
+  manual: |
+    1. Construire la liste à partir de l'usage actuel de la fédération (rapports d'utilisation Teams ou
+       journal d'audit) et faire approuver chaque domaine partenaire par les responsables métier.
+    2. Dans le centre d'administration Teams, aller dans **Utilisateurs** > **Accès externe**
+       (**Collaboration externe** > **Accès externe** dans la nouvelle navigation) > **Paramètres de
+       l'organisation**, sélectionner **Autoriser uniquement des domaines externes spécifiques**,
+       ajouter chaque domaine puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Équivalent PowerShell :
+       `$list = New-Object 'System.Collections.Generic.List[string]'; $list.Add('partner.example'); Set-CsTenantFederationConfiguration -AllowFederatedUsers $true -AllowedDomainsAsAList $list`.
+    4. La propagation prend du temps ; annoncer la date aux utilisateurs.
+  rollback: |
+    Sélectionner **Autoriser tous les domaines externes** (ou ajouter le domaine manquant). La
+    propagation peut prendre plusieurs heures.

@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-004
+title: Prevent group owners from consenting to applications for their groups
+finding:
+  title: Group owners can grant applications access to their group's data
+  description: The owner of a Microsoft 365 group or team, often a regular user, can approve an application that then reads the group's files, conversations and calendar.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, consent, groups, teams, entra-id]
+
+description: |
+  Group owners cannot grant resource-specific consent to applications for the groups or teams they
+  own. No `ManagePermissionGrantsForOwnedResource.*` group consent policy is assigned to the
+  default user role, and the legacy directory setting `EnableGroupSpecificConsent` is `False`.
+rationale: |
+  Group-specific consent bypasses the tenant consent settings for the data of a group: an owner
+  tricked by a consent phishing link exposes every file and message of the group, even when user
+  consent is restricted (CB-M365-APPS-002). Group owners are not vetted like administrators, and
+  in most tenants any user can create a group and become its owner.
+impact: |
+  Teams apps that need resource-specific consent (RSC) permissions on a team must be approved by
+  an administrator. Teams app permission policies and the Teams admin center keep working.
+notes: |
+  Microsoft moved this setting from the legacy **Consent Policy Settings** directory object to app
+  consent policies. Check both places: some tenants still carry the legacy value.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** > **User consent
+       settings** and check that **Group owner consent for apps accessing data** is set to **Do not
+       allow group owner consent** (when the section is shown).
+    3. In Microsoft Graph PowerShell (scope `Policy.Read.All`), run
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.PermissionGrantPoliciesAssigned`
+       and look for entries starting with `ManagePermissionGrantsForOwnedResource.` that point to a
+       group consent policy (for example `microsoft-all-application-permissions-for-group` or
+       `microsoft-pre-approval-apps-for-group`).
+    4. Run `Get-MgBetaDirectorySetting -All | Where-Object TemplateId -eq
+       'dffd5d46-495d-40a9-8e21-954ff55e198a' | Select-Object -ExpandProperty Values` and read
+       `EnableGroupSpecificConsent`.
+    5. Fail if a group consent policy is assigned to the default user role, or if
+       `EnableGroupSpecificConsent` is `True`.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator
+       (Global Administrator for the portal page).
+    2. Browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** > **User consent
+       settings**, select **Do not allow group owner consent** and select **Save**.
+    3. In Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`), read
+       `PermissionGrantPoliciesAssigned`, remove the group consent entries and keep the others, then
+       apply the list with `Update-MgPolicyAuthorizationPolicy`.
+    4. If the legacy **Consent Policy Settings** object exists, set `EnableGroupSpecificConsent` to
+       `False` with `Update-MgBetaDirectorySetting`, passing all its other values unchanged.
+  rollback: |
+    Restore the previous group owner consent option.
+
+references:
+  - title: Manage group owner consent policies
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/manage-group-owner-consent-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure group owner consent to applications
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.4v1
+    relation: equivalent
+    note: Policy withdrawn from SCuBA 2.0; kept here because the exposure still exists.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Auditer les actions du propriétaire, des délégués et des administrateurs sur chaque boîte aux lettres
+finding:
+  title: Certaines boîtes aux lettres enregistrent moins d'actions que l'ensemble d'audit par défaut de Microsoft
+  description: Une boîte aux lettres dont les actions d'audit ont été personnalisées ou réduites peut laisser un attaquant lire, déplacer ou supprimer des messages, ou créer des règles de transfert, sans laisser de trace.
+description: |
+  Chaque boîte aux lettres utilisateur, partagée et de ressource a `AuditEnabled` = `True` et
+  enregistre, pour les types de connexion **Owner**, **Delegate** et **Admin**, au moins les actions
+  de l'ensemble d'audit par défaut de Microsoft. Soit `DefaultAuditSet` liste `Admin`, `Delegate` et
+  `Owner` (Microsoft gère la liste et ajoute automatiquement les nouvelles actions), soit les listes
+  personnalisées contiennent au moins ces actions :
+
+  - Owner : `ApplyRecord`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`, `Send`,
+    `SoftDelete`, `Update`, `UpdateCalendarDelegation`, `UpdateFolderPermissions`,
+    `UpdateInboxRules` ;
+  - Delegate : `ApplyRecord`, `Create`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`,
+    `SendAs`, `SendOnBehalf`, `SoftDelete`, `Update`, `UpdateFolderPermissions`,
+    `UpdateInboxRules` ;
+  - Admin : `ApplyRecord`, `Create`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`,
+    `Send`, `SendAs`, `SendOnBehalf`, `SoftDelete`, `Update`, `UpdateCalendarDelegation`,
+    `UpdateFolderPermissions`, `UpdateInboxRules`.
+rationale: |
+  L'audit à l'échelle de l'organisation (CB-M365-AUDIT-005) n'applique que les actions configurées
+  sur chaque boîte aux lettres. Les listes personnalisées sont figées : elles ne reçoivent pas les
+  nouvelles actions que Microsoft ajoute à l'ensemble par défaut, et sont parfois réduites
+  volontairement. Les actions du propriétaire, des délégués et des administrateurs sont nécessaires
+  pour reconstituer une compromission de boîte aux lettres.
+impact: |
+  Aucun connu quand l'ensemble par défaut est conservé. Des actions supplémentaires (par exemple
+  `SearchQueryInitiated` dans CB-M365-AUDIT-004) peuvent s'y ajouter.
+notes: |
+  Les listes d'actions ci-dessus correspondent à l'ensemble par défaut de Microsoft au moment de la
+  rédaction ; se référer à la documentation Microsoft pour la liste à jour.
+audit:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec au moins le rôle View-Only Organization
+       Management.
+    2. Exécuter `Get-Mailbox -ResultSize Unlimited | Where-Object { -not $_.AuditEnabled -or ($_.DefaultAuditSet -notcontains 'Owner') -or ($_.DefaultAuditSet -notcontains 'Delegate') -or ($_.DefaultAuditSet -notcontains 'Admin') } | Select-Object UserPrincipalName,RecipientTypeDetails,AuditEnabled,DefaultAuditSet,AuditOwner,AuditDelegate,AuditAdmin`.
+    3. Pour chaque boîte renvoyée, comparer `AuditOwner`, `AuditDelegate` et `AuditAdmin` aux listes
+       de la description.
+    4. Échec si une boîte a `AuditEnabled` = `False`, ou un type de connexion personnalisé auquel il
+       manque une des actions listées.
+remediation:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec le rôle Organization Management ou Audit Logs.
+    2. Rétablir la valeur par défaut gérée par Microsoft pour une boîte :
+       `Set-Mailbox -Identity <boîte> -DefaultAuditSet Admin,Delegate,Owner`.
+    3. Ou ajouter les actions manquantes à la liste personnalisée, par exemple
+       `Set-Mailbox -Identity <boîte> -AuditOwner @{Add='MailItemsAccessed','UpdateInboxRules'}`.
+    4. Si `AuditEnabled` vaut `False` sur une boîte, exécuter
+       `Set-Mailbox -Identity <boîte> -AuditEnabled $true`.
+  rollback: |
+    Rétablir les listes personnalisées précédentes avec `Set-Mailbox -AuditOwner`, `-AuditDelegate`
+    et `-AuditAdmin`.

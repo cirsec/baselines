@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-020
+title: Restrict service principal profiles in Power BI to approved groups
+finding:
+  title: Any service principal can create and use Power BI profiles
+  description: Every service principal can create profiles that hold their own workspace permissions, which multiplies identities that are hard to review.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [fabric, power-bi, service-principals, embedded, workload-identities]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Allow service principals to create and use profiles** (Developer
+  settings) is **Disabled**, or **Enabled** only for specific security groups containing the
+  service principals of approved multitenant embedding applications.
+rationale: |
+  Service principal profiles let one application act as many isolated identities, one per
+  customer, each with its own workspace access. They are useful for Power BI Embedded ISV scenarios
+  and useless elsewhere. Leaving the feature open to every service principal creates identities and
+  permissions that do not appear in the usual Entra reviews; restricting it keeps them to the
+  applications designed for it.
+impact: |
+  Applications outside the allowed groups can no longer create or use profiles. Only multitenant
+  Power BI Embedded applications normally rely on this feature.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Developer settings > Allow service principals to create and use profiles
+  recommended_value: Disabled, or Enabled for specific security groups
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Developer settings** and
+       expand **Allow service principals to create and use profiles**.
+    3. Check that it is **Disabled**, or **Enabled** for **Specific security groups** only.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `AllowServicePrincipalsCreateAndUseProfiles`.
+    5. Fail if the setting is enabled for the entire organization.
+
+remediation:
+  manual: |
+    1. In **Tenant settings** > **Developer settings** > **Allow service principals to create and
+       use profiles**, select **Disabled**, or **Enabled** with **Specific security groups**. Select
+       **Apply**. Role: Fabric Administrator.
+    2. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/AllowServicePrincipalsCreateAndUseProfiles/update`
+       with the target state.
+  rollback: |
+    Set the setting back to its previous scope.
+
+references:
+  - title: Developer admin settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-developer
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power BI baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerbi.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.11"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERBI.4.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.003
+related_controls:
+  - id: CB-M365-POWER-019
+    type: related
+  - id: CB-M365-APPS-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

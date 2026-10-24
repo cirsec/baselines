@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-009
+title: Set the default sharing link permission to view
+finding:
+  title: Sharing links grant edit permission by default
+  description: Recipients of a default link can change or delete the shared content, including when the link was meant for reading.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [sharing-links, sharepoint, onedrive, least-privilege]
+
+description: |
+  The permission selected by default when a user creates a sharing link in SharePoint or OneDrive is
+  **View** (`DefaultLinkPermission` = `View`). It applies to **Specific people**, organization and
+  **Anyone** links. Users can still choose **Can edit** when they need it.
+rationale: |
+  Edit is the vendor default, so most links grant more than the user intends. An edit link lets every
+  recipient alter or delete the file, replace it with a malicious version that colleagues trust, or
+  reshare it if resharing is allowed. A view default applies least privilege without blocking
+  collaboration.
+impact: |
+  Users who want co-authoring must switch the link to **Can edit** in the sharing dialog. Sites with
+  their own default (`Set-SPOSite -DefaultLinkPermission`) keep it.
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > File and folder links > Choose the permission that's selected by default for sharing links
+  default_value: Edit
+  recommended_value: View (DefaultLinkPermission = View)
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** > **File and folder links** and check that the permission
+       selected by default for sharing links is **View**.
+    3. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object DefaultLinkPermission` must return `View`.
+    4. Fail if the default permission is `Edit`.
+
+remediation:
+  manual: |
+    1. In the SharePoint admin center, browse to **Policies** > **Sharing** > **File and folder links**,
+       set the default permission to **View** and **Save**. Role: SharePoint Administrator.
+    2. PowerShell equivalent: `Set-SPOTenant -DefaultLinkPermission View`.
+
+references:
+  - title: Change the default link type for sharing
+    url: https://learn.microsoft.com/sharepoint/change-default-sharing-link
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.11"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.2.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1565.001
+related_controls:
+  - id: CB-M365-COLLAB-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

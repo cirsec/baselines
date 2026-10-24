@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-031
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Fixer des limites d'envoi sortant et notifier les administrateurs des expéditeurs bloqués
+finding:
+  title: Les stratégies anti-spam sortant utilisent les limites par défaut du service et personne n'est averti quand un expéditeur est bloqué
+  description: Une boîte compromise peut envoyer une grosse vague de spam ou de hameçonnage avant d'être arrêtée, et l'équipe sécurité peut ne pas remarquer la restriction.
+description: |
+  Chaque stratégie de filtrage du courrier indésirable sortant qui s'applique à des utilisateurs a :
+
+  - une limite de messages externes de {{ external_limit_per_hour }} destinataires par heure
+    (`RecipientLimitExternalPerHour`) ;
+  - une limite de messages internes de {{ internal_limit_per_hour }} destinataires par heure
+    (`RecipientLimitInternalPerHour`) ;
+  - une limite quotidienne de {{ daily_limit }} destinataires (`RecipientLimitPerDay`) ;
+  - **Empêcher l'utilisateur d'envoyer du courrier** quand une limite est atteinte
+    (`ActionWhenThresholdReached BlockUser`), de sorte qu'un administrateur doit débloquer le compte ;
+  - les notifications activées : **Avertir ces utilisateurs et groupes si un expéditeur est bloqué
+    pour envoi de courrier indésirable sortant** (`NotifyOutboundSpam`) et **Envoyer une copie des
+    messages sortants suspects** (`BccSuspiciousOutboundMail`), toutes deux vers
+    {{ outbound_alert_recipients }}.
+rationale: |
+  Un pic d'envoi est un signe typique de compte compromis utilisé pour du spam ou du hameçonnage
+  interne. Des limites explicites l'arrêtent plus tôt que celles du service, `BlockUser` garantit que
+  le compte est examiné avant de pouvoir envoyer à nouveau, et les notifications portent l'événement à
+  l'équipe sécurité même si personne ne surveille les stratégies d'alerte.
+impact: |
+  Les utilisateurs qui envoient légitimement à de nombreux destinataires (lettres d'information,
+  annonces RH) peuvent atteindre les limites ; utiliser pour ces boîtes une stratégie dédiée aux
+  limites plus élevées, ou un service d'envoi en nombre. Les utilisateurs bloqués doivent être libérés
+  depuis **Entités restreintes** par un administrateur.
+parameters:
+  external_limit_per_hour: Nombre maximal de destinataires externes par utilisateur et par heure.
+  internal_limit_per_hour: Nombre maximal de destinataires internes par utilisateur et par heure.
+  daily_limit: Nombre maximal de destinataires par utilisateur et par jour.
+  outbound_alert_recipients: Destinataires des notifications et copies du courrier indésirable sortant.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-courrier indésirable** et ouvrir **Stratégie de courrier indésirable sortant (par
+       défaut)** et chaque stratégie sortante personnalisée. Vérifier **Limites de messages**,
+       **Restriction appliquée aux utilisateurs qui atteignent la limite de messages** et
+       **Notifications**.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-HostedOutboundSpamFilterPolicy | Format-List Name, RecipientLimitExternalPerHour, RecipientLimitInternalPerHour,
+         RecipientLimitPerDay, ActionWhenThresholdReached, NotifyOutboundSpam, NotifyOutboundSpamRecipients,
+         BccSuspiciousOutboundMail, BccSuspiciousOutboundAdditionalRecipients
+       ```
+    4. Échec si une limite vaut `0` (défaut du service) ou dépasse le paramètre, si l'action n'est pas
+       `BlockUser`, ou si les notifications sont désactivées ou sans destinataire. Des limites plus
+       élevées ne sont acceptables que dans une stratégie personnalisée limitée à des expéditeurs de
+       masse nommés.
+remediation:
+  manual: |
+    1. Dans le portail Defender, ouvrir la stratégie sortante > **Modifier les paramètres de
+       protection** (Administrateur de la sécurité), régler les trois limites et **Empêcher
+       l'utilisateur d'envoyer du courrier**, cocher les deux options de notification avec les
+       destinataires, et enregistrer.
+    2. Équivalent PowerShell :
+       ```powershell
+       Set-HostedOutboundSpamFilterPolicy -Identity Default -RecipientLimitExternalPerHour 500 -RecipientLimitInternalPerHour 1000 `
+         -RecipientLimitPerDay 1000 -ActionWhenThresholdReached BlockUser `
+         -NotifyOutboundSpam $true -NotifyOutboundSpamRecipients soc@example.com `
+         -BccSuspiciousOutboundMail $true -BccSuspiciousOutboundAdditionalRecipients soc@example.com
+       ```
+  rollback: |
+    Remettre les limites à `0` et `ActionWhenThresholdReached` à `BlockUserForToday`.

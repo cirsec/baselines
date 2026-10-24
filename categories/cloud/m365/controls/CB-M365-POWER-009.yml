@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-009
+title: Disable sharing canvas apps with Everyone
+finding:
+  title: Makers can share canvas apps with Everyone
+  description: A maker can share an app, and the data its connections expose, with every account of the directory, guests included.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [power-platform, power-apps, sharing, oversharing, guests]
+
+description: |
+  The Power Platform tenant setting `powerPlatform.powerApps.disableShareWithEveryone` is `true`.
+  Makers share canvas apps with named users or security groups; only Global Administrators,
+  Dynamics 365 Administrators and Power Platform Administrators can share an app with
+  **Everyone**.
+rationale: |
+  The **Everyone** principal contains every account that has signed in to the tenant, including
+  B2B guests, and its membership can be neither viewed nor edited. Sharing an app with Everyone
+  exposes its screens, and often the data behind its connections, far beyond the intended audience.
+  Microsoft disables the feature by default; enforcing the setting protects against a later change
+  or a mistake.
+impact: |
+  Makers who want broad distribution must use a security group (for example a dynamic group of
+  internal employees) or ask an administrator. Apps already shared with Everyone keep that sharing:
+  review them separately.
+
+setting:
+  location: Power Platform tenant settings (PowerShell) > powerPlatform.powerApps.disableShareWithEveryone
+  default_value: "true"
+  recommended_value: "true"
+
+audit:
+  manual: |
+    1. Run `Add-PowerAppsAccount` as a Power Platform Administrator (module
+       `Microsoft.PowerApps.Administration.PowerShell`).
+    2. Run `(Get-TenantSettings).powerPlatform.powerApps.disableShareWithEveryone`.
+    3. To find apps already shared with Everyone, list role assignments per app, for example
+       `Get-AdminPowerApp | Get-AdminPowerAppRoleAssignment | Where-Object { $_.PrincipalType -eq
+       'Tenant' }`.
+    4. Fail if the setting is `False`, or if apps shared with Everyone have no documented approval.
+
+remediation:
+  manual: |
+    1. Run `Add-PowerAppsAccount` as a Power Platform Administrator.
+    2. Run:
+       `$settings = Get-TenantSettings;
+       $settings.powerPlatform.powerApps.disableShareWithEveryone = $true;
+       Set-TenantSettings $settings`.
+    3. For apps already shared with Everyone, replace the sharing with a security group (owner, or
+       administrator with `Remove-AdminPowerAppRoleAssignment` after adding the group).
+    4. On managed environments, also configure **Sharing limits** (no sharing with security groups,
+       or a maximum number of viewers) for the environments that need it.
+  rollback: |
+    Set `disableShareWithEveryone` back to `$false` with the same commands.
+
+references:
+  - title: Secure the default environment - Limit sharing with Everyone
+    url: https://learn.microsoft.com/power-platform/guidance/adoption/secure-default-environment
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.6.1v1
+    relation: equivalent
+    note: SCuBA rates it SHOULD; our baseline profile requires it because the change has almost no impact.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(10)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1213
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

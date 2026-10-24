@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-037
+title: Scope application access to mailboxes with RBAC for Applications
+finding:
+  title: Applications with mail permissions can access every mailbox in the organization
+  description: An application granted Mail, Calendars or full mailbox permissions at tenant level can read or send from any mailbox, including executives', if its credentials leak.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online, applications, rbac-for-applications, graph-permissions, least-privilege]
+
+description: |
+  Applications that use application permissions on mailbox data (Microsoft Graph `Mail.*`,
+  `MailboxSettings.*`, `Calendars.*`, `Contacts.*`, or Exchange `full_access_as_app`) get them
+  through **RBAC for Applications** in Exchange Online, limited to the mailboxes they need by a
+  management scope or administrative unit, and no longer through a tenant-wide grant in Microsoft
+  Entra ID.
+
+  Older application access policies (`New-ApplicationAccessPolicy`) are acceptable while they are
+  migrated, provided every such application is restricted to a group.
+rationale: |
+  Tenant-wide mail permissions turn one application secret into a key to every mailbox, and
+  attackers look for exactly these applications after compromising a tenant. Scoping limits the
+  damage to the mailboxes the application really serves, and Exchange shows the scope in one place.
+  Entra and Exchange grants add up, so the scope only works once the Entra grant is removed.
+impact: |
+  Each application must be reviewed with its owner to define the mailboxes it needs. Removing the
+  Entra grant before the RBAC assignment is in place breaks the application; test with
+  `Test-ServicePrincipalAuthorization` first.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a Global
+       Reader. Browse to **Entra ID** > **Enterprise apps**, and for each application open
+       **Security** > **Permissions** > **Admin consent**: note the applications that hold application
+       permissions on Microsoft Graph `Mail.*`, `MailboxSettings.*`, `Calendars.*`, `Contacts.*` or
+       Office 365 Exchange Online `full_access_as_app`.
+    2. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-ServicePrincipal | Format-Table DisplayName, AppId, ObjectId
+       Get-ManagementRoleAssignment -RoleAssigneeType ServicePrincipal |
+         Format-Table RoleAssigneeName, Role, CustomResourceScope, RecipientWriteScope
+       Get-ApplicationAccessPolicy | Format-Table AppId, AccessRight, ScopeName
+       ```
+    3. Fail if an application holds a tenant-wide mailbox permission in Entra ID with no application
+       access policy restricting it, or if an RBAC for Applications assignment has no scope.
+
+remediation:
+  manual: |
+    1. With each application owner, list the mailboxes it needs and put them in a management scope
+       (for example a filter on a custom attribute) or an administrative unit.
+    2. In Exchange Online PowerShell (Exchange Administrator):
+       ```powershell
+       New-ServicePrincipal -AppId <app id> -ObjectId <enterprise app object id> -DisplayName "<app>"
+       New-ManagementScope -Name "<app> mailboxes" -RecipientRestrictionFilter "CustomAttribute10 -eq '<app>'"
+       New-ManagementRoleAssignment -App <app id> -Role "Application Mail.Read" -CustomResourceScope "<app> mailboxes"
+       Test-ServicePrincipalAuthorization -Identity <app id> -Resource <mailbox>
+       ```
+    3. Once the test passes, remove the tenant-wide permission from the application in the Entra
+       admin center (**Enterprise apps** > the app > **Permissions** > **Revoke permission**, Cloud
+       Application Administrator or Privileged Role Administrator).
+  rollback: |
+    Grant the Entra application permission again with admin consent while the scope is fixed.
+
+references:
+  - title: Role Based Access Control for Applications in Exchange Online
+    url: https://learn.microsoft.com/exchange/permissions-exo/application-rbac
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: New-ApplicationAccessPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/new-applicationaccesspolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1058 - Exchange application access policies must be configured
+    url: https://maester.dev/docs/tests/MT.1058
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.002
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-MAIL-011
+    type: related
+  - id: CB-M365-APPS-011
+    type: related
+  - id: CB-M365-APPS-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-017
+title: Disable email delivery to Teams channels
+finding:
+  title: Teams channels accept messages sent to their email address
+  description: Anyone who learns a channel address can post content and attachments into the channel, bypassing the sender checks applied to chat.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, email, phishing]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Users cannot send email to a channel email address (`AllowEmailIntoChannel` = `False`), and no SMTP
+  domain is listed in **Accept channel email from these SMTP domains**.
+rationale: |
+  Channel addresses are static and often end up in mailing lists, forwarding rules or leaked
+  documents. Mail posted into a channel appears as channel content that members trust, which makes it
+  a phishing and malware delivery path into Teams that does not depend on external access settings.
+impact: |
+  Workflows that post to channels by email (alerts, newsletters, forwarding) stop working. Replace
+  them with Power Automate flows, the Workflows app or incoming webhooks under app governance.
+
+setting:
+  location: Teams admin center > Teams > Teams settings > Email integration > Users can send emails to a channel email address
+  default_value: "On"
+  recommended_value: Off (AllowEmailIntoChannel = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Teams** > **Teams settings** > **Email integration** and check that **Users can send
+       emails to a channel email address** is **Off**.
+    3. With Microsoft Teams PowerShell:
+       `Get-CsTeamsClientConfiguration -Identity Global | Select-Object AllowEmailIntoChannel, RestrictedSenderList`.
+    4. Fail if `AllowEmailIntoChannel` is `True`.
+
+remediation:
+  manual: |
+    1. Identify channels that receive email (ask team owners, or look for mail flow to `*.teams.ms`
+       addresses in the Exchange message trace) and plan replacements.
+    2. In the Teams admin center, browse to **Teams** > **Teams settings** > **Email integration**, turn
+       off **Users can send emails to a channel email address** and clear the accepted domains. Select
+       **Save**. Role: Teams Administrator.
+    3. PowerShell equivalent:
+       `Set-CsTeamsClientConfiguration -Identity Global -AllowEmailIntoChannel $false`.
+
+references:
+  - title: Set-CsTeamsClientConfiguration
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsclientconfiguration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Teams settings and policies reference
+    url: https://learn.microsoft.com/microsoftteams/settings-policies-reference
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.1.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.4.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

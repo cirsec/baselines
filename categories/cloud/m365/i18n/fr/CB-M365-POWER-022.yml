@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-022
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'authentification des utilisateurs des agents Copilot Studio et limiter l'étendue de leur partage
+finding:
+  title: Des agents Copilot Studio sont utilisables sans authentification ou ouverts à tous
+  description: Certains agents acceptent des utilisateurs anonymes, n'exigent pas de connexion, ou sont partagés avec n'importe quel utilisateur ou tenant ; leurs connaissances et outils sont accessibles à des personnes qui ne devraient pas les utiliser.
+description: |
+  Les agents Copilot Studio ne servent que des utilisateurs authentifiés et sont partagés avec des
+  publics nommés :
+
+  - une stratégie de données Power Platform couvrant tous les environnements bloque le connecteur
+    **Chat without Microsoft Entra ID authentication in Copilot Studio**, ce qui empêche de publier
+    des agents en **Aucune authentification** ;
+  - chaque agent utilise **S'authentifier avec Microsoft**, ou **S'authentifier manuellement** avec
+    **Exiger que les utilisateurs se connectent** activé ;
+  - aucun agent n'est partagé pour un usage par n'importe quel utilisateur (**Any**) ou n'importe
+    quel tenant (**Any (multitenant)**) ; la prise en charge multitenant est désactivée sauf agent
+    conçu pour des partenaires ;
+  - sur les environnements gérés, les limites de partage restreignent avec qui les concepteurs
+    peuvent partager des agents (par exemple pas de partage **Éditeur**, ou groupes de sécurité
+    seulement).
+rationale: |
+  Un agent répond à partir de ses sources de connaissances et exécute des outils avec des
+  identifiants enregistrés ou ceux de l'utilisateur. Un agent sans authentification publié sur un
+  site web ou un canal Direct Line expose ces connaissances et ces outils à quiconque a le lien, et
+  ses utilisateurs ne sont pas identifiables dans les journaux. Les agents partagés avec tous les
+  utilisateurs ou tous les tenants atteignent des personnes qui n'auraient jamais dû les utiliser.
+  Exiger la connexion et un partage ciblé place l'accès aux agents sous les mêmes contrôles
+  d'identité que les autres applications.
+impact: |
+  Les agents conçus pour un usage public anonyme (par exemple un assistant de site web public) ne
+  peuvent plus être publiés dans les environnements couverts par la stratégie ; les héberger dans un
+  environnement dédié avec une stratégie d'exception revue. Les agents qui passent à
+  l'authentification doivent être republiés, et les utilisateurs des canaux personnalisés doivent se
+  connecter. Les limites de partage ne s'appliquent qu'aux nouveaux partages.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général et aller dans
+       **Sécurité** > **Données et confidentialité** > **Stratégie de données**. Vérifier qu'une
+       stratégie couvrant tous les environnements place **Chat without Microsoft Entra ID
+       authentication in Copilot Studio** dans **Bloqué**.
+    2. Pour chaque environnement qui contient des agents, se connecter à Copilot Studio
+       (https://copilotstudio.microsoft.com) comme administrateur d'environnement ou administrateur
+       système, ouvrir chaque agent publié et contrôler **Paramètres** > **Sécurité** >
+       **Authentification** : l'option vaut **S'authentifier avec Microsoft**, ou **S'authentifier
+       manuellement** avec **Exiger que les utilisateurs se connectent** activé.
+    3. Depuis la liste des agents, ouvrir **Partager** pour chaque agent et vérifier qu'il n'est pas
+       partagé avec toute l'organisation sans règle d'autorisation, et que la prise en charge
+       multitenant est désactivée.
+    4. Alternative en lecture seule : interroger la table Dataverse `bots` de chaque environnement
+       (`GET https://<org>.crm.dynamics.com/api/data/v9.2/bots`) et examiner les colonnes
+       d'authentification et de contrôle d'accès, ou lancer les tests Maester MT.1113 et MT.1114
+       (`Connect-Maester -Service Dataverse,Graph`), qui ne font que lire.
+    5. Échec si la stratégie de données manque, ou si un agent publié autorise l'usage anonyme,
+       n'exige pas la connexion en authentification manuelle, ou est partagé avec n'importe quel
+       utilisateur ou tenant sans exception approuvée.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Power Platform, **Sécurité** > **Données et confidentialité** >
+       **Stratégie de données**, modifier la stratégie de base du tenant (ou en créer une avec
+       l'étendue **Ajouter tous les environnements**) et déplacer **Chat without Microsoft Entra ID
+       authentication in Copilot Studio** dans **Bloqué**. Rôle : administrateur Power Platform.
+    2. Demander à chaque propriétaire d'agent de régler **Paramètres** > **Sécurité** >
+       **Authentification** sur **S'authentifier avec Microsoft** (ou **S'authentifier manuellement**
+       avec **Exiger que les utilisateurs se connectent**), puis de republier l'agent.
+    3. Dans la boîte de dialogue **Partager** de l'agent, retirer l'accès à toute l'organisation ou
+       ouvert et partager avec des groupes de sécurité ; désactiver la prise en charge multitenant
+       dans les paramètres d'authentification.
+    4. Sur les environnements gérés, configurer les **Limites de partage** des agents (paramètres de
+       l'environnement ou règles de groupe d'environnements).
+  rollback: |
+    Remettre le connecteur dans **Non professionnel** dans la stratégie de données, ou exclure
+    l'environnement qui héberge un agent anonyme approuvé.

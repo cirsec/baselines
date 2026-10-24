@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-010
+title: Clean up and rotate existing application credentials
+finding:
+  title: Applications keep client secrets, expired credentials or certificates that are never rotated
+  description: Old secrets and long-lived certificates on applications and service principals remain usable by anyone who copied them, and nobody notices when they are abused.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, workload-identities, credentials, client-secrets, certificates, hygiene]
+
+description: |
+  Existing credentials on application registrations and service principals are reviewed at least
+  every 90 days:
+
+  - client secrets are replaced by certificates, federated identity credentials or managed
+    identities, and removed once unused;
+  - expired credentials, and credentials not used for 30 days or more, are deleted;
+  - credentials expiring within **{{ credential_expiry_warning_days }}** days are renewed or
+    removed by their owner;
+  - no certificate is older than its rotation period (CB-M365-APPS-009);
+  - no service principal holding a privileged directory role authenticates with a client secret;
+  - Microsoft first-party service principals carry no credential added by the tenant.
+rationale: |
+  The app management policy (CB-M365-APPS-006 to CB-M365-APPS-009) only governs new
+  credentials. The secrets and certificates created before it stay valid until they expire, and
+  many tenants have secrets valid for years on applications with broad permissions. Attackers who
+  compromise an administrator routinely add a credential to an existing privileged application or
+  to a Microsoft service principal, because it is rarely reviewed.
+impact: |
+  Each application owner must migrate or rotate credentials. Removing a credential still used by
+  an integration breaks it: check the sign-in logs of the service principal first.
+
+parameters:
+  - name: credential_expiry_warning_days
+    type: integer
+    description: Number of days before expiry at which a credential must be renewed or removed.
+    unit: days
+    default: 30
+    minimum: 1
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Overview** > **Recommendations** and open **Remove unused
+       credentials from applications**, **Renew expiring application credentials** and **Renew
+       expiring service principal credentials**. Note every active item.
+    3. Browse to **Entra ID** > **Monitoring & health** > **Usage & insights** > **Application
+       credential activity** to see credentials and their last use.
+    4. In Microsoft Graph PowerShell (scope `Application.Read.All`), list credentials:
+       `Get-MgApplication -All -Property displayName,appId,passwordCredentials,keyCredentials`
+       and `Get-MgServicePrincipal -All -Property displayName,appId,appOwnerOrganizationId,passwordCredentials,keyCredentials`.
+       Flag secrets, credentials with `endDateTime` in the past or within
+       {{ credential_expiry_warning_days }} days, certificates whose `startDateTime` is older than
+       the rotation period, and any credential on a service principal whose
+       `appOwnerOrganizationId` is Microsoft (`f8cdef31-a31e-4b4a-93e4-5f571e91255a`).
+    5. Cross-check with **Entra ID** > **Roles & admins**: service principals assigned a privileged
+       role must not have a client secret.
+    6. Fail if any flagged credential has no documented owner and plan, or if a privileged service
+       principal or a Microsoft service principal carries a secret.
+
+remediation:
+  manual: |
+    1. For each flagged application, identify the owner and the workload that uses it (service
+       principal sign-in logs: **Entra ID** > **Monitoring & health** > **Sign-in logs** >
+       **Service principal sign-ins**).
+    2. Replace secrets with a certificate stored in a key vault, a federated identity credential or
+       a managed identity, then remove the secret under **App registrations** > the application >
+       **Certificates & secrets**.
+    3. Delete expired credentials and credentials unused for 30 days or more.
+    4. Remove any credential found on a Microsoft first-party service principal and investigate how
+       it was added (audit log activity **Add service principal credentials**).
+    5. Role required: Application Administrator or Cloud Application Administrator, or owner of the
+       application. Graph alternative: `Remove-MgApplicationPassword`, `Remove-MgServicePrincipalPassword`,
+       `Update-MgApplication -KeyCredentials`.
+  rollback: |
+    A deleted secret cannot be restored: create a new one, through an exception to
+    CB-M365-APPS-006, and update the workload.
+
+references:
+  - title: Remove unused credentials from apps recommendation
+    url: https://learn.microsoft.com/entra/identity/monitoring-health/recommendation-remove-unused-credential-from-apps
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Renew expiring application credentials recommendation
+    url: https://learn.microsoft.com/entra/identity/monitoring-health/recommendation-renew-expiring-application-credential
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure Microsoft Entra for increased security - protect identities and secrets
+    url: https://learn.microsoft.com/entra/fundamentals/zero-trust-protect-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test catalogue (MT.1027, MT.1057, MT.1199)
+    url: https://maester.dev/docs/tests/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.001
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-M365-APPS-006
+    type: related
+  - id: CB-M365-APPS-009
+    type: related
+  - id: CB-M365-APPS-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

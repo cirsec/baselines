@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès des invités à Microsoft Fabric
+finding:
+  title: Tous les invités peuvent accéder à Microsoft Fabric
+  description: Chaque invité Microsoft Entra B2B du tenant peut se connecter à Fabric et Power BI et atteindre les éléments partagés avec lui ou ses groupes.
+description: |
+  Le paramètre du locataire Fabric **Guest users can access Microsoft Fabric** (les invités peuvent
+  accéder à Microsoft Fabric), dans les paramètres d'exportation et de partage, est **Désactivé**,
+  ou **Activé** uniquement pour des groupes de sécurité précis contenant les invités dont le besoin
+  est approuvé. Il n'est jamais activé pour toute l'organisation.
+rationale: |
+  Les invités sont conviés pour de nombreuses raisons (un canal Teams, un site SharePoint) sans
+  rapport avec la décisionnel. Si Fabric leur est ouvert à tous, tout rapport, modèle sémantique ou
+  lakehouse partagé avec un groupe large devient lisible par des comptes externes dont l'organisation
+  ne maîtrise pas le cycle de vie. Limiter Fabric à un groupe d'invités nommé garde l'accès externe
+  aux données analytiques délibéré.
+impact: |
+  Les invités hors des groupes autorisés reçoivent une erreur en ouvrant Fabric ou Power BI, y
+  compris pour les éléments auxquels ils avaient accès. Désactiver le paramètre pour toute
+  l'organisation empêche aussi d'inviter des invités via le partage Fabric. Créer un groupe de
+  sécurité pour les invités qui utilisent légitimement du contenu Power BI (par exemple des rapports
+  diffusés) avant de restreindre.
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres d'exportation et de partage > Guest users can access Microsoft Fabric
+  recommended_value: Désactivé, ou Activé pour des groupes de sécurité précis
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric (Fabric n'a pas de rôle en lecture seule pour les paramètres du locataire).
+    2. Ouvrir **Paramètres** (roue dentée) > **Portail d'administration** > **Paramètres du
+       locataire** (accessible aussi par **Catalogue OneLake** > **Gouverner** > **Configurations** >
+       **Paramètres du locataire**).
+    3. Sous **Paramètres d'exportation et de partage**, développer **Guest users can access Microsoft
+       Fabric**.
+    4. Vérifier qu'il est **Désactivé**, ou **Activé** avec **Appliquer à** réglé sur **Groupes de
+       sécurité spécifiques** ne listant que des groupes d'invités approuvés.
+    5. Alternative en lecture seule : `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`
+       (étendue `Tenant.Read.All`, par exemple avec `Invoke-PowerBIRestMethod -Method Get -Url
+       'https://api.fabric.microsoft.com/v1/admin/tenantsettings'` après
+       `Connect-PowerBIServiceAccount`) et lire l'entrée `AllowGuestUserToAccessSharedContent` :
+       `enabled` doit valoir `false`, ou `true` avec `enabledSecurityGroups` renseigné.
+    6. Échec si le paramètre est activé pour toute l'organisation.
+remediation:
+  manual: |
+    1. Créer un groupe de sécurité pour les invités qui ont besoin de Fabric et les y ajouter.
+    2. Dans **Paramètres du locataire** > **Paramètres d'exportation et de partage** > **Guest users
+       can access Microsoft Fabric**, sélectionner **Désactivé**, ou garder **Activé** avec **Groupes
+       de sécurité spécifiques** et le groupe d'invités. Sélectionner **Appliquer**. Rôle :
+       administrateur Fabric.
+    3. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/AllowGuestUserToAccessSharedContent/update`
+       avec `{"enabled": true, "enabledSecurityGroups": [{"graphId": "<id du groupe>", "name": "<nom
+       du groupe>"}]}` ou `{"enabled": false}`.
+  rollback: |
+    Remettre le paramètre à son étendue précédente.

@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-028
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier les liens au moment du clic avec les liens fiables dans l'e-mail, Teams et Office pour tous les destinataires
+finding:
+  title: Les liens des e-mails, de Teams et des documents Office ne sont pas vérifiés au clic
+  description: Un lien devenu malveillant après la remise, ou qui pointe vers un fichier malveillant, s'ouvre sans avertissement, et les utilisateurs peuvent être autorisés à passer outre un avertissement.
+description: |
+  Chaque destinataire est couvert par une stratégie de liens fiables (stratégie prédéfinie Standard
+  ou Stricte, ou stratégie personnalisée appliquée à tous les domaines acceptés) avec les valeurs
+  Standard :
+
+  - e-mail : liens fiables activés (`EnableSafeLinksForEmail $true`), appliqués aux messages envoyés
+    au sein de l'organisation (`EnableForInternalSenders $true`), analyse en temps réel des liens
+    suspects et des liens vers des fichiers (`ScanUrls $true`), remise après analyse
+    (`DeliverMessageAfterScan $true`), URL réécrites (`DisableUrlRewrite $false`) ;
+  - Teams (`EnableSafeLinksForTeams $true`) et applications Office (`EnableSafeLinksForOffice $true`) ;
+  - clics suivis (`TrackClicks $true`) et pas de passage vers l'URL d'origine
+    (`AllowClickThrough $false`) ;
+  - une liste **Ne pas réécrire les URL suivantes** courte et revue.
+
+  Aucune règle de flux de courrier ne fait sauter les liens fiables (règles qui posent l'en-tête
+  `X-MS-Exchange-Organization-SkipSafeLinksProcessing`).
+rationale: |
+  Les attaquants envoient des liens sains et les arment après la remise, ou pointent vers des
+  téléchargements de fichiers. La vérification au clic attrape les deux, l'analyse interne attrape le
+  hameçonnage envoyé depuis un compte interne compromis, et l'interdiction de passer outre empêche
+  l'utilisateur d'ignorer l'avertissement. Le suivi des clics indique au SOC qui a cliqué un lien
+  reconnu malveillant plus tard.
+impact: |
+  Les utilisateurs voient des liens réécrits dans les e-mails. Les messages avec liens peuvent être
+  retardés pendant l'analyse des URL. Les données de clic sont conservées pour les enquêtes ;
+  informer les utilisateurs et les représentants du personnel si nécessaire.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Liens fiables** et vérifier que la stratégie prédéfinie Standard (ou Stricte) ou une stratégie
+       personnalisée couvre tous les destinataires avec les valeurs ci-dessus.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-SafeLinksPolicy | Format-List Name, EnableSafeLinksForEmail, EnableForInternalSenders, ScanUrls, DeliverMessageAfterScan,
+         DisableUrlRewrite, EnableSafeLinksForTeams, EnableSafeLinksForOffice, TrackClicks, AllowClickThrough, DoNotRewriteUrls
+       Get-SafeLinksRule | Format-List Name, State, Priority, SentTo, SentToMemberOf, RecipientDomainIs, Except*
+       Get-TransportRule | Where-Object { $_.SetHeaderName -like '*SkipSafeLinksProcessing*' } | Format-Table Name, State
+       ```
+    4. Échec si des destinataires ne sont couverts que par la protection intégrée ou par une stratégie
+       à laquelle manque l'une des valeurs ci-dessus, ou si une règle de flux de courrier fait sauter
+       les liens fiables.
+remediation:
+  manual: |
+    1. Préférer la stratégie prédéfinie : appliquer la stratégie Standard à tous les destinataires
+       (CB-M365-MAIL-019).
+    2. Pour une stratégie personnalisée, dans **Liens fiables**, modifier la stratégie (Administrateur
+       de la sécurité) : **Paramètres de protection des URL et des clics** avec chaque option ci-dessus
+       cochée, **Autoriser les utilisateurs à cliquer jusqu'à l'URL d'origine** décoché, et utilisateurs
+       et domaines réglés sur tous les domaines acceptés.
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-SafeLinksPolicy -Identity "<policy>" -EnableSafeLinksForEmail $true -EnableForInternalSenders $true -ScanUrls $true `
+         -DeliverMessageAfterScan $true -DisableUrlRewrite $false -EnableSafeLinksForTeams $true -EnableSafeLinksForOffice $true `
+         -TrackClicks $true -AllowClickThrough $false
+       ```
+    4. Supprimer ou réécrire les règles de flux de courrier qui font sauter les liens fiables.
+  rollback: |
+    Restaurer les valeurs précédentes de la stratégie personnalisée.

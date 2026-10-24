@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-022
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une approbation avant de rendre les applications Teams disponibles
+finding:
+  title: Les utilisateurs peuvent installer des applications Teams que personne n'a approuvées
+  description: Des applications tierces et personnalisées peuvent être ajoutées aux conversations, équipes et réunions et accéder à leur contenu sans revue.
+description: |
+  Les applications Teams ne sont disponibles pour les utilisateurs qu'après approbation par
+  l'organisation :
+
+  - les applications tierces et personnalisées ne sont pas disponibles par défaut ; chaque application
+    approuvée est rendue disponible individuellement (pour tous ou pour des utilisateurs ou groupes
+    précis) ;
+  - les applications Microsoft non approuvées par l'organisation sont bloquées ;
+  - le chargement de packages d'applications personnalisées (sideloading) est désactivé dans les
+    stratégies de configuration d'application, sauf pour les développeurs dans une stratégie dédiée ;
+  - les utilisateurs peuvent demander une application, et les demandes parviennent à un
+    administrateur.
+
+  Le tenant utilise la gestion centrée sur l'application (**Gérer les applications** avec une
+  disponibilité par application). Les tenants encore sous stratégies d'autorisation d'application
+  appliquent la même règle via les stratégies d'autorisation globale et personnalisées.
+rationale: |
+  Les applications Teams reçoivent des jetons et un consentement spécifique aux ressources pour lire
+  messages, fichiers et contenu de réunion, et peuvent pousser messages et liens vers les
+  utilisateurs. Une application non vérifiée est un risque de chaîne d'approvisionnement et
+  d'exposition des données, et des éditeurs malveillants ou compromis ont utilisé des intégrations
+  d'applications pour atteindre les utilisateurs. Une étape d'approbation permet de revoir d'abord
+  l'éditeur, les autorisations et le traitement des données.
+impact: |
+  Les utilisateurs doivent demander les applications au lieu de les ajouter, et quelqu'un doit traiter
+  les demandes. Les applications déjà installées mais qui ne sont plus disponibles cessent de
+  fonctionner. Les développeurs ont besoin d'une stratégie de configuration dédiée pour tester leurs
+  propres packages.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Applications Teams** > **Gérer les applications** > **Actions** > **Paramètres
+       d'application à l'échelle de l'organisation**. Vérifier que les **Applications tierces** et les
+       **Applications personnalisées** ne sont pas disponibles par défaut et que les demandes des
+       utilisateurs sont activées.
+    3. Dans **Gérer les applications**, filtrer les applications tierces et personnalisées dont la
+       disponibilité est **Tout le monde** ou **Utilisateurs ou groupes spécifiques** et comparer
+       chacune à la liste des applications approuvées. Faire de même pour les applications Microsoft qui
+       doivent être bloquées.
+    4. Aller dans **Applications Teams** > **Stratégies de configuration** et vérifier que **Charger des
+       applications personnalisées** est **Désactivé** dans la stratégie globale et dans toutes les
+       stratégies sauf celle des développeurs.
+    5. Avec Microsoft Teams PowerShell :
+       `Get-CsTeamsAppSetupPolicy | Select-Object Identity, AllowSideLoading` et, sur les tenants sous
+       stratégies d'autorisation, `Get-CsTeamsAppPermissionPolicy`.
+    6. Échec si les applications tierces ou personnalisées sont disponibles par défaut, si une
+       application non approuvée est disponible, ou si le chargement d'applications personnalisées est
+       ouvert à tous.
+remediation:
+  manual: |
+    1. Exporter la liste et l'usage des applications (**Gérer les applications** > **Exporter**, rapport
+       d'utilisation des applications Teams) et faire approuver ou retirer chaque application utilisée.
+    2. Dans **Applications Teams** > **Gérer les applications** > **Actions** > **Paramètres
+       d'application à l'échelle de l'organisation**, désactiver la disponibilité par défaut des
+       **Applications tierces** et des **Applications personnalisées**, activer les demandes des
+       utilisateurs puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Pour chaque application approuvée, la sélectionner puis **Modifier la disponibilité** sur **Tout
+       le monde** ou **Utilisateurs ou groupes spécifiques**. Régler les applications Microsoft non
+       approuvées sur **Personne**.
+    4. Dans **Applications Teams** > **Stratégies de configuration** > **Global (par défaut à l'échelle
+       de l'organisation)**, désactiver **Charger des applications personnalisées** ; créer une
+       stratégie distincte pour les développeurs. Équivalent PowerShell :
+       `Set-CsTeamsAppSetupPolicy -Identity Global -AllowSideLoading $false`.

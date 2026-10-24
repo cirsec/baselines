@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-023
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Écarter des agents Copilot Studio les identifiants du concepteur, les secrets en dur et le HTTP en clair
+finding:
+  title: Des agents Copilot Studio utilisent les identifiants du concepteur, des secrets intégrés ou des appels HTTP non sécurisés
+  description: Certains agents appellent des outils avec la connexion enregistrée de l'auteur, contiennent des clés d'API ou mots de passe dans leurs rubriques, ou envoient des requêtes HTTP en clair ou vers des ports non standard.
+description: |
+  Les agents Copilot Studio respectent trois règles :
+
+  - les outils de connecteur qui atteignent des données de l'organisation utilisent
+    **Authentification de l'utilisateur**, pas **Authentification de l'auteur de l'agent**, sauf
+    recherches publiques à faible risque documentées ;
+  - les rubriques, invites et instructions ne contiennent aucun identifiant (clé d'API, jeton
+    porteur, chaîne de connexion, mot de passe) ; les secrets résident dans des variables
+    d'environnement adossées à Azure Key Vault ou dans des connexions de connecteur ;
+  - les nœuds de requête HTTP utilisent HTTPS sur le port standard, et la stratégie de données du
+    tenant bloque le connecteur **HTTP** ou le limite aux points de terminaison approuvés par filtrage
+    des points de terminaison.
+rationale: |
+  Avec l'authentification de l'auteur, chaque personne qui discute avec l'agent agit avec les droits
+  du concepteur : un utilisateur peut lire ou modifier des données qu'il ne pourrait jamais atteindre
+  lui-même, et une injection d'invite peut retourner l'agent contre la boîte aux lettres ou les
+  fichiers du concepteur. Les secrets écrits dans les rubriques peuvent être extraits par injection
+  d'invite et survivent à leur rotation ailleurs. Les points de terminaison HTTP en clair ou
+  inhabituels peuvent faire fuir des données et sont typiques des canaux d'exfiltration ou de
+  commande et contrôle.
+impact: |
+  Les utilisateurs doivent créer leur propre connexion la première fois qu'un agent appelle un outil
+  en authentification utilisateur ; certains canaux (site de démonstration, Facebook, application
+  mobile) ne la prennent pas en charge. Les agents qui dépendent de points de terminaison HTTP
+  bloqués cessent de fonctionner jusqu'à leur passage à des connecteurs ou à des points de
+  terminaison HTTPS approuvés. Faire tourner chaque secret trouvé dans une rubrique.
+audit:
+  manual: |
+    1. Dans le centre d'administration Power Platform (https://admin.powerplatform.microsoft.com),
+       avec au moins le rôle Lecteur général, aller dans **Sécurité** > **Données et
+       confidentialité** > **Stratégie de données** et vérifier que les stratégies couvrant les
+       environnements d'agents bloquent le connecteur **HTTP**, ou n'autorisent que des points de
+       terminaison HTTPS approuvés via **Configurer le connecteur** > **Points de terminaison du
+       connecteur**.
+    2. Dans Copilot Studio (https://copilotstudio.microsoft.com), comme administrateur
+       d'environnement ou administrateur système, ouvrir chaque agent : sous **Outils**, vérifier que
+       chaque outil de connecteur utilise **Authentification de l'utilisateur** ; dans **Rubriques**,
+       rechercher les nœuds de requête HTTP et le texte `http://`, des ports explicites, `Bearer`,
+       `apikey`, `password` ou des chaînes de connexion.
+    3. Alternative en lecture seule : exporter les définitions d'agents depuis Dataverse (tables
+       `bots` et `botcomponents`) et y chercher, ou lancer les tests Maester MT.1115, MT.1118 et
+       MT.1119 (`Connect-Maester -Service Dataverse,Graph`).
+    4. Échec si un agent utilise l'authentification de l'auteur pour un outil qui atteint des données
+       non publiques sans exception documentée, contient un identifiant, ou appelle HTTP en clair ou
+       sur un port non standard.
+remediation:
+  manual: |
+    1. Faire tourner chaque identifiant trouvé dans un agent, puis le remplacer par une variable
+       d'environnement de type secret (Azure Key Vault) ou une connexion de connecteur.
+    2. Demander aux propriétaires d'agents de passer les outils de connecteur en **Authentification
+       de l'utilisateur** et de republier.
+    3. Remplacer les nœuds de requête HTTP par des connecteurs quand c'est possible ; sinon utiliser
+       HTTPS sur le port 443.
+    4. Dans la stratégie de données couvrant les environnements d'agents, bloquer le connecteur
+       **HTTP**, ou configurer le filtrage des points de terminaison pour n'autoriser que des points
+       de terminaison `https://` approuvés. Rôle : administrateur Power Platform.
+  rollback: |
+    Remettre le connecteur **HTTP** dans son groupe précédent ou retirer les règles de points de
+    terminaison ; rétablir l'authentification d'outil précédente si un canal ne gère pas
+    l'authentification utilisateur.

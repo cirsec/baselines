@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver l'inscription d'applications aux administrateurs
+finding:
+  title: Tout utilisateur peut inscrire des applications dans le tenant
+  description: Un utilisateur standard, ou un attaquant qui détient un seul compte, peut créer une application, lui donner des identifiants et s'en servir comme point d'ancrage persistant ou comme outil d'hameçonnage reconnu par le tenant.
+description: |
+  Le rôle utilisateur par défaut ne peut pas créer d'inscriptions d'applications. Le paramètre du
+  tenant **Les utilisateurs peuvent inscrire des applications** vaut **Non** : seuls les détenteurs
+  d'un rôle qui autorise la création d'applications (Développeur d'applications, Administrateur
+  d'applications, Administrateur d'applications cloud, ou un rôle personnalisé avec
+  `microsoft.directory/applications/createAsOwner`) peuvent inscrire des applications.
+rationale: |
+  Par défaut, tout utilisateur membre peut inscrire une application, lui ajouter un secret et
+  demander des permissions. Les attaquants s'en servent pour créer une application qu'ils possèdent
+  dans le tenant, qui survit à la réinitialisation du mot de passe du compte compromis, ou pour
+  monter une application d'hameçonnage par consentement qui a l'air interne. Restreindre
+  l'inscription fait passer chaque nouvelle application par une équipe qui revoit son usage et ses
+  permissions.
+impact: |
+  Les développeurs qui inscrivaient leurs propres applications doivent demander le rôle Développeur
+  d'applications (éligible via PIM si disponible) ou passer par l'équipe qui gère les inscriptions
+  d'applications. Les applications existantes et leurs propriétaires ne sont pas touchés.
+setting:
+  location: Centre d'administration Entra > Entra ID > Utilisateurs > Paramètres utilisateur > Les utilisateurs peuvent inscrire des applications (Graph authorizationPolicy.defaultUserRolePermissions.allowedToCreateApps)
+  recommended_value: "Non"
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    3. Vérifier que **Les utilisateurs peuvent inscrire des applications** vaut **Non**.
+    4. Alternative en Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateApps`, ou Graph
+       `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy`.
+    5. Échec si le paramètre vaut **Oui** ou si `allowedToCreateApps` vaut `true`.
+remediation:
+  manual: |
+    1. Attribuer le rôle Développeur d'applications (de préférence éligible via PIM) aux personnes
+       qui créent légitimement des applications.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de rôle privilégié.
+    3. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    4. Régler **Les utilisateurs peuvent inscrire des applications** sur **Non** et sélectionner
+       **Enregistrer**.
+    5. Alternative en Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) :
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateApps = $false }`.
+  rollback: |
+    Remettre **Les utilisateurs peuvent inscrire des applications** sur **Oui**.

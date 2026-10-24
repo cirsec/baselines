@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Nettoyer et renouveler les identifiants d'application existants
+finding:
+  title: Des applications conservent des secrets client, des identifiants expirés ou des certificats jamais renouvelés
+  description: Les anciens secrets et les certificats de longue durée des applications et principaux de service restent utilisables par quiconque les a copiés, et personne ne remarque leur usage abusif.
+description: |
+  Les identifiants existants des inscriptions d'applications et des principaux de service sont
+  revus au moins tous les 90 jours :
+
+  - les secrets client sont remplacés par des certificats, des identifiants fédérés ou des
+    identités managées, puis supprimés une fois inutilisés ;
+  - les identifiants expirés, et ceux inutilisés depuis 30 jours ou plus, sont supprimés ;
+  - les identifiants qui expirent dans les **{{ credential_expiry_warning_days }}** jours sont
+    renouvelés ou retirés par leur propriétaire ;
+  - aucun certificat n'est plus ancien que sa période de rotation (CB-M365-APPS-009) ;
+  - aucun principal de service titulaire d'un rôle d'annuaire privilégié ne s'authentifie par
+    secret client ;
+  - les principaux de service Microsoft (first-party) ne portent aucun identifiant ajouté par le
+    tenant.
+rationale: |
+  La stratégie de gestion des applications (CB-M365-APPS-006 à CB-M365-APPS-009) ne régit que les
+  nouveaux identifiants. Les secrets et certificats créés avant restent valables jusqu'à leur
+  expiration, et beaucoup de tenants ont des secrets valables plusieurs années sur des applications
+  aux permissions larges. Les attaquants qui compromettent un administrateur ajoutent souvent un
+  identifiant à une application privilégiée existante ou à un principal de service Microsoft, car
+  ils sont rarement revus.
+impact: |
+  Chaque propriétaire d'application doit migrer ou renouveler ses identifiants. Retirer un
+  identifiant encore utilisé par une intégration la casse : vérifier d'abord les journaux de
+  connexion du principal de service.
+parameters:
+  credential_expiry_warning_days: Nombre de jours avant expiration à partir duquel un identifiant doit être renouvelé ou retiré.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Vue d'ensemble** > **Recommandations** et ouvrir **Supprimer les
+       informations d'identification inutilisées des applications**, **Renouveler les informations
+       d'identification d'application arrivant à expiration** et **Renouveler les informations
+       d'identification de principal de service arrivant à expiration**. Noter chaque élément actif.
+    3. Aller dans **Entra ID** > **Supervision et intégrité** > **Utilisation et insights** >
+       **Activité des informations d'identification d'application** pour voir les identifiants et
+       leur dernière utilisation.
+    4. En Microsoft Graph PowerShell (étendue `Application.Read.All`), lister les identifiants :
+       `Get-MgApplication -All -Property displayName,appId,passwordCredentials,keyCredentials`
+       et `Get-MgServicePrincipal -All -Property displayName,appId,appOwnerOrganizationId,passwordCredentials,keyCredentials`.
+       Relever les secrets, les identifiants dont `endDateTime` est passée ou tombe dans les
+       {{ credential_expiry_warning_days }} jours, les certificats dont `startDateTime` dépasse la
+       période de rotation, et tout identifiant sur un principal de service dont
+       `appOwnerOrganizationId` est Microsoft (`f8cdef31-a31e-4b4a-93e4-5f571e91255a`).
+    5. Croiser avec **Entra ID** > **Rôles et administrateurs** : les principaux de service titulaires
+       d'un rôle privilégié ne doivent pas avoir de secret client.
+    6. Échec si un identifiant relevé n'a ni propriétaire ni plan documentés, ou si un principal de
+       service privilégié ou un principal de service Microsoft porte un secret.
+remediation:
+  manual: |
+    1. Pour chaque application relevée, identifier le propriétaire et la charge de travail qui
+       l'utilise (journaux de connexion du principal de service : **Entra ID** > **Supervision et
+       intégrité** > **Journaux de connexion** > **Connexions de principal de service**).
+    2. Remplacer les secrets par un certificat stocké dans un coffre de clés, un identifiant fédéré
+       ou une identité managée, puis supprimer le secret dans **Inscriptions d'applications** >
+       l'application > **Certificats et secrets**.
+    3. Supprimer les identifiants expirés et ceux inutilisés depuis 30 jours ou plus.
+    4. Retirer tout identifiant trouvé sur un principal de service Microsoft et rechercher comment il
+       a été ajouté (activité du journal d'audit **Add service principal credentials**).
+    5. Rôle requis : Administrateur d'applications ou Administrateur d'applications cloud, ou
+       propriétaire de l'application. Alternative Graph : `Remove-MgApplicationPassword`,
+       `Remove-MgServicePrincipalPassword`, `Update-MgApplication -KeyCredentials`.
+  rollback: |
+    Un secret supprimé ne peut pas être restauré : en créer un nouveau, via une exception à
+    CB-M365-APPS-006, et mettre à jour la charge de travail.

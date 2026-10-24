@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-035
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rendre le chiffrement de bout en bout disponible pour les appels Teams
+finding:
+  title: Les utilisateurs ne peuvent pas activer le chiffrement de bout en bout des appels Teams
+  description: "Les appels individuels sensibles ne reposent que sur le chiffrement côté service : leur contenu est lisible par le service pendant le traitement."
+description: |
+  La stratégie de chiffrement amélioré globale permet aux utilisateurs d'activer le chiffrement de
+  bout en bout (E2EE) des appels individuels (**Chiffrement des appels de bout en bout** = **Non
+  activé, mais les utilisateurs peuvent l'activer**, `CallingEndtoEndEncryptionEnabledType` =
+  `DisabledUserOverride`). Là où les organisateurs ont Teams Premium, le **Chiffrement des réunions de
+  bout en bout** est aussi disponible (`MeetingEndToEndEncryption` = `DisabledUserOverride`).
+
+  L'E2EE reste au choix : les utilisateurs l'activent dans leurs paramètres Teams, ou des modèles de
+  réunion et des étiquettes de confidentialité l'imposent aux réunions sensibles.
+rationale: |
+  Le chiffrement Teams standard protège le contenu en transit et au repos, mais le service peut le
+  déchiffrer. Le chiffrement de bout en bout garde les clés sur les terminaux : l'audio, la vidéo et
+  le partage d'écran d'un appel sensible ne peuvent être lus ni par le service ni par une personne
+  disposant d'un accès privilégié à celui-ci. Le rendre disponible permet aux personnes qui traitent
+  des sujets sensibles de l'utiliser quand elles en ont besoin.
+impact: |
+  Pendant un appel ou une réunion chiffrés de bout en bout, l'enregistrement, les sous-titres en
+  direct et la transcription, Copilot, le transfert et la fusion d'appels, les salles pour petits
+  groupes, PowerPoint Live et l'accès par téléphone sont indisponibles. Les utilisateurs soumis à
+  l'enregistrement de conformité ne peuvent pas utiliser l'E2EE. Teams sur le web et en VDI ne peut
+  pas rejoindre les réunions chiffrées. Former les utilisateurs à réserver l'E2EE aux appels qui le
+  justifient.
+setting:
+  location: Centre d'administration Teams > Stratégies de chiffrement amélioré > Global (par défaut à l'échelle de l'organisation) > Chiffrement des appels de bout en bout
+  recommended_value: Non activé, mais les utilisateurs peuvent l'activer (DisabledUserOverride)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies de chiffrement amélioré** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)** et les stratégies personnalisées attribuées.
+    3. Vérifier que **Chiffrement des appels de bout en bout** vaut **Non activé, mais les utilisateurs
+       peuvent l'activer** (et, avec Teams Premium, que **Chiffrement des réunions de bout en bout** a
+       la même valeur).
+    4. Avec Microsoft Teams PowerShell :
+       `Get-CsTeamsEnhancedEncryptionPolicy | Select-Object Identity, CallingEndtoEndEncryptionEnabledType, MeetingEndToEndEncryption`.
+    5. Échec si `CallingEndtoEndEncryptionEnabledType` vaut `Disabled` dans la stratégie globale.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Stratégies de chiffrement amélioré**, ouvrir
+       la stratégie **Global (par défaut à l'échelle de l'organisation)**, régler **Chiffrement des
+       appels de bout en bout** sur **Non activé, mais les utilisateurs peuvent l'activer** puis
+       **Enregistrer**. Rôle : Administrateur Teams.
+    2. Équivalent PowerShell :
+       `Set-CsTeamsEnhancedEncryptionPolicy -Identity Global -CallingEndtoEndEncryptionEnabledType DisabledUserOverride`.
+    3. Expliquer aux utilisateurs comment activer les appels chiffrés de bout en bout et quand s'en
+       servir.

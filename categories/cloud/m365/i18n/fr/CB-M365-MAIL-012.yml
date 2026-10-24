@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer la connexion des comptes de boîtes aux lettres partagées
+finding:
+  title: Les comptes des boîtes aux lettres partagées peuvent se connecter directement
+  description: Le compte utilisateur derrière une boîte partagée a une connexion active, donc quiconque définit ou devine son mot de passe entre sans être rattaché à un utilisateur nommé.
+description: |
+  Chaque boîte aux lettres partagée a un objet utilisateur Microsoft Entra. La connexion est bloquée
+  sur tous ces objets (`accountEnabled false`). Les personnes accèdent à la boîte partagée par des
+  autorisations déléguées (Accès total, Envoyer en tant que, Envoyer de la part de) avec leur propre
+  compte.
+rationale: |
+  Un compte de boîte partagée n'appartient à personne en particulier, n'a souvent aucune méthode MFA
+  enregistrée et est rarement surveillé. Si son mot de passe est défini (lors d'une migration ou par un
+  administrateur bien intentionné), le compte devient une porte dérobée que l'accès conditionnel et
+  les revues d'accès ont tendance à manquer. Bloquer la connexion garde chaque accès attribué à un
+  utilisateur nommé.
+impact: |
+  Aucun connu pour l'usage normal : l'accès délégué n'a pas besoin que le compte partagé se connecte.
+  Les scripts ou appareils qui se connectent en tant que boîte partagée (par exemple pour envoyer du
+  courrier) cessent de fonctionner et doivent utiliser un compte dédié et surveillé ou une identité
+  d'application.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Équipes et groupes** > **Boîtes aux lettres partagées** et noter les boîtes
+       partagées.
+    3. Aller dans **Utilisateurs** > **Utilisateurs actifs**, ouvrir chacun de ces comptes et vérifier
+       qu'il indique **Connexion bloquée**.
+    4. Ou, en PowerShell (lecture seule), avec Exchange Online et Microsoft Graph (`User.Read.All`) :
+       ```powershell
+       Get-EXOMailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited |
+         ForEach-Object { Get-MgUser -UserId $_.ExternalDirectoryObjectId -Property UserPrincipalName,AccountEnabled } |
+         Where-Object AccountEnabled | Select-Object UserPrincipalName, AccountEnabled
+       ```
+       Équivalent Graph par compte : `GET /users/{id}?$select=userPrincipalName,accountEnabled`.
+    5. Échec si un compte de boîte partagée a `accountEnabled` à `true`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Microsoft 365, aller dans **Utilisateurs** > **Utilisateurs
+       actifs**, sélectionner les comptes des boîtes partagées, puis **Bloquer la connexion**
+       (Administrateur d'utilisateurs).
+    2. Équivalent PowerShell (Microsoft Graph, `User.ReadWrite.All`) :
+       ```powershell
+       Update-MgUser -UserId <object id> -AccountEnabled:$false
+       ```
+    3. Pour un compte synchronisé, le désactiver dans Active Directory, sinon la synchronisation
+       suivante le réactive.
+  rollback: |
+    `Update-MgUser -UserId <object id> -AccountEnabled:$true`.

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-026
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Déconnecter les sessions web Microsoft 365 inactives sur appareil non géré après {{ idle_timeout_hours }} heures
+finding:
+  title: Les sessions web Microsoft 365 inactives restent ouvertes indéfiniment sur les appareils non gérés
+  description: Un navigateur resté connecté sur un ordinateur partagé ou personnel donne à la personne suivante l'accès à la messagerie et aux fichiers de l'utilisateur.
+description: |
+  Le **délai d'expiration de session inactive** est activé dans le centre d'administration
+  Microsoft 365 avec une valeur de {{ idle_timeout_hours }} heures ou moins. Les utilisateurs
+  inactifs pendant cette durée dans les applications web Microsoft 365 prises en charge (Outlook sur
+  le web, OneDrive, SharePoint, Office pour le web, Microsoft365.com, les portails Microsoft 365,
+  Defender et Purview) sont avertis, puis déconnectés.
+
+  Une stratégie d'accès conditionnel limite ce délai aux appareils non gérés : elle cible
+  **Office 365** pour tous les utilisateurs, avec la condition **Applications clientes** réglée sur
+  **Navigateur** et le contrôle de session **Utiliser les restrictions appliquées par
+  l'application**. Les appareils conformes ou joints ne sont pas déconnectés.
+rationale: |
+  Le délai vise les appareils que l'organisation ne maîtrise pas : bornes, ordinateurs personnels,
+  postes de partenaires. Sur ces appareils, personne ne verrouille l'écran à la place de
+  l'utilisateur, et un onglet oublié garde une session valide pendant des jours. Déconnecter les
+  sessions inactives réduit cette exposition sans gêner les utilisateurs des postes gérés, qui ont
+  leur propre verrouillage d'écran.
+impact: |
+  Les utilisateurs d'appareils non gérés sont déconnectés de toutes les applications web Microsoft 365
+  de ce navigateur après {{ idle_timeout_hours }} heures d'inactivité, et perdent les formulaires non
+  enregistrés. Les applications de bureau et mobiles ne sont pas concernées. Le réglage vaut pour tout
+  le tenant et ne peut pas être limité à des groupes. Il ne fonctionne pas si les cookies tiers sont
+  bloqués dans le navigateur.
+notes: |
+  Le délai ne déconnecte pas les utilisateurs qui ont choisi **Rester connecté** à la connexion :
+  masquer cette option (CB-M365-AUTH-027). Le réglage Microsoft 365 remplace les anciennes stratégies
+  d'inactivité d'Outlook sur le web et de SharePoint. Il est stocké comme `activityBasedTimeoutPolicy`
+  par défaut de l'organisation dans Microsoft Graph.
+
+  Un délai de 15 minutes (verrouillage de session du poste) est un réglage de l'appareil, pas du
+  tenant ; il est hors périmètre ici.
+setting:
+  location: Centre d'administration Microsoft 365 > Paramètres > Paramètres de l'organisation > Sécurité et confidentialité > Délai d'expiration de session inactive
+  recommended_value: "Activé, {{ idle_timeout_hours }} heures ou moins, déclenché uniquement sur les appareils non gérés"
+parameters:
+  idle_timeout_hours: Inactivité maximale dans les applications web Microsoft 365 avant déconnexion d'une session sur appareil non géré.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Délai d'expiration de session inactive**.
+    3. Vérifier que le réglage est activé et que la durée est de {{ idle_timeout_hours }} heures ou
+       moins.
+    4. Dans le centre d'administration Microsoft Entra (https://entra.microsoft.com), avec au moins le
+       rôle Lecteur Sécurité, aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et
+       trouver une stratégie à l'**État** **Activé** qui cible **Tous les utilisateurs**, la
+       ressource **Office 365**, la condition **Applications clientes** **Navigateur** et le contrôle
+       de session **Utiliser les restrictions appliquées par l'application**.
+    5. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgPolicyActivityBasedTimeoutPolicy | Select-Object DisplayName, IsOrganizationDefault, Definition`
+       affiche `WebSessionIdleTimeout` pour l'`ApplicationId` `default`.
+    6. Échec si le délai est désactivé, supérieur à {{ idle_timeout_hours }} heures, ou si la
+       stratégie d'accès conditionnel manque (le délai s'applique alors à tous les appareils, ce qui
+       est accepté mais n'est pas l'état visé).
+remediation:
+  manual: |
+    1. Dans le centre d'administration Microsoft 365, aller dans **Paramètres** > **Paramètres de
+       l'organisation** > **Sécurité et confidentialité** > **Délai d'expiration de session
+       inactive**. La première activation exige un Administrateur général ; les modifications
+       suivantes peuvent être faites par un Administrateur de la sécurité ou un Administrateur
+       d'applications cloud.
+    2. Activer le réglage, choisir {{ idle_timeout_hours }} heures (ou une durée personnalisée plus
+       courte) et sélectionner **Enregistrer**.
+    3. Dans le centre d'administration Microsoft Entra, en tant qu'Administrateur de l'accès
+       conditionnel, créer une stratégie : **Utilisateurs** > **Tous les utilisateurs** (exclure les
+       comptes d'accès d'urgence) ; **Ressources cibles** > **Sélectionner des ressources** >
+       **Office 365** ; **Conditions** > **Applications clientes** > **Navigateur** ; **Session** >
+       **Utiliser les restrictions appliquées par l'application**.
+    4. Commencer en **Rapport seul**, puis passer à **Activé**.
+  rollback: |
+    Décocher l'activation dans le volet Délai d'expiration de session inactive et enregistrer.

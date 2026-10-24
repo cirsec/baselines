@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que des secrets client générés par le système
+finding:
+  title: Les applications peuvent utiliser des secrets client choisis par une personne
+  description: Les secrets personnalisés peuvent être courts, réutilisés ou devinables, et prennent souvent une valeur déjà utilisée ailleurs.
+description: |
+  La stratégie de gestion des applications du tenant bloque les mots de passe personnalisés
+  (`customPasswordAddition`) sur les applications et principaux de service. Quand un secret reste
+  autorisé par une exception à CB-M365-APPS-006, c'est Microsoft Entra qui génère sa valeur.
+rationale: |
+  Via Microsoft Graph, un client peut fournir sa propre valeur de secret au lieu de laisser
+  Microsoft Entra en générer une aléatoire. Les valeurs choisies par un humain sont plus faibles et
+  tendent à être réutilisées entre applications et environnements : une seule fuite ouvre alors
+  plusieurs portes.
+impact: |
+  Les scripts ou produits qui fixent leur propre valeur de secret via Graph (par exemple lors d'un
+  provisionnement automatisé) échouent et doivent lire la valeur générée dans la réponse de l'API.
+notes: |
+  Redondant tant que **Bloquer l'ajout de mot de passe** (CB-M365-APPS-006) s'applique à toutes les
+  applications, mais protège toujours les applications qui ont une exception.
+setting:
+  location: Centre d'administration Entra > Entra ID > Applications d'entreprise > Stratégies d'application > Bloquer les mots de passe personnalisés (Graph policies/defaultAppManagementPolicy, restriction passwordCredentials customPasswordAddition)
+  recommended_value: Activé, s'applique à toutes les applications
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application**.
+    3. Vérifier que la restriction sur les mots de passe personnalisés est **Activée** pour
+       **Toutes les applications**.
+    4. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Vérifier que
+       `isEnabled` vaut `true` et que `passwordCredentials`, pour les applications et les principaux
+       de service, contient `customPasswordAddition` avec `state` = `enabled`.
+    5. Vérifier aussi les stratégies personnalisées attribuées en exception
+       (`GET https://graph.microsoft.com/v1.0/policies/appManagementPolicies`) : elles ne doivent
+       pas désactiver `customPasswordAddition`.
+    6. Échec si la restriction est absente ou désactivée dans la stratégie par défaut ou dans une
+       stratégie d'exception.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec le rôle Administrateur de la
+       sécurité et le rôle Administrateur d'applications ou Administrateur d'applications cloud.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application** et
+       ouvrir la restriction sur les mots de passe personnalisés.
+    3. La passer à **Activé**, **S'applique à** = **Toutes les applications**, puis sélectionner
+       **Enregistrer**.
+    4. Alternative Graph (étendue `Policy.ReadWrite.ApplicationConfiguration`) :
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` en ajoutant
+       `{"restrictionType": "customPasswordAddition", "state": "enabled"}` à `passwordCredentials`
+       pour les applications et les principaux de service, en conservant les restrictions
+       existantes.
+  rollback: |
+    Passer la restriction sur les mots de passe personnalisés à **Désactivé**.

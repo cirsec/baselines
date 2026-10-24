@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'accès aux fichiers sensibles par les applications restreintes et Bluetooth non autorisées avec la DLP de point de terminaison
+finding:
+  title: Des fichiers sensibles sur les postes peuvent être ouverts par des applications non approuvées ou envoyés en Bluetooth
+  description: Sans restrictions DLP de point de terminaison, un utilisateur ou un logiciel malveillant peut téléverser un fichier protégé via une application non autorisée ou l'envoyer vers un téléphone en Bluetooth, hors de tout contrôle cloud.
+description: |
+  Les appareils Windows et macOS sont intégrés à la DLP de point de terminaison Microsoft Purview.
+  Dans les paramètres DLP de point de terminaison, une liste **Applications restreintes** (par
+  exemple clients de synchronisation cloud personnels, navigateurs non approuvés, outils de
+  transfert de fichiers) et une liste **Applications Bluetooth non autorisées** sont définies. Une
+  stratégie DLP activée pour l'emplacement **Appareils** s'applique au contenu qui correspond aux
+  types d'informations sensibles de CB-M365-DATA-001 et règle ces actions sur **Bloquer** :
+
+  - **Accès par des applications restreintes** ;
+  - **Copier ou déplacer à l'aide d'une application Bluetooth non autorisée**.
+rationale: |
+  La DLP cloud arrête les données partagées depuis Microsoft 365, mais une fois un fichier
+  synchronisé ou téléchargé sur un poste, il peut sortir par des canaux locaux. Les applications
+  restreintes et le Bluetooth sont des chemins courants d'exfiltration, par négligence comme par
+  malveillance, et la DLP de point de terminaison est le seul contrôle Microsoft 365 qui les voit.
+impact: |
+  Les appareils doivent être intégrés (via Intune ou Defender for Endpoint). Les utilisateurs
+  reçoivent une notification de blocage quand ils ouvrent un fichier sensible avec une application
+  listée. Tenir la liste des applications restreintes avec l'équipe poste de travail.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins le
+       rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Protection contre la perte de données** > **Paramètres DLP de
+       point de terminaison** et vérifier que **Applications restreintes et groupes d'applications**
+       et **Applications Bluetooth non autorisées** contiennent des entrées.
+    3. Aller dans **Paramètres** > **Intégration d'appareils** > **Appareils** et vérifier que les
+       appareils Windows et macOS gérés sont intégrés.
+    4. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies**, ouvrir
+       la stratégie qui couvre **Appareils**, et vérifier qu'elle est **Activée** et que sa règle
+       règle **Accès par des applications restreintes** et **Copier ou déplacer à l'aide d'une
+       application Bluetooth non autorisée** sur **Bloquer**.
+    5. Alternative en PowerShell Sécurité et conformité : `Get-DlpCompliancePolicy | Where-Object
+       { $_.EndpointDlpLocation } | Format-List Name,Mode,EndpointDlpLocation` et
+       `Get-DlpComplianceRule -Policy <stratégie> | Format-List Name,EndpointDlpRestrictions`.
+    6. Échec si une liste est vide, si aucune stratégie appliquée ne couvre les appareils, ou si
+       l'une des actions est en audit seul.
+remediation:
+  manual: |
+    1. Intégrer les appareils à Microsoft Purview (via le package d'intégration Intune ou Microsoft
+       Defender for Endpoint).
+    2. Se connecter au portail Microsoft Purview avec au moins le rôle Administrateur de conformité.
+    3. Aller dans **Paramètres** > **Protection contre la perte de données** > **Paramètres DLP de
+       point de terminaison**, renseigner **Applications restreintes et groupes d'applications** et
+       **Applications Bluetooth non autorisées**.
+    4. Modifier ou créer une stratégie DLP avec l'emplacement **Appareils**, tous les utilisateurs et
+       appareils ; dans la règle, sous **Auditer ou restreindre les activités sur les appareils**,
+       régler **Accès par des applications restreintes** et **Copier ou déplacer à l'aide d'une
+       application Bluetooth non autorisée** sur **Bloquer**.
+    5. Exécuter en simulation, examiner l'**Explorateur d'activités**, puis activer la stratégie.
+  rollback: |
+    Remettre les actions sur appareil en **Audit seul**, ou repasser la stratégie en simulation.

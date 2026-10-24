@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-013
+title: Restrict the Microsoft Entra admin center to administrators
+finding:
+  title: Any user can browse the Microsoft Entra admin center
+  description: Non-administrators can open the admin center and browse users, groups and tenant information, which helps reconnaissance after an account compromise.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, admin-portal, reconnaissance, user-settings]
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Users > User settings > Restrict access to Microsoft Entra admin center
+  default_value: "No"
+  recommended_value: "Yes"
+
+description: |
+  The user setting **Restrict access to Microsoft Entra admin center** is set to **Yes**: users
+  without an administrative role cannot load the common pages of the Microsoft Entra admin center
+  and the Azure portal (home, tenant overview, user list).
+rationale: |
+  An attacker with a regular user account often starts by listing users, groups and roles to pick
+  the next target. This setting adds friction to that browsing for little cost.
+impact: |
+  Non-administrators who own groups or applications can no longer manage them from the admin
+  center; they use My Groups, My Apps, or get a reader role. The setting does not apply to users
+  with any admin role, including custom roles.
+notes: |
+  Microsoft states that this is not a security boundary: it does not block Microsoft Graph,
+  PowerShell or deep links to most pages. Directory read access by members is reduced with other
+  settings; blocking non-admin access to Azure management uses a Conditional Access policy on
+  **Windows Azure Service Management API**.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Fail if **Restrict access to Microsoft Entra admin center** is **No**. There is no public
+       API for this setting.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator
+       (or Global Administrator).
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Set **Restrict access to Microsoft Entra admin center** to **Yes** and select **Save**.
+    4. Give a reader role (for example Global Reader or Directory Readers) to non-administrators
+       who have a documented need for the portal.
+  rollback: |
+    Set the option back to **No**.
+
+references:
+  - title: What are the default user permissions in Microsoft Entra ID?
+    url: https://learn.microsoft.com/entra/fundamentals/users-default-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.2.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1087.004
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-002
+title: Restrict trial environment creation to administrators
+finding:
+  title: Any user can create trial Power Platform environments
+  description: Users can spin up trial environments, with their own Dataverse database and connectors, outside the governance of the platform team.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [power-platform, environments, trials, governance]
+
+description: |
+  The Power Platform tenant setting **Trial environment assignments** is set to **Only specific
+  admins**. Users who want to evaluate a product ask the platform team, which creates the trial in
+  a governed way.
+rationale: |
+  Trial environments are often created on impulse, filled with real data to test a scenario, and
+  forgotten. They are outside the data policies scoped to known environments and outside the
+  inventory until they expire. Restricting their creation to administrators avoids unmanaged copies
+  of business data and connectors.
+impact: |
+  Users can no longer start trials of Power Apps, Power Automate or Dynamics 365 environments
+  themselves. Provide a request process. Existing trial environments are not affected.
+
+setting:
+  location: Power Platform admin center > Manage > Tenant settings > Trial environment assignments
+  default_value: Everyone
+  recommended_value: Only specific admins
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader.
+    2. Browse to **Manage** > **Tenant settings** and open **Trial environment assignments**.
+    3. Check that it is set to **Only specific admins**.
+    4. Alternative, read only (Power Platform Administrator):
+       `(Get-TenantSettings).disableTrialEnvironmentCreationByNonAdminUsers` after
+       `Add-PowerAppsAccount`.
+    5. Fail if the setting is **Everyone** (`disableTrialEnvironmentCreationByNonAdminUsers` is
+       `False`).
+
+remediation:
+  manual: |
+    1. In the Power Platform admin center, browse to **Manage** > **Tenant settings** > **Trial
+       environment assignments**. Role: Power Platform Administrator.
+    2. Select **Only specific admins** and **Save**.
+    3. PowerShell equivalent: `Set-TenantSettings -RequestBody @{
+       disableTrialEnvironmentCreationByNonAdminUsers = $true }`.
+  rollback: |
+    Set **Trial environment assignments** back to **Everyone**.
+
+references:
+  - title: Control environment creation and management
+    url: https://learn.microsoft.com/power-platform/admin/control-environment-creation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.1.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(10)
+    relation: related
+related_controls:
+  - id: CB-M365-POWER-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ouvrir les anciens formats de fichiers Office en mode protégé
+finding:
+  title: Les anciens formats de fichiers Office s'ouvrent hors du mode protégé
+  description: Les anciens formats binaires Word, Excel et PowerPoint, dont les analyseurs sont sujets à la corruption mémoire, s'ouvrent en édition complète, même depuis des emplacements approuvés.
+description: |
+  Deux paramètres du mode de sécurité de base (*Baseline security mode*) sont activés dans le centre
+  d'administration Microsoft 365 :
+
+  - **Open ancient legacy formats in Protected View and disallow editing** : les documents binaires
+    Word 2 et antérieurs, Word 6.0 et Word 95, les feuilles de calcul et feuilles macro Excel 2 à 4
+    et les classeurs Excel 4 s'ouvrent en lecture seule en mode protégé ; l'enregistrement dans ces
+    formats est bloqué ;
+  - **Open old legacy formats in Protected View and save as modern format** : les documents binaires
+    Word 97 à 2003, les fichiers PowerPoint 97-2003, les classeurs Excel 95 à 2003 et les
+    convertisseurs hérités s'ouvrent en mode protégé ; l'utilisateur peut modifier après avoir
+    quitté le mode protégé et doit enregistrer dans un format moderne.
+
+  Les deux paramètres activent aussi les stratégies Cloud Policy **File Block includes trusted
+  files** et **File Block includes external link files**, pour que les emplacements approuvés ne
+  contournent pas le blocage.
+rationale: |
+  Les analyseurs de ces formats binaires datent des années 1990 et du début des années 2000 et
+  restent une cible fréquente d'exploits de corruption mémoire livrés en pièce jointe. Le mode
+  protégé ouvre le fichier dans un bac à sable sans contenu actif, ce qui contient une tentative
+  d'exploitation. Peu d'organisations créent encore des fichiers dans ces formats : le coût
+  opérationnel est faible.
+impact: |
+  Les utilisateurs qui ouvrent d'anciens fichiers binaires les voient en mode protégé ; les très
+  anciens formats ne sont pas modifiables, et les anciens formats doivent être enregistrés en .docx,
+  .xlsx ou .pptx. Dans Excel, les nouveaux liens externes vers ces formats renvoient `#BLOCKED` et les
+  liens existants ne se mettent plus à jour. Les processus qui produisent encore des fichiers .xls ou
+  .doc (exports d'anciennes applications) doivent être repérés avec les rapports d'impact et
+  convertis, ou exclus par une configuration Cloud Policy ciblée.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Baseline security mode**.
+    3. Vérifier que **Open ancient legacy formats in Protected View and disallow editing** et **Open
+       old legacy formats in Protected View and save as modern format** sont tous deux activés.
+    4. Dans le service Office Cloud Policy (https://config.office.com), **Personnalisation** >
+       **Gestion des stratégies**, examiner toute configuration de stratégie de priorité plus haute
+       qui règle autrement les stratégies de blocage de ces formats : chacune doit être une exception
+       documentée et ciblée.
+    5. Échec si l'un des paramètres est désactivé, ou si une exception s'applique à tous les
+       utilisateurs.
+remediation:
+  manual: |
+    1. Dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité** >
+       **Baseline security mode**, télécharger les rapports d'impact des deux paramètres pour repérer
+       les utilisateurs et processus qui ouvrent ou enregistrent encore d'anciens formats.
+    2. Convertir les fichiers récurrents vers des formats modernes, ou préparer une exception Cloud
+       Policy ciblée pour les processus qui ne peuvent pas encore changer.
+    3. Activer les deux paramètres. Rôle : administrateur des applications Office.
+    4. Alternative : configurer dans le service Office Cloud Policy les stratégies de blocage de
+       fichiers listées dans les pages Microsoft (par exemple **Word 97 binary documents and
+       templates** réglée sur **Allow editing and open in Protected View**). Aucune cmdlet PowerShell
+       n'existe.
+  rollback: |
+    Désactiver les paramètres dans le mode de sécurité de base, ou remettre les stratégies Cloud
+    Policy de blocage de fichiers à l'état non configuré.

@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir les permissions d'API à haut risque accordées aux applications
+finding:
+  title: Des applications détiennent des permissions à haut risque non revues ou inutilisées
+  description: Une application qui a des permissions comme RoleManagement.ReadWrite.Directory ou Mail.ReadWrite sur tout le tenant est un chemin direct vers l'administrateur général ou vers toutes les boîtes aux lettres si son identifiant fuit.
+description: |
+  Les permissions d'application (rôles d'application) et les consentements délégués à l'échelle du
+  tenant sur des API à haut risque sont revus au moins tous les 90 jours. Les permissions à haut
+  risque comprennent au moins :
+
+  - les permissions qui mènent au contrôle du tenant : `RoleManagement.ReadWrite.Directory`,
+    `AppRoleAssignment.ReadWrite.All`, `Application.ReadWrite.All`,
+    `Directory.ReadWrite.All`, `Policy.ReadWrite.*`, `UserAuthenticationMethod.ReadWrite.All`,
+    `Group.ReadWrite.All`, `ServicePrincipalEndpoint.ReadWrite.All` ;
+  - les permissions qui lisent ou modifient toutes les boîtes aux lettres, fichiers ou
+    conversations : `Mail.*`, `Files.*`, `Sites.*`, `Chat.*`, `full_access_as_app`,
+    `EWS.AccessAsUser.All`.
+
+  Chacune a un propriétaire et une justification, est encore utilisée, et est restreinte quand le
+  service le permet (par exemple RBAC for Applications d'Exchange, `Sites.Selected`).
+rationale: |
+  Une permission d'application fonctionne sans utilisateur et sans accès conditionnel utilisateur :
+  qui détient l'identifiant agit sur tout le tenant. Les permissions qui permettent d'attribuer des
+  rôles ou d'autres permissions donnent un chemin direct ou indirect vers l'administrateur général,
+  et ont servi d'escalade dans plusieurs intrusions cloud publiques. Les permissions privilégiées
+  inutilisées ajoutent du risque sans valeur.
+impact: |
+  Retirer une permission encore utilisée casse l'intégration. Vérifier les connexions du principal
+  de service et l'activité API de l'application avant de révoquer.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Toutes les applications**, filtrer
+       sur **Type d'application** = **Applications d'entreprise**, ouvrir chaque application et
+       vérifier **Autorisations** (onglet consentement administrateur) pour les permissions
+       ci-dessus.
+    3. En Microsoft Graph PowerShell (étendues `Application.Read.All`, `Directory.Read.All`), lister
+       les permissions d'application par principal de service avec
+       `Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId <id>` et les consentements
+       délégués à l'échelle du tenant avec
+       `Get-MgOauth2PermissionGrant -All | Where-Object ConsentType -eq 'AllPrincipals'`.
+    4. Si la gouvernance des applications de Microsoft Defender for Cloud Apps est sous licence,
+       utiliser **Portail Microsoft Defender** > **Applications cloud** > **Gouvernance des
+       applications** > **Applications** pour filtrer les permissions à privilèges élevés et
+       inutilisées.
+    5. Échec si une permission à haut risque n'a ni propriétaire ni justification documentés, n'a
+       pas été utilisée depuis 90 jours, ou est accordée à tout le tenant alors qu'une alternative
+       restreinte existe.
+remediation:
+  manual: |
+    1. Pour chaque constat, contacter le propriétaire de l'application et confirmer le besoin.
+    2. Retirer les permissions inutiles : **Applications d'entreprise** > l'application >
+       **Autorisations** > **Vérifier les autorisations**, ou en Graph PowerShell
+       `Remove-MgServicePrincipalAppRoleAssignment` et `Remove-MgOauth2PermissionGrant`. Rôle
+       requis : Administrateur de rôle privilégié (l'Administrateur d'applications cloud ne peut pas
+       révoquer les rôles d'application Microsoft Graph).
+    3. Remplacer les permissions larges par des permissions restreintes : `Sites.Selected`, RBAC for
+       Applications d'Exchange Online, unités administratives.
+    4. Consigner propriétaire, justification et date de revue des permissions conservées.
+  rollback: |
+    Accorder de nouveau la permission retirée avec consentement administrateur si une intégration
+    casse.

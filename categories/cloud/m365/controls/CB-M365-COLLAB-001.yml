@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-001
+title: Block legacy authentication protocols to SharePoint and OneDrive
+finding:
+  title: SharePoint and OneDrive accept legacy authentication protocols
+  description: Clients using IDCRL or other non-modern protocols can reach files with a password alone, outside multifactor authentication and Conditional Access.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [legacy-authentication, sharepoint, onedrive, mfa]
+
+description: |
+  SharePoint Online refuses authentication through legacy protocols. Two tenant settings are off:
+
+  - `LegacyAuthProtocolsEnabled`: Identity Client Runtime Library (IDCRL), forms-based authentication
+    and the `SharePointOnlineCredentials` class used by old Office clients, scripts and third-party
+    tools;
+  - `LegacyBrowserAuthProtocolsEnabled`: the Relying Party Suite (RPS) browser protocol.
+
+  In the SharePoint admin center this is the **Apps that don't use modern authentication** setting set
+  to **Block access**. Baseline security mode exposes the same two settings.
+rationale: |
+  Legacy protocols send a user name and password to the service and cannot carry a multifactor
+  challenge or a device claim. They are the usual path for password spraying and credential stuffing
+  against SharePoint, and they bypass Conditional Access policies that require MFA or a managed
+  device, including the SharePoint unmanaged device restrictions.
+impact: |
+  Office clients older than Office 2013, scripts that sign in with `SharePointOnlineCredentials` and
+  third-party tools that store a password stop working. Rewrite scripts with an app registration
+  (certificate) or a delegated modern sign-in. The change can take up to 24 hours. Microsoft
+  deprecated RPS browser authentication for enterprise tenants in October 2025:
+  `LegacyBrowserAuthProtocolsEnabled` can no longer be set to `True`.
+
+setting:
+  location: SharePoint admin center > Policies > Access control > Apps that don't use modern authentication
+  default_value: Allow access (LegacyAuthProtocolsEnabled = True)
+  recommended_value: Block access (LegacyAuthProtocolsEnabled = False, LegacyBrowserAuthProtocolsEnabled = False)
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Access control** > **Apps that don't use modern authentication**.
+    3. Check that **Block access** is selected.
+    4. Read-only alternative: as a Global Reader, call Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, or `Get-MgAdminSharepointSetting`) and check that
+       `isLegacyAuthProtocolsEnabled` is `false`. With the SharePoint Online Management Shell (requires
+       SharePoint Administrator), run
+       `Get-SPOTenant | Select-Object LegacyAuthProtocolsEnabled, LegacyBrowserAuthProtocolsEnabled`.
+    5. Fail if **Allow access** is selected or if either property is `True`.
+
+remediation:
+  manual: |
+    1. Find who still uses legacy protocols: the Baseline security mode page in the Microsoft 365 admin
+       center (**Settings** > **Org settings** > **Security and Privacy** > **Baseline Security Mode**)
+       offers an impact report for the IDCRL and RPS settings. The SharePoint sign-in events in the
+       Entra sign-in logs (**Client app** filter on legacy clients) give the same view.
+    2. Move the remaining scripts and tools to modern authentication.
+    3. In the SharePoint admin center, browse to **Policies** > **Access control** > **Apps that don't
+       use modern authentication**, select **Block access** and **Save**. Role: SharePoint
+       Administrator.
+    4. PowerShell equivalent:
+       `Set-SPOTenant -LegacyAuthProtocolsEnabled $false -LegacyBrowserAuthProtocolsEnabled $false`.
+       Graph equivalent: `PATCH /admin/sharepoint/settings` with
+       `{"isLegacyAuthProtocolsEnabled": false}`.
+  rollback: |
+    Run `Set-SPOTenant -LegacyAuthProtocolsEnabled $true` while a client is migrated. The RPS setting
+    can no longer be turned back on.
+
+references:
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Control access from unmanaged devices
+    url: https://learn.microsoft.com/sharepoint/control-access-from-unmanaged-devices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: sharepointSettings resource type (Microsoft Graph)
+    url: https://learn.microsoft.com/graph/api/resources/sharepointsettings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-COLLAB-015
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

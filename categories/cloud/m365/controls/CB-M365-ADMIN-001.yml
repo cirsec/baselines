@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-001
+title: Use dedicated, named, cloud-only accounts for administrative roles
+finding:
+  title: Privileged roles are held by synchronized, shared or everyday accounts
+  description: A compromise of the on-premises directory, of a shared password or of a user's mailbox gives the attacker the privileged role along with the account.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, admin-accounts, cloud-only, hybrid-identity, least-privilege]
+
+description: |
+  Every account that holds a privileged Microsoft Entra role (active or eligible, directly or
+  through a group) is:
+
+  - **cloud-only**: created in Microsoft Entra ID, not synchronized from Active Directory and not
+    federated with another identity provider (`onPremisesSyncEnabled` is empty or `false`);
+  - **dedicated**: used only for administration, separate from the person's everyday account that
+    reads mail, browses and works on documents;
+  - **named**: assigned to one identified person, never shared between several administrators.
+
+  The emergency access accounts (CB-M365-ADMIN-002) are the only non-named exception.
+rationale: |
+  A synchronized account inherits the trust of Active Directory: whoever controls a domain
+  controller or the Entra Connect server can reset its password or take it over, and pivot from
+  the on-premises network to the whole tenant. A federated account depends on the security of the
+  external identity provider. An everyday account is exposed to phishing, malicious attachments and
+  browser exploits all day long; separating the admin account keeps those threats away from the
+  privileges. Named accounts make every privileged action traceable to a person.
+impact: |
+  Each administrator manages a second account and a second set of authentication methods. Scripts
+  or service desks that rely on synchronized admin accounts must be moved to the cloud-only ones.
+  Administrators whose on-premises role required the same account keep a separate account in
+  Active Directory.
+notes: |
+  Naming conventions (for example an `adm-` prefix) help reviewers, but only the account owner
+  registry proves that an account is named and dedicated. The license footprint of admin accounts
+  is covered by CB-M365-ADMIN-005.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Roles & admins** > **Roles & admins**. For each role marked
+       **Privileged**, open **Assignments** and list the active and eligible members; expand
+       groups.
+    3. For each account, open the user and check **Properties** > **On-premises** >
+       **On-premises sync enabled**: it must be **No** (or empty).
+    4. Check against the administrator registry that each account belongs to one person and is
+       not that person's everyday account (no mailbox use, no Teams activity, see
+       CB-M365-ADMIN-005).
+    5. Read-only PowerShell alternative (Microsoft Graph, scope `RoleManagement.Read.Directory`,
+       `User.Read.All`):
+       ```
+       Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal |
+         ForEach-Object { Get-MgUser -UserId $_.PrincipalId -Property UserPrincipalName,OnPremisesSyncEnabled -ErrorAction SilentlyContinue } |
+         Where-Object OnPremisesSyncEnabled | Select-Object UserPrincipalName
+       ```
+       Repeat with `Get-MgRoleManagementDirectoryRoleEligibilitySchedule` for eligible
+       assignments.
+    6. Fail if any privileged role holder is synchronized from on-premises, is shared, or is the
+       everyday account of its owner.
+
+remediation:
+  manual: |
+    1. For each administrator in breach, create a cloud-only account (user principal name on a
+       managed domain or on `*.onmicrosoft.com`) with at least the User Administrator role
+       (Privileged Authentication Administrator is needed to reset methods of other admins).
+    2. Have the owner register phishing-resistant methods on the new account
+       (CB-M365-AUTH-004).
+    3. Assign the roles to the new account, preferably as eligible through Privileged Identity
+       Management (CB-M365-ADMIN-006), with at least the Privileged Role Administrator role.
+    4. Remove the roles from the synchronized, shared or everyday account.
+    5. Replace any shared admin account with named accounts, then disable and delete it.
+  rollback: |
+    Reassign the roles to the previous account from **Roles & admins** with a Privileged Role
+    Administrator or an emergency access account.
+
+references:
+  - title: Best practices for Microsoft Entra roles
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Securing privileged access for hybrid and cloud deployments in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/security-planning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.1.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.3v1
+    relation: stricter
+    note: SCuBA only asks for cloud-only accounts; ours also requires dedicated and named accounts.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R27"
+    relation: equivalent
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R28"
+    relation: partial
+    note: Cloud-only accounts keep admin identities out of the on-premises directory; access to the Entra directory itself is covered by other controls.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R30"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-ADMIN-005
+    type: related
+  - id: CB-M365-ADMIN-012
+    type: related
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-AUTH-045
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

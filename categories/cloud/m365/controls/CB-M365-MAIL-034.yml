@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-034
+title: Turn on automated remediation of malicious message clusters in AIR
+finding:
+  title: Messages found malicious by automated investigations wait for manual approval before removal
+  description: AIR identifies all copies of a malicious file or link in mailboxes, but they stay there until an analyst approves each action.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [defender-for-office-365, air, automated-response, remediation, soc]
+
+applicability:
+  requires:
+    - "Microsoft Defender for Office 365 Plan 2"
+
+description: |
+  In the Defender for Office 365 automation settings, automated remediation is selected for the
+  message clusters **Similar files** and **Similar URLs** (and optionally **Multiple similar
+  attributes**), with the remediation action **Soft delete**. Messages in these clusters that AIR
+  finds malicious are removed from mailboxes without waiting for SecOps approval; clusters larger
+  than 10,000 messages still wait for review.
+rationale: |
+  After a campaign is detected, the time copies stay in mailboxes is the time users can click them.
+  Automated remediation cuts that time from hours (waiting for an analyst) to minutes, for the
+  clusters where the malicious entity is well identified. Soft delete keeps the messages
+  recoverable if a verdict turns out to be wrong.
+impact: |
+  Messages are removed from users' mailboxes without analyst review. Soft-deleted messages can be
+  restored from the Action center (**History** tab) or Threat Explorer while they are kept in the
+  Recoverable Items folder; check that the deleted items retention meets legal obligations.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Settings** > **Email & collaboration** > **MDO automation settings**.
+    3. Check that **Similar files** and **Similar URLs** are selected under **Message clusters**, and
+       that **Soft delete** is the remediation action.
+    4. There is no read-only PowerShell cmdlet for this page.
+    5. Fail if neither **Similar files** nor **Similar URLs** is selected.
+
+remediation:
+  manual: |
+    1. In the Defender portal, browse to **Settings** > **Email & collaboration** > **MDO automation
+       settings** (Security Administrator).
+    2. Select **Similar files** and **Similar URLs** (and **Multiple similar attributes** if the SOC
+       agrees), keep **Soft delete**, and select **Save**.
+    3. Check the results in the **Action center** > **History** tab with the **Decided by** filter set
+       to **Automation**.
+  rollback: |
+    Clear the cluster types on the **Automation settings** page; actions go back to pending approval.
+
+references:
+  - title: Automated remediation in AIR
+    url: https://learn.microsoft.com/defender-office-365/air-auto-remediation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Automated investigation and response (AIR) in Microsoft Defender for Office 365
+    url: https://learn.microsoft.com/defender-office-365/air-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.4.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-4(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-024
+    type: related
+  - id: CB-M365-MAIL-033
+    type: related
+  - id: CB-M365-AUDIT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

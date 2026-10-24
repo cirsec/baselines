@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-026
+title: Scan SharePoint, OneDrive and Teams files with Safe Attachments and block infected downloads
+finding:
+  title: Files stored in SharePoint, OneDrive and Teams are not scanned by Safe Attachments
+  description: Malicious files uploaded or shared in collaboration sites are not detected, and users can still download a file once it is flagged.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [defender-for-office-365, safe-attachments, sharepoint, onedrive, teams]
+
+applicability:
+  requires:
+    - "Microsoft Defender for Office 365 Plan 1"
+
+description: |
+  Two settings are on:
+
+  - **Turn on Defender for Office 365 for SharePoint, OneDrive, and Microsoft Teams** in the Safe
+    Attachments global settings (`EnableATPForSPOTeamsODB $true`);
+  - SharePoint prevents users from downloading files that Defender detected as malicious
+    (`DisallowInfectedFileDownload $true`).
+rationale: |
+  Collaboration storage is a common way to spread malware inside the organization and to partners:
+  a file shared from a trusted tenant does not go through email filtering. Scanning catches it, and
+  blocking the download stops users from opening it anyway.
+impact: |
+  Users cannot download, open in the desktop app, copy or sync files flagged as malicious; they can
+  still delete them. Administrators can release false positives from quarantine.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** > **Safe
+       Attachments** > **Global settings** and check that **Turn on Defender for Office 365 for
+       SharePoint, OneDrive, and Microsoft Teams** is on.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-AtpPolicyForO365 | Format-List EnableATPForSPOTeamsODB
+       ```
+    4. In SharePoint Online Management Shell (`Get-SPOTenant` requires the SharePoint Administrator
+       role; there is no read-only role for it):
+       ```powershell
+       Get-SPOTenant | Format-List DisallowInfectedFileDownload
+       ```
+    5. Fail if either value is `False`.
+
+remediation:
+  manual: |
+    1. In the Defender portal, **Safe Attachments** > **Global settings**, turn on **Turn on
+       Defender for Office 365 for SharePoint, OneDrive, and Microsoft Teams** and save. PowerShell
+       equivalent (Security Administrator):
+       ```powershell
+       Set-AtpPolicyForO365 -EnableATPForSPOTeamsODB $true
+       ```
+    2. In SharePoint Online Management Shell (SharePoint Administrator):
+       ```powershell
+       Set-SPOTenant -DisallowInfectedFileDownload $true
+       ```
+  rollback: |
+    `Set-SPOTenant -DisallowInfectedFileDownload $false`.
+
+references:
+  - title: Turn on Safe Attachments for SharePoint, OneDrive, and Microsoft Teams
+    url: https://learn.microsoft.com/defender-office-365/safe-attachments-for-spo-odfb-teams-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-AtpPolicyForO365
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-atppolicyforo365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.5"
+    relation: equivalent
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.3.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.1.4v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1204.002
+related_controls:
+  - id: CB-M365-MAIL-025
+    type: related
+  - id: CB-M365-MAIL-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

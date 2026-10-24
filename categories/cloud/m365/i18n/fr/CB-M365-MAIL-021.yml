@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-021
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer le filtre des pièces jointes courantes dans chaque stratégie anti-programme malveillant
+finding:
+  title: Les pièces jointes exécutables et scripts ne sont pas bloqués par type de fichier
+  description: Des fichiers comme .exe, .cmd ou .vbe arrivent dans les boîtes tant qu'aucune signature de programme malveillant ne les reconnaît encore.
+description: |
+  Chaque stratégie anti-programme malveillant qui s'applique à des utilisateurs (stratégie par
+  défaut, stratégies personnalisées et stratégies prédéfinies) a le **filtre des pièces jointes
+  courantes** activé (`EnableFileFilter $true`) avec au moins la liste par défaut de Microsoft, qui
+  inclut `exe`, `cmd` et `vbe`. Les messages concernés sont rejetés avec un NDR (`FileTypeAction Reject`)
+  ou mis en quarantaine (`Quarantine`).
+
+  Le filtre détecte le type réel du fichier, pas seulement l'extension, pour les types qui prennent en
+  charge la correspondance de type réel. Les stratégies personnalisées sont activées et leurs
+  conditions de destinataires ne laissent pas d'utilisateurs sans autre stratégie que celle par
+  défaut.
+rationale: |
+  Exécutables, scripts, programmes d'installation et images disque n'ont rien à faire dans un
+  courrier normal et sont une première étape classique de livraison de logiciels malveillants. Les
+  bloquer par type arrête des échantillons nouveaux que l'analyse par signature ne connaît pas
+  encore, sans coût pour le courrier légitime.
+impact: |
+  Les utilisateurs ne peuvent plus recevoir les types listés par e-mail, y compris d'expéditeurs
+  internes. Les équipes qui échangent ces fichiers (développeurs, informatique) passent par
+  SharePoint, OneDrive ou un autre canal approuvé.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-programme malveillant** et ouvrir chaque stratégie.
+    3. Sous **Paramètres de protection**, vérifier que **Activer le filtre des pièces jointes
+       courantes** est coché, que la liste des types de fichiers contient au moins les types par
+       défaut, et que **Lorsque ces types de fichiers sont trouvés** vaut **Rejeter le message avec une
+       notification d'échec de remise (NDR)** ou **Mettre le message en quarantaine**.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-MalwareFilterPolicy | Format-List Name, EnableFileFilter, FileTypeAction, FileTypes
+       Get-MalwareFilterRule | Format-Table Name, State, Priority
+       ```
+    5. Échec si une stratégie qui s'applique à des utilisateurs a `EnableFileFilter` à `False`, si
+       `FileTypes` ne contient pas `exe`, `cmd`, `vbe` ou d'autres types par défaut, ou si une stratégie
+       personnalisée est désactivée alors que des utilisateurs en dépendent.
+remediation:
+  manual: |
+    1. Dans le portail Defender, ouvrir la stratégie > **Modifier les paramètres de protection**.
+    2. Cocher **Activer le filtre des pièces jointes courantes**, garder les types par défaut
+       (**Sélectionner les types de fichiers** pour en ajouter), choisir **Rejeter le message avec une
+       notification d'échec de remise (NDR)** et enregistrer.
+    3. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-MalwareFilterPolicy -Identity Default -EnableFileFilter $true -FileTypeAction Reject
+       ```
+       Retirer des types demande `-FileTypes` avec la liste complète ; ne pas retirer de types par défaut.
+  rollback: |
+    `Set-MalwareFilterPolicy -Identity <policy> -EnableFileFilter $false` (déconseillé).

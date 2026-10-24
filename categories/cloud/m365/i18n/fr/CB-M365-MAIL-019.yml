@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-019
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer la stratégie de sécurité prédéfinie Standard à tous les destinataires
+finding:
+  title: Tous les destinataires ne sont pas couverts par les stratégies de sécurité prédéfinies Standard ou Stricte
+  description: Les utilisateurs hors des stratégies prédéfinies dépendent de réglages par défaut ou faits main, souvent plus faibles que les valeurs recommandées par Microsoft et qui dérivent avec le temps.
+description: |
+  La stratégie de sécurité prédéfinie **Protection standard** est activée et s'applique à tous les
+  destinataires, pour **Exchange Online Protection** (anti-courrier indésirable, anti-programme
+  malveillant, paramètres d'usurpation de l'anti-hameçonnage) et, si le tenant dispose de Defender
+  pour Office 365, pour **Defender pour Office 365** (emprunt d'identité, pièces jointes fiables,
+  liens fiables). Les comptes sensibles sont dans la **Protection stricte** (CB-M365-MAIL-020), qui est
+  prioritaire.
+
+  Aucun destinataire n'est exclu des stratégies prédéfinies ni de la **Protection intégrée**, sauf des
+  boîtes de service documentées (par exemple la boîte SecOps de la stratégie de remise avancée).
+
+  Des stratégies personnalisées restent acceptables pour une population qui a besoin d'autres
+  valeurs, à condition de respecter les valeurs de CB-M365-MAIL-021 à CB-M365-MAIL-030 ; la stratégie
+  prédéfinie est la manière la plus simple d'obtenir et de garder les valeurs recommandées par
+  Microsoft, car Microsoft la met à jour.
+rationale: |
+  Les valeurs Standard et Stricte de Microsoft sont la référence pour la protection contre les menaces
+  par e-mail, et les stratégies prédéfinies les appliquent d'un bloc, ne peuvent pas être affaiblies
+  par erreur et suivent les mises à jour de Microsoft. Les stratégies faites main laissent des trous :
+  un domaine manquant dans les conditions de destinataires, une stratégie désactivée, un paramètre
+  oublié après la sortie d'une nouvelle fonction.
+impact: |
+  Les utilisateurs peuvent voir plus de messages dans le Courrier indésirable ou en quarantaine, et
+  recevoir des notifications de quarantaine. Expliquer au support comment libérer les messages et
+  signaler les faux positifs. La protection contre l'emprunt d'identité de la partie Defender pour
+  Office 365 demande la liste des utilisateurs et domaines protégés (CB-M365-MAIL-029).
+notes: |
+  La partie Defender pour Office 365 ne s'applique qu'avec une licence Defender pour Office 365 Plan 1
+  ou Plan 2 ; sans elle, seule la partie Exchange Online Protection est vérifiée.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Stratégies de sécurité prédéfinies**.
+    3. Vérifier que **Protection standard** est activée, et ouvrir **Gérer les paramètres de
+       protection** : **Appliquer Exchange Online Protection à** et **Appliquer la protection Defender
+       pour Office 365 à** valent **Tous les destinataires**, sans exclusion autre que des boîtes de
+       service documentées.
+    4. Vérifier que la **Protection intégrée** n'a aucun destinataire exclu.
+    5. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-EOPProtectionPolicyRule | Format-List Identity, State, Priority, SentTo, SentToMemberOf, RecipientDomainIs, Except*
+       Get-ATPProtectionPolicyRule | Format-List Identity, State, Priority, SentTo, SentToMemberOf, RecipientDomainIs, Except*
+       Get-ATPBuiltInProtectionRule | Format-List Identity, Except*
+       ```
+       La règle Standard doit être `Enabled` et soit n'avoir aucune condition de destinataire, soit
+       lister tous les domaines acceptés (`Get-AcceptedDomain`).
+    6. Échec si la stratégie Standard est désactivée, si elle ne couvre qu'une partie des destinataires
+       sans stratégies personnalisées aux mêmes valeurs pour les autres, ou si des destinataires sont
+       exclus sans raison documentée.
+remediation:
+  manual: |
+    1. Dans le portail Defender, aller dans **Stratégies de sécurité prédéfinies** et, sous
+       **Protection standard**, sélectionner **Gérer les paramètres de protection** (Administrateur de
+       la sécurité).
+    2. **Appliquer Exchange Online Protection à** : **Tous les destinataires**. **Appliquer la
+       protection Defender pour Office 365 à** : **Tous les destinataires**. N'ajouter d'exclusions que
+       pour des boîtes de service documentées.
+    3. Dans **Protection contre l'emprunt d'identité**, ajouter les utilisateurs et domaines à protéger
+       (voir CB-M365-MAIL-029), relire la stratégie et sélectionner **Confirmer**.
+    4. Activer le bouton **Protection standard**.
+    5. Équivalent PowerShell une fois la stratégie prédéfinie configurée dans le portail :
+       ```powershell
+       Enable-EOPProtectionPolicyRule -Identity "Standard Preset Security Policy"
+       Enable-ATPProtectionPolicyRule -Identity "Standard Preset Security Policy"
+       ```
+  rollback: |
+    Désactiver le bouton Protection standard ; les destinataires repassent sur les stratégies
+    personnalisées ou par défaut.

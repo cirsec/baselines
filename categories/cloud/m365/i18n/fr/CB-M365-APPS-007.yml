@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter la durée de vie des secrets client des applications
+finding:
+  title: Les secrets client des applications peuvent être créés avec une durée de vie longue ou illimitée
+  description: Un secret valable plusieurs années continue de fonctionner longtemps après avoir fuité dans un script, un dépôt ou les notes d'un ancien salarié.
+description: |
+  La stratégie de gestion des applications du tenant impose une durée de vie maximale de
+  **{{ app_secret_max_days }}** jours aux mots de passe (secrets client) des applications et
+  principaux de service. Les secrets existants dont la durée est plus longue sont suivis et
+  remplacés (CB-M365-APPS-010).
+rationale: |
+  Là où les secrets ne peuvent pas encore être évités (exceptions à CB-M365-APPS-006 ou applications
+  existantes), une durée de vie courte limite la période d'usage d'un secret qui a fuité et impose
+  une rotation régulière, ce qui tient aussi à jour la liste des personnes qui connaissent le
+  secret.
+impact: |
+  Les équipes qui gèrent des applications à secret doivent les renouveler au moins tous les
+  {{ app_secret_max_days }} jours. Prévoir des rappels de rotation, par exemple avec la
+  recommandation Entra sur les identifiants qui expirent.
+setting:
+  location: Centre d'administration Entra > Entra ID > Applications d'entreprise > Stratégies d'application > Restreindre la durée de vie maximale des mots de passe (Graph policies/defaultAppManagementPolicy, restriction passwordCredentials passwordLifetime)
+  recommended_value: Activé, au plus {{ app_secret_max_days }} jours, s'applique à toutes les applications
+parameters:
+  app_secret_max_days: Durée de vie maximale d'un nouveau secret client.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application**.
+    3. Vérifier que la restriction de durée de vie des mots de passe est **Activée**, réglée sur au
+       plus {{ app_secret_max_days }} jours, et s'applique à **Toutes les applications**.
+    4. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Vérifier que
+       `isEnabled` vaut `true` et que `passwordCredentials`, dans `applicationRestrictions` comme
+       dans `servicePrincipalRestrictions`, contient `passwordLifetime` avec `state` = `enabled` et
+       `maxLifetime` au plus égal à `P{{ app_secret_max_days }}D`.
+    5. Échec si la restriction est absente, désactivée, supérieure à {{ app_secret_max_days }}
+       jours, ou définie pour un seul des deux types d'objets.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec le rôle Administrateur de la
+       sécurité et le rôle Administrateur d'applications ou Administrateur d'applications cloud.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application** et
+       ouvrir la restriction de durée de vie des mots de passe.
+    3. La passer à **Activé**, saisir une durée maximale de {{ app_secret_max_days }} jours, régler
+       **S'applique à** sur **Toutes les applications** et sélectionner **Enregistrer**.
+    4. Alternative Graph (étendue `Policy.ReadWrite.ApplicationConfiguration`) :
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` en ajoutant
+       `{"restrictionType": "passwordLifetime", "state": "enabled", "maxLifetime": "P{{ app_secret_max_days }}D"}`
+       à `passwordCredentials` pour les applications et les principaux de service, en conservant
+       les restrictions existantes.
+  rollback: |
+    Passer la restriction de durée de vie des mots de passe à **Désactivé** ou augmenter la durée
+    maximale.

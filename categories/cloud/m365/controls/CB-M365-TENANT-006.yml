@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-006
+title: Restrict Microsoft 365 group creation to an approved group
+finding:
+  title: Any user can create Microsoft 365 groups and Teams
+  description: Every user can create groups, teams and SharePoint sites, which leads to unmanaged workspaces, inconsistent sharing settings and data with no owner.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, groups, microsoft-365-groups, teams, governance]
+
+parameters:
+  - name: group_creators_group
+    type: string
+    description: Display name of the security group whose members may create Microsoft 365 groups.
+    default: GRP-M365-Group-Creators
+
+description: |
+  Microsoft 365 group creation (which also creates Teams teams, SharePoint team sites and Planner
+  plans) is limited to administrators and to the members of the security group
+  `{{ group_creators_group }}`:
+
+  - the `Group.Unified` directory setting has `EnableGroupCreation` = `false` and
+    `GroupCreationAllowedGroupId` = the object ID of that group;
+  - the Entra setting **Users can create Microsoft 365 groups in Azure portals, API or
+    PowerShell** is **No**.
+rationale: |
+  Open group creation produces many workspaces without a clear owner, purpose or classification,
+  each with its own guest access and sharing. Limiting creation to a trained group, or to a request
+  process, keeps workspaces governed and makes labels, naming and expiration policies effective.
+impact: |
+  Users who are not in the group request new teams through a form or the service desk. The members
+  of the allowed group need a Microsoft Entra ID P1 license. The Entra portal toggle alone only
+  covers the Azure and Entra portals, API and PowerShell; the directory setting also covers
+  Outlook, Teams, SharePoint and Planner.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader. Browse to **Entra ID** > **Groups** > **General** and read **Users can
+       create Microsoft 365 groups in Azure portals, API or PowerShell**.
+    2. Connect to Microsoft Graph PowerShell (scope `Directory.Read.All`) and run:
+       ```
+       (Get-MgBetaDirectorySetting | Where-Object DisplayName -eq 'Group.Unified').Values |
+         Where-Object Name -in 'EnableGroupCreation','GroupCreationAllowedGroupId'
+       ```
+       (or `GET https://graph.microsoft.com/v1.0/groupSettings`).
+    3. Check that the group ID resolves to `{{ group_creators_group }}` with
+       `Get-MgGroup -GroupId <id>`.
+    4. Fail if the portal setting is **Yes**, if no `Group.Unified` setting exists, if
+       `EnableGroupCreation` is `true`, or if `GroupCreationAllowedGroupId` is empty or points to
+       another group.
+
+remediation:
+  manual: |
+    1. Create the security group `{{ group_creators_group }}` and add the authorized creators.
+    2. Connect to Microsoft Graph PowerShell as at least a Groups Administrator (scopes
+       `Directory.ReadWrite.All`, `Group.Read.All`).
+    3. If no `Group.Unified` setting exists, create it from the template:
+       ```
+       $tpl = Get-MgBetaDirectorySettingTemplate | Where-Object DisplayName -eq 'Group.Unified'
+       New-MgBetaDirectorySetting -BodyParameter @{ templateId = $tpl.Id; values = @() }
+       ```
+    4. Set the values:
+       ```
+       $gid = (Get-MgGroup -Filter "displayName eq '{{ group_creators_group }}'").Id
+       $s = Get-MgBetaDirectorySetting | Where-Object DisplayName -eq 'Group.Unified'
+       $v = $s.Values
+       ($v | Where-Object Name -eq 'EnableGroupCreation').Value = 'false'
+       ($v | Where-Object Name -eq 'GroupCreationAllowedGroupId').Value = $gid
+       Update-MgBetaDirectorySetting -DirectorySettingId $s.Id -Values $v
+       ```
+    5. In the Entra admin center, set **Users can create Microsoft 365 groups in Azure portals,
+       API or PowerShell** to **No**.
+  rollback: |
+    Set `EnableGroupCreation` back to `true` with `Update-MgBetaDirectorySetting`.
+
+references:
+  - title: Manage who can create Microsoft 365 groups
+    url: https://learn.microsoft.com/microsoft-365/solutions/manage-creation-of-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure group settings using PowerShell
+    url: https://learn.microsoft.com/entra/identity/users/groups-settings-cmdlets
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.3.4"
+    relation: stricter
+    note: CIS checks the Entra portal toggle; ours also restricts creation from Outlook, Teams and SharePoint through the directory setting.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-M365-TENANT-003
+    type: related
+  - id: CB-M365-TENANT-007
+    type: related
+  - id: CB-M365-TENANT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

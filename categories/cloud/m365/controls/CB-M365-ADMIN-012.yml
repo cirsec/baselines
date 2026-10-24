@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-012
+title: Do not assign privileged roles to guest users
+finding:
+  title: A guest user holds a privileged role
+  description: The tenant's privileges depend on an account whose authentication and lifecycle are controlled by another organization.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, guests, external-identities]
+
+description: |
+  No guest user (`userType` **Guest**, or an external account with `#EXT#` in its user principal
+  name) holds a privileged Microsoft Entra role, actively or as eligible, directly or through a
+  group. External administrators (partners, contractors) get a named cloud-only account in the
+  tenant (CB-M365-ADMIN-001) or a GDAP relationship (CB-M365-ADMIN-017).
+rationale: |
+  A guest authenticates in its home tenant or with a consumer account: its password policy, MFA,
+  device and offboarding are out of the organization's control. When the guest's home account is
+  compromised or its owner leaves the partner company, the privileged role stays reachable.
+impact: |
+  External administrators need an internal account with the same protections as employees, which
+  adds an account to manage and a license where required.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Roles & admins** > **Roles & admins**, open each role marked
+       **Privileged** > **Assignments**, and look for members with **User type** **Guest**
+       (eligible and active, expanding groups).
+    3. Read-only PowerShell alternative (Microsoft Graph, scopes `RoleManagement.Read.Directory`,
+       `User.Read.All`):
+       ```
+       $ids = (Get-MgRoleManagementDirectoryRoleAssignment -All).PrincipalId +
+              (Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All).PrincipalId
+       $ids | Sort-Object -Unique | ForEach-Object { Get-MgUser -UserId $_ -Property UserPrincipalName,UserType -ErrorAction SilentlyContinue } |
+         Where-Object UserType -eq 'Guest'
+       ```
+    4. Fail if any guest holds a privileged role.
+
+remediation:
+  manual: |
+    1. With a Privileged Role Administrator, remove the role from the guest in **Roles & admins**
+       or in **Privileged Identity Management** > **Assignments**.
+    2. If the person still needs administrative access, create a named cloud-only account,
+       register phishing-resistant methods and assign the narrowest role as eligible.
+  rollback: |
+    Reassign the role to the guest (not recommended).
+
+references:
+  - title: Best practices for Microsoft Entra roles
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Securing privileged access for hybrid and cloud deployments in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/security-planning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-001
+    type: related
+  - id: CB-M365-ADMIN-017
+    type: related
+  - id: CB-M365-TENANT-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

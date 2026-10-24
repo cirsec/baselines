@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-018
+title: Block high-risk AI agents with Conditional Access
+finding:
+  title: AI agents flagged as high risk keep access to organizational resources
+  description: When ID Protection detects that an agent identity is likely compromised, nothing stops it from continuing to call Microsoft Graph and other resources with its permissions.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [ai-agents, agent-id, conditional-access, identity-protection, workload-identities]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+description: |
+  A Conditional Access policy targets **All agent identities**, with the **Agent risk** condition
+  set to **High**, on **All resources**, and grants **Block**. A second policy with the same
+  settings targets agents' user accounts (agent users) when the tenant has any.
+rationale: |
+  AI agents act autonomously with delegated or application permissions, often across mail, files
+  and line-of-business data. A compromised or hijacked agent (prompt injection, stolen blueprint
+  credential, anomalous token use) can exfiltrate data at machine speed. Microsoft Entra ID
+  Protection computes a risk level for agents; blocking high-risk agents stops the activity until
+  an administrator investigates and dismisses or confirms the risk.
+impact: |
+  A legitimate agent flagged as high risk stops working until the risk is remediated. Agents that
+  are not represented as agent identities in Microsoft Entra (for example agents that use a
+  regular application registration) are not covered.
+notes: |
+  Agent risk is a preview feature. Conditional Access for agents also requires an Agent 365 or
+  Microsoft 365 E7 licence in addition to Entra ID P2; the control does not apply to a tenant
+  without agent identities.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** = **On** where:
+       - **Users, agents or workload identities** > **What does this policy apply to?** =
+         **Agents**, **Include** = **All agent identities**, with no exclusion;
+       - **Conditions** > **Agent risk** includes **High**;
+       - **Target resources** includes **All resources**;
+       - **Grant** = **Block access**.
+    4. If agent users exist, check for an equivalent policy that targets agents' user accounts.
+    5. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/beta/identity/conditionalAccess/policies` and look for a
+       policy whose conditions target agent identities with high agent risk and whose grant control
+       is `block`.
+    6. Fail if no such policy exists or if it is in Report-only or Off.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `AGT - Block high-risk agents`.
+    4. **Users, agents or workload identities** > **What does this policy apply to?** > **Agents** >
+       **Include** > **All agent identities**.
+    5. **Target resources** > **Include** > **All resources**.
+    6. **Conditions** > **Agent risk** > **Configure** = **Yes**, select **High**.
+    7. **Grant** > **Block access**.
+    8. Set **Enable policy** to **Report-only**, review the results in the sign-in logs, then switch
+       it to **On**.
+  rollback: |
+    Set the policy to **Report-only** or **Off**.
+
+references:
+  - title: Target agent identities in Conditional Access policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/howto-target-agent-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ID Protection for agents
+    url: https://learn.microsoft.com/entra/id-protection/concept-risky-agents
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.9.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(12)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-APPS-019
+    type: related
+  - id: CB-M365-TENANT-020
+    type: related
+  - id: CB-M365-AUTH-031
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

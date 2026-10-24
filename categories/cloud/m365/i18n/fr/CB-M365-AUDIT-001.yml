@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer le journal d'audit unifié
+finding:
+  title: L'activité des utilisateurs et administrateurs Microsoft 365 n'est pas enregistrée dans le journal d'audit unifié
+  description: Sans ingestion du journal d'audit, les accès aux boîtes aux lettres, partages de fichiers, changements d'administration et de nombreux événements de sécurité ne laissent aucune trace consultable, et une intrusion ne peut pas faire l'objet d'une enquête.
+description: |
+  L'ingestion du journal d'audit unifié est activée pour l'organisation
+  (`UnifiedAuditLogIngestionEnabled` = `True`). Les activités des utilisateurs et administrateurs
+  d'Exchange Online, SharePoint, OneDrive, Teams, Microsoft Entra ID, Power Platform, Copilot et des
+  autres services Microsoft 365 sont enregistrées et consultables dans **Audit** de Microsoft
+  Purview.
+rationale: |
+  Le journal d'audit unifié est la principale source de preuves pour les incidents Microsoft 365 :
+  règles de boîte aux lettres créées par un attaquant, fichiers téléchargés, permissions accordées,
+  rôles d'administration modifiés. Il est actif par défaut dans la plupart des tenants mais peut être
+  désactivé par un administrateur, parfois par un attaquant pour masquer son activité. Tous les
+  autres contrôles de journalisation (export vers le SIEM, alertes, rétention) en dépendent.
+impact: |
+  Aucun connu. L'activation peut prendre jusqu'à 60 minutes.
+notes: |
+  Faire la vérification en PowerShell Exchange Online : en PowerShell Sécurité et conformité, la
+  même cmdlet renvoie toujours `False` pour cette propriété.
+setting:
+  location: Portail Microsoft Purview > Solutions > Audit (Exchange Online Get-AdminAuditLogConfig UnifiedAuditLogIngestionEnabled)
+  recommended_value: "True"
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins un
+       groupe de rôles qui porte le rôle View-Only Audit Logs ou Audit Logs.
+    2. Aller dans **Solutions** > **Audit**. Si une bannière propose **Démarrer l'enregistrement de
+       l'activité des utilisateurs et des administrateurs**, le journal est désactivé.
+    3. Lancer une recherche sur les dernières 24 heures et vérifier que des résultats sont renvoyés.
+    4. Alternative en PowerShell Exchange Online (View-Only Organization Management suffit) :
+       `Get-AdminAuditLogConfig | Format-List UnifiedAuditLogIngestionEnabled`.
+    5. Échec si `UnifiedAuditLogIngestionEnabled` vaut `False` ou si la page Audit propose de
+       démarrer l'enregistrement.
+remediation:
+  manual: |
+    1. Se connecter au portail Microsoft Purview avec le rôle Audit Logs (par exemple Organization
+       Management ou Administrateur de conformité).
+    2. Aller dans **Solutions** > **Audit** et sélectionner **Démarrer l'enregistrement de l'activité
+       des utilisateurs et des administrateurs**.
+    3. Alternative en PowerShell Exchange Online (rôle Audit Logs) :
+       `Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true`.
+    4. Restreindre qui peut le désactiver (CB-M365-AUDIT-012) et alerter sur la modification
+       (opération d'audit `Set-AdminAuditLogConfig`).
+  rollback: |
+    Déconseillé. `Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $false` arrête
+    l'enregistrement.

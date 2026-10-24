@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-028
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une nouvelle connexion avec MFA à chaque inscription d'appareil dans Intune
+finding:
+  title: Des appareils peuvent être inscrits dans Intune avec une session existante, sans nouvelle connexion
+  description: Un attaquant qui détient la session ou le jeton d'actualisation d'un utilisateur peut inscrire son propre appareil et le faire passer pour géré auprès de l'accès conditionnel.
+description: |
+  Une stratégie d'accès conditionnel cible la ressource **Microsoft Intune Enrollment** pour tous les
+  utilisateurs, exige l'authentification multifacteur (ou une force d'authentification) et règle le
+  contrôle de session **Fréquence de connexion** sur **Chaque fois**. Chaque inscription demande alors
+  une nouvelle connexion interactive avec MFA, quelle que soit la session déjà détenue.
+rationale: |
+  Un appareil inscrit devient un objet de confiance : il peut être marqué conforme, recevoir des
+  certificats et des profils Wi-Fi ou VPN, et satisfaire l'accès conditionnel basé sur l'appareil
+  (CB-M365-AUTH-020). Les attaquants qui ont volé une session inscrivent un appareil pour persister et
+  contourner ces stratégies. Une MFA fraîche à l'inscription rend un jeton volé insuffisant.
+impact: |
+  Les utilisateurs répondent à une invite MFA à chaque inscription. Les appareils d'entreprise
+  inscrits via l'inscription automatisée Apple ou Android Enterprise entièrement géré ont besoin d'un
+  second appareil ou d'un Temporary Access Pass pour y répondre. Ne pas ajouter de contrôle d'octroi
+  basé sur l'appareil dans cette stratégie, sinon l'inscription des nouveaux appareils échoue.
+notes: |
+  La ressource **Microsoft Intune Enrollment** n'est pas créée automatiquement dans les nouveaux
+  tenants. Si elle n'apparaît pas dans le sélecteur, créer son principal de service (ID d'application
+  `d4ebce55-015a-49b5-a083-c84d1797ae8c`) avec `New-MgServicePrincipal -AppId d4ebce55-015a-49b5-a083-c84d1797ae8c`.
+  Choisir **Microsoft Intune** à la place déclenche aussi l'invite à chaque connexion au Portail
+  d'entreprise.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs** (les comptes d'accès
+         d'urgence peuvent être exclus) ;
+       - **Ressources cibles** inclut **Microsoft Intune Enrollment** (ou **Toutes les ressources**) ;
+       - **Accorder** exige l'authentification multifacteur ou une force d'authentification ;
+       - **Session** > **Fréquence de connexion** vaut **Chaque fois**.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.SessionControls.SignInFrequency.FrequencyInterval -eq 'everyTime' } | Select-Object DisplayName, State, @{n='Apps';e={$_.Conditions.Applications.IncludeApplications}}`
+       et rechercher l'ID d'application `d4ebce55-015a-49b5-a083-c84d1797ae8c`.
+    5. Échec si aucune stratégie active ne combine la ressource d'inscription, la MFA et **Chaque
+       fois**.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel (les mêmes écrans existent dans le centre d'administration Intune sous
+       **Appareils** > **Accès conditionnel**).
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle
+       stratégie**.
+    3. La nommer, par exemple `ALL - Intune enrollment - MFA every time`.
+    4. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    5. **Ressources cibles** > **Ressources** > **Sélectionner des ressources** : **Microsoft Intune
+       Enrollment**.
+    6. **Accorder** > **Accorder l'accès** > **Exiger l'authentification multifacteur** (ou **Exiger
+       la force d'authentification**).
+    7. **Session** > **Fréquence de connexion** > **Chaque fois**.
+    8. Régler **Activer la stratégie** sur **Rapport seul**, vérifier les inscriptions dans les
+       journaux de connexion, puis passer à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-031
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger la MFA pour les connexions à risque et bloquer celles des niveaux de risque les plus élevés
+finding:
+  title: Les connexions à risque détectées par ID Protection ne sont ni challengées ni bloquées
+  description: Une connexion qui ressemble à une pulvérisation de mots de passe, à un rejeu de jeton ou à un proxy d'anonymisation passe comme les autres.
+description: |
+  Deux stratégies d'accès conditionnel agissent sur la condition **Risque de connexion**, pour tous
+  les utilisateurs sur toutes les ressources, en n'excluant que les comptes d'accès d'urgence :
+
+  1. Risque de connexion **Moyen** et **Élevé** : accorder l'accès avec **Exiger la force
+     d'authentification** (au moins la force intégrée **Authentification multifacteur**) et le
+     contrôle de session **Fréquence de connexion - Chaque fois**, pour que l'utilisateur refasse une
+     MFA pour cette connexion.
+  2. Risque de connexion dans {{ signin_risk_block_levels }} : **Bloquer l'accès**.
+
+  Le profil baseline bloque les connexions à risque élevé ; le profil hardened bloque moyen et élevé.
+rationale: |
+  Le risque de connexion est calculé en temps réel pour chaque authentification : propriétés
+  inhabituelles, voyage atypique, adresses IP anonymes, motifs de pulvérisation de mots de passe,
+  infrastructure d'attaquant connue. Demander la MFA arrête un attaquant qui n'a que le mot de passe.
+  Bloquer les connexions les plus risquées arrête aussi l'attaquant qui relaie l'invite MFA ou mise
+  sur la lassitude de l'utilisateur.
+impact: |
+  Les utilisateurs dont la connexion est à risque moyen voient une invite MFA supplémentaire. Les
+  utilisateurs non inscrits à la MFA sont bloqués sur les connexions à risque (erreur AADSTS53004), car
+  l'inscription est refusée pendant une session à risque. Bloquer le risque moyen (hardened) produit
+  plus de faux positifs, par exemple en voyage ou avec un nouveau point de sortie VPN : prévoir une
+  procédure de déblocage rapide.
+notes: |
+  Microsoft déploie une stratégie gérée par Microsoft « Multifactor authentication and
+  reauthentication for risky sign-ins » pour le risque élevé. Elle couvre la partie 1 pour le risque
+  élevé seulement et ne bloque pas. La revoir comme décrit dans CB-M365-AUTH-030.
+parameters:
+  signin_risk_block_levels: Niveaux de risque de connexion bloqués directement (valeurs low, medium, high).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé**, **Tous les utilisateurs** (accès d'urgence
+       exclus), **Toutes les ressources**, **Conditions** > **Risque de connexion** avec **Moyen** et
+       **Élevé**, **Accorder** exigeant la MFA ou une force d'authentification, et **Session** >
+       **Fréquence de connexion** **Chaque fois**.
+    4. Trouver une stratégie à l'**État** **Activé**, mêmes utilisateurs et ressources, **Risque de
+       connexion** incluant chaque niveau de {{ signin_risk_block_levels }}, et **Accorder**
+       **Bloquer l'accès**.
+    5. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.SignInRiskLevels } | Select-Object DisplayName, State, @{n='Risk';e={$_.Conditions.SignInRiskLevels}}, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Échec si les connexions à risque moyen ne sont pas challengées, ou si un niveau de
+       {{ signin_risk_block_levels }} n'est pas bloqué.
+remediation:
+  manual: |
+    1. Vérifier que les utilisateurs sont inscrits à la MFA (CB-M365-AUTH-018).
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    3. Créer la stratégie MFA : **Nouvelle stratégie**, **Utilisateurs** > **Tous les utilisateurs**
+       (exclure les comptes d'accès d'urgence), **Ressources cibles** > **Toutes les ressources**,
+       **Conditions** > **Risque de connexion** > **Configurer** **Oui**, sélectionner **Élevé** et
+       **Moyen** ; **Accorder** > **Exiger la force d'authentification** > **Authentification
+       multifacteur** ; **Session** > **Fréquence de connexion** > **Chaque fois**.
+    4. Créer la stratégie de blocage : mêmes affectations, **Risque de connexion** réglé sur
+       {{ signin_risk_block_levels }}, **Accorder** > **Bloquer l'accès**.
+    5. Démarrer les deux en **Rapport seul**, examiner les connexions concernées, puis passer à
+       **Activé**.
+  rollback: |
+    Passer les stratégies en **Rapport seul** ou **Désactivé**. Débloquer un utilisateur en
+    confirmant la connexion comme sûre dans **Protection des ID** > **Connexions à risque**.

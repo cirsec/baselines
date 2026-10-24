@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-009
+title: Alert on every use of emergency access accounts
+finding:
+  title: Sign-ins with emergency access accounts raise no alert
+  description: Emergency access accounts bypass Conditional Access and hold Global Administrator; if one is used by an attacker or outside procedure, nobody is told.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [break-glass, emergency-access, alerting, monitoring, entra-id, privileged-access]
+
+description: |
+  Every sign-in attempt (successful or failed) and every audit event performed by an emergency
+  access (break-glass) account raises an alert within minutes to the security team and to several
+  administrators, by email and by a second channel (SMS, phone call, incident tool). The rule is
+  based on the object IDs of the accounts, not on their names, and is tested at least twice a
+  year during the emergency access drill.
+rationale: |
+  Emergency access accounts are excluded from most Conditional Access policies and have permanent
+  Global Administrator rights (CB-M365-ADMIN-002). Their use should be rare and planned; any
+  unexpected use is either an emergency the team must know about, or a compromise. Immediate
+  alerting is the compensating control for their exclusions.
+impact: |
+  Requires Microsoft Entra sign-in logs in a Log Analytics workspace, Microsoft Sentinel or another
+  SIEM (CB-M365-AUDIT-002), or Defender XDR custom detections. Planned drills trigger the alert:
+  announce them to the SOC.
+
+audit:
+  manual: |
+    1. Get the object IDs of the emergency access accounts from the administrators (**Entra ID** >
+       **Users** > the account > **Object ID**).
+    2. In the Azure portal (https://portal.azure.com) as at least a Monitoring Reader, browse to
+       **Monitor** > **Alerts** > **Alert rules** (or in Microsoft Sentinel, **Analytics**; or in the
+       Microsoft Defender portal, **Hunting** > **Custom detection rules**) and find a rule that
+       queries `SigninLogs` (and `AADNonInteractiveUserSignInLogs`, `AuditLogs`) for these object
+       IDs, runs at least every 5 to 15 minutes, and triggers on one result.
+    3. Open the action group and check that it notifies the security team and several
+       administrators through at least two channels.
+    4. Ask for the record of the last drill showing that the alert fired.
+    5. Fail if no rule exists, if it misses an account or uses only the display name, if it runs less
+       often than every 15 minutes, or if it has never been tested.
+
+remediation:
+  manual: |
+    1. Send Microsoft Entra sign-in and audit logs to a Log Analytics workspace or SIEM
+       (CB-M365-AUDIT-002).
+    2. In the Azure portal as at least a Monitoring Contributor, browse to **Monitor** > **Alerts** >
+       **Create** > **Alert rule**, select the Log Analytics workspace, and use a custom log search
+       such as:
+       `SigninLogs | where UserId in ("<objectId1>", "<objectId2>")` (repeat for
+       `AADNonInteractiveUserSignInLogs` and `AuditLogs` on `InitiatedBy.user.id`).
+    3. Set **Threshold value** to 0 with operator **Greater than**, and frequency to 5 minutes.
+    4. Attach an action group that emails the security team and administrators and sends an SMS or
+       creates an incident.
+    5. Test the rule by signing in with each account during a planned drill.
+  rollback: |
+    Disable the alert rule (not recommended).
+
+references:
+  - title: Manage emergency access admin accounts
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud
+    url: https://blueprint.asd.gov.au/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.2.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(12)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUDIT-002
+    type: requires
+  - id: CB-M365-ADMIN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

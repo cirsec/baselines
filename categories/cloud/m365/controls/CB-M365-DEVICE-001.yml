@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-001
+title: Mark devices without a compliance policy as not compliant
+finding:
+  title: Intune treats devices without a compliance policy as compliant
+  description: Any enrolled device that no compliance policy targets passes the "require compliant device" Conditional Access check without being evaluated.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [intune, device-compliance, conditional-access, secure-by-default]
+
+applicability:
+  requires:
+    - "Microsoft Intune"
+
+description: |
+  The Intune tenant-wide compliance setting **Mark devices with no compliance policy assigned as**
+  is set to **Not compliant**. A device then has to receive at least one compliance policy and meet
+  it before Intune reports it as compliant to Microsoft Entra ID.
+rationale: |
+  Conditional Access policies that require a compliant device rely on the status Intune reports.
+  With the default value (**Compliant**), a device that falls outside every compliance policy
+  assignment, for example a new platform or a user missing from the target group, is reported as
+  compliant without any check of encryption, OS version or jailbreak status. Secure by default
+  closes that gap.
+impact: |
+  Enrolled devices that no compliance policy targets become non compliant and lose access to
+  resources protected by a "require compliant device" policy. Before the change, assign a
+  compliance policy to every platform in use (at least one per platform, targeting all users or
+  all devices) and check the **Devices without compliance policy** report.
+
+setting:
+  location: Intune admin center > Endpoint security > Device compliance > Compliance policy settings > Mark devices with no compliance policy assigned as
+  default_value: Compliant
+  recommended_value: Not compliant
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Endpoint security** > **Device compliance** > **Compliance policy settings**.
+    3. Check that **Mark devices with no compliance policy assigned as** is **Not compliant**.
+    4. Alternative, read only: with Microsoft Graph PowerShell
+       (`Connect-MgGraph -Scopes DeviceManagementConfiguration.Read.All`), run
+       `Invoke-MgGraphRequest -Method GET -Uri https://graph.microsoft.com/v1.0/deviceManagement/settings`
+       and read `secureByDefault`.
+    5. Fail if the setting is **Compliant** (`secureByDefault` is `false`).
+
+remediation:
+  manual: |
+    1. In the Intune admin center, browse to **Devices** > **Monitor** > **Devices without
+       compliance policy** and assign a compliance policy to every platform that shows up.
+    2. Browse to **Endpoint security** > **Device compliance** > **Compliance policy settings**.
+    3. Set **Mark devices with no compliance policy assigned as** to **Not compliant** and select
+       **Save**. Role: Intune Administrator, or a custom Intune role with the
+       **Device compliance policies** update permission.
+    4. Graph equivalent: `PATCH https://graph.microsoft.com/v1.0/deviceManagement` with body
+       `{"settings": {"secureByDefault": true}}`.
+  rollback: |
+    Set **Mark devices with no compliance policy assigned as** back to **Compliant**.
+
+references:
+  - title: Device compliance policies in Microsoft Intune
+    url: https://learn.microsoft.com/intune/device-security/compliance/overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1054
+    url: https://maester.dev/docs/tests/MT.1054
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "4.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-DEVICE-002
+    type: related
+  - id: CB-M365-DEVICE-010
+    type: related
+  - id: CB-M365-AUTH-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

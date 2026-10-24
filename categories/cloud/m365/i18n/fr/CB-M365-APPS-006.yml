@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'ajout de nouveaux mots de passe aux applications
+finding:
+  title: De nouveaux secrets client peuvent être ajoutés aux applications et principaux de service
+  description: Toute personne qui peut gérer une application, y compris un attaquant qui a pris le compte d'un propriétaire, peut ajouter un secret client et s'authentifier comme l'application depuis n'importe où.
+description: |
+  La stratégie de gestion des applications du tenant est activée et bloque l'ajout de nouveaux
+  mots de passe (secrets client) et de clés symétriques sur les objets application comme sur les
+  principaux de service. Les applications s'authentifient par certificat, par identifiant fédéré
+  ou par identité managée. Les exceptions passent par une stratégie de gestion des applications
+  personnalisée, attribuée à l'application concernée, avec une justification documentée.
+rationale: |
+  Un secret client est un mot de passe partagé : il est copié dans des fichiers de configuration,
+  des scripts et des pipelines, ne peut pas être lié à un appareil et c'est l'identifiant le plus
+  souvent retrouvé dans les fuites. Ajouter un secret à une application privilégiée existante est
+  aussi une technique de persistance classique après la compromission d'un compte administrateur.
+  Bloquer les nouveaux secrets ferme ce chemin tout en laissant fonctionner les secrets existants
+  jusqu'à leur migration (CB-M365-APPS-010).
+impact: |
+  Les développeurs et intégrateurs ne peuvent plus créer de secrets client. Les produits tiers qui
+  ne gèrent que les secrets ont besoin d'une stratégie d'exception. Les secrets existants
+  fonctionnent jusqu'à leur expiration.
+notes: |
+  La restriction peut ne viser que les applications créées après une date donnée
+  (`restrictForAppsCreatedAfterDateTime`) ; choisir une date passée pour couvrir toutes les
+  applications. Vérifier la licence affichée dans le centre d'administration pour les stratégies de
+  gestion des applications du tenant.
+setting:
+  location: Centre d'administration Entra > Entra ID > Applications d'entreprise > Stratégies d'application > Bloquer l'ajout de mot de passe (Graph policies/defaultAppManagementPolicy, restriction passwordCredentials passwordAddition)
+  recommended_value: Activé, s'applique à toutes les applications
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application**.
+    3. Vérifier que **Bloquer l'ajout de mot de passe** est **Activé** et que **S'applique à** vaut
+       **Toutes les applications** (ou **Toutes les applications avec exclusions** avec une liste
+       d'exclusions courte et documentée).
+    4. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Vérifier que
+       `isEnabled` vaut `true` et que `applicationRestrictions.passwordCredentials` et
+       `servicePrincipalRestrictions.passwordCredentials` contiennent tous deux `passwordAddition` et
+       `symmetricKeyAddition` avec `state` = `enabled`.
+    5. Lister les exceptions avec `GET https://graph.microsoft.com/v1.0/policies/appManagementPolicies`.
+    6. Échec si la stratégie est désactivée, si l'une des restrictions manque ou est désactivée pour
+       les applications ou les principaux de service, ou si une exception n'a ni propriétaire ni
+       justification documentés.
+remediation:
+  manual: |
+    1. Recenser les applications qui créent encore de nouveaux secrets (activité du journal d'audit
+       **Update application – Certificates and secrets management**) et prévoir pour elles des
+       certificats, des identifiants fédérés ou des identités managées.
+    2. Se connecter au centre d'administration Microsoft Entra avec le rôle Administrateur de la
+       sécurité et le rôle Administrateur d'applications ou Administrateur d'applications cloud.
+    3. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application** et
+       sélectionner **Bloquer l'ajout de mot de passe**.
+    4. Passer l'état à **Activé**, régler **S'applique à** sur **Toutes les applications** et
+       sélectionner **Enregistrer**.
+    5. Alternative Graph (étendue `Policy.ReadWrite.ApplicationConfiguration`) :
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` avec
+       `isEnabled: true` et les restrictions `passwordAddition` et `symmetricKeyAddition` dans
+       `applicationRestrictions` et `servicePrincipalRestrictions`, en conservant les restrictions
+       déjà présentes.
+    6. Pour une exception justifiée, créer une stratégie de gestion des applications personnalisée
+       qui désactive la restriction et l'attribuer à cette seule application.
+  rollback: |
+    Passer **Bloquer l'ajout de mot de passe** à **Désactivé**, ou exclure l'application concernée.

@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-020
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger un appareil conforme ou joint hybride pour accéder aux ressources
+finding:
+  title: Des appareils non gérés peuvent accéder aux ressources Microsoft 365
+  description: N'importe quel appareil, y compris un ordinateur personnel ou la machine d'un attaquant, peut ouvrir une session avec des identifiants valides et télécharger les données de l'organisation.
+description: |
+  Une stratégie d'accès conditionnel pour **Tous les utilisateurs** sur **Toutes les ressources**
+  n'accorde l'accès que si l'appareil est **marqué comme conforme** par Intune ou **joint hybride
+  Microsoft Entra** (**Exiger un des contrôles sélectionnés**). Des stratégies de conformité Intune
+  existent pour chaque plateforme utilisée, et les appareils sans stratégie de conformité sont
+  marqués non conformes.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence, le rôle **Comptes de synchronisation
+  d'annuaires** sur les tenants hybrides et, si c'est documenté, les invités. Les organisations qui
+  autorisent les appareils personnels peuvent adapter ce contrôle : garder la stratégie pour les
+  clients de bureau et les applications mobiles, et donner aux navigateurs des appareils non gérés
+  un accès web limité via les restrictions appliquées par l'application.
+rationale: |
+  Un mot de passe ou un cookie de session volé n'est utile que depuis un appareil que l'attaquant
+  contrôle. Exiger un appareil géré déplace la décision de confiance vers un appareil que
+  l'organisation configure, met à jour, chiffre et peut effacer, et empêche la synchronisation des
+  données vers des machines inconnues.
+impact: |
+  Impact fort là où des appareils personnels sont utilisés : les utilisateurs ne peuvent plus
+  atteindre Microsoft 365 depuis un appareil que l'organisation ne gère pas. Inscrire d'abord tous
+  les appareils de l'entreprise dans Intune, vérifier les résultats de conformité, et prévoir le
+  cas des appareils personnels (accès web seul, stratégies de protection des applications sur
+  mobile). Les invités de tenants partenaires ont besoin de la confiance inter-tenant sur leurs
+  revendications d'appareil, ou d'une exclusion.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** (pas Rapport seul) où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes listés ci-dessus ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Accorder** vaut **Exiger que l'appareil soit marqué comme conforme** et/ou **Exiger un
+         appareil joint hybride Microsoft Entra**.
+       Si l'organisation a adapté le contrôle aux appareils personnels, vérifier que les
+       applications clientes exclues sont seulement **Navigateur** et qu'une seconde stratégie leur
+       applique les restrictions appliquées par l'application.
+    4. Dans le centre d'administration Intune (https://intune.microsoft.com), avec au moins le rôle
+       Lecteur général, vérifier sous **Appareils** > **Conformité** qu'une stratégie existe par
+       plateforme et que **Paramètres de stratégie de conformité** marque les appareils sans
+       stratégie comme **Non conformes**.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.GrantControls.BuiltInControls -match 'compliantDevice|domainJoinedDevice' } | Select-Object DisplayName, State, @{n='Users';e={$_.Conditions.Users.IncludeUsers}}, @{n='Apps';e={$_.Conditions.Applications.IncludeApplications}}`
+    6. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si elle ne couvre pas tous les utilisateurs et toutes les ressources.
+remediation:
+  manual: |
+    1. Créer des stratégies de conformité Intune pour chaque plateforme et inscrire les appareils
+       de l'entreprise ; vérifier qu'ils remontent **Conforme**.
+    2. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**.
+    3. La nommer, par exemple `ALL - Require managed device`.
+    4. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence et le rôle **Comptes de synchronisation d'annuaires**.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Accorder** > **Accorder l'accès** : cocher **Exiger que l'appareil soit marqué comme
+       conforme** et **Exiger un appareil joint hybride Microsoft Entra**, puis **Exiger un des
+       contrôles sélectionnés**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion au moins deux semaines pour repérer les appareils non gérés.
+    8. Passer **Activer la stratégie** à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `grantControls.builtInControls` à `compliantDevice` et `domainJoinedDevice` et l'opérateur
+    `OR`.
+  rollback: |
+    Passer la stratégie en **Rapport seul**. Se connecter avec un compte d'accès d'urgence si
+    nécessaire.

@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-019
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer la communication Teams avec les comptes Teams non gérés
+finding:
+  title: Les utilisateurs peuvent converser avec des comptes Teams personnels gérés par aucune organisation
+  description: N'importe qui disposant d'un compte Microsoft gratuit peut échanger messages et fichiers avec les utilisateurs, hors de toute responsabilité d'un tenant.
+description: |
+  Les utilisateurs ne peuvent pas communiquer avec des comptes Teams qu'aucune organisation ne gère
+  (Teams gratuit, comptes Microsoft personnels) : **Les personnes de mon organisation peuvent
+  communiquer avec des comptes Teams non gérés** est désactivé au niveau de l'organisation
+  (`AllowTeamsConsumer` = `False`) et dans la stratégie d'accès externe globale
+  (`EnableTeamsConsumerAccess` = `False`).
+rationale: |
+  Les comptes non gérés sont gratuits, anonymes et jetables, et aucun administrateur de tenant ne peut
+  être sollicité en cas d'abus. Ils offrent un canal direct pour l'hameçonnage, la diffusion de
+  logiciels malveillants et l'exfiltration par conversation, et permettent à un initié de transférer
+  des données vers une identité personnelle. Les partenaires professionnels ont des comptes gérés et
+  passent par la fédération.
+impact: |
+  Les conversations existantes avec des comptes Teams personnels cessent de fonctionner. Les
+  organisations qui travaillent avec des particuliers (indépendants, usagers) doivent les inviter
+  comme invités ou utiliser des réunions avec salle d'attente. L'interopérabilité avec Skype grand
+  public (`AllowPublicUsers`) n'a plus d'effet depuis le retrait de Skype en mai 2025.
+setting:
+  location: Centre d'administration Teams > Utilisateurs > Accès externe > Paramètres de l'organisation > Les personnes de mon organisation peuvent communiquer avec des comptes Teams non gérés
+  recommended_value: Désactivé (AllowTeamsConsumer = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Utilisateurs** > **Accès externe** (**Collaboration externe** > **Accès externe**
+       dans la nouvelle navigation) > **Paramètres de l'organisation** et vérifier que **Les personnes
+       de mon organisation peuvent communiquer avec des comptes Teams non gérés** est **Désactivé**.
+    3. Dans l'onglet **Stratégies**, ouvrir chaque stratégie et vérifier que la communication avec les
+       comptes Teams non gérés est désactivée.
+    4. Avec Microsoft Teams PowerShell :
+       `Get-CsTenantFederationConfiguration | Select-Object AllowTeamsConsumer` doit renvoyer `False`,
+       et `Get-CsExternalAccessPolicy | Select-Object Identity, EnableTeamsConsumerAccess` doit indiquer
+       `False` pour chaque stratégie attribuée.
+    5. Échec si le paramètre d'organisation est activé.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Utilisateurs** > **Accès externe**
+       (**Collaboration externe** > **Accès externe** dans la nouvelle navigation) > **Paramètres de
+       l'organisation**, désactiver **Les personnes de mon organisation peuvent communiquer avec des
+       comptes Teams non gérés** puis **Enregistrer**. Rôle : Administrateur Teams.
+    2. Équivalent PowerShell : `Set-CsTenantFederationConfiguration -AllowTeamsConsumer $false`, et
+       `Set-CsExternalAccessPolicy -Identity Global -EnableTeamsConsumerAccess $false`.
+  rollback: |
+    Exécuter
+    `Set-CsTenantFederationConfiguration -AllowTeamsConsumer $true -AllowTeamsConsumerInbound $false`
+    pour n'autoriser que le contact sortant (CB-M365-COLLAB-020 reste respecté).

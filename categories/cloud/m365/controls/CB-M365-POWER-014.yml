@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-014
+title: Disable R and Python visuals in Power BI
+finding:
+  title: Users can interact with and share R and Python visuals
+  description: Reports can run R or Python scripts written by any author, a code path the organization does not review.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, r-python, scripts, code-execution]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Interact with and share R and Python visuals** (R and Python visuals
+  settings) is **Disabled**. The setting applies to the whole organization and cannot be scoped to
+  groups.
+rationale: |
+  R and Python visuals run arbitrary scripts on the service against the report's data. Scripts can
+  embed libraries and logic that the organization does not review, and are a way to process or move
+  data outside the usual Power BI controls. Where no reviewed use case exists, disabling the feature
+  removes this unmanaged code path.
+impact: |
+  Reports that contain R or Python visuals show them as unavailable in the service. Data science
+  teams that need these visuals should use Fabric notebooks in governed workspaces instead, or the
+  organization must accept the exception for the whole tenant.
+
+setting:
+  location: Fabric admin portal > Tenant settings > R and Python visuals settings > Interact with and share R and Python visuals
+  default_value: Enabled
+  recommended_value: Disabled
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **R and Python visuals
+       settings** and expand **Interact with and share R and Python visuals**.
+    3. Check that it is **Disabled**.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `RScriptVisual` (`enabled` must be `false`).
+    5. Fail if the setting is enabled.
+
+remediation:
+  manual: |
+    1. Identify reports using R or Python visuals with their owners.
+    2. In **Tenant settings** > **R and Python visuals settings** > **Interact with and share R and
+       Python visuals**, select **Disabled** and **Apply**. Role: Fabric Administrator.
+    3. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/RScriptVisual/update` with
+       `{"enabled": false}`.
+  rollback: |
+    Set the setting back to **Enabled**.
+
+references:
+  - title: R and Python visuals admin settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-r-python-visuals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power BI baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerbi.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.5"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERBI.6.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059
+  - framework: mitre-attack
+    id: T1567
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

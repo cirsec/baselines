@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'exempter aucun compte de l'audit des boîtes aux lettres
+finding:
+  title: Certains comptes contournent la journalisation d'audit des boîtes aux lettres
+  description: Un compte qui bénéficie d'un contournement d'audit peut accéder à toute boîte aux lettres sur laquelle il a des droits sans générer d'enregistrement, ce qui en fait l'outil idéal d'un vol de messagerie silencieux.
+description: |
+  Aucun compte utilisateur ou ordinateur n'a `AuditBypassEnabled` = `True` dans les associations de
+  contournement d'audit des boîtes aux lettres. Les accès des comptes de service (sauvegarde,
+  archivage, outils de migration) sont journalisés comme tous les autres.
+rationale: |
+  Le contournement d'audit a été conçu pour réduire le volume de journaux des comptes de service de
+  confiance, mais il crée un angle mort : si l'un de ces comptes ou ses identifiants est compromis,
+  les accès aux boîtes aux lettres par ce biais ne laissent aucune trace. Les attaquants qui
+  obtiennent des droits d'administrateur peuvent aussi ajouter un contournement pour masquer leur
+  propre activité.
+impact: |
+  Les accès aux boîtes aux lettres par les produits de sauvegarde ou d'archivage sont enregistrés, ce
+  qui augmente le volume d'audit.
+audit:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec au moins le rôle View-Only Organization
+       Management.
+    2. Exécuter `Get-MailboxAuditBypassAssociation -ResultSize Unlimited | Where-Object { $_.AuditBypassEnabled } | Select-Object Name,AuditBypassEnabled`.
+    3. Échec si un résultat est renvoyé.
+remediation:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec le rôle Organization Management ou Audit Logs.
+    2. Pour chaque compte renvoyé, exécuter
+       `Set-MailboxAuditBypassAssociation -Identity <compte> -AuditBypassEnabled $false`.
+    3. Alerter sur tout usage ultérieur de `Set-MailboxAuditBypassAssociation` dans le journal
+       d'audit unifié.
+  rollback: |
+    `Set-MailboxAuditBypassAssociation -Identity <compte> -AuditBypassEnabled $true` (déconseillé).

@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-006
+title: Block new password credentials on applications
+finding:
+  title: New client secrets can be added to applications and service principals
+  description: Anyone who can manage an application, including an attacker who took over an owner account, can add a client secret and authenticate as the application from anywhere.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [applications, workload-identities, credentials, client-secrets, app-management-policy]
+
+description: |
+  The tenant-wide app management policy is enabled and blocks the addition of new password
+  credentials (client secrets) and symmetric keys on both application objects and service
+  principals. Applications authenticate with certificates, federated identity credentials or
+  managed identities instead. Exceptions go through a custom app management policy assigned to
+  the specific application, with a documented reason.
+rationale: |
+  A client secret is a shared password: it is copied into configuration files, scripts and
+  pipelines, cannot be bound to a device and is the credential most often found in leaks. Adding a
+  secret to an existing privileged application is also a classic persistence technique after an
+  administrator account is compromised. Blocking new secrets closes this path while leaving
+  existing secrets working until they are migrated (CB-M365-APPS-010).
+impact: |
+  Developers and integrators can no longer create client secrets. Third-party products that only
+  support secrets need an exception policy. Existing secrets keep working until they expire.
+notes: |
+  The restriction can target only applications created after a given date
+  (`restrictForAppsCreatedAfterDateTime`); set a date in the past so that it covers all
+  applications. Check the licensing shown in the admin center for app management policies in your
+  tenant.
+
+setting:
+  location: Entra admin center > Entra ID > Enterprise apps > Application policies > Block password addition (Graph policies/defaultAppManagementPolicy, passwordCredentials restriction passwordAddition)
+  default_value: "Off"
+  recommended_value: On, applies to all applications
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies**.
+    3. Check that **Block password addition** is **On** and **Applies to** is **All applications**
+       (or **All applications with exclusions** with a short, documented exclusion list).
+    4. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Check that
+       `isEnabled` is `true` and that `applicationRestrictions.passwordCredentials` and
+       `servicePrincipalRestrictions.passwordCredentials` both contain `passwordAddition` and
+       `symmetricKeyAddition` with `state` = `enabled`.
+    5. List exceptions with `GET https://graph.microsoft.com/v1.0/policies/appManagementPolicies`.
+    6. Fail if the policy is disabled, if either restriction is missing or disabled for applications
+       or service principals, or if an exception has no documented owner and reason.
+
+remediation:
+  manual: |
+    1. Inventory the applications that still create new secrets (audit log activity **Update
+       application – Certificates and secrets management**) and plan certificates, federated
+       credentials or managed identities for them.
+    2. Sign in to the Microsoft Entra admin center as a Security Administrator together with
+       Application Administrator or Cloud Application Administrator.
+    3. Browse to **Entra ID** > **Enterprise apps** > **Application policies** and select **Block
+       password addition**.
+    4. Set the status to **On**, set **Applies to** to **All applications** and select **Save**.
+    5. Graph alternative (scope `Policy.ReadWrite.ApplicationConfiguration`):
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` with
+       `isEnabled: true` and the `passwordAddition` and `symmetricKeyAddition` restrictions in both
+       `applicationRestrictions` and `servicePrincipalRestrictions`, keeping the restrictions that
+       already exist.
+    6. For a justified exception, create a custom app management policy that disables the
+       restriction and assign it to that application only.
+  rollback: |
+    Set **Block password addition** to **Off**, or exclude the affected application.
+
+references:
+  - title: Configure restrictions on how applications can be configured
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-app-management-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: tenantAppManagementPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/tenantappmanagementpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.5v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.001
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-M365-APPS-007
+    type: related
+  - id: CB-M365-APPS-008
+    type: related
+  - id: CB-M365-APPS-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

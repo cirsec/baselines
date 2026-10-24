@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-046
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'ancien module PowerShell MSOnline sur le tenant
+finding:
+  title: Le module PowerShell MSOnline retiré peut encore s'authentifier sur le tenant
+  description: Une voie d'administration non maintenue, moins visible que Microsoft Graph, reste ouverte à quiconque détient un mot de passe administrateur.
+description: |
+  La stratégie d'autorisation du tenant a `blockMsolPowerShell` à `true`. Les demandes
+  d'authentification du module PowerShell MSOnline (MSOL), et l'accès utilisateur au point de
+  terminaison hérité qu'il utilise, sont refusés. L'administration se fait avec le SDK PowerShell
+  Microsoft Graph ou les centres d'administration.
+rationale: |
+  Les modules MSOnline et AzureAD sont retirés et ne reçoivent plus de correctifs. Ils reposent sur un
+  point de terminaison hérité antérieur à certains contrôles actuels et moins surveillé par les
+  défenseurs, et des outils d'attaque s'en servent encore pour énumérer et modifier l'annuaire. Les
+  bloquer supprime une voie d'accès dont personne ne devrait plus avoir besoin.
+impact: |
+  Les anciens scripts et outils qui appellent encore des cmdlets MSOnline (`Connect-MsolService`,
+  `Get-MsolUser`...) cessent de fonctionner et doivent être migrés vers Microsoft Graph PowerShell.
+  Microsoft Entra Connect et Microsoft Graph ne sont pas concernés.
+notes: |
+  Examiner les journaux de connexion pour l'application **Azure Active Directory PowerShell** ou le
+  client MSOnline avant de bloquer, pour trouver les derniers utilisateurs du module.
+setting:
+  location: Microsoft Graph > policies/authorizationPolicy > blockMsolPowerShell
+  recommended_value: "true"
+audit:
+  manual: |
+    1. En PowerShell (Microsoft Graph, étendue `Policy.Read.All`, rôle au moins Lecteur général) :
+       `Get-MgPolicyAuthorizationPolicy | Select-Object BlockMsolPowerShell`
+       ou Graph `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy`.
+    2. Vérifier que `BlockMsolPowerShell` vaut `True`.
+    3. Échec s'il vaut `False` ou est vide.
+remediation:
+  manual: |
+    1. Rechercher dans les journaux de connexion (**Entra ID** > **Supervision et intégrité** >
+       **Journaux de connexion**, filtre sur l'application) un usage récent de MSOnline et migrer ces
+       scripts vers Microsoft Graph PowerShell.
+    2. En PowerShell (Microsoft Graph, étendue `Policy.ReadWrite.Authorization`, rôle Administrateur
+       de rôle privilégié ou Administrateur général) :
+       `Update-MgPolicyAuthorizationPolicy -BodyParameter @{ blockMsolPowerShell = $true }`
+       ou Graph `PATCH https://graph.microsoft.com/v1.0/policies/authorizationPolicy` avec
+       `{"blockMsolPowerShell": true}`.
+    3. Vérifier que `Connect-MsolService` échoue désormais depuis un poste d'administration.
+  rollback: |
+    Exécuter la même commande avec `blockMsolPowerShell = $false`.

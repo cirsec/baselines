@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-014
+title: Protect groups that grant privileges or bypass security policies
+finding:
+  title: Sensitive groups can be modified by lower-privileged administrators or owners
+  description: A Groups Administrator, a User Administrator or a group owner can add an account to a group that grants a role or excludes it from Conditional Access, and escalate privileges.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, groups, role-assignable-groups, administrative-units, conditional-access]
+
+description: |
+  Every group that grants privileges or bypasses a security policy is protected against changes by
+  anyone but highly privileged administrators. This covers groups:
+
+  - assigned to a Microsoft Entra role, or eligible through PIM for Groups;
+  - excluded from a Conditional Access policy (for example the emergency access group);
+  - used for Intune role-based access control or for other admin delegations (Defender, Purview,
+    Azure).
+
+  Each such group is either **role-assignable** (`isAssignableToRole` = true, created with
+  **Microsoft Entra roles can be assigned to the group**), or member of a **restricted management
+  administrative unit**. Their owners are administrators themselves, not regular users.
+rationale: |
+  Group membership is the weakest link in many privilege designs: roles such as Groups
+  Administrator, User Administrator or Intune Administrator, and group owners, can change ordinary
+  groups. If a group grants Global Administrator or excludes accounts from MFA, changing its
+  members is a full escalation path. Role-assignable groups and restricted management
+  administrative units limit changes to Privileged Role Administrators or to admins scoped on the
+  unit.
+impact: |
+  The setting **Microsoft Entra roles can be assigned to the group** is set at creation and
+  cannot be changed: existing groups must be replaced by new ones. Role-assignable groups cannot be
+  dynamic and are limited in number per tenant. Restricted management administrative units need
+  Microsoft Entra ID P1 and a dedicated admin role scoped on the unit.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. List the sensitive groups: groups assigned to roles (**Entra ID** > **Roles & admins**, each
+       role > **Assignments**), groups excluded in **Conditional Access** > **Policies**, and
+       groups used in Intune (**Tenant administration** > **Roles**) and in other admin centers.
+    3. For each group, open **Properties**: **Microsoft Entra roles can be assigned to the group**
+       is **Yes**, or the group appears in an administrative unit with **Restricted management
+       administrative unit** set to **Yes** (**Entra ID** > **Roles & admins** > **Admin
+       units**).
+    4. Check **Owners**: only administrators.
+    5. Read-only PowerShell alternative (Microsoft Graph, scopes `Group.Read.All`,
+       `AdministrativeUnit.Read.All`):
+       ```
+       Get-MgGroup -GroupId <id> -Property DisplayName,IsAssignableToRole
+       Get-MgDirectoryAdministrativeUnit -All -Property Id,DisplayName,IsMemberManagementRestricted |
+         Where-Object IsMemberManagementRestricted |
+         ForEach-Object { Get-MgDirectoryAdministrativeUnitMember -AdministrativeUnitId $_.Id -All }
+       ```
+    6. Fail if a sensitive group is neither role-assignable nor in a restricted management
+       administrative unit, or if a regular user owns it.
+
+remediation:
+  manual: |
+    1. For a group used in Microsoft Entra roles or Conditional Access exclusions: with a
+       Privileged Role Administrator, create a new security group with **Microsoft Entra roles can
+       be assigned to the group** set to **Yes**, copy the members, move the role assignment or
+       the policy exclusion to it, then delete the old group.
+    2. For other sensitive groups (Intune RBAC, app access): with a Privileged Role Administrator,
+       create an administrative unit with **Restricted management administrative unit** set to
+       **Yes**, add the groups, and assign the admins who manage them a role scoped to the unit.
+    3. Remove non-administrator owners from each sensitive group.
+    4. Equivalent with Microsoft Graph PowerShell:
+       `New-MgGroup -DisplayName <name> -SecurityEnabled -MailEnabled:$false -MailNickname <alias> -IsAssignableToRole`
+       and `New-MgDirectoryAdministrativeUnit -DisplayName <name> -IsMemberManagementRestricted`.
+  rollback: |
+    Move the assignments back to the previous group, or remove the group from the administrative
+    unit.
+
+references:
+  - title: Use Microsoft Entra groups to manage role assignments
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/groups-concept
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Restricted management administrative units in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/admin-units-restricted-management
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R40"
+    relation: partial
+    note: ANSSI asks for rights granted to groups; ours adds protection of those groups against tampering.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-AUTH-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

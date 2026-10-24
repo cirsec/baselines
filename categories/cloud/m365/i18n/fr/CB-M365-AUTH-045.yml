@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-045
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Durcir la synchronisation d'annuaire contre la prise de contrôle de comptes cloud depuis Active Directory
+finding:
+  title: La synchronisation d'annuaire permet à des objets locaux de prendre le contrôle de comptes cloud
+  description: Un attaquant disposant de droits dans Active Directory peut faire correspondre un objet forgé à un compte cloud existant, y compris un administrateur, et définir son mot de passe.
+description: |
+  La synchronisation d'annuaire est configurée pour qu'Active Directory ne puisse pas servir à prendre
+  le contrôle d'identités cloud :
+
+  1. `BlockSoftMatchEnabled` vaut `true` : un objet local n'est jamais rattaché à un compte cloud
+     existant sur son adresse SMTP principale ou son UPN. Il n'est désactivé que le temps d'une
+     migration planifiée, puis réactivé.
+  2. `BlockCloudObjectTakeoverThroughHardMatchEnabled` vaut `true` : un compte géré dans le cloud ne
+     peut pas être repris par un objet local ayant un ID immuable correspondant.
+  3. Le contournement temporaire `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled` vaut `false`.
+  4. Le compte `krbtgt_AzureAD` (objet de clé Microsoft Entra Kerberos) est hors du périmètre de
+     synchronisation.
+  5. L'identité de synchronisation est protégée : authentification par application (Microsoft Entra
+     Connect 2.5.76 ou ultérieur), ou, pour un ancien compte de synchronisation d'annuaire de type
+     utilisateur, exclusion des stratégies d'accès conditionnel utilisateur combinée à une stratégie
+     qui le limite aux adresses de sortie des serveurs de synchronisation. Les serveurs de
+     synchronisation sont gérés en Tier 0.
+rationale: |
+  Le soft match et le hard match ont été conçus pour les migrations, mais ils permettent à quiconque
+  contrôle Active Directory (ou le serveur de synchronisation) de rattacher un objet à un compte
+  uniquement cloud, y compris un Administrateur général, puis d'y pousser un mot de passe connu via la
+  synchronisation du hachage. Synchroniser `krbtgt_AzureAD` expose la clé qui sert à émettre les
+  tickets Kerberos de l'approbation Kerberos cloud. Le compte de synchronisation dispose de larges
+  droits d'écriture sur l'annuaire et est un pivot connu du local vers le cloud.
+impact: |
+  Avec le soft match bloqué, de nouveaux appareils joints hybrides peuvent échouer avec une erreur
+  InvalidSoftMatch, et les migrations qui reposent sur la correspondance SMTP ou UPN exigent de lever
+  le blocage temporairement. Passer à l'authentification par application demande une mise à jour de
+  Microsoft Entra Connect et une vérification avec `Get-ADSyncEntraConnectorCredential`.
+notes: |
+  Depuis juillet 2026, Microsoft bloque les hard match sur les comptes qui détiennent ou peuvent
+  activer des rôles privilégiés, ou qui ont déjà un `onPremisesObjectIdentifier` ; l'indicateur de
+  contournement du point 3 supprime cette protection pour tout le tenant. Les comptes administrateurs
+  uniquement cloud (domaine CB-M365-ADMIN) restent la principale défense.
+audit:
+  manual: |
+    1. En PowerShell (Microsoft Graph, étendue `OnPremDirectorySynchronization.Read.All`, rôle au
+       moins Lecteur général) :
+       `Get-MgDirectoryOnPremiseSynchronization | Select-Object -ExpandProperty Features | Format-List`
+       Vérifier `BlockSoftMatchEnabled : True`, `BlockCloudObjectTakeoverThroughHardMatchEnabled : True`
+       et, sous `AdditionalProperties`, `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled : False`.
+    2. Dans le centre d'administration Microsoft Entra (https://entra.microsoft.com), aller dans
+       **Entra ID** > **Utilisateurs**, rechercher `krbtgt_AzureAD` et vérifier qu'aucun utilisateur
+       synchronisé de ce nom n'existe (**Synchronisation locale activée** = **Non** ou aucun
+       résultat).
+    3. Sur chaque serveur Microsoft Entra Connect, exécuter `Get-ADSyncEntraConnectorCredential`
+       (lecture seule) et vérifier que `ConnectorIdentityType` vaut `Application`. Sinon, aller dans
+       **Entra ID** > **Rôles et administrateurs** > **Comptes de synchronisation d'annuaire**, noter
+       les comptes utilisateur, et vérifier dans **Accès conditionnel** qu'une stratégie les limite à
+       des emplacements approuvés.
+    4. Échec si le soft match ou le hard match n'est pas bloqué, si l'indicateur de contournement est
+       activé, si `krbtgt_AzureAD` est synchronisé, ou si un compte de synchronisation de type
+       utilisateur n'est pas restreint.
+remediation:
+  manual: |
+    1. Bloquer le soft match et le hard match (Microsoft Graph, étendue
+       `OnPremDirectorySynchronization.ReadWrite.All`, Administrateur d'identité hybride) :
+       `$s = Get-MgDirectoryOnPremiseSynchronization;
+       $s.Features.BlockSoftMatchEnabled = $true;
+       $s.Features.BlockCloudObjectTakeoverThroughHardMatchEnabled = $true;
+       Update-MgDirectoryOnPremiseSynchronization -OnPremisesDirectorySynchronizationId $s.Id -Features $s.Features`
+    2. Si l'indicateur de contournement est activé et que la correction pour laquelle il a été ouvert
+       est terminée, régler `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled` sur `false` de la
+       même façon.
+    3. Exclure `krbtgt_AzureAD` de la synchronisation : dans l'assistant Microsoft Entra Connect,
+       filtrer son unité d'organisation ou l'objet, ou ajouter une règle de synchronisation qui
+       l'exclut ; lancer une synchronisation delta et supprimer la copie synchronisée dans Entra ID si
+       elle existe.
+    4. Mettre à jour Microsoft Entra Connect et passer le connecteur en authentification par
+       application ; supprimer ensuite l'ancien compte de synchronisation d'annuaire ou son rôle.
+    5. D'ici là, restreindre le compte de synchronisation de type utilisateur par une stratégie
+       d'accès conditionnel qui le bloque hors des adresses IP de sortie des serveurs de
+       synchronisation.
+  rollback: |
+    Régler `BlockSoftMatchEnabled` sur `false` uniquement le temps d'une migration par soft match
+    planifiée, puis le remettre à `true`.

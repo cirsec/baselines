@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer la sauvegarde Windows LAPS dans Microsoft Entra ID
+finding:
+  title: Windows LAPS n'est pas activé dans Microsoft Entra ID
+  description: Les mots de passe administrateur local des appareils Windows joints à Entra ne peuvent pas être sauvegardés dans Entra ID ; ils sont probablement partagés, figés ou non gérés.
+description: |
+  Le paramètre d'appareil **Enable Microsoft Entra Local Administrator Password Solution (LAPS)**
+  (activer LAPS) vaut **Oui**, et une stratégie Windows LAPS côté client (Intune **Sécurité du point
+  de terminaison** > **Protection de compte** > **Solution de mot de passe d'administrateur local
+  (Windows LAPS)**, ou stratégie de groupe pour les appareils hybrides) sauvegarde dans Microsoft
+  Entra ID le mot de passe du compte administrateur local géré et le fait tourner.
+
+  Le paramètre du tenant seul ne fait rien : il autorise les appareils à stocker les mots de passe
+  dans Entra ID. La stratégie client fixe le compte géré, l'annuaire de sauvegarde, la complexité,
+  la longueur et l'âge du mot de passe.
+rationale: |
+  Un compte administrateur local avec le même mot de passe sur tous les appareils permet à un
+  attaquant qui compromet un poste de réutiliser l'empreinte ou le mot de passe sur tous les autres
+  (pass-the-hash, mouvement latéral). Windows LAPS donne à chaque appareil un mot de passe aléatoire
+  unique, le fait tourner et journalise chaque consultation dans l'audit Entra.
+impact: |
+  Aucun pour les utilisateurs. Le support récupère le mot de passe depuis la page de l'appareil dans
+  Entra ID ou Intune au lieu d'une valeur partagée ; n'accorder qu'à lui le droit de lire les mots de
+  passe LAPS (administrateur d'appareils cloud, ou rôle personnalisé avec
+  `microsoft.directory/deviceLocalCredentials/password/read`). Nécessite Windows 10 ou 11 (mise à jour
+  d'avril 2023 ou ultérieure) ou Windows Server 2019/2022 ; les appareils simplement inscrits dans
+  Entra ne sont pas pris en charge. Quand l'objet appareil est supprimé, son mot de passe stocké est
+  perdu.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Enable Microsoft Entra Local Administrator Password Solution (LAPS)
+  recommended_value: Oui, avec une stratégie client Windows LAPS qui sauvegarde dans Microsoft Entra ID
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil** et vérifier que **Enable
+       Microsoft Entra Local Administrator Password Solution (LAPS)** vaut **Oui**.
+    3. Aller dans **Entra ID** > **Appareils** > **Vue d'ensemble** > **Récupération du mot de passe
+       de l'administrateur local** et vérifier que les appareils Windows apparaissent avec une date
+       de rotation récente (métadonnées lisibles par le Lecteur Sécurité).
+    4. Dans le centre d'administration Intune, aller dans **Sécurité du point de terminaison** >
+       **Protection de compte** et vérifier qu'une stratégie **Solution de mot de passe
+       d'administrateur local (Windows LAPS)** avec **Annuaire de sauvegarde** réglé sur Microsoft
+       Entra ID est affectée à tous les appareils Windows.
+    5. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` et lire
+       `localAdminPassword.isEnabled` ; `GET https://graph.microsoft.com/v1.0/directory/deviceLocalCredentials`
+       (étendue `DeviceLocalCredential.ReadBasic.All`) liste les appareils dont le mot de passe est
+       sauvegardé.
+    6. Échec si le paramètre du tenant vaut **Non**, ou si aucune stratégie client ne sauvegarde les
+       mots de passe du parc Windows.
+remediation:
+  manual: |
+    1. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**, régler **Enable
+       Microsoft Entra Local Administrator Password Solution (LAPS)** sur **Oui** et enregistrer.
+       Rôle : administrateur d'appareils cloud.
+    2. Dans le centre d'administration Intune, aller dans **Sécurité du point de terminaison** >
+       **Protection de compte** > **Créer une stratégie**, plateforme **Windows**, profil **Solution
+       de mot de passe d'administrateur local (Windows LAPS)**. Régler **Annuaire de sauvegarde** sur
+       la sauvegarde dans Microsoft Entra ID uniquement, un âge de mot de passe de 30 jours au plus et
+       une complexité d'au moins 14 caractères. L'affecter à un groupe pilote, puis à tous les
+       appareils Windows. Rôle : administrateur Intune ou gestionnaire de la sécurité des points de
+       terminaison.
+    3. Équivalent Graph pour le paramètre du tenant : `PUT
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` avec
+       `localAdminPassword.isEnabled` à `true`.
+    4. Protéger la récupération : exiger une MFA résistante au hameçonnage pour les rôles autorisés à
+       lire les mots de passe LAPS.
+  rollback: |
+    Retirer l'affectation de la stratégie LAPS Intune, puis remettre le paramètre du tenant sur
+    **Non**. Les mots de passe déjà tournés restent valides jusqu'à leur changement : les récupérer
+    avant le retour arrière.

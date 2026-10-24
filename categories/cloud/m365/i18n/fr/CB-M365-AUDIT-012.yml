@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre qui peut lire, désactiver ou raccourcir les journaux d'audit Microsoft 365
+finding:
+  title: Trop de comptes peuvent lire les journaux d'audit ou modifier leur enregistrement et leur rétention
+  description: Les journaux d'audit révèlent ce que chaque utilisateur a fait et sont la preuve d'une intrusion ; un accès large en lecture expose des données personnelles, un accès large en écriture permet à un attaquant d'effacer ses traces.
+description: |
+  L'accès aux données et paramètres d'audit Microsoft 365 est limité à des personnes nommées ayant un
+  besoin opérationnel, revu au moins tous les six mois :
+
+  - **Écriture** : les rôles qui peuvent désactiver le journal d'audit unifié ou l'audit des boîtes
+    aux lettres, créer ou supprimer des stratégies de rétention d'audit, ou modifier les paramètres
+    de diagnostic (rôle Audit Logs, rôle Organization Configuration, groupes de rôles Organization
+    Management et Administrateur de conformité, Administrateur de la sécurité pour les paramètres de
+    diagnostic Entra) ne sont détenus que par les administrateurs qui gèrent la journalisation, de
+    préférence en éligible via PIM ;
+  - **Lecture** : les rôles View-Only Audit Logs et Audit Logs, Lecteur Sécurité et Lecteur de
+    rapports ne sont détenus que par les équipes sécurité, SOC et investigation ;
+  - la copie des journaux dans le SIEM (CB-M365-AUDIT-002) a son propre contrôle d'accès que les
+    administrateurs du tenant ne peuvent pas modifier seuls.
+rationale: |
+  Un attaquant disposant de droits d'administrateur tente souvent de désactiver la journalisation ou
+  de raccourcir la rétention avant d'agir. Limiter l'accès en écriture, et garder une copie
+  indépendante, préserve les preuves. Les journaux d'audit contiennent aussi des données personnelles
+  (qui a lu quel e-mail, qui a ouvert quel fichier) ; le principe de minimisation du RGPD s'applique
+  à leurs lecteurs autant qu'à leur contenu.
+impact: |
+  Les administrateurs qui utilisaient la recherche d'audit pour le dépannage doivent demander l'accès
+  ou passer par l'équipe sécurité.
+audit:
+  manual: |
+    1. Dans le portail Microsoft Purview (https://purview.microsoft.com) avec au moins le rôle
+       Lecteur général, aller dans **Paramètres** > **Rôles et étendues** > **Groupes de rôles** et
+       lister les membres des groupes de rôles qui contiennent **Audit Logs**, **View-Only Audit
+       Logs** ou **Organization Configuration**.
+    2. En PowerShell Exchange Online (View-Only Organization Management), lister les détenteurs du
+       rôle Audit Logs :
+       `Get-ManagementRoleAssignment -Role "Audit Logs" -GetEffectiveUsers | Select-Object EffectiveUserName,RoleAssigneeName`
+       et de même pour `View-Only Audit Logs` ; lister les membres d'Organization Management avec
+       `Get-RoleGroupMember "Organization Management"`.
+    3. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Rôles et
+       administrateurs** et lister les membres des rôles Administrateur général, Administrateur de la
+       sécurité, Administrateur de conformité, Lecteur Sécurité et Lecteur de rapports.
+    4. Comparer avec la liste des personnes approuvées pour l'administration de la journalisation et
+       l'investigation.
+    5. Échec si des comptes hors de la liste approuvée détiennent ces rôles, ou si aucune revue n'a eu
+       lieu au cours des six derniers mois.
+remediation:
+  manual: |
+    1. Définir et faire valider la liste des personnes qui administrent la journalisation et de
+       celles qui enquêtent.
+    2. Retirer les autres membres des groupes de rôles Purview et Exchange (**Paramètres** > **Rôles
+       et étendues** > **Groupes de rôles**, ou `Remove-RoleGroupMember`) et des rôles Entra.
+    3. Si possible, créer un groupe de rôles dédié ne contenant que **View-Only Audit Logs** pour les
+       enquêteurs, et passer les rôles d'écriture en attributions éligibles PIM.
+    4. Alerter dans le SIEM sur les modifications des paramètres d'audit (`Set-AdminAuditLogConfig`,
+       `Set-OrganizationConfig -AuditDisabled`, `New/Set/Remove-UnifiedAuditLogRetentionPolicy`,
+       modifications des paramètres de diagnostic).
+    5. Rôle requis : Organization Management (groupes de rôles Exchange et Purview) et Administrateur
+       de rôle privilégié (rôles Entra).
+  rollback: |
+    Remettre le membre retiré dans le groupe de rôles.

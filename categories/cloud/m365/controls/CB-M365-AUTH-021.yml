@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-021
+title: Block unknown or unsupported device platforms
+finding:
+  title: Sign-ins from unknown device platforms are allowed
+  description: Requests whose user agent matches no supported platform, typical of scripts, attack tools and unusual operating systems, are not blocked.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [conditional-access, device-platforms, managed-device]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy for **All users** on **All resources** blocks access from **Any
+  device**, excluding only the platforms the organisation supports: `{{ allowed_device_platforms }}`.
+  Linux, Windows Phone and unknown platforms are then refused unless explicitly allowed.
+
+  The policy excludes only the emergency access accounts.
+parameters:
+  - name: allowed_device_platforms
+    type: list
+    description: Device platforms excluded from the block, as named in Conditional Access.
+    default: [android, iOS, windows, macOS]
+    allowed: [android, iOS, windows, macOS, linux, windowsPhone]
+rationale: |
+  Many token theft and password spray tools present user agents that match no supported platform.
+  Blocking them reduces the attack surface and keeps device-based policies from being sidestepped
+  through a platform they do not evaluate.
+impact: |
+  Users on a platform that is not listed, for example Linux workstations, are blocked: add it to
+  the parameter if it is supported. The platform condition relies on the user agent, which an
+  attacker can forge: this control complements CB-M365-AUTH-020, it does not replace it.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where **Users** includes **All users** (only
+       emergency access accounts excluded), **Target resources** includes **All resources**,
+       **Conditions** > **Device platforms** includes **Any device** and excludes exactly
+       `{{ allowed_device_platforms }}`, and **Grant** is **Block access**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Platforms.IncludePlatforms -contains 'all' } | Select-Object DisplayName, State, @{n='Excluded';e={$_.Conditions.Platforms.ExcludePlatforms}}, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    5. Fail if no such policy exists, if it is Report-only or Off, or if it excludes a platform
+       that is not in the list.
+
+remediation:
+  manual: |
+    1. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**.
+    2. Name it, for example `ALL - Block unknown platforms`.
+    3. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    4. **Target resources** > **Resources** > **Include**: **All resources**.
+    5. **Conditions** > **Device platforms**: **Configure** **Yes**, **Include** **Any device**,
+       **Exclude** the platforms in `{{ allowed_device_platforms }}`.
+    6. **Grant**: **Block access**.
+    7. Set **Enable policy** to **Report-only**, review the sign-in logs for blocked platforms,
+       then switch to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with
+    `conditions.platforms.includePlatforms` set to `all`, `excludePlatforms` set to the list and
+    `grantControls.builtInControls` set to `block`.
+  rollback: |
+    Set the policy to **Report-only**, or add the missing platform to the exclusions.
+
+references:
+  - title: Block access for unknown or unsupported device platform
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-unknown-unsupported
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-020
+    type: related
+  - id: CB-M365-AUTH-029
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

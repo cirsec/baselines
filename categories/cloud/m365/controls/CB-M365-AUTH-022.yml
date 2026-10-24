@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-022
+title: Block device code flow
+finding:
+  title: Device code flow is allowed
+  description: Attackers send users a device code with a convincing pretext; once the user enters it on the real Microsoft page, the attacker receives tokens for the account, MFA included.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [conditional-access, device-code, authentication-flows, phishing]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy for **All users** on **All resources** blocks the **Device code
+  flow** authentication flow. The only exceptions are documented accounts that need it on
+  devices without a keyboard or browser, such as Microsoft Teams Rooms resource accounts, scoped
+  to those accounts and ideally to their network location.
+
+  The Microsoft-managed policy **Block device code flow** satisfies this control once it is
+  **On** with the same scope.
+rationale: |
+  Device code phishing needs no fake page: the user signs in on the genuine Microsoft site,
+  passes MFA and hands the session to the attacker. Campaigns using it against Microsoft 365 are
+  frequent, while legitimate use is rare and limited to specific devices.
+impact: |
+  Command-line tools and devices that sign in with a device code stop working: Teams Rooms and
+  other meeting devices, some printers, scripts using `az login --use-device-code` or similar.
+  Find them in the sign-in logs (filter **Authentication protocol** = **Device code**) and exclude
+  only those accounts.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where **Users** includes **All users**
+       (exclusions limited to emergency access accounts and documented device accounts),
+       **Target resources** includes **All resources**, **Conditions** > **Authentication flows**
+       selects **Device code flow**, and **Grant** is **Block access**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.AuthenticationFlows.TransferMethods -match 'deviceCodeFlow' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    5. Fail if no such policy exists, if it is Report-only or Off, or if it excludes users or
+       applications without a documented reason.
+
+remediation:
+  manual: |
+    1. In **Entra ID** > **Monitoring & health** > **Sign-in logs**, filter **Authentication
+       protocol** on **Device code** for the last 30 days and list legitimate uses.
+    2. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies**. Enable the Microsoft-managed **Block device code
+       flow** policy, or select **New policy**.
+    3. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts and the
+       documented device accounts.
+    4. **Target resources** > **Resources** > **Include**: **All resources**.
+    5. **Conditions** > **Authentication flows**: **Configure** **Yes**, select **Device code
+       flow**.
+    6. **Grant**: **Block access**.
+    7. Set **Enable policy** to **Report-only**, review, then switch to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with
+    `conditions.authenticationFlows.transferMethods` set to `deviceCodeFlow` and
+    `grantControls.builtInControls` set to `block`.
+  rollback: |
+    Set the policy to **Report-only**, or exclude the account that needs device code flow.
+
+references:
+  - title: Block authentication flows with Conditional Access policy
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-block-authentication-flows
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.12"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.9v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.002
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-AUTH-023
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-AUTH-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

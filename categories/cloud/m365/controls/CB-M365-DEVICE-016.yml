@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-016
+title: Block Microsoft Publisher
+finding:
+  title: Microsoft Publisher can still be launched
+  description: Publisher, retired from Microsoft 365 and with a large attack surface, still runs on devices where it is installed.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [microsoft-365-apps, baseline-security-mode, cloud-policy, publisher, attack-surface]
+
+description: |
+  The Baseline Security Mode setting **Block Microsoft Publisher** is turned on in the Microsoft
+  365 admin center (Cloud Policy policy **Disable Publisher** set to **Enabled**). Publisher does
+  not start on any device that receives Microsoft 365 apps policies, and users see the message that
+  a security policy set by the organization prevents it.
+rationale: |
+  Publisher files (.pub) are rarely used, poorly inspected by mail filters, and Publisher's parser
+  has a large attack surface. Microsoft stopped including Publisher in Microsoft 365 in October
+  2026, so it no longer receives new features and is on its way out of support. Blocking it removes
+  an attack vector that almost nobody needs.
+impact: |
+  Users can no longer open or edit .pub files. Convert the remaining publications to Word or PDF
+  (or move layout work to another tool) before turning the setting on. Devices running older
+  Microsoft 365 apps builds or perpetual Office versions that still ship Publisher are the ones that
+  matter: the block only applies to apps that receive Cloud Policy settings.
+notes: |
+  Microsoft announced that Publisher is no longer included in Microsoft 365 from October 2026. Keep
+  the control until the inventory shows no Publisher installation left; it can then be retired.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Baseline security
+       mode**.
+    3. Check that **Block Microsoft Publisher** is turned on.
+    4. In the Office Cloud Policy service (https://config.office.com), check that no higher-priority
+       policy configuration sets **Disable Publisher** to **Disabled**.
+    5. Fail if the setting is off or overridden for a group of users.
+
+remediation:
+  manual: |
+    1. Find remaining Publisher users with the setting's impact report, and convert their files.
+    2. In **Settings** > **Org settings** > **Security & privacy** > **Baseline security mode**,
+       turn on **Block Microsoft Publisher**. Role: Office Apps Administrator.
+    3. Alternative: set **Disable Publisher** to **Enabled** in an Office Cloud Policy configuration
+       targeting all users. No PowerShell cmdlet exists.
+    4. Remove Publisher from deployment configurations (Office Deployment Tool `ExcludeApp
+       ID="Publisher"`) for older builds.
+  rollback: |
+    Turn the setting off, or set **Disable Publisher** back to not configured.
+
+references:
+  - title: Block Microsoft Publisher
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-microsoft-publisher
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1203
+related_controls:
+  - id: CB-M365-DEVICE-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

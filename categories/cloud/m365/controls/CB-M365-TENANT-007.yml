@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-007
+title: Allow public Microsoft 365 groups only when approved
+finding:
+  title: Unapproved public Microsoft 365 groups exist
+  description: Any user in the organization can join a public group and read its mailbox, files and Teams channels without approval from the owner.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [groups, microsoft-365-groups, teams, oversharing, data-exposure]
+
+description: |
+  Every Microsoft 365 group (and team) with privacy set to **Public** is listed in the register of
+  approved public groups, with an owner and a purpose (for example an organization-wide
+  announcements team). All other groups are **Private**.
+rationale: |
+  Members of the organization can join a public group without approval and get access to its
+  conversations, files and SharePoint site. Groups created for a project often start public by
+  default and end up holding sensitive documents. Search and Copilot also surface public group
+  content to every user.
+impact: |
+  Users who relied on joining public groups must ask the owner. Owners of groups switched to
+  private review the existing members, who keep their access.
+notes: |
+  Sensitivity labels for groups and sites can enforce privacy at creation (DATA domain).
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Teams & groups** > **Active teams & groups** and filter or sort on the
+       **Privacy** column to list **Public** groups.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Group.Read.All`):
+       ```
+       Get-MgGroup -All -Filter "groupTypes/any(c:c eq 'Unified')" -Property DisplayName,Visibility,Id |
+         Where-Object Visibility -eq 'Public'
+       ```
+       or, in Exchange Online PowerShell, `Get-UnifiedGroup -ResultSize Unlimited | Where-Object AccessType -eq 'Public'`.
+    4. Fail if a public group is not in the approved register.
+
+remediation:
+  manual: |
+    1. For each unapproved public group, contact the owner and confirm the change.
+    2. In the Microsoft 365 admin center, open the group > **Settings** > **Privacy** >
+       **Private**, and save (Groups Administrator).
+    3. Equivalent with Microsoft Graph PowerShell: `Update-MgGroup -GroupId <id> -Visibility Private`,
+       or in Exchange Online `Set-UnifiedGroup -Identity <group> -AccessType Private`.
+  rollback: |
+    Set the group privacy back to **Public**.
+
+references:
+  - title: Manage a group in the Microsoft 365 admin center
+    url: https://learn.microsoft.com/microsoft-365/admin/create-groups/manage-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Compare types of groups in Microsoft 365
+    url: https://learn.microsoft.com/microsoft-365/admin/create-groups/compare-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.2.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+related_controls:
+  - id: CB-M365-TENANT-006
+    type: related
+  - id: CB-M365-TENANT-008
+    type: related
+  - id: CB-M365-DATA-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

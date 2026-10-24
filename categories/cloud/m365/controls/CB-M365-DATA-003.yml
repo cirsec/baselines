@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DATA-003
+title: Block restricted apps and unallowed Bluetooth apps from sensitive files with endpoint DLP
+finding:
+  title: Sensitive files on devices can be opened by unapproved applications or sent over Bluetooth
+  description: Without endpoint DLP restrictions, a user or malware can upload a protected file through an unsanctioned app or push it to a phone over Bluetooth, outside any cloud control.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [dlp, endpoint-dlp, purview, data-protection, devices, bluetooth]
+
+applicability:
+  requires:
+    - "Microsoft Purview E5 Compliance"
+    - "Microsoft Intune"
+
+description: |
+  Windows and macOS devices are onboarded to Microsoft Purview endpoint DLP. In the endpoint DLP
+  settings, a **Restricted apps** list (for example personal cloud sync clients, unapproved
+  browsers, file transfer tools) and an **Unallowed Bluetooth apps** list are defined. A DLP policy
+  turned on for the **Devices** location applies to content that matches the sensitive information
+  types of CB-M365-DATA-001 and sets these actions to **Block**:
+
+  - **Access by restricted apps**;
+  - **Copy or move using unallowed Bluetooth app**.
+rationale: |
+  Cloud DLP stops data shared from Microsoft 365, but once a file is synced or downloaded to a
+  device it can leave through local channels. Restricted apps and Bluetooth are common paths for
+  both careless and deliberate exfiltration, and endpoint DLP is the only Microsoft 365 control
+  that sees them.
+impact: |
+  Devices must be onboarded (Intune or Defender for Endpoint onboarding). Users get a block
+  notification when they open a sensitive file with a listed app. Maintain the restricted app list
+  with the workstation team.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Purview portal (https://purview.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Settings** > **Data Loss Prevention** > **Endpoint DLP settings** and check that
+       **Restricted apps and app groups** and **Unallowed Bluetooth apps** contain entries.
+    3. Browse to **Settings** > **Device onboarding** > **Devices** and check that managed Windows
+       and macOS devices are onboarded.
+    4. Browse to **Solutions** > **Data Loss Prevention** > **Policies**, open the policy that covers
+       **Devices**, and check that it is **On** and that its rule sets **Access by restricted apps**
+       and **Copy or move using unallowed Bluetooth app** to **Block**.
+    5. Alternative in Security & Compliance PowerShell: `Get-DlpCompliancePolicy | Where-Object
+       { $_.EndpointDlpLocation } | Format-List Name,Mode,EndpointDlpLocation` and
+       `Get-DlpComplianceRule -Policy <policy> | Format-List Name,EndpointDlpRestrictions`.
+    6. Fail if a list is empty, if no enforced policy covers devices, or if either action is set to
+       audit only.
+
+remediation:
+  manual: |
+    1. Onboard devices to Microsoft Purview (through the Intune or Microsoft Defender for Endpoint
+       onboarding package).
+    2. Sign in to the Microsoft Purview portal as at least a Compliance Administrator.
+    3. Browse to **Settings** > **Data Loss Prevention** > **Endpoint DLP settings**, fill
+       **Restricted apps and app groups** and **Unallowed Bluetooth apps**.
+    4. Edit or create a DLP policy with the **Devices** location, all users and devices; in the
+       rule, under **Audit or restrict activities on devices**, set **Access by restricted apps** and
+       **Copy or move using unallowed Bluetooth app** to **Block**.
+    5. Run in simulation, review **Activity explorer**, then turn the policy on.
+  rollback: |
+    Set the device actions back to **Audit only**, or set the policy to simulation.
+
+references:
+  - title: Learn about endpoint data loss prevention
+    url: https://learn.microsoft.com/purview/endpoint-dlp-learn-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure endpoint DLP settings
+    url: https://learn.microsoft.com/purview/dlp-configure-endpoint-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.3.5v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.DEFENDER.4.5v1
+    relation: equivalent
+    note: Policy withdrawn from SCuBA 2.0; its intent is covered by the restricted apps list.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-18
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1011.001
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-DATA-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

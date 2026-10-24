@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-012
+title: Allow guest invitations only to approved domains
+finding:
+  title: Guests can be invited from any domain
+  description: Invitations can be sent to any external address, including consumer mailboxes and lookalike domains, so data can be shared with any organization.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, guests, invitations, external-identities, allow-list]
+
+parameters:
+  - name: allowed_guest_domains
+    type: list
+    description: External domains whose users may be invited as guests (partners with a business relationship).
+    default: []
+
+description: |
+  **Collaboration restrictions** is set to **Allow invitations only to the specified domains (most
+  restrictive)**, and the list contains exactly the domains of `{{ allowed_guest_domains }}`.
+  Invitations to any other domain, including consumer email providers, are refused.
+rationale: |
+  An allow list limits guest accounts, and therefore sharing through Entra B2B, to organizations
+  with a business relationship. It blocks invitations to personal mailboxes used to exfiltrate
+  data, and to lookalike domains set up by attackers.
+impact: |
+  Every new partner domain must be added before its users can be invited, which needs a request
+  process. The list applies to new invitations; existing guests from other domains stay until they
+  are reviewed (CB-M365-TENANT-013). Partners with several domains need each one listed.
+notes: |
+  Cross-tenant access settings (CB-M365-TENANT-014) can also allow or block B2B collaboration per
+  Microsoft Entra tenant; the domain list here also covers external users without an Entra tenant.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **External Identities** > **External collaboration settings**,
+       section **Collaboration restrictions**.
+    3. Check that **Allow invitations only to the specified domains (most restrictive)** is
+       selected and that the domain list matches `{{ allowed_guest_domains }}`.
+    4. Read-only alternative with Microsoft Graph (beta, scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/beta/policies/b2bManagementPolicies` and read
+       `InvitationsAllowedAndBlockedDomainsPolicy`.
+    5. Fail if invitations are allowed to any domain, if a deny list is used instead, or if the
+       list contains domains outside the parameter.
+
+remediation:
+  manual: |
+    1. Collect the partner domains and set the parameter.
+    2. With an External Identity Provider Administrator or Global Administrator, browse to
+       **Entra ID** > **External Identities** > **External collaboration settings**.
+    3. Under **Collaboration restrictions**, select **Allow invitations only to the specified
+       domains (most restrictive)**, enter one domain per line and **Save**.
+  rollback: |
+    Select **Allow invitations to be sent to any domain (most inclusive)**.
+
+references:
+  - title: Allow or block invitations to B2B users from specific organizations
+    url: https://learn.microsoft.com/entra/external-id/allow-deny-list
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.6.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.8.3v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-TENANT-011
+    type: related
+  - id: CB-M365-TENANT-014
+    type: related
+  - id: CB-M365-COLLAB-002
+    type: related
+  - id: CB-M365-COLLAB-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher l'ajout de comptes de messagerie et de calendriers personnels dans Outlook
+finding:
+  title: Les utilisateurs peuvent connecter des comptes et calendriers personnels à leur Outlook professionnel
+  description: Courrier professionnel et personnel se mélangent dans le même client, ce qui facilite le transfert de données vers un compte personnel et amène le hameçonnage personnel dans la session de travail.
+description: |
+  Chaque stratégie de boîte aux lettres Outlook sur le web utilisée a :
+
+  - `PersonalAccountsEnabled` à `$false` : les utilisateurs ne peuvent pas ajouter de comptes
+    Outlook.com, Gmail, Yahoo ou autres comptes personnels dans le nouvel Outlook pour Windows et
+    Outlook sur le web ;
+  - `PersonalAccountCalendarsEnabled` à `$false` : les utilisateurs ne peuvent pas connecter un
+    calendrier personnel Outlook.com ou Google.
+rationale: |
+  Avec un compte personnel dans le même client, glisser un message ou une pièce jointe de la boîte
+  professionnelle vers la boîte personnelle se fait en un geste et contourne la prévention des pertes
+  de données, la rétention et l'audit. Le courrier reçu sur le compte personnel n'est pas filtré par
+  les protections de l'organisation mais il est lu dans le client professionnel de confiance.
+impact: |
+  Les utilisateurs qui lisent leur courrier personnel dans le nouvel Outlook doivent utiliser un
+  autre client ou un profil de navigateur séparé. Les comptes personnels déjà ajoutés disparaissent du
+  client une fois la stratégie appliquée.
+audit:
+  manual: |
+    1. Ces paramètres n'apparaissent pas dans le centre d'administration Exchange. Se connecter à
+       Exchange Online PowerShell avec au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-OwaMailboxPolicy | Format-Table Name, IsDefault, PersonalAccountsEnabled, PersonalAccountCalendarsEnabled
+       Get-CASMailbox -ResultSize Unlimited | Group-Object OwaMailboxPolicy | Select-Object Name, Count
+       ```
+       Un `OwaMailboxPolicy` vide signifie que la stratégie par défaut s'applique.
+    3. Échec si une stratégie utilisée par au moins une boîte a `PersonalAccountsEnabled` ou
+       `PersonalAccountCalendarsEnabled` à `True`.
+remediation:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange.
+    2. Pour chaque stratégie utilisée (celle par défaut s'appelle en général `OwaMailboxPolicy-Default`) :
+       ```powershell
+       Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -PersonalAccountsEnabled $false -PersonalAccountCalendarsEnabled $false
+       ```
+    3. La prise en compte par les clients peut demander quelques heures.
+  rollback: |
+    Remettre les deux paramètres à `$true` sur la stratégie.

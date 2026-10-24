@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-027
+title: Turn on Safe Documents for Office clients without click-through
+finding:
+  title: Office files opened in Protected View are not checked before users enable editing
+  description: A user can leave Protected View on a malicious document, which runs its content on the device.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [defender-for-office-365, safe-documents, office, protected-view]
+
+applicability:
+  requires:
+    - "Microsoft 365 E5 or Microsoft Defender Suite (Office 365 SafeDocs service plan)"
+  conditions: |
+    Safe Documents is controlled by the **Office 365 SafeDocs** service plan, included in Microsoft
+    365 E5, A5 and G5 and in Microsoft Defender Suite, not in Defender for Office 365 Plan 1 or 2.
+    Users need Microsoft 365 Apps for enterprise version 2004 or later.
+
+description: |
+  In the Safe Attachments global settings:
+
+  - **Turn on Safe Documents for Office clients** is on (`EnableSafeDocs $true`);
+  - **Allow people to click through Protected View even if Safe Documents identified the file as
+    malicious** is off (`AllowSafeDocsOpen $false`).
+
+  Office files opened in Protected View are sent to the Microsoft Defender for Endpoint cloud for
+  analysis before users can leave Protected View.
+rationale: |
+  Files downloaded from the internet or received from outside open in Protected View, and leaving
+  it is the moment a malicious macro or exploit runs. Safe Documents checks the file at that moment;
+  without click-through, a file found to be malicious cannot be opened at all.
+impact: |
+  Users wait a short time before they can enable editing. Files flagged as malicious stay in
+  Protected View. File information is sent to the Defender for Endpoint cloud and kept for less
+  than 24 hours.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** > **Safe
+       Attachments** > **Global settings**.
+    3. Check that **Turn on Safe Documents for Office clients** is on and **Allow people to click
+       through Protected View even if Safe Documents identified the file as malicious** is off.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-AtpPolicyForO365 | Format-List EnableSafeDocs, AllowSafeDocsOpen
+       ```
+    5. Fail if `EnableSafeDocs` is `False` or `AllowSafeDocsOpen` is `True`.
+
+remediation:
+  manual: |
+    1. In the Defender portal, **Safe Attachments** > **Global settings**, turn on **Turn on Safe
+       Documents for Office clients**, turn off the click-through option, and save.
+    2. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Set-AtpPolicyForO365 -EnableSafeDocs $true -AllowSafeDocsOpen $false
+       ```
+  rollback: |
+    `Set-AtpPolicyForO365 -AllowSafeDocsOpen $true`, or `-EnableSafeDocs $false`.
+
+references:
+  - title: Safe Documents in Microsoft 365 A5/E5/G5 or Microsoft Defender Suite
+    url: https://learn.microsoft.com/defender-office-365/safe-documents-in-e5-plus-security-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-AtpPolicyForO365
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-atppolicyforo365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-225, ORCA-234)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-44
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1204.002
+related_controls:
+  - id: CB-M365-MAIL-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

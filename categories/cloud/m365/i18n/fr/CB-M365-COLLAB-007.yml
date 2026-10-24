@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les invités de repartager des éléments qu'ils ne possèdent pas
+finding:
+  title: Les invités peuvent repartager des fichiers, dossiers et sites qu'ils ne possèdent pas
+  description: Un invité disposant de droits de modification peut transmettre le contenu à d'autres personnes externes sans décision du propriétaire ni de l'organisation.
+description: |
+  Les invités ne peuvent pas partager des fichiers, dossiers ou sites qu'ils ne possèdent pas, même
+  avec un contrôle total ou un droit de modification (`PreventExternalUsersFromResharing` = `True`).
+  Dans le centre d'administration SharePoint, l'option **Autoriser les invités à partager des éléments
+  qu'ils ne possèdent pas** est décochée.
+rationale: |
+  Chaque invité est une identité à laquelle l'organisation a fait confiance dans un but précis.
+  Laisser les invités repartager étend cette confiance à des personnes que personne dans
+  l'organisation n'a choisies, et la chaîne peut se répéter. Bloquer le repartage rattache chaque
+  destinataire externe à une décision interne et à la trace d'audit d'un utilisateur interne.
+impact: |
+  Les invités qui coordonnent leur propre équipe (par exemple un prestataire qui ajoute ses collègues)
+  doivent demander à un propriétaire interne de partager ou d'inviter. Aucun autre impact connu.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Plus de paramètres de partage externe > Autoriser les invités à partager des éléments qu'ils ne possèdent pas
+  recommended_value: Décoché (PreventExternalUsersFromResharing = True)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage** > **Plus de paramètres de partage externe** et vérifier
+       que **Autoriser les invités à partager des éléments qu'ils ne possèdent pas** est décoché.
+    3. Alternative en lecture seule : en Lecteur général, appeler Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, ou `Get-MgAdminSharepointSetting`) :
+       `isResharingByExternalUsersEnabled` doit valoir `false`. Avec SharePoint Online Management Shell
+       (Administrateur SharePoint) : `Get-SPOTenant | Select-Object PreventExternalUsersFromResharing`
+       doit renvoyer `True`.
+    4. Échec si les invités peuvent repartager.
+remediation:
+  manual: |
+    1. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Plus de
+       paramètres de partage externe**, décocher **Autoriser les invités à partager des éléments qu'ils
+       ne possèdent pas** puis **Enregistrer**. Rôle : Administrateur SharePoint.
+    2. Équivalent PowerShell : `Set-SPOTenant -PreventExternalUsersFromResharing $true`. Équivalent
+       Graph : `PATCH /admin/sharepoint/settings` avec `{"isResharingByExternalUsersEnabled": false}`.

@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger la MFA pour tous les utilisateurs sur toutes les ressources
+finding:
+  title: Certains utilisateurs peuvent se connecter à certaines ressources avec le seul mot de passe
+  description: Sans stratégie d'accès conditionnel exigeant la MFA pour chaque utilisateur et chaque ressource, un mot de passe volé ou deviné suffit à ouvrir une session.
+description: |
+  Une stratégie d'accès conditionnel exige l'authentification multifacteur pour **Tous les
+  utilisateurs** sur **Toutes les ressources**, avec la force d'authentification intégrée
+  **Authentification multifacteur** (ou le contrôle **Exiger l'authentification multifacteur**).
+  Elle s'applique depuis tous les emplacements, y compris les réseaux approuvés.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence et, sur les tenants hybrides, le rôle
+  **Comptes de synchronisation d'annuaires**. Les invités restent inclus : ils satisfont
+  l'exigence dans leur tenant d'origine quand les paramètres d'accès inter-tenant font confiance à
+  sa MFA, sinon dans ce tenant.
+
+  Les administrateurs ont besoin d'une méthode plus forte : voir CB-M365-AUTH-004. Une stratégie
+  gérée par Microsoft **Multifactor authentication for all users** satisfait ce contrôle une fois
+  **Activée** et avec le même périmètre.
+rationale: |
+  Les mots de passe sont hameçonnés, réutilisés, pulvérisés et revendus. La MFA arrête la plupart
+  des prises de contrôle de compte qui commencent par un mot de passe. Une stratégie limitée à
+  certaines applications ou qui exclut les réseaux approuvés laisse des trous que les attaquants
+  trouvent vite, par exemple les points de terminaison de gestion Azure ou l'IP de sortie d'un VPN.
+impact: |
+  Chaque utilisateur doit enregistrer une méthode MFA avant l'application (voir
+  CB-M365-AUTH-018). Les comptes de service qui se connectent de façon interactive cessent de
+  fonctionner : les remplacer par des identités de charge de travail (identités managées ou
+  principaux de service), que l'accès conditionnel des utilisateurs ne cible pas. Les postes
+  partagés et les bornes ont besoin d'une méthode utilisable par plusieurs personnes, comme des
+  clés de sécurité.
+notes: |
+  Exclure les emplacements approuvés est un raccourci fréquent ; ce contrôle ne l'autorise pas.
+  Utiliser plutôt la fréquence de connexion et la session de navigateur persistante pour limiter
+  le nombre de demandes.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** (pas Rapport seul) où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs** ;
+       - **Utilisateurs** > **Exclure** ne contient que les comptes d'accès d'urgence et, si la
+         synchronisation est utilisée, le rôle **Comptes de synchronisation d'annuaires** ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Réseau** n'est pas configuré, ou n'exclut aucun emplacement ;
+       - **Accorder** vaut **Exiger la force d'authentification** (Authentification multifacteur
+         ou plus forte) ou **Exiger l'authentification multifacteur**.
+    4. Utiliser **What If** (ou les journaux de connexion) pour un utilisateur standard sur Office
+       365 afin de confirmer que la stratégie s'applique.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Users.IncludeUsers -contains 'All' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}, @{n='Strength';e={$_.GrantControls.AuthenticationStrength.Id}}`
+    6. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si elle exclut des utilisateurs, groupes, applications ou emplacements au-delà de ceux listés
+       ci-dessus.
+remediation:
+  manual: |
+    1. Vérifier d'abord l'inscription : **Entra ID** > **Méthodes d'authentification** > **Détails
+       de l'inscription des utilisateurs**, filtrer sur **Non compatible**, et faire inscrire ces
+       utilisateurs.
+    2. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**.
+    3. La nommer, par exemple `ALL - Require MFA`.
+    4. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence et, sur les tenants hybrides, le rôle **Comptes de synchronisation d'annuaires**.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Accorder** > **Accorder l'accès** > **Exiger la force d'authentification** >
+       **Authentification multifacteur**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion quelques jours.
+    8. Passer **Activer la stratégie** à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `conditions.users.includeUsers` à `All`, `conditions.applications.includeApplications` à `All`
+    et `grantControls.authenticationStrength.id` à `00000000-0000-0000-0000-000000000002` (force
+    intégrée Authentification multifacteur).
+  rollback: |
+    Passer la stratégie en **Rapport seul**. Se connecter avec un compte d'accès d'urgence si
+    nécessaire.

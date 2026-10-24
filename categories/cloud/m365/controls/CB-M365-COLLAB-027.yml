@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-027
+title: Turn off meeting chat for anonymous participants
+finding:
+  title: Anonymous participants can read and post in Teams meeting chat
+  description: Unauthenticated participants see the files and links shared in the meeting chat and can post links of their own to attendees.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, meetings, anonymous-access, chat]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Meeting chat is on for everyone except anonymous participants (`MeetingChatEnabledType` =
+  `EnabledExceptAnonymous`), or off (`Disabled`), in every meeting policy. Anonymous participants who
+  are admitted cannot read or post chat messages.
+rationale: |
+  Meeting chat often carries documents, links and decisions that outlive the meeting. An anonymous
+  participant has no accountable identity and can use the chat to post phishing links that look like
+  part of the meeting. Removing chat for anonymous participants limits both exposure and abuse while
+  keeping audio, video and screen sharing.
+impact: |
+  Anonymous participants (for example customers without an account) cannot use the chat, including to
+  ask questions; use Q&A or invite them as guests. None known for authenticated participants.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Meeting engagement > Meeting chat
+  default_value: On for everyone (Enabled)
+  recommended_value: On for everyone but anonymous users (EnabledExceptAnonymous), or Off
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Meeting engagement** section, check that **Meeting chat** is **On for everyone but
+       anonymous users** or **Off**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, MeetingChatEnabledType`.
+    5. Fail if any policy returns `Enabled`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Meeting engagement** section, set **Meeting chat** to **On for everyone but anonymous
+       users** and **Save**. Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -MeetingChatEnabledType EnabledExceptAnonymous`
+       (repeat with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+
+references:
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Teams settings and policies reference
+    url: https://learn.microsoft.com/microsoftteams/settings-policies-reference
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.002
+related_controls:
+  - id: CB-M365-COLLAB-023
+    type: related
+  - id: CB-M365-COLLAB-030
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

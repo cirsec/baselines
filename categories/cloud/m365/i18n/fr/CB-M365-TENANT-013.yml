@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir périodiquement l'accès des invités
+finding:
+  title: L'accès des invités n'est jamais revu
+  description: Les invités gardent leur accès aux équipes, groupes et fichiers longtemps après la fin de la collaboration.
+parameters:
+  guest_review_frequency: Récurrence de la révision d'accès des invités.
+description: |
+  Une révision d'accès récurrente couvre les invités membres de chaque groupe Microsoft 365 (et
+  équipe), selon la fréquence `{{ guest_review_frequency }}`. La révision :
+
+  - cible **Utilisateurs invités uniquement** dans **Tous les groupes Microsoft 365 avec des
+    utilisateurs invités** ;
+  - a des relecteurs internes (propriétaires des groupes, avec un relecteur de secours), jamais les
+    invités eux-mêmes ;
+  - active les notifications par e-mail et les rappels, et exige une justification à
+    l'approbation ;
+  - dure 14 jours ou moins et se répète sans date de fin ;
+  - applique automatiquement les résultats et **retire l'accès** quand les relecteurs ne répondent
+    pas.
+rationale: |
+  Les invités sont ajoutés pour un projet et rarement retirés à sa fin. Une révision qui retire
+  l'accès par défaut quand personne ne se porte garant de l'invité limite la population externe aux
+  collaborations actives, et documente qui a approuvé quoi.
+impact: |
+  Les propriétaires revoient leurs invités à chaque cycle ; une révision oubliée retire des invités
+  légitimes, qui doivent être réinvités. Les révisions d'invités demandent une licence Microsoft
+  Entra ID Governance ou P2, et Microsoft facture les fonctions de gouvernance des invités via un
+  abonnement Azure lié.
+notes: |
+  Les invités retirés de tous les groupes peuvent être bloqués puis supprimés avec l'option de
+  révision **Bloquer la connexion de l'utilisateur pendant 30 jours, puis le supprimer du
+  locataire** dans une révision distincte portant sur tous les utilisateurs invités.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Révisions d'accès** et ouvrir les révisions **Équipes +
+       groupes**.
+    3. Trouver une révision active de portée **Tous les groupes Microsoft 365 avec des utilisateurs
+       invités** et **Utilisateurs invités uniquement**, et vérifier : relecteurs internes ;
+       **Fréquence** `{{ guest_review_frequency }}` ou plus fréquente ; **Durée** de 14 jours ou
+       moins ; **Fin** **Jamais** ; **Notifications par e-mail**, **Rappels**, **Exiger une
+       justification à l'approbation** et **Appliquer automatiquement les résultats à la
+       ressource** activés ; **Si les relecteurs ne répondent pas** **Supprimer l'accès**.
+    4. Alternative en lecture seule avec Microsoft Graph (étendue `AccessReview.Read.All`) :
+       `GET /identityGovernance/accessReviews/definitions` et chercher une définition dont la
+       portée filtre `userType eq 'Guest'` sur les groupes Microsoft 365.
+    5. Échec si aucune révision de ce type n'existe ou si un critère n'est pas respecté.
+remediation:
+  manual: |
+    1. Avec un Administrateur de la gouvernance des identités, aller dans **Gouvernance des ID** >
+       **Révisions d'accès** > **Nouvelle révision d'accès**.
+    2. **Sélectionner ce qu'il faut réviser** : **Équipes + groupes** ; **Étendue de la révision** :
+       **Tous les groupes Microsoft 365 avec des utilisateurs invités** ; **Étendue** :
+       **Utilisateurs invités uniquement**.
+    3. **Relecteurs** : **Propriétaire(s) du groupe**, avec un relecteur de secours.
+    4. **Récurrence** : `{{ guest_review_frequency }}`, **Durée** de 14 jours ou moins, **Fin**
+       **Jamais**.
+    5. **Paramètres à l'issue** : **Appliquer automatiquement les résultats à la ressource**
+       activé ; **Si les relecteurs ne répondent pas** : **Supprimer l'accès**.
+    6. **Activer les assistants de décision du relecteur** et, sous **Paramètres avancés**,
+       **Justification obligatoire**, **Notifications par e-mail** et **Rappels**. Sélectionner
+       **Créer**.
+  rollback: |
+    Arrêter ou supprimer la révision d'accès ; les invités retirés doivent être réinvités.

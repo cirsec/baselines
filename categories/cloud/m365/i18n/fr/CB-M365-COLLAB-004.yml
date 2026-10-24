@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le partage externe OneDrive aux invités authentifiés
+finding:
+  title: OneDrive autorise un partage externe au-delà du niveau approuvé
+  description: Les utilisateurs peuvent partager le contenu de leur OneDrive avec quiconque détient un lien, ou avec n'importe quelle adresse externe, hors de la gouvernance appliquée aux sites d'équipe.
+description: |
+  Le niveau de partage externe de OneDrive au niveau de l'organisation est au plus
+  `{{ onedrive_sharing_level }}` et jamais plus permissif que celui de SharePoint
+  (CB-M365-COLLAB-003). La baseline autorise les invités nouveaux et existants (pas de liens **Tout le
+  monde**) ; le profil renforcé coupe le partage externe OneDrive (**Uniquement les personnes de votre
+  organisation**) : la collaboration externe se fait dans des sites d'équipe gouvernés par leurs
+  propriétaires et les étiquettes.
+rationale: |
+  OneDrive contient les copies de travail personnelles, souvent le contenu le moins classifié et le
+  moins revu du tenant. Le partage depuis OneDrive contourne les propriétaires de sites, les
+  paramètres de partage des sites et les revues d'appartenance aux équipes. Les liens **Tout le
+  monde** depuis OneDrive sont une source fréquente de fuites. Couper le partage externe OneDrive
+  déplace la collaboration externe vers des sites gouvernés.
+impact: |
+  En baseline, les utilisateurs peuvent encore partager des éléments OneDrive avec des invités
+  authentifiés, mais les liens **Tout le monde** et les **demandes de fichiers** cessent de
+  fonctionner. En profil renforcé, aucun partage externe depuis OneDrive n'est possible ; les partages
+  externes existants cessent de fonctionner. Prévoir un site d'équipe ou un canal partagé pour les
+  projets externes avant le changement. Des exceptions par utilisateur restent possibles avec
+  `Set-SPOSite -Identity <URL OneDrive> -SharingCapability`.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Partage externe > OneDrive
+  recommended_value: "{{ onedrive_sharing_level }} ou plus restrictif"
+parameters:
+  onedrive_sharing_level: Niveau de partage externe OneDrive le plus permissif autorisé (valeur de OneDriveSharingCapability).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage**. Sous **Partage externe**, lire le curseur OneDrive.
+    3. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object OneDriveSharingCapability, SharingCapability`.
+    4. Facultatif : lister les OneDrive réglés plus largement :
+       `Get-SPOSite -IncludePersonalSite $true -Limit All -Filter "Url -like '-my.sharepoint.com/personal/'" | Where-Object SharingCapability -ne 'Disabled'`.
+    5. Échec si le niveau OneDrive est plus permissif que `{{ onedrive_sharing_level }}` (ordre :
+       `ExternalUserAndGuestSharing` > `ExternalUserSharingOnly` > `ExistingExternalUserSharingOnly` >
+       `Disabled`).
+remediation:
+  manual: |
+    1. Identifier les utilisateurs qui partagent depuis OneDrive vers l'extérieur (activités d'audit
+       `SharingInvitationCreated` et `AnonymousLinkCreated` sur les URL `-my.sharepoint.com`) et
+       convenir de l'endroit où le travail externe sera déplacé.
+    2. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** et placer le
+       curseur OneDrive sur le niveau correspondant à `{{ onedrive_sharing_level }}`. Sélectionner
+       **Enregistrer**. Rôle : Administrateur SharePoint.
+    3. Équivalent PowerShell : `Set-SPOTenant -OneDriveSharingCapability {{ onedrive_sharing_level }}`.
+  rollback: |
+    Replacer le curseur OneDrive au niveau précédent, ou accorder une exception à un utilisateur avec
+    `Set-SPOSite -Identity <URL OneDrive> -SharingCapability ExternalUserSharingOnly`.

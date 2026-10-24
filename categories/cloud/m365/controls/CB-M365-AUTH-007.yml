@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-007
+title: Disable one-time passcodes in Microsoft Authenticator
+finding:
+  title: Microsoft Authenticator one-time passcodes are allowed
+  description: Users can type a six-digit code from Authenticator instead of answering a number-matched notification, and a phishing page can collect and replay that code.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [mfa, microsoft-authenticator, oath, authentication-methods]
+
+description: |
+  In the Authentication methods policy, **Allow use of Microsoft Authenticator OTP** is set to
+  **No**. Users of Microsoft Authenticator then complete MFA with a number-matched push
+  notification or an Authenticator passkey, never with a typed time-based code.
+
+  Third-party software OATH tokens and hardware OATH tokens are separate methods in the policy;
+  keep them disabled unless a documented population needs them.
+rationale: |
+  A one-time code shows no context and has no binding to the sign-in page: a phishing proxy asks
+  for it and replays it within its validity window. Push with number matching at least shows the
+  application, location and a number from the real sign-in screen.
+impact: |
+  Users can no longer sign in when the phone has no network connection, since push needs one.
+  The NPS extension relies on codes for some VPN scenarios; check those first. Users with a
+  passkey in Authenticator are not affected.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Policies > Microsoft Authenticator > Configure > Allow use of Microsoft Authenticator OTP
+  default_value: "Yes"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** and select **Microsoft
+       Authenticator**.
+    3. On the **Configure** tab, read **Allow use of Microsoft Authenticator OTP**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId MicrosoftAuthenticator).AdditionalProperties.isSoftwareOathEnabled`
+    5. Fail if the setting is **Yes** (`isSoftwareOathEnabled` is `true`).
+
+remediation:
+  manual: |
+    1. Check the NPS extension and other code-based integrations, and move their users to push.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Microsoft
+       Authenticator** > **Configure**.
+    4. Set **Allow use of Microsoft Authenticator OTP** to **No** and select **Save**.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`
+    with `"isSoftwareOathEnabled": false` (send the whole configuration back).
+  rollback: |
+    Set **Allow use of Microsoft Authenticator OTP** back to **Yes**.
+
+references:
+  - title: How to migrate MFA and SSPR policy settings to the Authentication methods policy
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-methods-manage
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Authentication methods in Microsoft Entra ID - Microsoft Authenticator app
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-authenticator-app
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(8)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1111
+related_controls:
+  - id: CB-M365-AUTH-006
+    type: related
+  - id: CB-M365-AUTH-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

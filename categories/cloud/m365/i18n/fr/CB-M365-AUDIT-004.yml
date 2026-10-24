@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les événements Audit Premium pour tous les utilisateurs
+finding:
+  title: Les événements d'accès et de recherche dans les boîtes aux lettres nécessaires à la réponse à incident ne sont pas enregistrés pour tous
+  description: Sans les événements Audit Premium comme MailItemsAccessed, Send et SearchQueryInitiated, les enquêteurs ne peuvent pas savoir quels e-mails un attaquant a lus ou recherchés.
+description: |
+  Chaque boîte aux lettres utilisateur dispose d'une licence Microsoft Purview Audit (Premium) et
+  enregistre les événements d'audit avancés :
+
+  - `MailItemsAccessed` et `Send` (enregistrés par défaut pour les boîtes sous licence quand l'audit
+    des boîtes aux lettres est actif, CB-M365-AUDIT-005) ;
+  - `SearchQueryInitiatedExchange` et `SearchQueryInitiatedSharePoint`, à ajouter aux actions d'audit
+    propriétaire de chaque boîte aux lettres (`SearchQueryInitiated`).
+rationale: |
+  Dans les cas de compromission de messagerie, y compris les intrusions étatiques dans des boîtes aux
+  lettres cloud, la question clé est de savoir quels messages ont été lus et ce que l'attaquant a
+  recherché. Ces événements y répondent et permettent aussi de limiter les notifications
+  réglementaires aux données réellement consultées. Sans eux, l'organisation doit supposer que toute
+  la boîte aux lettres a été exposée.
+impact: |
+  Exige une licence Audit Premium (E5, E5 Compliance ou module eDiscovery and Audit) pour chaque
+  utilisateur. Les événements de recherche augmentent le volume d'audit. Depuis 2024, Microsoft
+  enregistre aussi `MailItemsAccessed` et `Send` pour les clients Audit Standard ; ce contrôle reste
+  utile pour les événements de recherche et la rétention native plus longue.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au
+       moins le rôle Lecteur général et vérifier dans **Facturation** > **Licences** que chaque boîte
+       aux lettres utilisateur dispose d'une licence incluant Microsoft Purview Audit (Premium).
+    2. En PowerShell Exchange Online (View-Only Organization Management), vérifier les actions
+       d'audit propriétaire :
+       `Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox | Where-Object { $_.AuditOwner -notcontains 'MailItemsAccessed' -or $_.AuditOwner -notcontains 'SearchQueryInitiated' } | Select-Object UserPrincipalName,AuditOwner`.
+    3. Dans le portail Microsoft Purview, lancer une recherche **Audit** sur les activités **Éléments
+       de boîte aux lettres consultés** et **Recherche d'e-mails effectuée** sur la dernière semaine
+       et vérifier qu'il y a des résultats.
+    4. Échec si des boîtes aux lettres utilisateur n'ont pas la licence, ou si une boîte sous licence
+       n'enregistre pas `MailItemsAccessed` ou `SearchQueryInitiated`.
+remediation:
+  manual: |
+    1. Attribuer à tous les utilisateurs une licence incluant Audit Premium (licences par groupe
+       recommandées).
+    2. Vérifier que l'audit des boîtes aux lettres est actif (CB-M365-AUDIT-005).
+    3. En PowerShell Exchange Online (rôle Organization Management ou Audit Logs), ajouter l'action de
+       recherche à chaque boîte aux lettres utilisateur :
+       `Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox | Set-Mailbox -AuditOwner @{Add='SearchQueryInitiated'}`.
+    4. Si `MailItemsAccessed` a été retiré d'une boîte, le rajouter de la même façon pour
+       `AuditOwner`, `AuditDelegate` et `AuditAdmin`.
+    5. Répéter l'étape 3 pour les nouvelles boîtes aux lettres, par exemple dans le processus de
+       provisionnement.
+  rollback: |
+    `Set-Mailbox -AuditOwner @{Remove='SearchQueryInitiated'}`.

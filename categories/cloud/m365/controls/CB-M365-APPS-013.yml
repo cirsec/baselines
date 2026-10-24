@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-013
+title: Remove unsafe redirect URIs from applications
+finding:
+  title: Applications accept redirect URIs that an attacker could control
+  description: Wildcard, plain HTTP or abandoned redirect URIs let an attacker receive authorization codes and tokens issued for a legitimate application.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, oauth, redirect-uri, token-theft]
+
+description: |
+  Redirect URIs (reply URLs) of application registrations are restricted to addresses the
+  organization controls:
+
+  - no wildcard (`*`) in a URI;
+  - `https` only, except `http://localhost` for native and development clients;
+  - no URI on a domain the organization no longer owns or that is not registered (for example an
+    expired domain, a deleted `azurewebsites.net` or `cloudapp.net` host, a third-party URL
+    shortener);
+  - no URI left over from tests (`https://jwt.ms`, `https://oauth.pstmn.io`, personal
+    `ngrok` hosts) on production applications.
+rationale: |
+  Microsoft Entra sends authorization codes and, for implicit flows, tokens to the redirect URI. If
+  that URI points to a host an attacker can register or intercept, the attacker receives the
+  victim's code for a trusted application and can redeem it. Dangling cloud host names are claimed
+  by attackers precisely for this purpose.
+impact: |
+  Removing a URI still used by a client breaks sign-in for that client. Confirm with the
+  application owner first.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **App registrations** > **All applications**, open each application
+       and review **Authentication** > **Platform configurations** (Web, Single-page application,
+       Mobile and desktop).
+    3. In Microsoft Graph PowerShell (scope `Application.Read.All`), list URIs with
+       `Get-MgApplication -All -Property displayName,appId,web,spa,publicClient | Select-Object displayName,@{n='uris';e={$_.Web.RedirectUris + $_.Spa.RedirectUris + $_.PublicClient.RedirectUris}}`.
+    4. Resolve each host name: check it is a domain the organization owns and that the DNS name
+       still points to a resource the organization controls.
+    5. Fail if any URI contains a wildcard, uses `http` to a host other than `localhost`, points to
+       an unregistered or third-party-controlled host, or is a test URI on a production
+       application.
+
+remediation:
+  manual: |
+    1. With the application owner, list the redirect URIs actually used by the clients.
+    2. Browse to **App registrations** > the application > **Authentication** and delete the unsafe
+       URIs, or replace them with exact `https` URIs on domains you control.
+    3. Graph alternative: `Update-MgApplication -ApplicationId <id> -Web @{ RedirectUris = @('<uri>') }`.
+    4. Remove dangling DNS records that pointed to deleted cloud resources.
+    5. Role required: Cloud Application Administrator, or owner of the application.
+  rollback: |
+    Add the removed URI back under **Authentication** once its host is confirmed to be under your
+    control.
+
+references:
+  - title: Redirect URI (reply URL) best practices and limitations
+    url: https://learn.microsoft.com/entra/identity-platform/reply-url
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-APPS-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

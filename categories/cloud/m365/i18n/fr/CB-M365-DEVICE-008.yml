@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les utilisateurs de lire les clés de récupération BitLocker de leurs propres appareils
+finding:
+  title: Les utilisateurs peuvent lire les clés de récupération BitLocker des appareils dont ils sont propriétaires
+  description: Un utilisateur, ou un attaquant qui détient sa session, peut récupérer la clé de récupération et déverrouiller le disque chiffré de ses appareils sans passer par le support.
+description: |
+  Le paramètre d'appareil **Restrict users from recovering the BitLocker key(s) for their owned
+  devices** (restreindre la récupération des clés BitLocker par les utilisateurs pour leurs
+  appareils) vaut **Oui**. Seuls les rôles disposant de l'autorisation de lecture BitLocker
+  (administrateur d'appareils cloud, administrateur du support technique, administrateur Intune,
+  administrateur de la sécurité, lecteur Sécurité) peuvent afficher les clés de récupération, et
+  chaque affichage est journalisé.
+rationale: |
+  La clé de récupération BitLocker contourne les protecteurs TPM et PIN. Si le propriétaire de
+  l'appareil peut la lire en libre-service, un attaquant qui hameçonne la session de l'utilisateur,
+  ou un utilisateur qui veut contourner les contrôles du poste (par exemple démarrer un autre
+  système ou casser la liaison au TPM), l'obtient sans aucune vérification humaine. Passer par le
+  support ajoute une vérification d'identité et une trace de qui a demandé quelle clé.
+impact: |
+  Les utilisateurs bloqués sur l'écran de récupération BitLocker ne peuvent plus obtenir leur clé
+  depuis Mon compte ou le Portail d'entreprise et doivent appeler le support. Préparer la procédure
+  du support (vérification d'identité, récupération de la clé dans Entra ID ou Intune) avant
+  d'activer le paramètre, en particulier pour les utilisateurs nomades.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Restrict users from recovering the BitLocker key(s) for their owned devices
+  recommended_value: Oui
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**.
+    3. Vérifier que **Restrict users from recovering the BitLocker key(s) for their owned devices**
+       vaut **Oui**.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/v1.0/policies/authorizationPolicy` (étendue `Policy.Read.All`) et
+       lire `defaultUserRolePermissions.allowedToReadBitlockerKeysForOwnedDevice`.
+    5. Échec si le paramètre vaut **Non** (`allowedToReadBitlockerKeysForOwnedDevice` à `true`).
+remediation:
+  manual: |
+    1. Documenter la procédure du support pour la récupération BitLocker.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**. Rôle : administrateur
+       de rôle privilégié.
+    3. Régler **Restrict users from recovering the BitLocker key(s) for their owned devices** sur
+       **Oui** et enregistrer.
+    4. Équivalent Graph : `PATCH https://graph.microsoft.com/v1.0/policies/authorizationPolicy` avec
+       le corps `{"defaultUserRolePermissions": {"allowedToReadBitlockerKeysForOwnedDevice": false}}`.
+  rollback: |
+    Remettre le paramètre sur **Non**.

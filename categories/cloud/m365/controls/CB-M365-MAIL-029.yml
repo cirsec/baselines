@@ -1,0 +1,176 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-029
+title: Configure anti-phishing impersonation protection, mailbox intelligence and safety tips
+finding:
+  title: Anti-phishing policies do not protect against impersonation of key users and domains
+  description: Look-alike senders posing as executives, the organization's own domains or key partners are delivered without a warning or quarantine.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [defender-for-office-365, anti-phishing, impersonation, mailbox-intelligence, safety-tips]
+
+applicability:
+  requires:
+    - "Microsoft Defender for Office 365 Plan 1"
+
+description: |
+  Every recipient is covered by an anti-phishing policy (the impersonation settings of the
+  Standard or Strict preset, or a custom policy) with at least the Standard values:
+
+  - **Phishing email threshold** at {{ phish_threshold }} or higher (`PhishThresholdLevel`);
+  - user impersonation protection on (`EnableTargetedUserProtection $true`) for
+    {{ protected_users }}, action **Quarantine the message**;
+  - domain impersonation protection on for the organization's domains
+    (`EnableOrganizationDomainsProtection $true`) and for {{ partner_domains }}
+    (`EnableTargetedDomainsProtection $true`), action **Quarantine the message**;
+  - mailbox intelligence and intelligence for impersonation protection on
+    (`EnableMailboxIntelligence`, `EnableMailboxIntelligenceProtection`), action **Move the message
+    to the recipients' Junk Email folders** or stricter;
+  - safety tips on: user impersonation, domain impersonation, unusual characters, first contact,
+    unauthenticated sender (?) and "via" tag;
+  - spoof intelligence on, spoofed senders moved to Junk Email or quarantined;
+  - trusted senders and domains (`ExcludedSenders`, `ExcludedDomains`) empty or limited to
+    documented false positives.
+rationale: |
+  Business email compromise relies on a sender that looks like someone the victim trusts: the CEO
+  from a personal address, `examp1e.com` for `example.com`, a supplier asking to change bank
+  details. Impersonation protection compares senders with the protected names and domains and with
+  each user's usual contacts (mailbox intelligence); safety tips warn users when the match is not
+  certain.
+impact: |
+  Some legitimate messages (a protected executive writing from a personal account, a partner with
+  a similar domain) may be quarantined; add them as trusted senders or domains after review. The
+  protected user list is limited to 350 entries per policy.
+
+parameters:
+  - name: phish_threshold
+    type: integer
+    description: Minimum phishing email threshold (1 Standard, 2 Aggressive, 3 More aggressive, 4 Most aggressive).
+    default: 3
+    minimum: 1
+    maximum: 4
+  - name: protected_users
+    type: string
+    description: Senders protected against user impersonation.
+    default: the priority accounts (CB-M365-MAIL-020) and other people who approve payments or data access
+  - name: partner_domains
+    type: string
+    description: External domains protected against domain impersonation.
+    default: the domains of key suppliers, customers, banks and service providers the organization exchanges money or data with
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** > **Preset
+       security policies** and review the impersonation protection of the Standard and Strict
+       presets; then **Threat policies** > **Anti-phishing** for custom policies and the default
+       policy.
+    3. Check the values above for each policy that applies to users.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-AntiPhishPolicy | Format-List Name, PhishThresholdLevel, EnableTargetedUserProtection, TargetedUsersToProtect,
+         TargetedUserProtectionAction, EnableOrganizationDomainsProtection, EnableTargetedDomainsProtection, TargetedDomainsToProtect,
+         TargetedDomainProtectionAction, EnableMailboxIntelligence, EnableMailboxIntelligenceProtection, MailboxIntelligenceProtectionAction,
+         EnableSimilarUsersSafetyTips, EnableSimilarDomainsSafetyTips, EnableUnusualCharactersSafetyTips, EnableFirstContactSafetyTips,
+         EnableUnauthenticatedSender, EnableViaTag, EnableSpoofIntelligence, AuthenticationFailAction, ExcludedSenders, ExcludedDomains
+       ```
+    5. Fail if a policy that applies to users misses one of the values, if the protected users or
+       partner domains lists are empty, or if trusted senders and domains contain undocumented
+       entries.
+
+remediation:
+  manual: |
+    1. Prefer the preset: in **Preset security policies** > **Standard protection** (and **Strict**)
+       > **Manage protection settings** > **Impersonation protection**, add the protected users and
+       partner domains and confirm (Security Administrator).
+    2. For a custom policy, in **Anti-phishing**, edit the policy: **Phishing threshold & protection**
+       with the threshold, user and domain protection, mailbox intelligence; **Actions** with
+       Quarantine for user and domain impersonation and every safety tip selected.
+    3. PowerShell equivalent:
+       ```powershell
+       Set-AntiPhishPolicy -Identity "<policy>" -PhishThresholdLevel 3 -EnableTargetedUserProtection $true `
+         -TargetedUsersToProtect "CEO;ceo@example.com","CFO;cfo@example.com" -TargetedUserProtectionAction Quarantine `
+         -EnableOrganizationDomainsProtection $true -EnableTargetedDomainsProtection $true -TargetedDomainsToProtect "partner.example" `
+         -TargetedDomainProtectionAction Quarantine -EnableMailboxIntelligence $true -EnableMailboxIntelligenceProtection $true `
+         -MailboxIntelligenceProtectionAction MoveToJmf -EnableSimilarUsersSafetyTips $true -EnableSimilarDomainsSafetyTips $true `
+         -EnableUnusualCharactersSafetyTips $true -EnableFirstContactSafetyTips $true -EnableUnauthenticatedSender $true -EnableViaTag $true
+       ```
+  rollback: |
+    Set the impersonation actions back to `NoAction` on the custom policy, or remove a protected entry
+    that causes false positives.
+
+references:
+  - title: Configure anti-phishing policies in Microsoft Defender for Office 365
+    url: https://learn.microsoft.com/defender-office-365/anti-phishing-policies-mdo-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Anti-phishing policies in Microsoft 365
+    url: https://learn.microsoft.com/defender-office-365/anti-phishing-policies-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommended settings for EOP and Microsoft Defender for Office 365 security
+    url: https://learn.microsoft.com/defender-office-365/recommended-settings-for-eop-and-office365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-111 to 123, 180, 220 to 230, 241)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.7"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.2.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.2.2v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.2.3v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.2.4v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+  - framework: mitre-attack
+    id: T1656
+related_controls:
+  - id: CB-M365-MAIL-003
+    type: related
+  - id: CB-M365-MAIL-017
+    type: related
+  - id: CB-M365-MAIL-019
+    type: related
+  - id: CB-M365-MAIL-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-010
+title: Disable per-user MFA for every user
+finding:
+  title: Some users are still in legacy per-user MFA
+  description: Users in the Enabled or Enforced per-user MFA state are prompted outside Conditional Access, which makes MFA behaviour hard to predict and can bring back app passwords.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [mfa, per-user-mfa, conditional-access, legacy]
+
+description: |
+  No user has the per-user MFA state **Enabled** or **Enforced**: every user shows **Disabled**,
+  and MFA is required by Conditional Access (CB-M365-AUTH-003) or, without Entra ID P1, by
+  security defaults (CB-M365-AUTH-002).
+
+  The per-user MFA service settings are not used either: **app passwords** are not allowed,
+  **trusted IPs** are empty and **remember multifactor authentication on trusted devices** is
+  off.
+rationale: |
+  Per-user MFA predates Conditional Access. It cannot target applications, devices or risk,
+  ignores authentication strengths, and with the Enforced state lets users create app passwords
+  that bypass MFA for legacy clients. Mixing it with Conditional Access gives prompts nobody can
+  explain and hides gaps.
+impact: |
+  Make sure Conditional Access requires MFA for these users before switching them to Disabled,
+  otherwise they lose MFA. Existing app passwords stop working once the user is no longer
+  enforced and app passwords are disallowed.
+notes: |
+  Microsoft can create a Microsoft-managed Conditional Access policy for per-user MFA users
+  (tenants with fewer than 500 of them). It helps the transition but does not remove the
+  per-user state.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader (the portal page may require Authentication Policy Administrator; use the
+       Graph call otherwise).
+    2. Browse to **Entra ID** > **Users** > **All users** and select **Per-user MFA**.
+    3. Filter **Status** on **Enabled**, then on **Enforced**.
+    4. Select **service settings** and check app passwords, trusted IPs and remember MFA.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`), per user:
+       `Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/beta/users/$id/authentication/requirements"`
+       returns `perUserMfaState`.
+    6. Fail if any user is **Enabled** or **Enforced**, or if app passwords are allowed.
+
+remediation:
+  manual: |
+    1. Confirm that the Conditional Access MFA policy covers the users found.
+    2. As at least an Authentication Policy Administrator, browse to **Entra ID** > **Users** >
+       **All users** > **Per-user MFA**.
+    3. Select the users in **Enabled** or **Enforced** and select **Disable MFA**, then confirm.
+    4. In **service settings**, select **Do not allow users to create app passwords**, clear
+       trusted IPs and remember MFA, and save.
+    Graph equivalent, per user: `PATCH https://graph.microsoft.com/beta/users/{id}/authentication/requirements`
+    with `{"perUserMfaState": "disabled"}`.
+  rollback: |
+    Set the users back to **Enabled** in **Per-user MFA**.
+
+references:
+  - title: Enable per-user Microsoft Entra multifactor authentication to secure sign-in events
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-mfa-userstates
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.2.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-009
+    type: related
+  - id: CB-M365-AUTH-046
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

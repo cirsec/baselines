@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-011
+title: Disable SMS and voice call as authentication methods
+finding:
+  title: SMS or voice call can be used for authentication
+  description: Codes and calls sent to a phone number can be intercepted by SIM swapping, number porting or a phishing page, and give no protection against relay.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [mfa, sms, voice, authentication-methods, sim-swap]
+
+description: |
+  In the Authentication methods policy, the **SMS** and **Voice call** methods are disabled, or
+  enabled only for a documented exception group (for example users waiting for a phishing-resistant
+  method) with a removal date. The setting applies whatever telephony provider delivers the
+  messages: Microsoft until its retirement, then a third-party provider from the Microsoft
+  Security Store.
+
+  Email one-time passcodes are handled separately in CB-M365-AUTH-012.
+rationale: |
+  Phone methods depend on the mobile operator: SIM swap and number porting hand the codes to an
+  attacker, and the code or call can be relayed by a phishing page like any other. SMS sign-in
+  also lets the phone number replace the password. Microsoft itself no longer considers these
+  methods secure and retires its own SMS and voice delivery in 2027.
+impact: |
+  Users whose only method is a phone number lose MFA and SSPR. Identify them first
+  (**User registration details**, method **SMS** or **Voice call**) and move them to Microsoft
+  Authenticator or a passkey. Users without a smartphone need a security key or a hardware OATH
+  token.
+notes: |
+  From 1 February 2027, Microsoft stops delivering SMS and voice for authentication (1 July 2027
+  for Global Administrators and external users); users who rely only on them are forced to
+  register a passkey. The control stays relevant for tenants that configure a third-party
+  telephony provider.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies**.
+    3. Check that **SMS** and **Voice call** show **Enabled** = **No**, or target only a documented
+       exception group.
+    4. Check that the migration is complete (CB-M365-AUTH-009); otherwise also check the
+       verification options in **Per-user MFA** > **service settings**.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `'Sms','Voice' | ForEach-Object { Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId $_ | Select-Object Id, State }`
+    6. Fail if either method is enabled for all users or for an undocumented group.
+
+remediation:
+  manual: |
+    1. List the users who still rely on SMS or voice and get them to register another method.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Authentication methods** > **Policies** > **SMS**, turn
+       **Enable** off (or narrow the target to the exception group) and save.
+    4. Do the same for **Voice call**.
+    Graph equivalent: `Update-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Sms -BodyParameter @{ '@odata.type' = '#microsoft.graph.smsAuthenticationMethodConfiguration'; state = 'disabled' }`
+    and the same with `Voice` and `#microsoft.graph.voiceAuthenticationMethodConfiguration`.
+  rollback: |
+    Re-enable the method for a limited group only.
+
+references:
+  - title: Passkeys by default and retirement of Microsoft-provided SMS and voice authentication
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sms-voice-retirement
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Phone authentication methods in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-phone-options
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.5"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.5v2
+    relation: partial
+    note: SCuBA also disables email OTP; that part is CB-M365-AUTH-012, in the hardened profile.
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R8"
+    relation: stricter
+    note: ANSSI rules out SMS; we also disable voice calls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(8)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1111
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-M365-AUTH-009
+    type: requires
+  - id: CB-M365-AUTH-012
+    type: related
+  - id: CB-M365-AUTH-013
+    type: related
+  - id: CB-M365-AUTH-040
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

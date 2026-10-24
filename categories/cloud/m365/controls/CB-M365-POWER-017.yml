@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-017
+title: Restrict who can turn on external sharing of semantic models
+finding:
+  title: Any user can share semantic models in place with other tenants
+  description: Semantic model owners can let guests from other tenants connect to and build on the data from their own tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, external-sharing, semantic-models, cross-tenant]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Allow specific users to turn on external data sharing** (Export and
+  sharing settings) is **Disabled**, or **Enabled** only for specific security groups of owners
+  approved to share semantic models with other organizations.
+
+  The related OneLake settings **External data sharing** and **Users can accept external data
+  shares** follow the same rule: disabled, or limited to approved groups.
+rationale: |
+  In-place sharing lets B2B guests discover and use a semantic model from their home tenant, with
+  their own reports and capacity. The data then flows into another organization's environment,
+  outside this tenant's audit and lifecycle. Limiting who can turn it on keeps cross-tenant data
+  sharing to reviewed cases.
+impact: |
+  Owners outside the allowed groups can no longer enable external sharing on their semantic models.
+  Existing external shares should be reviewed with their owners.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Export and sharing settings > Allow specific users to turn on external data sharing
+  recommended_value: Disabled, or Enabled for specific security groups
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Export and sharing settings**
+       and expand **Allow specific users to turn on external data sharing**. Also check **External
+       data sharing** and **Users can accept external data shares**.
+    3. Check that each is **Disabled**, or **Enabled** for **Specific security groups** only.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `EnableDatasetInPlaceSharing`.
+    5. Fail if any of these settings is enabled for the entire organization.
+
+remediation:
+  manual: |
+    1. In **Tenant settings** > **Export and sharing settings** > **Allow specific users to turn on
+       external data sharing**, select **Disabled**, or **Enabled** with **Specific security
+       groups**. Select **Apply**. Role: Fabric Administrator.
+    2. Apply the same scope to **External data sharing** and **Users can accept external data
+       shares**.
+    3. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/EnableDatasetInPlaceSharing/update`
+       with the target state.
+  rollback: |
+    Set the settings back to their previous scope.
+
+references:
+  - title: Export and sharing tenant settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-export-sharing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.8"
+    relation: stricter
+    note: Also covers the OneLake external data sharing settings, not only semantic model in-place sharing.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1537
+related_controls:
+  - id: CB-M365-POWER-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

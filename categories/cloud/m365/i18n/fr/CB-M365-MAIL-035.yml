@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-035
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas envoyer de courrier depuis le domaine onmicrosoft.com
+finding:
+  title: Des boîtes envoient du courrier avec l'adresse onmicrosoft.com du tenant
+  description: Les messages issus du domaine Microsoft partagé ne portent ni l'image de l'organisation ni un DMARC qu'elle contrôle, et Microsoft les limite.
+description: |
+  Aucune boîte, aucun groupe ni aucune application n'envoie de courrier avec une adresse du domaine
+  MOERA du tenant (Microsoft Online Email Routing Address, `<tenant>.onmicrosoft.com`). Chaque boîte et
+  chaque groupe a son adresse SMTP principale dans un domaine personnalisé, et le domaine par défaut
+  du tenant est un domaine personnalisé. L'adresse MOERA reste en adresse secondaire, comme l'exige
+  Exchange Online.
+rationale: |
+  Les domaines `onmicrosoft.com` sont partagés par tous les tenants et leur réputation l'est aussi.
+  Les destinataires ne peuvent pas distinguer un message de `contoso.onmicrosoft.com` de celui d'un
+  attaquant qui a créé un tenant sosie, et le DMARC, le DKIM et l'image de l'organisation ne
+  s'appliquent pas. Microsoft limite désormais le courrier sortant des domaines MOERA à 100
+  destinataires externes par jour et par tenant ; au-delà, les messages sont rejetés.
+impact: |
+  Les comptes dont l'adresse principale change continuent de recevoir le courrier sur l'ancienne
+  adresse. Les scripts, applications ou appareils qui envoient avec l'adresse MOERA doivent être mis à
+  jour. Les comptes d'administration sans boîte aux lettres ne sont pas concernés.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au
+       moins le rôle Lecteur général. Aller dans **Paramètres** > **Domaines** et vérifier qu'un
+       domaine personnalisé est marqué **Par défaut**.
+    2. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-EXORecipient -ResultSize Unlimited | Where-Object { $_.PrimarySmtpAddress -like '*.onmicrosoft.com' } |
+         Format-Table Name, RecipientTypeDetails, PrimarySmtpAddress
+       Get-MessageTraceV2 -StartDate (Get-Date).AddDays(-10) -EndDate (Get-Date) -SenderAddress "*@<tenant>.onmicrosoft.com" |
+         Group-Object SenderAddress | Select-Object Name, Count
+       ```
+    3. Échec si une boîte ou un groupe autre qu'un objet système documenté a une adresse principale
+       `onmicrosoft.com`, ou si le suivi des messages montre du courrier sortant envoyé depuis le domaine
+       MOERA.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Microsoft 365, **Paramètres** > **Domaines**, sélectionner le
+       domaine personnalisé principal > **Définir par défaut** (Administrateur de noms de domaine).
+    2. Pour chaque utilisateur listé, **Utilisateurs** > **Utilisateurs actifs** > sélectionner
+       l'utilisateur > **Gérer le nom d'utilisateur et l'e-mail**, ajouter une adresse dans le domaine
+       personnalisé et la définir comme principale (Administrateur d'utilisateurs ou Administrateur
+       Exchange). Équivalent PowerShell :
+       ```powershell
+       Set-Mailbox -Identity <user> -WindowsEmailAddress user@example.com
+       Set-UnifiedGroup -Identity <group> -PrimarySmtpAddress group@example.com
+       ```
+       Pour les utilisateurs synchronisés, modifier les attributs `mail` / `proxyAddresses` dans Active
+       Directory.
+    3. Mettre à jour les scripts et appareils qui envoient avec l'adresse MOERA.

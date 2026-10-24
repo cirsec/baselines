@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-013
+title: Block new custom scripts on SharePoint and OneDrive sites
+finding:
+  title: Custom scripts are allowed on SharePoint sites
+  description: Site owners can insert arbitrary script into pages that every visitor runs, outside any governance or code review.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [custom-script, sharepoint, onedrive, governance]
+
+description: |
+  No SharePoint site or OneDrive allows custom scripts: every site has `DenyAddAndCustomizePages`
+  enabled and the Baseline security mode setting **Don't allow new custom scripts in SharePoint
+  sites** is on, which permanently removes the ability to add new custom scripts.
+
+  Custom scripts are blocked by default on OneDrive, self-service sites, modern sites and sites
+  created from the admin center or `New-SPOSite`. An administrator can still allow them on a site
+  temporarily: SharePoint reverts the site to **Blocked** within 24 hours. Since 15 March 2026 the
+  tenant can no longer delay this enforcement.
+rationale: |
+  A custom script runs in the browser of every user who opens the page, with that user's session.
+  Anyone with **Add and Customize Pages** permission (site owners by default) can use it to steal
+  tokens, alter content or pivot to other sites, and the organization cannot scope, review or block
+  the code once it is deployed. SharePoint Framework solutions give the same extensibility through an
+  administered app catalog.
+impact: |
+  On sites where scripts are blocked, owners cannot save sites, lists or libraries as templates, use
+  the theme gallery, add sandbox solutions, script editor or content editor web parts, or upload
+  `.aspx`, `.master`, `.swf` and similar files. Existing items keep working. SharePoint Framework web
+  parts flagged `requiresCustomScript` disappear from pages. Classic publishing sites that rely on
+  script must be modernized.
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Sites** > **Active sites** and open the **Custom script allowed sites** view (or add
+       the **Custom script** column).
+    3. In the Microsoft 365 admin center, browse to **Settings** > **Org settings** > **Security and
+       Privacy** > **Baseline Security Mode** and check that **Don't allow new custom scripts in
+       SharePoint sites** is on.
+    4. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOSite -Limit All | Where-Object DenyAddAndCustomizePages -eq 'Disabled' | Select-Object Url`.
+    5. Fail if any site allows custom scripts outside a documented, time-boxed change, or if the
+       Baseline security mode setting is off.
+
+remediation:
+  manual: |
+    1. For each site listed, check with the owner what depends on script and plan a SharePoint Framework
+       replacement.
+    2. In the SharePoint admin center, browse to **Sites** > **Active sites**, select the site, then
+       **Settings** > **Custom scripts** > **Blocked**. PowerShell equivalent:
+       `Set-SPOSite -Identity <URL> -DenyAddAndCustomizePages 1`. Role: SharePoint Administrator.
+    3. In the Microsoft 365 admin center, browse to **Settings** > **Org settings** > **Security and
+       Privacy** > **Baseline Security Mode**, review the impact report, and turn on **Don't allow new
+       custom scripts in SharePoint sites**.
+
+references:
+  - title: Allow or prevent custom script
+    url: https://learn.microsoft.com/sharepoint/allow-or-prevent-custom-script
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Security considerations of allowing custom script
+    url: https://learn.microsoft.com/sharepoint/security-considerations-of-allowing-custom-script
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.4.1v1
+    relation: equivalent
+    note: Removed from ScubaGear 2.0.0, kept for traceability.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.4.2v1
+    relation: equivalent
+    note: Removed from ScubaGear 2.0.0, kept for traceability.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059.007
+  - framework: mitre-attack
+    id: T1213.002
+related_controls:
+  - id: CB-M365-COLLAB-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

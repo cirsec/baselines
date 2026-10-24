@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-022
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer le flux de code d'appareil
+finding:
+  title: Le flux de code d'appareil est autorisé
+  description: Les attaquants envoient aux utilisateurs un code d'appareil avec un prétexte crédible ; une fois le code saisi sur la vraie page Microsoft, l'attaquant reçoit des jetons pour le compte, MFA comprise.
+description: |
+  Une stratégie d'accès conditionnel pour **Tous les utilisateurs** sur **Toutes les ressources**
+  bloque le flux d'authentification **Flux de code d'appareil**. Seules exceptions : des comptes
+  documentés qui en ont besoin sur des appareils sans clavier ni navigateur, comme les comptes de
+  ressource Microsoft Teams Rooms, limités à ces comptes et si possible à leur emplacement réseau.
+
+  La stratégie gérée par Microsoft **Block device code flow** satisfait ce contrôle une fois
+  **Activée** avec le même périmètre.
+rationale: |
+  L'hameçonnage par code d'appareil n'a pas besoin de fausse page : l'utilisateur se connecte sur le
+  vrai site Microsoft, passe la MFA et remet la session à l'attaquant. Les campagnes qui l'utilisent
+  contre Microsoft 365 sont fréquentes, alors que l'usage légitime est rare et limité à des
+  appareils précis.
+impact: |
+  Les outils en ligne de commande et les appareils qui se connectent par code d'appareil cessent de
+  fonctionner : Teams Rooms et autres équipements de réunion, certaines imprimantes, scripts
+  utilisant `az login --use-device-code` ou équivalent. Les trouver dans les journaux de connexion
+  (filtre **Protocole d'authentification** = **Code d'appareil**) et n'exclure que ces comptes.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où **Utilisateurs** inclut **Tous les
+       utilisateurs** (exclusions limitées aux comptes d'accès d'urgence et aux comptes d'appareil
+       documentés), **Ressources cibles** inclut **Toutes les ressources**, **Conditions** > **Flux
+       d'authentification** sélectionne **Flux de code d'appareil**, et **Accorder** vaut **Bloquer
+       l'accès**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.AuthenticationFlows.TransferMethods -match 'deviceCodeFlow' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    5. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si elle exclut des utilisateurs ou des applications sans raison documentée.
+remediation:
+  manual: |
+    1. Dans **Entra ID** > **Supervision et intégrité** > **Journaux de connexion**, filtrer
+       **Protocole d'authentification** sur **Code d'appareil** sur 30 jours et lister les usages
+       légitimes.
+    2. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies**. Activer la stratégie gérée par Microsoft **Block
+       device code flow**, ou sélectionner **Nouvelle stratégie**.
+    3. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence et les comptes d'appareil documentés.
+    4. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    5. **Conditions** > **Flux d'authentification** : **Configurer** sur **Oui**, sélectionner
+       **Flux de code d'appareil**.
+    6. **Accorder** : **Bloquer l'accès**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, examiner, puis passer à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `conditions.authenticationFlows.transferMethods` à `deviceCodeFlow` et
+    `grantControls.builtInControls` à `block`.
+  rollback: |
+    Passer la stratégie en **Rapport seul**, ou exclure le compte qui a besoin du flux de code
+    d'appareil.

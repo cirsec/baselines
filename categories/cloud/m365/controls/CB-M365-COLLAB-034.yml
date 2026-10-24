@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-034
+title: Restrict Teams Rooms resource accounts to managed room devices
+finding:
+  title: Teams Rooms resource accounts can be used outside the room devices
+  description: A resource account, whose password is often shared with installers and rarely rotated, can sign in to Microsoft 365 apps from any device and keep access to meeting files.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams-rooms, resource-accounts, conditional-access, device-compliance]
+
+applicability:
+  requires:
+    - Microsoft Teams Rooms devices
+
+description: |
+  The resource accounts used by Teams Rooms and other Teams devices are limited to what a room needs:
+
+  - they do not keep access to Microsoft 365 files after a meeting (`RestrictResourceAccountAccess` =
+    `True`, Baseline security mode setting **Don't allow resource accounts on Teams Rooms devices from
+    accessing Microsoft 365 files**);
+  - they can sign in only from compliant, organization-managed Teams Rooms devices (Conditional Access
+    with a device filter and compliance requirement, **Only allow endpoint managed, compliant devices
+    to sign in**);
+  - they are blocked from signing in to other Microsoft 365 clients (**Block unmanaged devices and
+    resource account sign-ins to Microsoft 365 apps**).
+rationale: |
+  Resource accounts are licensed user accounts with a mailbox and calendar, often created with a
+  password set by an installer and excluded from MFA because the device cannot prompt. If the
+  credentials leak, they open a mailbox, files shared to meetings and a foothold in Teams from any
+  device. Binding the accounts to managed room devices and removing standing file access shrinks that
+  exposure.
+impact: |
+  Room devices must be Entra joined (or Android devices enrolled) and compliant in Intune before the
+  Conditional Access policies are enforced, otherwise rooms stop signing in. Teams Rooms Pro includes
+  Entra ID P1 and Intune; Microsoft's procedure also uses Entra ID Governance access packages for the
+  join window. Content shared in a meeting is no longer reachable from the room after the meeting.
+  `RestrictResourceAccountAccess` may still be in preview in some tenants.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader. Browse to **Settings** > **Org settings** > **Security and Privacy** > **Baseline
+       Security Mode** and check that the three **Room devices** settings are on.
+    2. In the Microsoft Entra admin center, browse to **Entra ID** > **Conditional Access** >
+       **Policies** (Security Reader) and check that a policy targeting the resource account group
+       requires a compliant device with a filter on the room devices, and that another blocks those
+       accounts outside the room devices. Both must be **On**.
+    3. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object RestrictResourceAccountAccess` must return `True`.
+    4. In the Entra sign-in logs, filter on a resource account and check that recent sign-ins come only
+       from room devices.
+    5. Fail if any of the three restrictions is missing or not enforced.
+
+remediation:
+  manual: |
+    1. Put all Teams Rooms resource accounts in a group (for example a dynamic group on a naming
+       convention) and make sure every room device is Entra joined and compliant in Intune.
+    2. Follow Microsoft's procedure to create the Conditional Access policies: require a compliant,
+       Entra joined device with a device filter on approved room devices, and block the resource
+       accounts everywhere else. Start in **Report-only**, check the sign-in logs, then switch to
+       **On**. Role: Conditional Access Administrator.
+    3. Run `Set-SPOTenant -RestrictResourceAccountAccess $true` (SharePoint Administrator), or turn on
+       the matching Baseline security mode setting.
+    4. Turn on the three **Room devices** settings in Baseline security mode once the impact report
+       shows no unexpected dependency. Role: Teams Administrator.
+  rollback: |
+    Set the Conditional Access policies to **Report-only** if rooms cannot sign in, and run
+    `Set-SPOTenant -RestrictResourceAccountAccess $false` if rooms need file access back.
+
+references:
+  - title: Restrict Teams resource accounts sign in to only Teams Rooms with Conditional Access
+    url: https://learn.microsoft.com/microsoftteams/rooms/block-non-compliant-teams-rooms-devices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Supported Conditional Access and Intune compliance policies for Microsoft Teams Rooms and Teams Android devices
+    url: https://learn.microsoft.com/microsoftteams/rooms/supported-ca-and-compliance-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

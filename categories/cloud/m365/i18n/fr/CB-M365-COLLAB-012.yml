@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer une réauthentification régulière aux personnes qui utilisent un code de vérification
+finding:
+  title: Les destinataires externes connectés par code de vérification restent connectés sans limite
+  description: Une session de navigateur ouverte avec un code reçu par e-mail garde l'accès au contenu partagé sans jamais reprouver que son détenteur contrôle la boîte aux lettres.
+description: |
+  Les destinataires externes qui s'authentifient avec un code de vérification à usage unique envoyé
+  par e-mail et choisissent de rester connectés doivent reprouver qu'ils contrôlent la boîte aux
+  lettres tous les `{{ verification_code_reauth_days }}` jours (`EmailAttestationRequired` = `True`,
+  `EmailAttestationReAuthDays`).
+
+  Ce paramètre SharePoint s'applique aux destinataires authentifiés par SharePoint lui-même. Quand
+  l'intégration Microsoft Entra B2B est active (CB-M365-COLLAB-002), les invités utilisent le code
+  secret à usage unique par e-mail d'Entra B2B et ce sont les contrôles de session Entra qui
+  s'appliquent.
+rationale: |
+  Un code de vérification prouve une fois le contrôle d'une boîte aux lettres. Sans
+  réauthentification, un cookie de session ouvert sur un poste partagé ou perdu, ou une boîte que la
+  personne ne contrôle plus (départ de l'entreprise, adresse réattribuée), garde l'accès aux fichiers
+  partagés aussi longtemps que vit le cookie. Une période de réauthentification courte borne cette
+  fenêtre.
+impact: |
+  Les destinataires externes qui utilisent des codes de vérification reçoivent un nouveau code par
+  e-mail tous les `{{ verification_code_reauth_days }}` jours. Microsoft retire l'authentification par
+  code à usage unique SharePoint des tenants commerciaux en octobre 2026 ; ensuite, le paramètre ne
+  compte que pour les tenants où il s'applique encore, et la réauthentification des invités B2B dépend
+  des contrôles de session de l'accès conditionnel Entra.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Plus de paramètres de partage externe > Les personnes qui utilisent un code de vérification doivent se réauthentifier après ce nombre de jours
+  recommended_value: "Activé, {{ verification_code_reauth_days }} jours ou moins"
+parameters:
+  verification_code_reauth_days: Nombre maximal de jours avant qu'un utilisateur de code de vérification doive se réauthentifier.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage** > **Plus de paramètres de partage externe** et vérifier
+       que **Les personnes qui utilisent un code de vérification doivent se réauthentifier après ce
+       nombre de jours** est coché avec au plus `{{ verification_code_reauth_days }}`.
+    3. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object EmailAttestationRequired, EmailAttestationReAuthDays`.
+    4. Échec si le partage externe est autorisé et que `EmailAttestationRequired` vaut `False` ou que
+       `EmailAttestationReAuthDays` dépasse `{{ verification_code_reauth_days }}`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Plus de
+       paramètres de partage externe**, cocher **Les personnes qui utilisent un code de vérification
+       doivent se réauthentifier après ce nombre de jours**, saisir
+       `{{ verification_code_reauth_days }}` puis **Enregistrer**. Rôle : Administrateur SharePoint.
+    2. Équivalent PowerShell :
+       `Set-SPOTenant -EmailAttestationRequired $true -EmailAttestationReAuthDays {{ verification_code_reauth_days }}`.
+    3. Pour les invités B2B, borner la session avec une stratégie d'accès conditionnel ciblant les
+       **Invités ou utilisateurs externes** avec une **Fréquence de connexion** du même nombre de jours.

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les services de stockage tiers dans Microsoft 365 sur le web
+finding:
+  title: Les utilisateurs peuvent ouvrir des fichiers d'un stockage tiers dans Microsoft 365 sur le web
+  description: Les utilisateurs peuvent connecter des comptes Dropbox, Box ou Google Drive personnels à Microsoft 365 sur le web et y déplacer des fichiers professionnels.
+setting:
+  location: Centre d'administration Microsoft 365 > Paramètres > Paramètres de l'organisation > Services > Microsoft 365 sur le web > Autoriser les utilisateurs à ouvrir des fichiers stockés dans des services de stockage tiers dans Microsoft 365 sur le web
+  recommended_value: Décochée
+description: |
+  L'option **Autoriser les utilisateurs à ouvrir des fichiers stockés dans des services de stockage
+  tiers dans Microsoft 365 sur le web** est décochée. Techniquement, le principal de service de
+  l'application **Microsoft 365 web third-party storage** (ID d'application
+  `c1f33bc0-bdb4-4248-ba9b-096807ddb43e`) existe dans le tenant avec **Activé pour la connexion des
+  utilisateurs** sur **Non** (`accountEnabled` = `false`).
+rationale: |
+  Un stockage tiers connecté à Microsoft 365 sur le web permet d'enregistrer et d'ouvrir des
+  documents professionnels dans des comptes cloud personnels que l'organisation ne gère, ne
+  sauvegarde ni ne surveille. Le désactiver supprime un chemin d'exfiltration facile et garde les
+  fichiers dans un stockage gouverné.
+impact: |
+  Les utilisateurs qui ouvraient des fichiers Dropbox, Box ou Google Drive dans Microsoft 365 sur le
+  web ne le peuvent plus. Les clients de synchronisation de bureau de ces services ne sont pas
+  concernés ; les contrôler sur les postes.
+notes: |
+  Les fournisseurs de stockage d'Outlook sur le web relèvent d'un paramètre Exchange distinct
+  (domaine MAIL). Si le principal de service n'existe pas, la fonction est active.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Services** > **Microsoft 365
+       sur le web** et lire l'option de stockage tiers.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Application.Read.All`) :
+       ```
+       Get-MgServicePrincipal -Filter "appId eq 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e'" |
+         Select-Object DisplayName, AccountEnabled
+       ```
+    4. Échec si l'option est cochée, si le principal de service n'existe pas, ou si
+       `AccountEnabled` vaut `true`.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 avec au moins le rôle Administrateur
+       général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Services** > **Microsoft 365
+       sur le web**.
+    3. Décocher **Autoriser les utilisateurs à ouvrir des fichiers stockés dans des services de
+       stockage tiers dans Microsoft 365 sur le web** et **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell (étendue `Application.ReadWrite.All`, au moins
+       Administrateur d'applications cloud) :
+       ```
+       $sp = Get-MgServicePrincipal -Filter "appId eq 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e'"
+       if (-not $sp) { $sp = New-MgServicePrincipal -AppId 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e' }
+       Update-MgServicePrincipal -ServicePrincipalId $sp.Id -AccountEnabled:$false
+       ```
+  rollback: |
+    Recocher l'option, ou repasser `AccountEnabled` à `true`.

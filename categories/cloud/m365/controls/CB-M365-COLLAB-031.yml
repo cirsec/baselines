@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-031
+title: Turn off Teams meeting recording by default
+finding:
+  title: Every user can record Teams meetings
+  description: Recordings and transcripts of confidential meetings are created freely and stored in OneDrive or SharePoint, where they can be shared further.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, meetings, recording, data-protection]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Cloud recording is off in the Global meeting policy (`AllowCloudRecording` = `False`); only users
+  assigned a custom policy for a documented need can record. For live events, **Record an event** is
+  not **Always record** (`BroadcastRecordingMode` is not `AlwaysEnabled`).
+rationale: |
+  A recording captures everything said and shown, including content shared by external participants,
+  and is stored as a file that follows the recorder's sharing habits and retention. Limiting recording
+  to named users who need it reduces copies of sensitive discussions and makes each recording an
+  expected, governed artifact.
+impact: |
+  Users without the custom policy cannot record or, depending on transcription settings, transcribe
+  meetings; people who rely on recordings for absent colleagues or training need the custom policy.
+  Recording for town halls and webinars is controlled separately in events policies
+  (`RecordingForTownhall`, `RecordingForWebinar`); align them with this decision.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Recording & transcription > Meeting recording
+  default_value: "On"
+  recommended_value: Off in the Global policy (AllowCloudRecording = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Recording & transcription** section, check that **Meeting recording** is **Off** in the
+       Global policy, and **On** only in custom policies assigned to approved users.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowCloudRecording`. For live events:
+       `Get-CsTeamsMeetingBroadcastPolicy | Select-Object Identity, BroadcastRecordingMode`.
+    5. Fail if the Global policy returns `True`, or if `Get-CsTeamsMeetingBroadcastPolicy` returns
+       `AlwaysEnabled` for any policy.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Recording & transcription** section, set **Meeting recording** to **Off** and **Save**.
+       Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent: `Set-CsTeamsMeetingPolicy -Identity Global -AllowCloudRecording $false`
+       (repeat with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+    5. Create a custom meeting policy with recording on and assign it only to approved users.
+    6. If live events policies still exist, set **Record an event** to **Organizer can record** or
+       **Never record** (`Set-CsTeamsMeetingBroadcastPolicy -Identity Global -BroadcastRecordingMode
+       UserOverride`).
+  rollback: |
+    Run `Set-CsTeamsMeetingPolicy -Identity Global -AllowCloudRecording $true`.
+
+references:
+  - title: Teams meeting recording
+    url: https://learn.microsoft.com/microsoftteams/meeting-recording
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingBroadcastPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingbroadcastpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.9"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.1.6v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.1.7v2
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-42
+    relation: related
+related_controls:
+  - id: CB-M365-COLLAB-035
+    type: related
+    note: Recording is unavailable during end-to-end encrypted calls and meetings.
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

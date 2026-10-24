@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une approbation pour activer le rôle Administrateur de rôle privilégié
+finding:
+  title: Le rôle Administrateur de rôle privilégié peut être activé sans approbation
+  description: Un utilisateur éligible au rôle Administrateur de rôle privilégié peut s'attribuer le rôle dans PIM sans intervention d'une seconde personne, y compris un attaquant qui détient ce compte.
+description: |
+  Dans Privileged Identity Management, les paramètres du rôle **Administrateur de rôle privilégié** règlent **Exiger une
+  approbation pour activer** sur **Oui**, avec au moins deux approbateurs. Les approbateurs sont
+  des administrateurs nominatifs qui ne sont pas les seuls utilisateurs éligibles au rôle : personne
+  n'approuve sa propre activation.
+rationale: |
+  Administrateur de rôle privilégié peut attribuer n'importe quel rôle, y compris Administrateur
+  général, et modifier les paramètres de PIM. Un attaquant qui l'active sans approbation peut
+  s'accorder tous les autres privilèges : ce rôle demande la même étape d'approbation
+  qu'Administrateur général.
+impact: |
+  Les activations attendent un approbateur : prévoir des approbateurs sur plusieurs fuseaux
+  horaires ou en astreinte pour ne pas bloquer les interventions urgentes. Les comptes d'accès
+  d'urgence sont actifs en permanence et ne dépendent pas de l'approbation. Les approbateurs
+  reçoivent un e-mail et approuvent dans **Mon accès** ou PIM.
+notes: |
+  PIM n'autorise pas un utilisateur à approuver sa propre demande, mais si les seuls approbateurs
+  sont aussi les seuls éligibles, deux d'entre eux peuvent s'approuver mutuellement : garder un
+  approbateur distinct.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles Microsoft
+       Entra** > **Rôles** > **Administrateur de rôle privilégié** > **Paramètres de rôle**.
+    3. Sous **Activation**, vérifier que **Exiger une approbation pour activer** vaut **Oui** et que
+       la liste des approbateurs compte au moins deux utilisateurs ou un groupe d'au moins deux
+       membres.
+    4. Alternative en lecture seule avec Microsoft Graph (étendue `RoleManagementPolicy.Read.Directory`) :
+       `GET /policies/roleManagementPolicyAssignments?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq 'e8611ab8-c189-46e8-94e1-60213ab1f814'&$expand=policy($expand=rules)`,
+       puis lire la règle `Approval_EndUser_Assignment` : `setting.isApprovalRequired` vaut
+       `true` et `approvalStages[0].primaryApprovers` n'est pas vide.
+    5. Échec si l'approbation n'est pas exigée ou si moins de deux approbateurs sont configurés.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié, aller dans **Gouvernance des ID** > **Privileged
+       Identity Management** > **Rôles Microsoft Entra** > **Rôles** > **Administrateur de rôle privilégié** > **Paramètres de
+       rôle** > **Modifier**.
+    2. Dans l'onglet **Activation**, cocher **Exiger une approbation pour activer** et sélectionner
+       au moins deux approbateurs (utilisateurs ou groupe).
+    3. Sélectionner **Mettre à jour**. Informer les utilisateurs éligibles et les approbateurs de la
+       nouvelle étape.
+    4. Équivalent avec Microsoft Graph : `PATCH /policies/roleManagementPolicies/{policyId}/rules/Approval_EndUser_Assignment`
+       avec `isApprovalRequired: true` et les approbateurs dans `approvalStages`.
+  rollback: |
+    Décocher **Exiger une approbation pour activer** dans les paramètres du rôle.

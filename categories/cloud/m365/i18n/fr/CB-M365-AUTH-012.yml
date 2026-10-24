@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les codes à usage unique par e-mail
+finding:
+  title: Les codes à usage unique par e-mail sont autorisés
+  description: Les invités peuvent utiliser une invitation et se connecter avec un code envoyé dans leur boîte aux lettres, et les membres peuvent réinitialiser leur mot de passe avec, donc contrôler une boîte aux lettres suffit à s'authentifier.
+description: |
+  La méthode **Email OTP** est désactivée dans la stratégie des méthodes d'authentification, y
+  compris son option **Allow external users to use email OTP**, et **Code secret à usage unique par
+  e-mail pour les invités** est réglé sur **Non** dans Identités externes. Les invités
+  s'authentifient alors avec leur propre compte Entra ID, un compte Microsoft ou un fournisseur
+  d'identité configuré ; les membres réinitialisent leur mot de passe avec des méthodes plus
+  fortes.
+rationale: |
+  Un code par e-mail ne prouve que l'accès à une boîte aux lettres, souvent personnelle ou mal
+  protégée, hors de toute stratégie MFA. C'est une porte d'entrée fréquente pour la prise de
+  contrôle de comptes invités et l'abus de la réinitialisation de mot de passe.
+impact: |
+  Les invités sans compte Entra ID ni compte Microsoft ne peuvent plus utiliser leurs invitations ;
+  il leur est demandé de créer un compte Microsoft. Les invités qui ont déjà utilisé un code ne
+  peuvent plus se connecter tant que leur état d'utilisation n'est pas réinitialisé. Les membres
+  perdent l'e-mail comme méthode de réinitialisation. Lister les invités existants qui utilisent
+  l'e-mail OTP avant le changement.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Email OTP** :
+       vérifier que **Activer** est désactivé et, dans **Configurer**, que **Allow external users to
+       use email OTP** vaut **No**.
+    3. Aller dans **Entra ID** > **Identités externes** > **Tous les fournisseurs d'identité**,
+       onglet **Intégré**, **Code secret à usage unique par e-mail** : vérifier que **Code secret à
+       usage unique par e-mail pour les invités** vaut **Non**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Email | Select-Object State, @{n='External';e={$_.AdditionalProperties.allowExternalIdToUseEmailOtp}}`
+    5. Échec si la méthode est activée, ou si `allowExternalIdToUseEmailOtp` vaut `enabled` ou
+       `default`.
+remediation:
+  manual: |
+    1. Lister les invités dont les connexions utilisent l'e-mail OTP et convenir d'une alternative
+       avec leurs parrains.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Email OTP**.
+       Dans **Configurer**, régler **Allow external users to use email OTP** sur **No** ; dans
+       **Activer et cibler**, désactiver **Activer**. Enregistrer.
+    4. Aller dans **Entra ID** > **Identités externes** > **Tous les fournisseurs d'identité** >
+       **Code secret à usage unique par e-mail** et régler **Code secret à usage unique par e-mail
+       pour les invités** sur **Non**. Enregistrer.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Email`
+    avec `{"@odata.type": "#microsoft.graph.emailAuthenticationMethodConfiguration", "state": "disabled", "allowExternalIdToUseEmailOtp": "disabled"}`.
+  rollback: |
+    Remettre **Code secret à usage unique par e-mail pour les invités** sur **Oui** et réactiver la
+    méthode. Réinitialiser l'état d'utilisation des invités bloqués.

@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-006
+title: Audit owner, delegate and administrator actions on every mailbox
+finding:
+  title: Some mailboxes record fewer actions than the Microsoft default audit set
+  description: A mailbox whose audit actions were customized or reduced can let an attacker read, move or delete messages, or create forwarding rules, without a trace.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [audit, logging, exchange, mailbox-audit]
+
+description: |
+  Every user, shared and resource mailbox has `AuditEnabled` = `True` and records, for the
+  **Owner**, **Delegate** and **Admin** logon types, at least the actions of the Microsoft default
+  audit set. Either `DefaultAuditSet` lists `Admin`, `Delegate` and `Owner` (Microsoft manages the
+  list and adds new actions automatically), or the custom lists contain at least these actions:
+
+  - Owner: `ApplyRecord`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`, `Send`,
+    `SoftDelete`, `Update`, `UpdateCalendarDelegation`, `UpdateFolderPermissions`,
+    `UpdateInboxRules`;
+  - Delegate: `ApplyRecord`, `Create`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`,
+    `SendAs`, `SendOnBehalf`, `SoftDelete`, `Update`, `UpdateFolderPermissions`, `UpdateInboxRules`;
+  - Admin: `ApplyRecord`, `Create`, `HardDelete`, `MailItemsAccessed`, `MoveToDeletedItems`,
+    `Send`, `SendAs`, `SendOnBehalf`, `SoftDelete`, `Update`, `UpdateCalendarDelegation`,
+    `UpdateFolderPermissions`, `UpdateInboxRules`.
+rationale: |
+  Organization-wide auditing (CB-M365-AUDIT-005) only applies the actions configured on each
+  mailbox. Customized lists are frozen: they do not receive new actions that Microsoft adds to the
+  default set, and they are sometimes reduced on purpose. Owner, delegate and admin actions are
+  needed to reconstruct a mailbox compromise.
+impact: |
+  None known when the default set is kept. Additional actions (for example `SearchQueryInitiated`
+  in CB-M365-AUDIT-004) can be added on top.
+notes: |
+  The action lists above match the Microsoft default set at the time of writing; refer to the
+  Microsoft documentation for the current list.
+
+audit:
+  manual: |
+    1. Connect to Exchange Online PowerShell as at least a member of View-Only Organization
+       Management.
+    2. Run `Get-Mailbox -ResultSize Unlimited | Where-Object { -not $_.AuditEnabled -or ($_.DefaultAuditSet -notcontains 'Owner') -or ($_.DefaultAuditSet -notcontains 'Delegate') -or ($_.DefaultAuditSet -notcontains 'Admin') } | Select-Object UserPrincipalName,RecipientTypeDetails,AuditEnabled,DefaultAuditSet,AuditOwner,AuditDelegate,AuditAdmin`.
+    3. For each mailbox returned, compare `AuditOwner`, `AuditDelegate` and `AuditAdmin` with the
+       lists in the description.
+    4. Fail if a mailbox has `AuditEnabled` = `False`, or a customized logon type that misses one of
+       the listed actions.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell with the Organization Management or Audit Logs role.
+    2. Restore the Microsoft-managed default for a mailbox:
+       `Set-Mailbox -Identity <mailbox> -DefaultAuditSet Admin,Delegate,Owner`.
+    3. Or add the missing actions to the custom list, for example
+       `Set-Mailbox -Identity <mailbox> -AuditOwner @{Add='MailItemsAccessed','UpdateInboxRules'}`.
+    4. If `AuditEnabled` is `False` on a mailbox, run `Set-Mailbox -Identity <mailbox> -AuditEnabled $true`.
+  rollback: |
+    Set the previous custom lists back with `Set-Mailbox -AuditOwner`, `-AuditDelegate` and
+    `-AuditAdmin`.
+
+references:
+  - title: Manage mailbox auditing
+    url: https://learn.microsoft.com/purview/audit-mailboxes
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-Mailbox
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-mailbox
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.1.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.002
+  - framework: mitre-attack
+    id: T1564.008
+related_controls:
+  - id: CB-M365-AUDIT-005
+    type: requires
+  - id: CB-M365-AUDIT-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-011
+title: Require multi admin approval for sensitive Intune changes
+finding:
+  title: Intune applies sensitive changes without a second administrator's approval
+  description: A single compromised Intune administrator account can wipe the fleet, push a script to every device or change roles without anyone else approving.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [intune, multi-admin-approval, privileged-access, change-control, ransomware]
+
+applicability:
+  requires:
+    - "Microsoft Intune"
+
+description: |
+  Intune **Multi Admin Approval** access policies protect at least these resource types:
+  **Device actions** (wipe, retire, delete), **Scripts** (Windows PowerShell scripts), **Apps** and
+  **Role-based access control**. Each access policy names an approver security group of at least
+  two administrators other than the requesters. Compliance policies, configuration policies and
+  tenant configuration can be added according to the organization's change process.
+rationale: |
+  Attackers who take over an Intune administrator account have used it to wipe thousands of
+  devices or to deploy malware as a script to the whole fleet in minutes. Requiring a second
+  administrator to approve these changes turns a single account compromise into a request that a
+  human must validate, and records a business justification for every change. Approvals also
+  apply to automation calling the Microsoft Graph API.
+impact: |
+  Protected changes wait for approval (requests expire after 3 days) and the requester must then
+  select **Complete**. Intune sends no notification: approvers must check the **Received
+  requests** page or be contacted directly. Automation that modifies protected resources must
+  handle the approval workflow, or be excluded explicitly (app exclusions apply to app-only calls
+  and weaken the protection). Protecting the **Role** type first can deadlock the RBAC assignments
+  that approvals rely on: configure it last.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com) as at least a
+       Global Reader (or an account with the **Read access policy** permission).
+    2. Browse to **Tenant administration** > **Multi Admin Approval** > **Access policies**.
+    3. Check that policies exist for **Device actions**, **Scripts**, **Apps** and **Role-based
+       access control**, each with an approver group of at least two administrators, and review the
+       enterprise applications excluded from each policy.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/deviceManagement/operationApprovalPolicies` (scope
+       `DeviceManagementRBAC.Read.All`).
+    5. Fail if no access policy exists, or if device actions or scripts are not protected.
+
+remediation:
+  manual: |
+    1. Create a security group of approvers (at least two administrators, direct members), and add
+       the group as a member group of an Intune role assignment with the read permissions of the
+       protected resources.
+    2. Browse to **Tenant administration** > **Multi Admin Approval** > **Access policies** >
+       **Create**. Role: Intune Administrator, or a custom role with the Multi Admin Approval
+       access policy permissions.
+    3. Choose the **Profile type** (start with **Device actions**), select the approver group, keep
+       **Exclusions** empty, enter a business justification and select **Submit for approval**.
+    4. Have another administrator approve the access policy, then select **Complete** with the
+       first account.
+    5. Repeat for **Scripts**, **Apps**, and finally **Role-based access control**.
+  rollback: |
+    Delete the access policy (this change also needs a second administrator's approval).
+
+references:
+  - title: Use Multi Admin Approval in Intune
+    url: https://learn.microsoft.com/intune/fundamentals/role-based-access-control/multi-admin-approval
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1096
+    url: https://maester.dev/docs/tests/MT.1096
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1485
+  - framework: mitre-attack
+    id: T1072
+  - framework: mitre-attack
+    id: T1078.004
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser les invitations d'invités que vers des domaines approuvés
+finding:
+  title: Des invités peuvent être invités depuis n'importe quel domaine
+  description: Les invitations peuvent partir vers n'importe quelle adresse externe, y compris des messageries grand public et des domaines ressemblants, si bien que des données peuvent être partagées avec n'importe quelle organisation.
+parameters:
+  allowed_guest_domains: Domaines externes dont les utilisateurs peuvent être invités (partenaires avec une relation d'affaires).
+description: |
+  **Restrictions de collaboration** vaut **Autoriser les invitations uniquement vers les domaines
+  spécifiés (le plus restrictif)**, et la liste contient exactement les domaines de
+  `{{ allowed_guest_domains }}`. Les invitations vers tout autre domaine, y compris les fournisseurs
+  de messagerie grand public, sont refusées.
+rationale: |
+  Une liste d'autorisation limite les comptes invités, et donc le partage via Entra B2B, aux
+  organisations avec lesquelles existe une relation d'affaires. Elle bloque les invitations vers
+  des boîtes personnelles utilisées pour exfiltrer des données, et vers des domaines ressemblants
+  montés par des attaquants.
+impact: |
+  Chaque nouveau domaine partenaire doit être ajouté avant que ses utilisateurs puissent être
+  invités, ce qui demande un processus de demande. La liste s'applique aux nouvelles invitations ;
+  les invités existants d'autres domaines restent jusqu'à leur revue (CB-M365-TENANT-013). Les
+  partenaires qui ont plusieurs domaines doivent voir chacun listé.
+notes: |
+  Les paramètres d'accès inter-locataires (CB-M365-TENANT-014) peuvent aussi autoriser ou bloquer
+  la collaboration B2B par tenant Microsoft Entra ; la liste de domaines couvre aussi les externes
+  sans tenant Entra.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**,
+       section **Restrictions de collaboration**.
+    3. Vérifier que **Autoriser les invitations uniquement vers les domaines spécifiés (le plus
+       restrictif)** est sélectionné et que la liste correspond à `{{ allowed_guest_domains }}`.
+    4. Alternative en lecture seule avec Microsoft Graph (bêta, étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/beta/policies/b2bManagementPolicies` et lire
+       `InvitationsAllowedAndBlockedDomainsPolicy`.
+    5. Échec si les invitations sont autorisées vers tout domaine, si une liste de refus est
+       utilisée à la place, ou si la liste contient des domaines hors du paramètre.
+remediation:
+  manual: |
+    1. Recenser les domaines partenaires et renseigner le paramètre.
+    2. Avec un Administrateur de fournisseur d'identité externe ou un Administrateur général, aller
+       dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**.
+    3. Sous **Restrictions de collaboration**, sélectionner **Autoriser les invitations uniquement
+       vers les domaines spécifiés (le plus restrictif)**, saisir un domaine par ligne et
+       **Enregistrer**.
+  rollback: |
+    Sélectionner **Autoriser l'envoi d'invitations vers n'importe quel domaine (le plus
+    inclusif)**.

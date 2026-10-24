@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Attribuer aux comptes d'administration des licences sans boîte aux lettres ni applications collaboratives
+finding:
+  title: Des comptes d'administration ont une boîte aux lettres ou Teams
+  description: Les comptes d'administration qui reçoivent des e-mails et des messages instantanés sont exposés à l'hameçonnage et aux contenus malveillants directement sur l'identité privilégiée.
+description: |
+  Les comptes qui détiennent un rôle privilégié n'ont aucune licence, ou uniquement des licences
+  qui ne fournissent pas de charges de travail de productivité : par exemple Microsoft Entra ID
+  P1/P2, Microsoft Intune ou des plans Microsoft Defender. Ils n'ont ni boîte aux lettres Exchange
+  Online, ni Teams, ni OneDrive. Les comptes d'accès d'urgence n'ont aucune licence.
+rationale: |
+  Une boîte aux lettres et Teams exposent le compte à l'hameçonnage, aux pièces jointes
+  malveillantes et aux conversations externes, et incitent à utiliser le compte d'administration
+  pour le travail quotidien. Un compte d'administration sans ces charges de travail n'est
+  atteignable par un attaquant que par sa connexion, que la MFA résistante au hameçonnage protège.
+  Les notifications utiles aux administrateurs sont envoyées sur leur boîte aux lettres du
+  quotidien.
+impact: |
+  Les administrateurs lisent les alertes et les notifications PIM dans leur boîte aux lettres du
+  quotidien : renseigner une adresse e-mail secondaire ou transférer depuis le service. Certaines
+  tâches (par exemple tester une fonction de messagerie) nécessitent un compte de test distinct.
+notes: |
+  Entra ID P1 ou P2 reste nécessaire sur les comptes d'administration pour l'accès conditionnel et
+  PIM, et fait partie de l'empreinte réduite.
+audit:
+  manual: |
+    1. Lister les titulaires de rôles privilégiés comme dans CB-M365-ADMIN-001.
+    2. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec
+       au moins le rôle Lecteur général. Aller dans **Utilisateurs** > **Utilisateurs actifs**,
+       ouvrir chaque compte d'administration et vérifier **Licences et applications** : aucune
+       licence incluant Exchange Online, Teams ou SharePoint (Microsoft 365 E3/E5, Office 365
+       E1/E3/E5, plans Exchange Online...).
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `User.Read.All`) :
+       ```
+       Get-MgUserLicenseDetail -UserId <upn> | Select-Object -ExpandProperty ServicePlans |
+         Where-Object { $_.ServicePlanName -match '^(EXCHANGE_S_|TEAMS|SHAREPOINT)' -and $_.ProvisioningStatus -ne 'Disabled' }
+       ```
+    4. Échec si un compte d'administration a un plan de service Exchange Online, Teams ou
+       SharePoint activé.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Microsoft 365, ouvrir chaque compte d'administration >
+       **Licences et applications**, retirer la licence de productivité et ne garder que Entra ID
+       P1/P2 (ou un plan de sécurité seul). Rôle requis : Administrateur de licences ou
+       Administrateur d'utilisateurs.
+    2. Si la licence est attribuée par un groupe, retirer le compte de ce groupe.
+    3. Renseigner une adresse e-mail secondaire pour les notifications sur le compte
+       (**Propriétés** > **Informations de contact**).
+    4. Équivalent avec Microsoft Graph PowerShell :
+       `Set-MgUserLicense -UserId <upn> -AddLicenses @() -RemoveLicenses @('<skuId>')`.
+  rollback: |
+    Réattribuer la licence. La boîte aux lettres reste récupérable 30 jours après le retrait de la
+    licence.

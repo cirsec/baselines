@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-031
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver par défaut l'enregistrement des réunions Teams
+finding:
+  title: Tous les utilisateurs peuvent enregistrer les réunions Teams
+  description: Les enregistrements et transcriptions de réunions confidentielles sont créés librement et stockés dans OneDrive ou SharePoint, d'où ils peuvent être repartagés.
+description: |
+  L'enregistrement cloud est désactivé dans la stratégie de réunion globale (`AllowCloudRecording` =
+  `False`) ; seuls les utilisateurs auxquels une stratégie personnalisée est attribuée pour un besoin
+  documenté peuvent enregistrer. Pour les événements en direct, **Enregistrer un événement** ne vaut
+  pas **Toujours enregistrer** (`BroadcastRecordingMode` différent de `AlwaysEnabled`).
+rationale: |
+  Un enregistrement capture tout ce qui est dit et montré, y compris le contenu partagé par des
+  participants externes, et devient un fichier qui suit les habitudes de partage et la rétention de
+  celui qui enregistre. Réserver l'enregistrement aux utilisateurs nommés qui en ont besoin réduit les
+  copies de discussions sensibles et fait de chaque enregistrement un artefact attendu et gouverné.
+impact: |
+  Les utilisateurs sans la stratégie personnalisée ne peuvent pas enregistrer ni, selon les paramètres
+  de transcription, transcrire les réunions ; ceux qui s'appuient sur les enregistrements pour les
+  absents ou la formation ont besoin de la stratégie personnalisée. L'enregistrement des assemblées et
+  webinaires se règle à part dans les stratégies d'événements (`RecordingForTownhall`,
+  `RecordingForWebinar`) ; les aligner sur cette décision.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Enregistrement et transcription > Enregistrement de réunion
+  recommended_value: Désactivé dans la stratégie globale (AllowCloudRecording = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Enregistrement et transcription**, vérifier que **Enregistrement de réunion**
+       est **Désactivé** dans la stratégie globale, et **Activé** uniquement dans des stratégies
+       personnalisées attribuées à des utilisateurs approuvés.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowCloudRecording`. Pour les événements en
+       direct : `Get-CsTeamsMeetingBroadcastPolicy | Select-Object Identity, BroadcastRecordingMode`.
+    5. Échec si la stratégie globale renvoie `True`, ou si `Get-CsTeamsMeetingBroadcastPolicy` renvoie
+       `AlwaysEnabled` pour une stratégie.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Enregistrement et transcription**, régler **Enregistrement de réunion** sur
+       **Désactivé** puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell : `Set-CsTeamsMeetingPolicy -Identity Global -AllowCloudRecording $false`
+       (répéter avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements
+       peuvent prendre jusqu'à 24 heures.
+    5. Créer une stratégie de réunion personnalisée avec l'enregistrement activé et ne l'attribuer
+       qu'aux utilisateurs approuvés.
+    6. Si des stratégies d'événements en direct existent encore, régler **Enregistrer un événement** sur
+       **L'organisateur peut enregistrer** ou **Ne jamais enregistrer**
+       (`Set-CsTeamsMeetingBroadcastPolicy -Identity Global -BroadcastRecordingMode UserOverride`).
+  rollback: |
+    Exécuter `Set-CsTeamsMeetingPolicy -Identity Global -AllowCloudRecording $true`.

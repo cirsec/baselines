@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver la remise d'e-mails dans les canaux Teams
+finding:
+  title: Les canaux Teams acceptent les messages envoyés à leur adresse e-mail
+  description: Quiconque connaît l'adresse d'un canal peut y publier du contenu et des pièces jointes, en contournant les contrôles d'expéditeur appliqués à la conversation.
+description: |
+  Les utilisateurs ne peuvent pas envoyer d'e-mails à l'adresse d'un canal (`AllowEmailIntoChannel` =
+  `False`), et aucun domaine SMTP n'est listé dans **Accepter les e-mails de canal provenant de ces
+  domaines SMTP**.
+rationale: |
+  Les adresses de canal sont fixes et finissent souvent dans des listes de diffusion, des règles de
+  transfert ou des documents divulgués. Un e-mail publié dans un canal apparaît comme du contenu de
+  canal auquel les membres font confiance : c'est une voie d'hameçonnage et de dépôt de logiciels
+  malveillants dans Teams qui ne dépend pas des paramètres d'accès externe.
+impact: |
+  Les flux qui publient dans des canaux par e-mail (alertes, lettres d'information, transferts)
+  cessent de fonctionner. Les remplacer par des flux Power Automate, l'application Workflows ou des
+  webhooks entrants soumis à la gouvernance des applications.
+setting:
+  location: Centre d'administration Teams > Équipes > Paramètres Teams > Intégration de la messagerie > Les utilisateurs peuvent envoyer des e-mails à l'adresse e-mail d'un canal
+  recommended_value: Désactivé (AllowEmailIntoChannel = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Équipes** > **Paramètres Teams** > **Intégration de la messagerie** et vérifier que
+       **Les utilisateurs peuvent envoyer des e-mails à l'adresse e-mail d'un canal** est **Désactivé**.
+    3. Avec Microsoft Teams PowerShell :
+       `Get-CsTeamsClientConfiguration -Identity Global | Select-Object AllowEmailIntoChannel, RestrictedSenderList`.
+    4. Échec si `AllowEmailIntoChannel` vaut `True`.
+remediation:
+  manual: |
+    1. Identifier les canaux qui reçoivent des e-mails (demander aux propriétaires d'équipe, ou chercher
+       le flux vers des adresses `*.teams.ms` dans le suivi des messages Exchange) et prévoir des
+       remplacements.
+    2. Dans le centre d'administration Teams, aller dans **Équipes** > **Paramètres Teams** >
+       **Intégration de la messagerie**, désactiver **Les utilisateurs peuvent envoyer des e-mails à
+       l'adresse e-mail d'un canal** et vider les domaines acceptés. Sélectionner **Enregistrer**. Rôle
+       : Administrateur Teams.
+    3. Équivalent PowerShell :
+       `Set-CsTeamsClientConfiguration -Identity Global -AllowEmailIntoChannel $false`.

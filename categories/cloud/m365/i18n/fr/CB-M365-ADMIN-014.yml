@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les groupes qui accordent des privilèges ou contournent des stratégies de sécurité
+finding:
+  title: Des groupes sensibles peuvent être modifiés par des administrateurs moins privilégiés ou des propriétaires
+  description: Un Administrateur de groupes, un Administrateur d'utilisateurs ou un propriétaire de groupe peut ajouter un compte à un groupe qui accorde un rôle ou l'exclut de l'accès conditionnel, et élever ses privilèges.
+description: |
+  Tout groupe qui accorde des privilèges ou contourne une stratégie de sécurité est protégé contre
+  les modifications par d'autres que des administrateurs hautement privilégiés. Cela couvre les
+  groupes :
+
+  - attribués à un rôle Microsoft Entra, ou éligibles via PIM pour les groupes ;
+  - exclus d'une stratégie d'accès conditionnel (par exemple le groupe d'accès d'urgence) ;
+  - utilisés pour le contrôle d'accès en fonction du rôle d'Intune ou pour d'autres délégations
+    d'administration (Defender, Purview, Azure).
+
+  Chacun de ces groupes est soit **attribuable à un rôle** (`isAssignableToRole` = true, créé avec
+  **Les rôles Microsoft Entra peuvent être attribués au groupe**), soit membre d'une **unité
+  administrative de gestion restreinte**. Leurs propriétaires sont eux-mêmes administrateurs, pas
+  des utilisateurs ordinaires.
+rationale: |
+  L'appartenance aux groupes est le maillon faible de nombreux modèles de privilèges : des rôles
+  comme Administrateur de groupes, Administrateur d'utilisateurs ou Administrateur Intune, ainsi que
+  les propriétaires de groupe, peuvent modifier les groupes ordinaires. Si un groupe accorde
+  Administrateur général ou exclut des comptes de la MFA, changer ses membres est une élévation
+  complète. Les groupes attribuables à un rôle et les unités administratives de gestion restreinte
+  réservent les modifications aux Administrateurs de rôle privilégié ou aux administrateurs
+  délégués sur l'unité.
+impact: |
+  Le paramètre **Les rôles Microsoft Entra peuvent être attribués au groupe** se choisit à la
+  création et ne peut pas être modifié : les groupes existants doivent être remplacés par de
+  nouveaux. Les groupes attribuables à un rôle ne peuvent pas être dynamiques et sont limités en
+  nombre par tenant. Les unités administratives de gestion restreinte demandent Microsoft Entra ID
+  P1 et un rôle d'administration dédié délégué sur l'unité.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Lister les groupes sensibles : groupes attribués à des rôles (**Entra ID** > **Rôles et
+       administrateurs**, chaque rôle > **Attributions**), groupes exclus dans **Accès
+       conditionnel** > **Stratégies**, et groupes utilisés dans Intune (**Administration du
+       locataire** > **Rôles**) et dans les autres centres d'administration.
+    3. Pour chaque groupe, ouvrir **Propriétés** : **Les rôles Microsoft Entra peuvent être
+       attribués au groupe** vaut **Oui**, ou le groupe figure dans une unité administrative dont
+       **Unité administrative de gestion restreinte** vaut **Oui** (**Entra ID** > **Rôles et
+       administrateurs** > **Unités administratives**).
+    4. Vérifier les **Propriétaires** : uniquement des administrateurs.
+    5. Alternative PowerShell en lecture seule (Microsoft Graph, étendues `Group.Read.All`,
+       `AdministrativeUnit.Read.All`) :
+       ```
+       Get-MgGroup -GroupId <id> -Property DisplayName,IsAssignableToRole
+       Get-MgDirectoryAdministrativeUnit -All -Property Id,DisplayName,IsMemberManagementRestricted |
+         Where-Object IsMemberManagementRestricted |
+         ForEach-Object { Get-MgDirectoryAdministrativeUnitMember -AdministrativeUnitId $_.Id -All }
+       ```
+    6. Échec si un groupe sensible n'est ni attribuable à un rôle ni dans une unité administrative
+       de gestion restreinte, ou si un utilisateur ordinaire en est propriétaire.
+remediation:
+  manual: |
+    1. Pour un groupe utilisé dans des rôles Microsoft Entra ou des exclusions d'accès conditionnel :
+       avec un Administrateur de rôle privilégié, créer un nouveau groupe de sécurité avec **Les
+       rôles Microsoft Entra peuvent être attribués au groupe** sur **Oui**, copier les membres,
+       déplacer l'attribution de rôle ou l'exclusion de stratégie vers lui, puis supprimer l'ancien
+       groupe.
+    2. Pour les autres groupes sensibles (RBAC Intune, accès aux applications) : avec un
+       Administrateur de rôle privilégié, créer une unité administrative avec **Unité
+       administrative de gestion restreinte** sur **Oui**, y ajouter les groupes, et attribuer aux
+       administrateurs qui les gèrent un rôle délégué sur l'unité.
+    3. Retirer les propriétaires non administrateurs de chaque groupe sensible.
+    4. Équivalent avec Microsoft Graph PowerShell :
+       `New-MgGroup -DisplayName <name> -SecurityEnabled -MailEnabled:$false -MailNickname <alias> -IsAssignableToRole`
+       et `New-MgDirectoryAdministrativeUnit -DisplayName <name> -IsMemberManagementRestricted`.
+  rollback: |
+    Redéplacer les attributions vers l'ancien groupe, ou retirer le groupe de l'unité
+    administrative.

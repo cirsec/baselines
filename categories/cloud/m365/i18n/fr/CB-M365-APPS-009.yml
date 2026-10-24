@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter la durée de vie des certificats d'application
+finding:
+  title: Des certificats d'application valables plusieurs années peuvent être enregistrés
+  description: Un certificat valable plusieurs années donne à un attaquant qui a copié la clé privée un accès durable en tant que l'application.
+description: |
+  La stratégie de gestion des applications du tenant impose une durée de vie maximale de
+  **{{ app_cert_max_days }}** jours aux clés asymétriques (certificats) ajoutées aux applications et
+  principaux de service.
+rationale: |
+  Les certificats sont l'identifiant d'application à privilégier, mais une clé privée exportée
+  depuis un serveur ou un pipeline est aussi utile à un attaquant qu'un secret. Une durée de vie
+  courte limite la fenêtre d'usage d'une clé volée et fait de la rotation une opération courante
+  plutôt qu'une urgence.
+impact: |
+  Les certificats doivent être renouvelés au moins tous les {{ app_cert_max_days }} jours.
+  Automatiser le renouvellement (par exemple via Azure Key Vault) avant d'appliquer la restriction.
+  Les certificats émis par des AC publiques avec une validité plus longue ne peuvent pas être
+  chargés tant qu'ils ne sont pas réémis.
+setting:
+  location: Centre d'administration Entra > Entra ID > Applications d'entreprise > Stratégies d'application > Restreindre la durée de vie maximale des certificats (Graph policies/defaultAppManagementPolicy, restriction keyCredentials asymmetricKeyLifetime)
+  recommended_value: Activé, au plus {{ app_cert_max_days }} jours, s'applique à toutes les applications
+parameters:
+  app_cert_max_days: Durée de vie maximale d'un nouveau certificat d'application.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application**.
+    3. Vérifier que la restriction de durée de vie des certificats est **Activée**, réglée sur au
+       plus {{ app_cert_max_days }} jours, et s'applique à **Toutes les applications**.
+    4. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Vérifier que
+       `isEnabled` vaut `true` et que `keyCredentials`, pour les applications et les principaux de
+       service, contient `asymmetricKeyLifetime` avec `state` = `enabled` et `maxLifetime` au plus
+       égal à `P{{ app_cert_max_days }}D`.
+    5. Échec si la restriction est absente, désactivée ou supérieure à {{ app_cert_max_days }}
+       jours.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec le rôle Administrateur de la
+       sécurité et le rôle Administrateur d'applications ou Administrateur d'applications cloud.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Stratégies d'application** et
+       ouvrir la restriction de durée de vie des certificats.
+    3. La passer à **Activé**, saisir {{ app_cert_max_days }} jours, régler **S'applique à** sur
+       **Toutes les applications** et sélectionner **Enregistrer**.
+    4. Alternative Graph (étendue `Policy.ReadWrite.ApplicationConfiguration`) :
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` en ajoutant
+       `{"restrictionType": "asymmetricKeyLifetime", "state": "enabled", "maxLifetime": "P{{ app_cert_max_days }}D"}`
+       à `keyCredentials` pour les applications et les principaux de service, en conservant les
+       restrictions existantes.
+  rollback: |
+    Passer la restriction de durée de vie des certificats à **Désactivé** ou augmenter la durée
+    maximale.

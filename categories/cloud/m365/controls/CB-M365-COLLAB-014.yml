@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-014
+title: Prevent users from adding apps from the SharePoint Store
+finding:
+  title: Users can add third-party apps from the SharePoint Store
+  description: Site owners can install marketplace apps that receive permissions on site content without an administrator reviewing them.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [sharepoint, third-party-apps, governance]
+
+description: |
+  Users cannot get apps from the SharePoint Store (the public marketplace reachable from a site). The
+  Baseline security mode setting **Disable Access to Microsoft Store for SharePoint** is on, which
+  corresponds to `DisableSharePointStoreAccess` = `True`; in the classic store settings, **App
+  Purchases** is **No**. Users can still browse the store and request an app; requests land in the
+  **App Requests** list of the apps site, where an administrator decides.
+rationale: |
+  Store apps run with permissions granted on the site where they are added, and their publishers are
+  outside the organization's supplier review. Letting site owners install them bypasses the
+  application governance applied to Entra consent and Teams apps. Routing apps through requests keeps
+  one decision point.
+impact: |
+  Site owners must request apps instead of installing them. Apps already installed keep working;
+  review them in the apps site.
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Security and Privacy > Baseline Security Mode > Disable Access to Microsoft Store for SharePoint
+  default_value: Off (users can get apps from the store)
+  recommended_value: On (DisableSharePointStoreAccess = True)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Settings** > **Org settings** > **Security and Privacy** > **Baseline Security Mode**
+       and check that **Disable Access to Microsoft Store for SharePoint** is on.
+    3. Alternatively, in the SharePoint admin center open **More features** > **Apps** > **Open** >
+       **Configure store settings** and check that **App Purchases** is **No**.
+    4. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object DisableSharePointStoreAccess` must return `True`.
+    5. Fail if users can get apps from the SharePoint Store.
+
+remediation:
+  manual: |
+    1. List apps already added from the store (apps site, **Apps for SharePoint** and **App Requests**)
+       and decide which to keep.
+    2. In the Microsoft 365 admin center, browse to **Settings** > **Org settings** > **Security and
+       Privacy** > **Baseline Security Mode** and turn on **Disable Access to Microsoft Store for
+       SharePoint**. Role: SharePoint Administrator.
+    3. PowerShell equivalent: `Set-SPOTenant -DisableSharePointStoreAccess $true`. In the classic store
+       settings, set **App Purchases** to **No**.
+    4. Assign someone to process the **App Requests** list.
+
+references:
+  - title: Configure settings for the SharePoint Store
+    url: https://learn.microsoft.com/sharepoint/configure-sharepoint-store-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195
+related_controls:
+  - id: CB-M365-COLLAB-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

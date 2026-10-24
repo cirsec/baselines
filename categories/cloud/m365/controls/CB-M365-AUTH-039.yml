@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-039
+title: Enable self-service password reset for all users
+finding:
+  title: Self-service password reset is disabled or limited to a group
+  description: Users who forget their password or are locked out depend on the help desk, whose identity checks over the phone are a common social engineering target.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [sspr, password-reset, account-recovery, help-desk]
+
+description: |
+  Self-service password reset (SSPR) is enabled with the scope **All**. Every user can reset a
+  forgotten password or unlock their account after proving their identity with the authentication
+  methods they registered, without calling the help desk.
+
+  Administrators always use the separate administrator reset policy (two methods, set by
+  Microsoft) whatever this scope.
+rationale: |
+  A recovery path that relies on a human verifying identity over the phone is what attackers abuse
+  to take over accounts (help-desk social engineering). A self-service reset based on registered
+  methods is both faster for users and harder to talk through. It also lets users clear a smart
+  lockout (CB-M365-AUTH-038) themselves.
+impact: |
+  Users must register reset methods (CB-M365-AUTH-041). For synchronized users, the reset only works
+  on-premises if password writeback is enabled in Microsoft Entra Connect or Cloud Sync. Help-desk
+  procedures change: the help desk no longer resets passwords on a phone call alone.
+notes: |
+  There is no Microsoft Graph API to read the SSPR scope: the check is made in the portal. SSPR for
+  cloud users needs at least a Microsoft 365 business plan or Microsoft Entra ID P1; writeback for
+  hybrid users needs P1.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Password reset > Properties > Self service password reset enabled
+  default_value: None
+  recommended_value: All
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Password reset** > **Properties**.
+    3. Check that **Self service password reset enabled** is set to **All**.
+    4. For hybrid tenants, browse to **Password reset** > **On-premises integration** and check that
+       password writeback is enabled.
+    5. Fail if the setting is **None** or **Selected**.
+
+remediation:
+  manual: |
+    1. Make sure the authentication methods and registration settings are ready
+       (CB-M365-AUTH-040, CB-M365-AUTH-041) and, for hybrid users, that password writeback is
+       enabled in the sync client.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Password reset** > **Properties**.
+    4. Pilot with **Selected** and a test group if SSPR was never used, then set **Self service
+       password reset enabled** to **All** and **Save**.
+    5. Update the help-desk procedure and inform users (https://aka.ms/sspr to reset,
+       https://aka.ms/mysecurityinfo to register).
+  rollback: |
+    Set the scope back to **Selected** with a group, or **None**.
+
+references:
+  - title: "Tutorial: Enable users to unlock their account or reset passwords using Microsoft Entra self-service password reset"
+    url: https://learn.microsoft.com/entra/identity/authentication/tutorial-enable-sspr
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: How self-service password reset works
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-howitworks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.4.1"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R30"
+    relation: partial
+    note: ANSSI asks for an access recovery method in general; ours provides it through SSPR for passwords only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-038
+    type: related
+  - id: CB-M365-AUTH-040
+    type: related
+  - id: CB-M365-AUTH-041
+    type: related
+  - id: CB-M365-AUTH-042
+    type: related
+  - id: CB-M365-AUTH-043
+    type: related
+  - id: CB-M365-AUTH-030
+    type: related
+  - id: CB-M365-AUTH-009
+    type: related
+  - id: CB-M365-ADMIN-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

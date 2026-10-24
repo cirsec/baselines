@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-037
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter l'accès des applications aux boîtes aux lettres avec RBAC for Applications
+finding:
+  title: Des applications avec des permissions de messagerie peuvent accéder à toutes les boîtes de l'organisation
+  description: Une application qui détient des permissions Mail, Calendars ou d'accès complet au niveau du tenant peut lire ou envoyer depuis n'importe quelle boîte, y compris celles des dirigeants, si ses identifiants fuient.
+description: |
+  Les applications qui utilisent des permissions d'application sur les données des boîtes (Microsoft
+  Graph `Mail.*`, `MailboxSettings.*`, `Calendars.*`, `Contacts.*`, ou Exchange `full_access_as_app`) les
+  obtiennent via **RBAC for Applications** dans Exchange Online, limitées aux boîtes dont elles ont
+  besoin par une étendue de gestion ou une unité administrative, et non plus par une autorisation à
+  l'échelle du tenant dans Microsoft Entra ID.
+
+  Les anciennes stratégies d'accès aux applications (`New-ApplicationAccessPolicy`) sont acceptables le
+  temps de la migration, à condition que chaque application concernée soit limitée à un groupe.
+rationale: |
+  Des permissions de messagerie à l'échelle du tenant font d'un seul secret d'application la clé de
+  toutes les boîtes, et les attaquants cherchent précisément ces applications après avoir compromis un
+  tenant. Limiter l'étendue restreint les dégâts aux boîtes que l'application sert réellement, et
+  Exchange montre l'étendue à un seul endroit. Les autorisations Entra et Exchange s'additionnent :
+  l'étendue ne fonctionne qu'une fois l'autorisation Entra retirée.
+impact: |
+  Chaque application doit être revue avec son responsable pour définir les boîtes dont elle a besoin.
+  Retirer l'autorisation Entra avant que l'attribution RBAC soit en place casse l'application ; tester
+  d'abord avec `Test-ServicePrincipalAuthorization`.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général. Aller dans **Entra ID** > **Applications d'entreprise**, et pour
+       chaque application ouvrir **Sécurité** > **Autorisations** > **Consentement administrateur** :
+       noter les applications qui détiennent des permissions d'application sur Microsoft Graph
+       `Mail.*`, `MailboxSettings.*`, `Calendars.*`, `Contacts.*` ou Office 365 Exchange Online
+       `full_access_as_app`.
+    2. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-ServicePrincipal | Format-Table DisplayName, AppId, ObjectId
+       Get-ManagementRoleAssignment -RoleAssigneeType ServicePrincipal |
+         Format-Table RoleAssigneeName, Role, CustomResourceScope, RecipientWriteScope
+       Get-ApplicationAccessPolicy | Format-Table AppId, AccessRight, ScopeName
+       ```
+    3. Échec si une application détient une permission de boîte à l'échelle du tenant dans Entra ID
+       sans stratégie d'accès aux applications qui la restreint, ou si une attribution RBAC for
+       Applications n'a pas d'étendue.
+remediation:
+  manual: |
+    1. Avec chaque responsable d'application, lister les boîtes dont elle a besoin et les placer dans
+       une étendue de gestion (par exemple un filtre sur un attribut personnalisé) ou une unité
+       administrative.
+    2. Dans Exchange Online PowerShell (Administrateur Exchange) :
+       ```powershell
+       New-ServicePrincipal -AppId <app id> -ObjectId <enterprise app object id> -DisplayName "<app>"
+       New-ManagementScope -Name "<app> mailboxes" -RecipientRestrictionFilter "CustomAttribute10 -eq '<app>'"
+       New-ManagementRoleAssignment -App <app id> -Role "Application Mail.Read" -CustomResourceScope "<app> mailboxes"
+       Test-ServicePrincipalAuthorization -Identity <app id> -Resource <mailbox>
+       ```
+    3. Une fois le test réussi, retirer la permission à l'échelle du tenant de l'application dans le
+       centre d'administration Entra (**Applications d'entreprise** > l'application > **Autorisations**
+       > **Révoquer l'autorisation**, Administrateur d'applications cloud ou Administrateur de rôle
+       privilégié).
+  rollback: |
+    Accorder à nouveau la permission d'application Entra avec consentement administrateur le temps de
+    corriger l'étendue.

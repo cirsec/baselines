@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DATA-008
+title: Enable Customer Lockbox
+finding:
+  title: Microsoft engineers can access tenant content during support operations without the organization's approval
+  description: Without Customer Lockbox, data access by Microsoft support engineers is approved inside Microsoft only, and the organization has no say and no explicit record of the request.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [customer-lockbox, purview, data-protection, third-party-access, sovereignty]
+
+applicability:
+  requires:
+    - "Microsoft Purview E5 Compliance"
+
+description: |
+  Customer Lockbox is enabled for the organization. When a Microsoft engineer needs access to
+  customer content to resolve a support case, the request is sent to approvers in the organization
+  (Customer Lockbox Access Approver role), who approve or reject it within the time limit, and
+  each request is recorded in the audit log.
+rationale: |
+  Access by the cloud provider's staff is one of the specific risks of hosting sensitive data in a
+  public cloud. Customer Lockbox makes this access subject to the organization's explicit, logged
+  approval, which supports the risk analysis of CB-M365-DATA-010 and contractual or regulatory
+  requirements on third-party access.
+impact: |
+  Support cases that need content access wait for an approver. Name at least two approvers and
+  include the approval step in the support procedure. Customer Lockbox does not cover every
+  scenario (for example legal requests handled outside support).
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Security & privacy > Customer lockbox (Exchange Online Get-OrganizationConfig CustomerLockBoxEnabled)
+  default_value: "Off"
+  recommended_value: Require approval for all data access requests
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Customer lockbox** and
+       check that **Require approval for all data access requests** is selected.
+    3. Browse to **Entra ID** > **Roles & admins** in the Microsoft Entra admin center and check that
+       **Customer Lockbox Access Approver** has at least two active or eligible members.
+    4. Alternative in Exchange Online PowerShell: `Get-OrganizationConfig | Select-Object
+       CustomerLockBoxEnabled`.
+    5. Fail if `CustomerLockBoxEnabled` is `False` or if no approver is assigned.
+
+remediation:
+  manual: |
+    1. Assign the **Customer Lockbox Access Approver** role to at least two people (eligible through
+       PIM where available).
+    2. Sign in to the Microsoft 365 admin center as a Global Administrator.
+    3. Browse to **Settings** > **Org settings** > **Security & privacy** > **Customer lockbox**,
+       select **Require approval for all data access requests** and **Save**.
+    4. Alternative in Exchange Online PowerShell (Organization Management):
+       `Set-OrganizationConfig -CustomerLockBoxEnabled $true`.
+  rollback: |
+    Clear **Require approval for all data access requests**, or
+    `Set-OrganizationConfig -CustomerLockBoxEnabled $false`.
+
+references:
+  - title: Microsoft Purview Customer Lockbox
+    url: https://learn.microsoft.com/purview/customer-lockbox-requests
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.6"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: PS-7
+    relation: related
+related_controls:
+  - id: CB-M365-DATA-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

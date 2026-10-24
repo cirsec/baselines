@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-044
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer la synchronisation du hachage de mot de passe pour les identités synchronisées
+finding:
+  title: La synchronisation du hachage de mot de passe n'est pas activée dans un tenant hybride
+  description: Microsoft ne peut pas détecter les mots de passe divulgués des utilisateurs synchronisés, et la connexion cloud dépend entièrement de la fédération ou des agents locaux.
+description: |
+  La synchronisation du hachage de mot de passe (PHS) est activée dans Microsoft Entra Connect Sync ou
+  Cloud Sync, même lorsque les utilisateurs se connectent via la fédération (AD FS) ou
+  l'authentification directe. Le client de synchronisation envoie à Microsoft Entra ID un hachage
+  dérivé du hachage Active Directory (PBKDF2 appliqué au hachage MD4, salé par utilisateur) ; le
+  hachage d'origine ne quitte jamais le réseau.
+rationale: |
+  Avec la PHS, ID Protection compare les identifiants des utilisateurs aux mots de passe trouvés dans
+  des fuites et lève un risque utilisateur **Informations d'identification divulguées** (traité par
+  CB-M365-AUTH-030). La PHS maintient aussi la connexion si les serveurs de fédération ou les agents
+  d'authentification tombent ou sont attaqués, et supprime le besoin d'exposer AD FS sur internet une
+  fois l'authentification passée dans le cloud.
+impact: |
+  La première activation synchronise les hachages de tous les utilisateurs concernés. Les mots de
+  passe cloud des utilisateurs synchronisés suivent la stratégie locale et sont réglés pour ne pas
+  expirer dans le cloud. Certaines organisations refusent de stocker dans le cloud des données
+  dérivées des mots de passe ; la valeur stockée ne permet pas de pass-the-hash en local.
+notes: |
+  Activer la PHS ne change pas la méthode de connexion : les domaines fédérés restent fédérés tant
+  qu'ils ne sont pas convertis. Le déploiement par étapes permet de basculer progressivement des
+  groupes d'utilisateurs vers l'authentification cloud.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Entra Connect > Connect Sync (Synchronisation du hachage de mot de passe)
+  recommended_value: Activée
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Entra Connect** > **Connect Sync** et vérifier que la
+       **Synchronisation du hachage de mot de passe** est indiquée **Activée** (pour Cloud Sync,
+       ouvrir la configuration et vérifier **Synchronisation du hachage de mot de passe**).
+    3. Alternative PowerShell (Microsoft Graph, étendue `OnPremDirectorySynchronization.Read.All`) :
+       `(Get-MgDirectoryOnPremiseSynchronization).Features.PasswordSyncEnabled`
+       doit renvoyer `True`.
+    4. Vérifier dans **Supervision et intégrité** ou dans le journal d'événements du serveur de
+       synchronisation que les hachages sont synchronisés sans erreur récurrente.
+    5. Échec si la synchronisation du hachage de mot de passe est désactivée.
+remediation:
+  manual: |
+    1. Sur le serveur Microsoft Entra Connect Sync, lancer l'assistant Microsoft Entra Connect en
+       administrateur local, avec un compte Administrateur d'identité hybride dans le tenant.
+    2. Choisir **Configurer** > **Personnaliser les options de synchronisation** (ou **Modifier la
+       connexion utilisateur**), et sur la page des fonctionnalités facultatives cocher
+       **Synchronisation du hachage de mot de passe**.
+    3. Terminer l'assistant ; la synchronisation initiale des hachages démarre automatiquement.
+    4. Pour Cloud Sync, ouvrir **Entra ID** > **Entra Connect** > **Cloud Sync**, modifier la
+       configuration et activer **Synchronisation du hachage de mot de passe**.
+    5. Vérifier dans **Protection des ID** que les détections d'identifiants divulgués sont désormais
+       possibles pour les utilisateurs synchronisés.
+  rollback: |
+    Décocher **Synchronisation du hachage de mot de passe** dans l'assistant. Les hachages déjà stockés
+    ne servent plus à la connexion dans les domaines fédérés ou en authentification directe.

@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-030
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les utilisateurs à risque élevé ou leur imposer une correction sécurisée
+finding:
+  title: Les utilisateurs signalés à risque élevé par ID Protection gardent un accès complet
+  description: Un compte que Microsoft considère probablement compromis (identifiants divulgués, activité d'attaquant) peut toujours se connecter et utiliser le tenant.
+description: |
+  Une stratégie d'accès conditionnel cible tous les utilisateurs sur toutes les ressources avec la
+  condition **Risque de l'utilisateur** réglée sur **Élevé**, et applique l'action choisie dans
+  `{{ user_risk_action }}` :
+
+  - `remediate` : accorder l'accès avec **Exiger la correction des risques** (une force
+    d'authentification est sélectionnée avec, et **Fréquence de connexion - Chaque fois** est
+    imposée). L'utilisateur doit changer son mot de passe de façon sécurisée, ou, sans mot de passe,
+    refaire une connexion forte, avant de continuer. L'ancienne combinaison **Exiger
+    l'authentification multifacteur** + **Exiger la modification du mot de passe** est acceptée tant
+    qu'elle existe.
+  - `block` : **Bloquer l'accès**. Un administrateur enquête, puis réinitialise le mot de passe et
+    ignore le risque.
+
+  Les deux options satisfont ce contrôle. La stratégie n'exclut que les comptes d'accès d'urgence.
+rationale: |
+  Le risque utilisateur agrège des signaux de compromission du compte lui-même : identifiants
+  retrouvés dans des fuites, connexions depuis une infrastructure d'attaquant, anomalies de jetons,
+  renseignement sur les menaces de Microsoft. Sans stratégie, ces détections n'alimentent qu'un
+  rapport que personne ne lit forcément. Agir automatiquement réduit le temps d'utilisation du compte
+  par l'attaquant de plusieurs jours à la prochaine connexion.
+impact: |
+  Avec `remediate`, les utilisateurs doivent déjà être inscrits à la MFA (et au SSPR pour les
+  utilisateurs à mot de passe), sinon ils sont bloqués jusqu'à l'intervention d'un administrateur.
+  Avec `block`, chaque utilisateur à risque élevé attend le support ou l'équipe sécurité : prévoir
+  une astreinte. La correction par mot de passe exige la réécriture du mot de passe pour les
+  utilisateurs synchronisés.
+notes: |
+  Microsoft déploie des stratégies gérées par Microsoft pour les utilisateurs à risque élevé
+  (« Block access for high-risk users », « Require remediation for high-risk users » ; centre de
+  messages MC1507808, fin octobre 2026). Une stratégie gérée laissée en **Rapport seul** est activée
+  par Microsoft après environ 30 jours. La revoir : la garder **Activée** comme stratégie qui répond à
+  ce contrôle, ou la **Désactiver** si votre propre stratégie couvre le même périmètre. Quand
+  plusieurs stratégies de risque s'appliquent, **Bloquer** l'emporte sur la correction.
+parameters:
+  user_risk_action: Action pour les utilisateurs à risque élevé. « remediate » impose une correction sécurisée en libre-service, « block » bloque l'accès jusqu'à l'intervention d'un administrateur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie (personnalisée ou gérée par Microsoft) à l'**État** **Activé** où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes d'accès d'urgence ou leur groupe ;
+       - **Ressources cibles** inclut **Toutes les ressources** ;
+       - **Conditions** > **Risque de l'utilisateur** inclut **Élevé** ;
+       - **Accorder** vaut **Bloquer l'accès**, ou **Exiger la correction des risques** (ou **Exiger
+         l'authentification multifacteur** + **Exiger la modification du mot de passe**).
+    4. Aller dans **Protection des ID** > **Utilisateurs à risque** et vérifier que les utilisateurs à
+       risque élevé ne restent pas longtemps à l'état **À risque**.
+    5. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.UserRiskLevels -contains 'high' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Échec si aucune stratégie active n'agit sur le risque utilisateur élevé pour tous les
+       utilisateurs et toutes les ressources.
+remediation:
+  manual: |
+    1. Vérifier que les utilisateurs sont inscrits à la MFA (CB-M365-AUTH-018) et, pour les
+       utilisateurs à mot de passe, au SSPR (CB-M365-AUTH-039).
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    3. Si une stratégie gérée par Microsoft pour les utilisateurs à risque élevé existe en **Rapport
+       seul**, examiner son impact, exclure les comptes d'accès d'urgence et la passer à **Activé**.
+       Sinon, créer une stratégie :
+    4. **Nouvelle stratégie**, la nommer par exemple `ALL - High user risk`.
+    5. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    6. **Ressources cibles** > **Inclure** : **Toutes les ressources**.
+    7. **Conditions** > **Risque de l'utilisateur** > **Configurer** : **Oui**, sélectionner
+       **Élevé**.
+    8. **Accorder** : pour `remediate`, **Accorder l'accès** > **Exiger la correction des risques** et
+       choisir une force d'authentification ; pour `block`, **Bloquer l'accès**.
+    9. Régler **Activer la stratégie** sur **Rapport seul**, examiner les connexions concernées, puis
+       passer à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**. Débloquer un utilisateur en
+    réinitialisant son mot de passe et en ignorant le risque dans **Protection des ID** >
+    **Utilisateurs à risque**.

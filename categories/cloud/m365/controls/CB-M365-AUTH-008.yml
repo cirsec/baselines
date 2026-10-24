@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-008
+title: Let all users report suspicious MFA prompts
+finding:
+  title: Users cannot report MFA prompts they did not request
+  description: A user who receives an unexpected MFA prompt can only deny it, so the attempt raises no risk signal and the compromised password stays in use.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [mfa, mfa-fatigue, identity-protection, authentication-methods]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  In the Authentication methods policy settings, **Report suspicious activity** is set to
+  **Enabled** for **All users**. A user who receives an MFA prompt they did not start can report
+  it from Microsoft Authenticator or from the phone call. The report rejects the sign-in, sets the
+  user risk to **High** in ID Protection and writes a **User Reported Suspicious Activity** risk
+  detection.
+
+  The **Microsoft managed** value currently leaves the feature disabled, so it must be set
+  explicitly.
+rationale: |
+  An unexpected prompt means the attacker already has the password. Turning the user's reaction
+  into a high user risk lets a risk policy force a secure password change or block the account
+  (Entra ID P2), and gives the security team a detection to act on with P1.
+impact: |
+  Users who report by mistake are flagged high risk and may be blocked or asked to change their
+  password by risk policies. Explain the feature to users and to the help desk, and decide who
+  reviews the detections.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Settings > Report suspicious activity
+  default_value: Microsoft managed (disabled)
+  recommended_value: Enabled, All users
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Settings**.
+    3. Read **Report suspicious activity** and its target.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthenticationMethodPolicy).ReportSuspiciousActivitySettings | Format-List`
+       (Graph: `GET https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy`,
+       property `reportSuspiciousActivitySettings`).
+    5. Fail if the state is **Disabled** or **Microsoft managed** (`default`), or if the target
+       is not **All users** (`all_users`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Settings**.
+    3. Set **Report suspicious activity** to **Enabled** and target **All users**.
+    4. Leave **Reporting code** at its default unless custom phone greetings are uploaded.
+    5. Select **Save**.
+    6. Make sure someone reviews **ID Protection** > **Risk detections**, or that a user risk
+       policy handles high-risk users.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy` with
+    `reportSuspiciousActivitySettings` set to `{"state": "enabled", "includeTarget": {"targetType": "group", "id": "all_users"}}`.
+  rollback: |
+    Set **Report suspicious activity** back to **Microsoft managed**.
+
+references:
+  - title: Configure Microsoft Entra multifactor authentication settings - Report suspicious activity
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-mfa-mfasettings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Protecting authentication methods in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-default-enablement
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1621
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-006
+    type: related
+  - id: CB-M365-AUTH-030
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-021
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'accès externe Teams avec les tenants d'essai
+finding:
+  title: Les utilisateurs peuvent être contactés depuis des tenants Microsoft 365 qui ne détiennent que des licences d'essai
+  description: Des tenants d'essai jetables, outil privilégié de l'hameçonnage Teams, peuvent converser avec les utilisateurs et les appeler.
+description: |
+  L'accès externe Teams avec les tenants qui ne détiennent que des licences d'essai est bloqué
+  (`ExternalAccessWithTrialTenants` = `Blocked`). Les utilisateurs de ces tenants ne peuvent ni
+  trouver, ni contacter, ni appeler, ni rencontrer (avec leur identité authentifiée) les utilisateurs
+  de l'organisation, et inversement. Le paramètre n'est disponible qu'en PowerShell.
+rationale: |
+  Les tenants d'essai ne coûtent rien, se créent en quelques minutes et sont abandonnés après une
+  campagne. Les attaquants les utilisent pour envoyer des conversations Teams sous des noms imitant
+  des marques. Les partenaires légitimes ont des abonnements payants : bloquer les tenants d'essai
+  retire une facilité aux attaquants pour un coût métier quasi nul.
+impact: |
+  Un partenaire qui évalue Microsoft 365 sur un tenant d'essai ne peut pas utiliser la fédération tant
+  qu'il n'a pas acheté de licence ; il peut toujours rejoindre les réunions comme participant anonyme.
+  Les utilisateurs des tenants d'essai sont retirés des conversations existantes. Bloqué est la valeur
+  par défaut actuelle ; le contrôle protège contre un passage à Autorisé.
+setting:
+  location: "Microsoft Teams PowerShell : Set-CsTenantFederationConfiguration -ExternalAccessWithTrialTenants"
+  recommended_value: Blocked
+audit:
+  manual: |
+    1. Se connecter à Microsoft Teams PowerShell (module 6.4.0 ou ultérieur) avec au moins le rôle
+       Lecteur général.
+    2. Exécuter `Get-CsTenantFederationConfiguration | Select-Object ExternalAccessWithTrialTenants`.
+    3. Échec si la valeur est `Allowed`.
+remediation:
+  manual: |
+    1. En Administrateur Teams, exécuter
+       `Set-CsTenantFederationConfiguration -ExternalAccessWithTrialTenants Blocked`.

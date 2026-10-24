@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer l'intégration de SharePoint et OneDrive avec Microsoft Entra B2B
+finding:
+  title: SharePoint et OneDrive partagent avec des personnes externes hors de Microsoft Entra B2B
+  description: Les destinataires externes peuvent obtenir des identités propres à SharePoint qui échappent aux paramètres invités, à l'accès conditionnel, aux revues d'accès et au cycle de vie des invités dans Entra.
+description: |
+  Le partage externe depuis SharePoint et OneDrive passe par Microsoft Entra B2B : chaque destinataire
+  externe d'un fichier, d'un dossier ou d'un site reçoit un compte invité dans l'annuaire
+  (`EnableAzureADB2BIntegration` vaut `True`). Les invités qui ne peuvent pas utiliser une autre
+  méthode se connectent avec le code secret à usage unique par e-mail d'Entra B2B.
+
+  Entre mai et juillet 2026, Microsoft a activé cette intégration pour les nouveaux partages externes
+  dans tous les tenants commerciaux et supprimé la possibilité de la désactiver. Le contrôle est alors
+  respecté par défaut ; la vérification reste utile pour les tenants où le paramètre s'applique encore
+  et pour confirmer l'état.
+rationale: |
+  Sans l'intégration, les personnes qui reçoivent un lien vers un fichier s'authentifient avec un code
+  à usage unique propre à SharePoint et n'apparaissent jamais comme objets de l'annuaire. Les
+  restrictions d'invitation Entra, les listes de domaines autorisés et bloqués, l'accès conditionnel
+  (MFA des invités), les revues d'accès et l'expiration des invités ne s'appliquent pas à elles. Avec
+  B2B, chaque personne externe est un objet de l'annuaire soumis à ces contrôles, et la connexion est
+  liée à l'identité invitée.
+impact: |
+  Chaque destinataire externe reçoit un compte invité : le nombre d'invités dans Entra augmente. Les
+  paramètres de collaboration externe Entra (qui peut inviter, domaines autorisés) restreignent
+  désormais aussi le partage de fichiers et de dossiers : les revoir d'abord. Microsoft retire
+  l'authentification par code à usage unique SharePoint des tenants commerciaux en octobre 2026 ; les
+  personnes externes sans compte invité correspondant perdent l'accès aux anciens liens **Personnes
+  spécifiques** jusqu'à une nouvelle invitation.
+setting:
+  location: "SharePoint Online Management Shell : Set-SPOTenant -EnableAzureADB2BIntegration (pas de bascule dans le centre d'administration)"
+  recommended_value: "True"
+audit:
+  manual: |
+    1. En Administrateur SharePoint (aucun rôle en lecture seule n'existe pour SharePoint Online
+       Management Shell), se connecter avec `Connect-SPOService` et exécuter
+       `Get-SPOTenant | Select-Object EnableAzureADB2BIntegration`.
+    2. Dans un tenant commercial, l'intégration est imposée quelle que soit la valeur ; la confirmer en
+       partageant un fichier de test avec une adresse externe et en vérifiant dans le centre
+       d'administration Microsoft Entra (**Entra ID** > **Utilisateurs**, filtre **Type d'utilisateur**
+       = Invité) qu'un compte invité a été créé.
+    3. Échec si la propriété vaut `False` dans un tenant où le paramètre contrôle encore le partage (par
+       exemple un cloud souverain ou gouvernemental).
+remediation:
+  manual: |
+    1. Revoir les paramètres de collaboration externe Microsoft Entra (**Entra ID** > **External
+       Identities** > **Paramètres de collaboration externe**) : restrictions d'invitation et domaines
+       autorisés ou bloqués. Y déplacer les restrictions de domaine SharePoint si besoin.
+    2. En Administrateur SharePoint, exécuter `Set-SPOTenant -EnableAzureADB2BIntegration $true`.
+    3. Avant que le retrait du code à usage unique SharePoint n'atteigne le tenant, créer des comptes
+       invités pour les personnes externes qui ont encore besoin d'anciens liens (Entra **Utilisateurs**
+       > **Inviter un utilisateur externe**), ou leur repartager un élément.

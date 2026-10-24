@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-032
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Permettre aux utilisateurs de signaler les messages Teams suspects à l'équipe sécurité
+finding:
+  title: Les utilisateurs ne peuvent pas signaler les messages Teams suspects
+  description: Hameçonnage et contenu malveillant reçus dans les conversations et canaux Teams atteignent les utilisateurs sans voie de signalement vers l'équipe sécurité ni vers Microsoft.
+description: |
+  Les utilisateurs peuvent signaler des messages Teams (et, quand c'est disponible, des appels et des
+  réunions) comme problème de sécurité, et les signalements parviennent à l'organisation :
+
+  - dans le centre d'administration Teams, **Signaler un problème de sécurité** est activé dans la
+    stratégie de messagerie globale et dans chaque stratégie personnalisée
+    (`AllowSecurityEndUserReporting` = `True`) ;
+  - dans le portail Microsoft Defender, **Surveiller les éléments signalés dans Microsoft Teams** est
+    activé, et les éléments signalés partent vers Microsoft, vers la boîte de signalement de l'équipe
+    sécurité, ou les deux (`ReportChatMessageEnabled` ou `ReportChatMessageToCustomizedAddressEnabled`
+    = `True`).
+rationale: |
+  Teams est devenu un canal d'hameçonnage courant, et les utilisateurs sont souvent les premiers à
+  voir une conversation malveillante. Sans bouton de signalement, ces signaux se perdent ou arrivent
+  en tickets sans le message. Les signalements dans la page **Soumissions** de Defender donnent au SOC
+  le message et son expéditeur, déclenchent une alerte et alimentent le filtrage de Microsoft.
+impact: |
+  Les messages signalés et jusqu'à quinze messages voisins peuvent être envoyés à Microsoft pour
+  analyse quand Microsoft est une destination ; choisir **Ma boîte de signalement uniquement** si ce
+  n'est pas acceptable. Quelqu'un doit trier les signalements. Indisponible dans GCC, GCC High et DoD.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général. Aller dans **Messagerie** > **Stratégies de messagerie** et
+       ouvrir la stratégie globale et chaque stratégie personnalisée : **Signaler un problème de
+       sécurité** doit être **Activé**.
+    2. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le rôle
+       Lecteur Sécurité. Aller dans **Paramètres** > **E-mail et collaboration** > **Paramètres des
+       éléments signalés par l'utilisateur dans Teams** : **Surveiller les éléments signalés dans
+       Microsoft Teams** doit être activé, avec une destination sous **Envoyer les éléments signalés
+       à**.
+    3. PowerShell en lecture seule :
+       `Get-CsTeamsMessagingPolicy | Select-Object Identity, AllowSecurityEndUserReporting` (Teams
+       PowerShell), et
+       `Get-ReportSubmissionPolicy | Format-List ReportChatMessageEnabled, ReportChatMessageToCustomizedAddressEnabled, ReportChatMessageAddresses`
+       (Exchange Online PowerShell, View-Only Organization Management ou Lecteur général).
+    4. Échec si le signalement est désactivé dans une stratégie de messagerie attribuée, ou si
+       `ReportChatMessageEnabled` et `ReportChatMessageToCustomizedAddressEnabled` valent tous deux
+       `False`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Messagerie** > **Stratégies de messagerie**,
+       ouvrir la stratégie globale, activer **Signaler un problème de sécurité** puis **Enregistrer** ;
+       répéter pour les stratégies personnalisées. Rôle : Administrateur Teams. Équivalent PowerShell :
+       `Set-CsTeamsMessagingPolicy -Identity Global -AllowSecurityEndUserReporting $true`.
+    2. Dans le portail Defender, aller dans **Paramètres** > **E-mail et collaboration** > **Paramètres
+       des éléments signalés par l'utilisateur dans Teams**, activer **Surveiller les éléments signalés
+       dans Microsoft Teams**, choisir la destination (la même boîte de signalement que pour les
+       e-mails, CB-M365-MAIL-033) puis **Enregistrer**. Rôle : Administrateur de la sécurité. Équivalent
+       PowerShell :
+       `Set-ReportSubmissionPolicy -Identity DefaultReportSubmissionPolicy -ReportChatMessageEnabled $true -ReportChatMessageToCustomizedAddressEnabled $true -ReportChatMessageAddresses soc@example.com`.
+    3. Vérifier que le SOC trie l'onglet **Signalés par l'utilisateur** de **Soumissions**.

@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-018
+title: Limit Teams external access to approved domains
+finding:
+  title: Teams users can chat, call and meet with users of any external organization
+  description: Any Microsoft 365 tenant, including one an attacker creates, can reach users directly in Teams chat with a convincing name and logo.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, external-access, federation, phishing, domain-allowlist]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Teams external access (federation) is allowed only with the domains in
+  `{{ allowed_federation_domains }}`: the organization setting **Teams and Skype for Business users in
+  external organizations** is **Allow only specific external domains** (`AllowFederatedUsers` =
+  `True`, `AllowedDomains` = the list). Blocking all external domains also meets the control.
+
+  The baseline keeps open federation but blocks unmanaged accounts and trial tenants
+  (CB-M365-COLLAB-019 to CB-M365-COLLAB-021).
+rationale: |
+  Open federation lets any tenant start a chat with any user. Threat actors create or compromise
+  tenants, name them after IT support or security teams, and use Teams chats and calls for phishing,
+  malware delivery and help-desk social engineering. An allow list limits Teams contact to partners
+  the organization chose.
+impact: |
+  Users can no longer chat, call or see presence of people in organizations outside the list; those
+  people join meetings as anonymous participants (subject to the lobby). Every new partner needs an
+  administrator change. The list holds up to 4,000 domains. Custom external access policies can grant
+  different domain lists to specific users.
+
+setting:
+  location: Teams admin center > Users > External access > Organization settings > Teams and Skype for Business users in external organizations
+  default_value: Allow all external domains
+  recommended_value: "Allow only specific external domains: {{ allowed_federation_domains }}"
+parameters:
+  - name: allowed_federation_domains
+    type: list
+    description: External domains that users may chat, call and meet with in Teams.
+    default: []
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Users** > **External access** (**External collaboration** > **External access** in
+       the newer navigation) > **Organization settings**.
+    3. Check that **Teams and Skype for Business users in external organizations** is **Allow only
+       specific external domains** (or **Block all external domains**) and compare the list with
+       `{{ allowed_federation_domains }}`.
+    4. With Microsoft Teams PowerShell:
+       `Get-CsTenantFederationConfiguration | Select-Object AllowFederatedUsers, AllowedDomains, BlockedDomains`.
+       `AllowedDomains` must be a list of domains, not `AllowAllKnownDomains`.
+    5. Check custom external access policies (`Get-CsExternalAccessPolicy`) for
+       `CommunicationWithExternalOrgs` values that open more domains.
+    6. Fail if federation is open to all domains or to a block list only, or if the list contains a
+       domain that is not approved.
+
+remediation:
+  manual: |
+    1. Build the list from current federation use (Teams usage reports or the audit log) and have the
+       business owners approve each partner domain.
+    2. In the Teams admin center, browse to **Users** > **External access** (**External collaboration**
+       > **External access** in the newer navigation) > **Organization settings**, select **Allow only
+       specific external domains**, add each domain and **Save**. Role: Teams Administrator.
+    3. PowerShell equivalent:
+       `$list = New-Object 'System.Collections.Generic.List[string]'; $list.Add('partner.example'); Set-CsTenantFederationConfiguration -AllowFederatedUsers $true -AllowedDomainsAsAList $list`.
+    4. Changes take time to propagate; announce the date to users.
+  rollback: |
+    Select **Allow all external domains** (or add the missing domain). Propagation can take several
+    hours.
+
+references:
+  - title: Manage external meetings and chat with people and organizations using Microsoft identities
+    url: https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTenantFederationConfiguration
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-cstenantfederationconfiguration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.2.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.2.1v2
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.003
+  - framework: mitre-attack
+    id: T1199
+related_controls:
+  - id: CB-M365-COLLAB-019
+    type: related
+  - id: CB-M365-COLLAB-020
+    type: related
+  - id: CB-M365-COLLAB-021
+    type: related
+  - id: CB-M365-COLLAB-030
+    type: related
+    note: Trusted domains define which external meetings keep chat.
+  - id: CB-M365-TENANT-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

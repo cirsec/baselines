@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les valeurs de sécurité par défaut sur les tenants sans Microsoft Entra ID P1
+finding:
+  title: Les valeurs de sécurité par défaut sont désactivées et aucun accès conditionnel n'est disponible
+  description: Sans Entra ID P1, le tenant ne peut pas utiliser l'accès conditionnel ; valeurs de sécurité par défaut désactivées, rien n'exige la MFA ni ne bloque l'authentification héritée.
+applicability:
+  conditions: |
+    Uniquement pour les tenants sans Microsoft Entra ID P1.
+description: |
+  Sur un tenant sans Microsoft Entra ID P1 (Entra ID Free, ou offres Microsoft 365 sans P1), les
+  **Valeurs de sécurité par défaut** sont activées. Elles imposent à chaque utilisateur de
+  s'inscrire à la MFA, exigent la MFA des administrateurs à chaque connexion et des autres
+  utilisateurs quand Microsoft le juge nécessaire, bloquent les protocoles d'authentification
+  hérités et le flux de code d'appareil, et protègent l'accès aux points de terminaison de gestion
+  Azure.
+
+  Les valeurs de sécurité par défaut ne sont pas réglables et ne peuvent pas coexister avec l'accès
+  conditionnel. Les tenants avec P1 appliquent à la place les contrôles d'accès conditionnel de ce
+  standard (CB-M365-AUTH-001, CB-M365-AUTH-003, CB-M365-AUTH-004).
+rationale: |
+  L'accès conditionnel est une fonctionnalité P1. Sur un tenant qui ne l'a pas, les valeurs de
+  sécurité par défaut sont le seul mécanisme qui impose la MFA et bloque les protocoles hérités
+  pour tous. Les désactiver laisse des comptes protégés par un simple mot de passe, première cible
+  de la pulvérisation de mots de passe.
+impact: |
+  Chaque utilisateur doit enregistrer Microsoft Authenticator (ou une autre méthode autorisée) à
+  la connexion suivante, sans délai de grâce. Les clients et appareils qui utilisent
+  l'authentification héritée ou le flux de code d'appareil cessent de fonctionner. Aucune
+  exclusion n'est possible : un compte de service incapable de faire de la MFA doit passer en
+  identité de charge de travail, ou le tenant doit acheter P1.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Vue d'ensemble > Propriétés > Gérer les valeurs de sécurité par défaut
+  recommended_value: Activées
+audit:
+  manual: |
+    1. Vérifier les licences : dans le centre d'administration Microsoft 365
+       (https://admin.cloud.microsoft) avec le rôle Lecteur général, aller dans **Facturation** >
+       **Licences** et confirmer qu'aucun abonnement n'inclut Microsoft Entra ID P1 ou P2. Si c'est
+       le cas, ce contrôle ne s'applique pas.
+    2. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    3. Aller dans **Entra ID** > **Vue d'ensemble** > **Propriétés** et sélectionner **Gérer les
+       valeurs de sécurité par défaut**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgPolicyIdentitySecurityDefaultEnforcementPolicy | Select-Object IsEnabled`
+       (Graph : `GET https://graph.microsoft.com/v1.0/policies/identitySecurityDefaultsEnforcementPolicy`).
+    5. Échec si les **Valeurs de sécurité par défaut** sont **Désactivées** (`isEnabled` vaut
+       `false`) sur un tenant sans P1.
+remediation:
+  manual: |
+    1. Vérifier qu'aucun administrateur ne dépend de l'authentification héritée ou du flux de code
+       d'appareil, et prévenir les utilisateurs qu'on leur demandera d'enregistrer Microsoft
+       Authenticator.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de l'accès conditionnel.
+    3. Aller dans **Entra ID** > **Vue d'ensemble** > **Propriétés** et sélectionner **Gérer les
+       valeurs de sécurité par défaut**.
+    4. Régler **Valeurs de sécurité par défaut** sur **Activé** et sélectionner **Enregistrer**.
+    5. Révoquer éventuellement les sessions existantes (`Revoke-MgUserSignInSession`) pour que
+       chaque utilisateur s'inscrive à la MFA à la connexion suivante.
+    Équivalent Graph : `Update-MgPolicyIdentitySecurityDefaultEnforcementPolicy -IsEnabled:$true`
+    (`PATCH /policies/identitySecurityDefaultsEnforcementPolicy` avec `{"isEnabled": true}`).
+  rollback: |
+    Régler les **Valeurs de sécurité par défaut** sur **Désactivé**. Ne le faire qu'après avoir
+    acheté P1 et activé les stratégies d'accès conditionnel équivalentes.

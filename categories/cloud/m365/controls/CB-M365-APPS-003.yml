@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-003
+title: Keep risk-based step-up consent enabled
+finding:
+  title: Users can consent to applications that Microsoft flags as risky
+  description: Risk-based step-up consent is turned off, so a user can approve a consent request that Microsoft detected as risky instead of having it sent to an administrator.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, consent, illicit-consent, oauth, entra-id]
+
+description: |
+  The directory setting **Consent Policy Settings** keeps `BlockUserConsentForRiskyApps` set to
+  `True`. When Microsoft detects a risky user consent request (for example a newly registered,
+  unverified multitenant application asking for non-basic permissions), the request steps up to
+  admin consent instead of being granted by the user.
+rationale: |
+  The protection is on by default and only matters while user consent is allowed
+  (CB-M365-APPS-002 with `low-risk`). Turning it off removes Microsoft's detection of malicious
+  consent requests, which is an effective layer against consent phishing campaigns that use fresh
+  applications.
+impact: |
+  None known. Users who hit a risky request see that admin approval is needed and can send a
+  request through the admin consent workflow (CB-M365-APPS-005).
+notes: |
+  If the **Consent Policy Settings** object was never created in the tenant, the template value
+  (`True`) applies. The setting has no admin center page: it is read and changed with Microsoft
+  Graph only.
+
+setting:
+  location: Microsoft Graph directory setting "Consent Policy Settings" (template dffd5d46-495d-40a9-8e21-954ff55e198a), value BlockUserConsentForRiskyApps
+  default_value: "True"
+  recommended_value: "True"
+
+audit:
+  manual: |
+    1. Connect to Microsoft Graph PowerShell (beta module) as at least a Global Reader with the
+       `Directory.Read.All` scope.
+    2. Run:
+       `Get-MgBetaDirectorySetting -All | Where-Object TemplateId -eq 'dffd5d46-495d-40a9-8e21-954ff55e198a' | Select-Object -ExpandProperty Values`
+       or call Graph `GET https://graph.microsoft.com/beta/settings`.
+    3. If no object is returned, the default applies (`True`) and the control passes.
+    4. Fail if `BlockUserConsentForRiskyApps` is `False`.
+
+remediation:
+  manual: |
+    1. Connect to Microsoft Graph PowerShell (beta module) as a Privileged Role Administrator with
+       the `Directory.ReadWrite.All` scope.
+    2. Read the existing **Consent Policy Settings** object and keep its other values
+       (`EnableGroupSpecificConsent`, `ConstrainGroupSpecificConsentToMembersOfGroupId`,
+       `EnableAdminConsentRequests`...).
+    3. Set `BlockUserConsentForRiskyApps` to `True` with `Update-MgBetaDirectorySetting
+       -DirectorySettingId <id> -BodyParameter <values>`, passing every value of the object.
+  rollback: |
+    Set `BlockUserConsentForRiskyApps` back to its previous value.
+
+references:
+  - title: Configure risk-based step-up consent
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-risk-based-step-up-consent
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+  - id: CB-M365-APPS-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

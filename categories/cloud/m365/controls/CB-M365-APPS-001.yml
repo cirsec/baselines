@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-001
+title: Restrict application registration to administrators
+finding:
+  title: Any user can register applications in the tenant
+  description: A standard user, or an attacker holding one user account, can create an application, give it credentials and use it as a persistent foothold or a phishing tool trusted by the tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, app-registration, least-privilege, entra-id]
+
+description: |
+  The default user role cannot create application registrations. The tenant setting **Users can
+  register applications** is set to **No**, so only holders of a role that grants application
+  creation (Application Developer, Application Administrator, Cloud Application Administrator, or a
+  custom role with `microsoft.directory/applications/createAsOwner`) can register applications.
+rationale: |
+  By default every member user can register an application, add a secret to it and request
+  permissions. Attackers use this to create an application they own inside the tenant, which
+  survives a password reset of the compromised account, or to stand up an illicit consent
+  phishing app that looks internal. Restricting registration puts every new application through
+  a team that reviews its purpose and permissions.
+impact: |
+  Developers who registered their own applications must request the Application Developer role
+  (eligible through PIM where available) or go through the team that manages app registrations.
+  Existing applications and their owners are not affected.
+
+setting:
+  location: Entra admin center > Entra ID > Users > User settings > Users can register applications (Graph authorizationPolicy.defaultUserRolePermissions.allowedToCreateApps)
+  default_value: "Yes"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Check that **Users can register applications** is set to **No**.
+    4. Alternative in Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateApps`, or Graph
+       `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy`.
+    5. Fail if the setting is **Yes** or `allowedToCreateApps` is `true`.
+
+remediation:
+  manual: |
+    1. Give the Application Developer role (preferably eligible through PIM) to the people who
+       legitimately create applications.
+    2. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator.
+    3. Browse to **Entra ID** > **Users** > **User settings**.
+    4. Set **Users can register applications** to **No** and select **Save**.
+    5. Alternative in Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`):
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateApps = $false }`.
+  rollback: |
+    Set **Users can register applications** back to **Yes**.
+
+references:
+  - title: Delegate app registration permissions in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/delegate-app-roles
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: authorizationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/authorizationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.2.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+  - id: CB-M365-APPS-020
+    type: related
+  - id: CB-M365-TENANT-001
+    type: related
+  - id: CB-M365-TENANT-009
+    type: related
+  - id: CB-M365-POWER-019
+    type: related
+  - id: CB-M365-POWER-020
+    type: related
+  - id: CB-M365-POWER-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

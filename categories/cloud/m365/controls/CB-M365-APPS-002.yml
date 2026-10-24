@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-002
+title: Restrict user consent to applications
+finding:
+  title: Users can grant any application access to organizational data
+  description: An attacker can send a consent link for a malicious multitenant application and obtain a token to the victim's mail, files or directory data without ever knowing a password.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [applications, consent, illicit-consent, oauth, entra-id]
+
+description: |
+  User consent to applications is limited by the **{{ user_consent }}** level:
+
+  - `low-risk`: users can consent only to applications from verified publishers or registered in
+    the tenant, and only for permissions classified as low impact (built-in policy
+    `microsoft-user-default-low`);
+  - `none`: users cannot consent to any application; every request goes to an administrator
+    through the admin consent workflow (CB-M365-APPS-005).
+
+  The legacy setting **Allow user consent for apps** (`microsoft-user-default-legacy`) is never
+  used.
+rationale: |
+  Illicit consent grant is a phishing technique that skips the password and MFA entirely: the
+  victim signs in on the real Microsoft page and approves permissions for the attacker's
+  application, which then keeps a refresh token. Limiting consent to verified publishers and
+  low-impact permissions removes most of these lures; removing user consent entirely removes all
+  of them.
+impact: |
+  With `low-risk`, users can still connect common applications that ask only for sign-in and basic
+  profile permissions. Classify the low-impact permissions first (**Permission classifications**),
+  otherwise the list is empty and every request needs an administrator. With `none`, each new
+  application needs an administrator decision: size the review team before switching.
+notes: |
+  Existing grants are not removed when the setting changes. Review them under **Enterprise apps** >
+  **Permissions** and revoke those that are not needed (CB-M365-APPS-011).
+
+setting:
+  location: Entra admin center > Entra ID > Enterprise apps > Consent and permissions > User consent settings (Graph authorizationPolicy.defaultUserRolePermissions.permissionGrantPoliciesAssigned)
+  default_value: Allow user consent for apps from verified publishers, for selected permissions (Microsoft-managed recommendation in recent tenants)
+  recommended_value: "{{ user_consent }}"
+parameters:
+  - name: user_consent
+    type: enum
+    description: Highest user consent level allowed. low-risk allows verified publishers and low-impact permissions only; none disables user consent.
+    allowed: [low-risk, none]
+    default: low-risk
+    profile_defaults:
+      hardened: none
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** > **User consent
+       settings**.
+    3. Check **User consent for applications**:
+       - for `low-risk`: **Allow user consent for apps from verified publishers, for selected
+         permissions** or **Do not allow user consent**;
+       - for `none`: **Do not allow user consent**.
+    4. With `low-risk`, open **Permission classifications** and check that only low-impact
+       delegated permissions (for example `openid`, `profile`, `email`, `offline_access`,
+       `User.Read`) are listed.
+    5. Alternative in Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.PermissionGrantPoliciesAssigned`.
+       Entries starting with `ManagePermissionGrantsForSelf.` define user consent:
+       `microsoft-user-default-low` matches `low-risk`; no such entry matches `none`.
+    6. Fail if **Allow user consent for apps** is selected (`microsoft-user-default-legacy`), if a
+       custom `ManagePermissionGrantsForSelf.*` policy is broader than low-impact permissions, or if
+       the level is looser than `{{ user_consent }}`.
+
+remediation:
+  manual: |
+    1. Turn on the admin consent workflow first (CB-M365-APPS-005) so that blocked users can ask for
+       access.
+    2. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator
+       (Global Administrator is required for the portal page).
+    3. For `low-risk`, browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** >
+       **Permission classifications** and add the low-impact delegated permissions.
+    4. Browse to **User consent settings** and select **Allow user consent for apps from verified
+       publishers, for selected permissions** (`low-risk`) or **Do not allow user consent**
+       (`none`). Select **Save**.
+    5. Alternative in Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`): read
+       the current `PermissionGrantPoliciesAssigned`, keep the `ManagePermissionGrantsForOwnedResource.*`
+       entries, and set the `ManagePermissionGrantsForSelf.*` entry to
+       `ManagePermissionGrantsForSelf.microsoft-user-default-low` (or remove it for `none`) with
+       `Update-MgPolicyAuthorizationPolicy`.
+  rollback: |
+    Select the previous consent option. Do not return to **Allow user consent for apps**.
+
+references:
+  - title: Configure how users consent to applications
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage app consent policies
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/manage-app-consent-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.1"
+    relation: partial
+    note: Equivalent in the hardened profile (user_consent none). The baseline still allows consent to verified publishers for low-impact permissions.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-APPS-001
+    type: related
+  - id: CB-M365-APPS-003
+    type: related
+  - id: CB-M365-APPS-004
+    type: related
+  - id: CB-M365-APPS-005
+    type: requires
+  - id: CB-M365-APPS-011
+    type: related
+  - id: CB-M365-COLLAB-022
+    type: related
+  - id: CB-M365-MAIL-037
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

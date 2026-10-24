@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-029
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer la protection anti-hameçonnage contre l'emprunt d'identité, l'intelligence de boîte aux lettres et les conseils de sécurité
+finding:
+  title: Les stratégies anti-hameçonnage ne protègent pas contre l'emprunt d'identité des utilisateurs et domaines clés
+  description: Des expéditeurs sosies se faisant passer pour des dirigeants, pour les domaines de l'organisation ou pour des partenaires clés sont remis sans avertissement ni quarantaine.
+description: |
+  Chaque destinataire est couvert par une stratégie anti-hameçonnage (paramètres d'emprunt d'identité
+  des stratégies prédéfinies Standard ou Stricte, ou stratégie personnalisée) avec au moins les valeurs
+  Standard :
+
+  - **Seuil des e-mails de hameçonnage** à {{ phish_threshold }} ou plus (`PhishThresholdLevel`) ;
+  - protection contre l'emprunt d'identité d'utilisateurs activée (`EnableTargetedUserProtection $true`)
+    pour {{ protected_users }}, action **Mettre le message en quarantaine** ;
+  - protection contre l'emprunt d'identité de domaines activée pour les domaines de l'organisation
+    (`EnableOrganizationDomainsProtection $true`) et pour {{ partner_domains }}
+    (`EnableTargetedDomainsProtection $true`), action **Mettre le message en quarantaine** ;
+  - intelligence de boîte aux lettres et intelligence pour la protection contre l'emprunt d'identité
+    activées (`EnableMailboxIntelligence`, `EnableMailboxIntelligenceProtection`), action **Déplacer le
+    message vers le dossier Courrier indésirable du destinataire** ou plus stricte ;
+  - conseils de sécurité activés : emprunt d'identité d'utilisateur, de domaine, caractères
+    inhabituels, premier contact, expéditeur non authentifié (?) et balise « via » ;
+  - intelligence contre l'usurpation activée, expéditeurs usurpés déplacés dans le Courrier
+    indésirable ou mis en quarantaine ;
+  - expéditeurs et domaines approuvés (`ExcludedSenders`, `ExcludedDomains`) vides ou limités à des faux
+    positifs documentés.
+rationale: |
+  La compromission de messagerie repose sur un expéditeur qui ressemble à quelqu'un de confiance : le
+  PDG depuis une adresse personnelle, `examp1e.com` pour `example.com`, un fournisseur qui demande de
+  changer de coordonnées bancaires. La protection contre l'emprunt d'identité compare les expéditeurs
+  aux noms et domaines protégés et aux contacts habituels de chaque utilisateur (intelligence de
+  boîte aux lettres) ; les conseils de sécurité avertissent l'utilisateur quand la correspondance
+  n'est pas certaine.
+impact: |
+  Certains messages légitimes (un dirigeant protégé qui écrit depuis un compte personnel, un
+  partenaire au domaine proche) peuvent être mis en quarantaine ; les ajouter comme expéditeurs ou
+  domaines approuvés après examen. La liste des utilisateurs protégés est limitée à 350 entrées par
+  stratégie.
+parameters:
+  phish_threshold: Seuil minimal des e-mails de hameçonnage (1 Standard, 2 Agressif, 3 Plus agressif, 4 Le plus agressif).
+  protected_users: Expéditeurs protégés contre l'emprunt d'identité d'utilisateur.
+  partner_domains: Domaines externes protégés contre l'emprunt d'identité de domaine.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Stratégies de sécurité prédéfinies** et examiner la protection contre l'emprunt d'identité des
+       stratégies Standard et Stricte ; puis **Stratégies de menace** > **Anti-hameçonnage** pour les
+       stratégies personnalisées et la stratégie par défaut.
+    3. Vérifier les valeurs ci-dessus pour chaque stratégie qui s'applique à des utilisateurs.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-AntiPhishPolicy | Format-List Name, PhishThresholdLevel, EnableTargetedUserProtection, TargetedUsersToProtect,
+         TargetedUserProtectionAction, EnableOrganizationDomainsProtection, EnableTargetedDomainsProtection, TargetedDomainsToProtect,
+         TargetedDomainProtectionAction, EnableMailboxIntelligence, EnableMailboxIntelligenceProtection, MailboxIntelligenceProtectionAction,
+         EnableSimilarUsersSafetyTips, EnableSimilarDomainsSafetyTips, EnableUnusualCharactersSafetyTips, EnableFirstContactSafetyTips,
+         EnableUnauthenticatedSender, EnableViaTag, EnableSpoofIntelligence, AuthenticationFailAction, ExcludedSenders, ExcludedDomains
+       ```
+    5. Échec si une stratégie qui s'applique à des utilisateurs manque l'une des valeurs, si les listes
+       d'utilisateurs protégés ou de domaines partenaires sont vides, ou si les expéditeurs et domaines
+       approuvés contiennent des entrées non documentées.
+remediation:
+  manual: |
+    1. Préférer la stratégie prédéfinie : dans **Stratégies de sécurité prédéfinies** > **Protection
+       standard** (et **Stricte**) > **Gérer les paramètres de protection** > **Protection contre
+       l'emprunt d'identité**, ajouter les utilisateurs protégés et les domaines partenaires et
+       confirmer (Administrateur de la sécurité).
+    2. Pour une stratégie personnalisée, dans **Anti-hameçonnage**, modifier la stratégie : **Seuil et
+       protection contre le hameçonnage** avec le seuil, la protection des utilisateurs et des domaines,
+       l'intelligence de boîte aux lettres ; **Actions** avec mise en quarantaine pour l'emprunt
+       d'identité d'utilisateur et de domaine et chaque conseil de sécurité coché.
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-AntiPhishPolicy -Identity "<policy>" -PhishThresholdLevel 3 -EnableTargetedUserProtection $true `
+         -TargetedUsersToProtect "CEO;ceo@example.com","CFO;cfo@example.com" -TargetedUserProtectionAction Quarantine `
+         -EnableOrganizationDomainsProtection $true -EnableTargetedDomainsProtection $true -TargetedDomainsToProtect "partner.example" `
+         -TargetedDomainProtectionAction Quarantine -EnableMailboxIntelligence $true -EnableMailboxIntelligenceProtection $true `
+         -MailboxIntelligenceProtectionAction MoveToJmf -EnableSimilarUsersSafetyTips $true -EnableSimilarDomainsSafetyTips $true `
+         -EnableUnusualCharactersSafetyTips $true -EnableFirstContactSafetyTips $true -EnableUnauthenticatedSender $true -EnableViaTag $true
+       ```
+  rollback: |
+    Remettre les actions d'emprunt d'identité à `NoAction` sur la stratégie personnalisée, ou retirer une
+    entrée protégée qui cause des faux positifs.

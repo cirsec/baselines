@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-038
+title: Lock accounts after {{ lockout_threshold }} failed sign-ins for at least {{ lockout_duration_seconds }} seconds
+finding:
+  title: Smart lockout allows too many password attempts or locks too briefly
+  description: A raised threshold or a lockout of a few seconds lets an attacker try many passwords per account.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [passwords, smart-lockout, brute-force, password-spray]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  Microsoft Entra smart lockout is configured with a **Lockout threshold** of at most
+  {{ lockout_threshold }} failed sign-ins and a **Lockout duration in seconds** of at least
+  {{ lockout_duration_seconds }}. Each new failure after the first lockout locks the account again,
+  for an increasing duration.
+
+  Smart lockout keeps separate counters for familiar and unfamiliar locations and ignores repeated
+  attempts with the same wrong password, so the genuine user is rarely locked out by an attacker.
+rationale: |
+  Limiting the number of guesses per account per unit of time makes online brute force and slow
+  password spray impractical. The threshold must stay high enough that attackers cannot lock users
+  out at will: Microsoft Entra accounts are reachable from the whole internet, which is why a very
+  low threshold such as 3 is not used.
+impact: |
+  Users who mistype their password many times wait for the lockout or use self-service password
+  reset (**I forgot my password** resets the lockout). With pass-through authentication, the Entra
+  threshold must be lower than the Active Directory one and the duration longer, so that attackers
+  cannot lock on-premises accounts through the cloud. The hardened value of 5 slightly increases
+  help-desk calls.
+notes: |
+  Without Microsoft Entra ID P1 the defaults apply (10 attempts, 60 seconds) and cannot be changed;
+  they already meet the baseline profile. Hash tracking of repeated wrong passwords is not available
+  with pass-through authentication.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Password protection > Custom smart lockout
+  default_value: Lockout threshold 10, Lockout duration in seconds 60
+  recommended_value: "Lockout threshold {{ lockout_threshold }} or less, Lockout duration in seconds {{ lockout_duration_seconds }} or more"
+
+parameters:
+  - name: lockout_threshold
+    type: integer
+    description: Maximum number of failed sign-ins before the first lockout.
+    unit: attempts
+    default: 10
+    profile_defaults:
+      hardened: 5
+    minimum: 1
+    maximum: 10
+  - name: lockout_duration_seconds
+    type: integer
+    description: Minimum duration of the first lockout.
+    unit: seconds
+    default: 60
+    minimum: 60
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Password protection**.
+    3. Under **Custom smart lockout**, check that **Lockout threshold** is {{ lockout_threshold }}
+       or less and **Lockout duration in seconds** is {{ lockout_duration_seconds }} or more.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Directory.Read.All`):
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       shows `LockoutThreshold` and `LockoutDurationInSeconds`. No object means the defaults (10
+       and 60).
+    5. If pass-through authentication is used, check in the Active Directory lockout policy that its
+       threshold is at least twice the Entra one and its duration shorter.
+    6. Fail if the threshold is above {{ lockout_threshold }} or the duration below
+       {{ lockout_duration_seconds }} seconds.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Password protection**.
+    3. Under **Custom smart lockout**, set **Lockout threshold** to {{ lockout_threshold }} and
+       **Lockout duration in seconds** to {{ lockout_duration_seconds }} or more.
+    4. Select **Save**.
+  rollback: |
+    Set the values back to 10 and 60 seconds.
+
+references:
+  - title: Protect user accounts from attacks with Microsoft Entra smart lockout
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-password-smart-lockout
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.8"
+    relation: equivalent
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.9"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R10"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.001
+  - framework: mitre-attack
+    id: T1110.003
+related_controls:
+  - id: CB-M365-AUTH-036
+    type: related
+  - id: CB-M365-AUTH-039
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

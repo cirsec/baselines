@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-021
+title: Block Teams external access with trial-only tenants
+finding:
+  title: Users can be contacted from Microsoft 365 tenants that only hold trial licenses
+  description: Throwaway trial tenants, a favorite tool for Teams phishing, can chat with and call users.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, external-access, federation, phishing]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Teams external access with tenants that hold only trial licenses is blocked
+  (`ExternalAccessWithTrialTenants` = `Blocked`). Users in such tenants cannot find, chat with, call
+  or meet (with their authenticated identity) users in the organization, and vice versa. The setting
+  is only available in PowerShell.
+rationale: |
+  Trial tenants cost nothing, take minutes to create and are discarded after a campaign. Attackers use
+  them to send Teams chats with brand-like names. Legitimate partners have paid subscriptions, so
+  blocking trial-only tenants removes an attacker convenience with almost no business cost.
+impact: |
+  A partner evaluating Microsoft 365 on a trial-only tenant cannot use federation until it buys a
+  license; it can still join meetings as an anonymous participant. Users from trial-only tenants are
+  removed from existing chats. Blocked is the current default; the control guards against it being
+  changed to Allowed.
+
+setting:
+  location: "Microsoft Teams PowerShell: Set-CsTenantFederationConfiguration -ExternalAccessWithTrialTenants"
+  default_value: Blocked
+  recommended_value: Blocked
+
+audit:
+  manual: |
+    1. Connect to Microsoft Teams PowerShell (module 6.4.0 or later) as at least a Global Reader.
+    2. Run `Get-CsTenantFederationConfiguration | Select-Object ExternalAccessWithTrialTenants`.
+    3. Fail if the value is `Allowed`.
+
+remediation:
+  manual: |
+    1. As a Teams Administrator, run
+       `Set-CsTenantFederationConfiguration -ExternalAccessWithTrialTenants Blocked`.
+
+references:
+  - title: Manage external meetings and chat with people and organizations using Microsoft identities
+    url: https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTenantFederationConfiguration
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-cstenantfederationconfiguration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.2.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.003
+related_controls:
+  - id: CB-M365-COLLAB-018
+    type: related
+  - id: CB-M365-COLLAB-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

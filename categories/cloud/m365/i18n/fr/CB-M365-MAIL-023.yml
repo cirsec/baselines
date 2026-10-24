@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-023
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Mettre les programmes malveillants en quarantaine réservée aux administrateurs et notifier les administrateurs des expéditeurs internes
+finding:
+  title: Personne n'est averti quand une boîte interne envoie un programme malveillant
+  description: Un compte interne qui envoie des pièces jointes infectées est souvent compromis, mais l'équipe sécurité ne l'apprend que si elle fouille les rapports.
+description: |
+  Dans chaque stratégie anti-programme malveillant qui s'applique à des utilisateurs :
+
+  - les messages contenant un programme malveillant sont mis en quarantaine avec la stratégie de
+    quarantaine **AdminOnlyAccessPolicy** (`QuarantineTag AdminOnlyAccessPolicy`) : seuls les
+    administrateurs peuvent les libérer ;
+  - **Avertir un administrateur des messages non remis provenant d'expéditeurs internes** est activé
+    (`EnableInternalSenderAdminNotifications $true`) et envoie à {{ malware_admin_address }}
+    (`InternalSenderAdminAddress`).
+rationale: |
+  Un programme malveillant envoyé de l'intérieur signale en général un compte ou un poste compromis,
+  et l'équipe sécurité doit agir vite. La quarantaine réservée aux administrateurs empêche un
+  utilisateur de libérer lui-même un message infecté.
+impact: |
+  La boîte de notification reçoit un message par détection interne ; la router vers la file du SOC.
+  Les stratégies prédéfinies utilisent la quarantaine réservée aux administrateurs mais n'envoient pas
+  de notification : celle-ci demande une stratégie personnalisée ou la stratégie par défaut.
+notes: |
+  Le contrôle ORCA ORCA-110 lit la même propriété mais attend qu'elle soit désactivée, en se fondant
+  sur l'ancienne notification à l'expéditeur. La notification administrateur n'envoie rien à
+  l'expéditeur : ce contrôle la garde activée, comme le benchmark CIS.
+parameters:
+  malware_admin_address: Adresse qui reçoit les notifications administrateur pour les programmes malveillants envoyés par des utilisateurs internes.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-programme malveillant** et ouvrir chaque stratégie.
+    3. Vérifier que **Stratégie de quarantaine** vaut **AdminOnlyAccessPolicy** et que **Avertir un
+       administrateur des messages non remis provenant d'expéditeurs internes** est coché avec
+       l'adresse attendue.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-MalwareFilterPolicy | Format-Table Name, QuarantineTag, EnableInternalSenderAdminNotifications, InternalSenderAdminAddress
+       ```
+    5. Échec si une stratégie qui s'applique à des utilisateurs utilise une stratégie de quarantaine
+       qui leur permet de libérer les programmes malveillants, ou si aucune stratégie couvrant les
+       utilisateurs n'envoie de notification pour les expéditeurs internes.
+remediation:
+  manual: |
+    1. Dans le portail Defender, ouvrir la stratégie > **Modifier les paramètres de protection**,
+       régler **Stratégie de quarantaine** sur **AdminOnlyAccessPolicy**, cocher **Avertir un
+       administrateur des messages non remis provenant d'expéditeurs internes**, saisir l'adresse et
+       enregistrer.
+    2. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-MalwareFilterPolicy -Identity Default -QuarantineTag AdminOnlyAccessPolicy `
+         -EnableInternalSenderAdminNotifications $true -InternalSenderAdminAddress soc@example.com
+       ```
+  rollback: |
+    `Set-MalwareFilterPolicy -Identity Default -EnableInternalSenderAdminNotifications $false`.

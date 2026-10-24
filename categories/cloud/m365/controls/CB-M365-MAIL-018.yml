@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-018
+title: Configure Enhanced Filtering and trusted ARC sealers behind a third-party mail gateway
+finding:
+  title: Exchange Online sees the third-party gateway, not the real sender, when evaluating mail
+  description: With mail routed through another filtering service, SPF, DMARC and spoof detection run against the gateway's address and either miss forgeries or flag legitimate mail.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online-protection, connectors, enhanced-filtering, arc, mail-gateway]
+
+applicability:
+  conditions: |
+    Only when the MX record of at least one accepted domain points to a service other than
+    Exchange Online Protection (`*.mail.protection.outlook.com`), such as a third-party secure
+    email gateway or an on-premises relay.
+
+description: |
+  When inbound mail reaches Exchange Online through another service:
+
+  - the partner inbound connector used by that service has **Enhanced Filtering for Connectors**
+    turned on (**Automatically detect and skip the last IP address**, or the list of the service's
+    IP addresses to skip), applied to all recipients;
+  - if the service modifies messages (banners, link rewriting) and seals them with ARC, its sealing
+    domain is listed as a **trusted ARC sealer**;
+  - the inbound connector identifies the service by its IP addresses or certificate.
+rationale: |
+  Without Enhanced Filtering, Exchange Online sees the gateway as the sender: SPF checks the wrong
+  IP address, DMARC and spoof intelligence work on broken results, and IP reputation is lost. The
+  result is both missed forgeries and false positives, and admins tend to answer with broad allow
+  rules. Trusted ARC sealers let Exchange Online use the authentication results the gateway saw
+  before it changed the message.
+impact: |
+  Detection becomes stricter: messages previously trusted because they came through the gateway
+  can now be marked as spoofed or spam. Turn Enhanced Filtering on for a test group first if the
+  gateway's own policies were relied on.
+
+audit:
+  manual: |
+    1. Check the MX records of the accepted domains (`Resolve-DnsName example.com -Type MX`). If all
+       of them point to `*.mail.protection.outlook.com`, the control does not apply.
+    2. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader. Browse to **Email & collaboration** > **Policies & rules** > **Threat
+       policies** > **Enhanced filtering** and open the connector used by the gateway. Check that
+       **Automatically detect and skip the last IP address** or **Skip these IP addresses** is set and
+       that it applies to all recipients.
+    3. Browse to **Threat policies** > **Email authentication settings** > **ARC** and check that the
+       gateway's sealing domain is listed when the gateway signs with ARC.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-InboundConnector | Format-List Name, Enabled, ConnectorType, SenderIPAddresses, TlsSenderCertificateName, EFSkipLastIP, EFSkipIPs, EFUsers
+       Get-ArcConfig | Format-List ArcTrustedSealers
+       ```
+    5. Fail if the gateway's connector has neither `EFSkipLastIP` nor `EFSkipIPs` set, if `EFUsers`
+       limits it to some recipients, or if a sealing gateway is missing from `ArcTrustedSealers`.
+
+remediation:
+  manual: |
+    1. In the Defender portal, browse to **Threat policies** > **Enhanced filtering**, select the
+       gateway's connector, choose **Automatically detect and skip the last IP address** (or list the
+       gateway's IP addresses), select **Apply to entire organization** and save.
+    2. If the gateway seals with ARC, browse to **Email authentication settings** > **ARC** and add
+       its sealing domain.
+    3. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Set-InboundConnector -Identity "<gateway connector>" -EFSkipLastIP $true -EFUsers $null
+       Set-ArcConfig -Identity Default -ArcTrustedSealers "gateway.example.net"
+       ```
+    4. Review the detections for a few days in Threat Explorer or the mail flow reports.
+  rollback: |
+    `Set-InboundConnector -Identity "<gateway connector>" -EFSkipLastIP $false -EFSkipIPs $null`.
+
+references:
+  - title: Enhanced Filtering for Connectors in Exchange Online
+    url: https://learn.microsoft.com/exchange/mail-flow-best-practices/use-connectors-to-configure-mail-flow/enhanced-filtering-for-connectors
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure trusted ARC sealers
+    url: https://learn.microsoft.com/defender-office-365/email-authentication-arc-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-233, ORCA-233-1, ORCA-243)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud - Connectors
+    url: https://blueprint.asd.gov.au/configuration/exchange-online/mail-flow/connectors/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-017
+    type: related
+  - id: CB-M365-MAIL-036
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

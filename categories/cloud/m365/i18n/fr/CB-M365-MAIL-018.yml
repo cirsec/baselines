@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer le filtrage amélioré et les scelleurs ARC de confiance derrière une passerelle de messagerie tierce
+finding:
+  title: Exchange Online voit la passerelle tierce, et non l'expéditeur réel, quand il évalue le courrier
+  description: Quand le courrier passe par un autre service de filtrage, SPF, DMARC et la détection d'usurpation portent sur l'adresse de la passerelle et manquent des contrefaçons ou signalent du courrier légitime.
+applicability:
+  conditions: |
+    Uniquement quand l'enregistrement MX d'au moins un domaine accepté pointe vers un service autre
+    qu'Exchange Online Protection (`*.mail.protection.outlook.com`), comme une passerelle de sécurité
+    de messagerie tierce ou un relais sur site.
+description: |
+  Quand le courrier entrant arrive dans Exchange Online via un autre service :
+
+  - le connecteur entrant partenaire utilisé par ce service a le **Filtrage amélioré pour les
+    connecteurs** activé (**Détecter et ignorer automatiquement la dernière adresse IP**, ou la liste
+    des adresses IP du service à ignorer), appliqué à tous les destinataires ;
+  - si le service modifie les messages (bannières, réécriture de liens) et les scelle avec ARC, son
+    domaine de scellement figure parmi les **scelleurs ARC de confiance** ;
+  - le connecteur entrant identifie le service par ses adresses IP ou son certificat.
+rationale: |
+  Sans filtrage amélioré, Exchange Online voit la passerelle comme l'expéditeur : SPF vérifie la
+  mauvaise adresse IP, DMARC et l'intelligence contre l'usurpation travaillent sur des résultats
+  faussés, et la réputation IP est perdue. Le résultat combine contrefaçons manquées et faux positifs,
+  et les administrateurs y répondent souvent par de larges règles d'autorisation. Les scelleurs ARC de
+  confiance permettent à Exchange Online d'utiliser les résultats d'authentification vus par la
+  passerelle avant qu'elle modifie le message.
+impact: |
+  La détection devient plus stricte : des messages auparavant considérés comme sûrs parce qu'ils
+  passaient par la passerelle peuvent maintenant être marqués comme usurpés ou indésirables. Activer
+  d'abord le filtrage amélioré pour un groupe de test si l'on s'appuyait sur les stratégies de la
+  passerelle.
+audit:
+  manual: |
+    1. Vérifier les enregistrements MX des domaines acceptés (`Resolve-DnsName example.com -Type MX`).
+       S'ils pointent tous vers `*.mail.protection.outlook.com`, le contrôle ne s'applique pas.
+    2. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité. Aller dans **E-mail et collaboration** > **Stratégies et règles** >
+       **Stratégies de menace** > **Filtrage amélioré** et ouvrir le connecteur utilisé par la
+       passerelle. Vérifier que **Détecter et ignorer automatiquement la dernière adresse IP** ou
+       **Ignorer ces adresses IP** est réglé et s'applique à tous les destinataires.
+    3. Aller dans **Stratégies de menace** > **Paramètres d'authentification des e-mails** > **ARC** et
+       vérifier que le domaine de scellement de la passerelle est listé quand elle signe avec ARC.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-InboundConnector | Format-List Name, Enabled, ConnectorType, SenderIPAddresses, TlsSenderCertificateName, EFSkipLastIP, EFSkipIPs, EFUsers
+       Get-ArcConfig | Format-List ArcTrustedSealers
+       ```
+    5. Échec si le connecteur de la passerelle n'a ni `EFSkipLastIP` ni `EFSkipIPs`, si `EFUsers` le
+       limite à certains destinataires, ou si une passerelle qui scelle manque dans
+       `ArcTrustedSealers`.
+remediation:
+  manual: |
+    1. Dans le portail Defender, aller dans **Stratégies de menace** > **Filtrage amélioré**,
+       sélectionner le connecteur de la passerelle, choisir **Détecter et ignorer automatiquement la
+       dernière adresse IP** (ou lister les adresses IP de la passerelle), sélectionner **Appliquer à
+       toute l'organisation** et enregistrer.
+    2. Si la passerelle scelle avec ARC, aller dans **Paramètres d'authentification des e-mails** >
+       **ARC** et ajouter son domaine de scellement.
+    3. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-InboundConnector -Identity "<gateway connector>" -EFSkipLastIP $true -EFUsers $null
+       Set-ArcConfig -Identity Default -ArcTrustedSealers "gateway.example.net"
+       ```
+    4. Examiner les détections pendant quelques jours dans l'Explorateur de menaces ou les rapports de
+       flux de courrier.
+  rollback: |
+    `Set-InboundConnector -Identity "<gateway connector>" -EFSkipLastIP $false -EFSkipIPs $null`.

@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-035
+title: Do not send mail from the onmicrosoft.com domain
+finding:
+  title: Mailboxes send mail with the tenant's onmicrosoft.com address
+  description: Messages from the shared Microsoft domain carry no organization branding or DMARC under the organization's control, and Microsoft throttles them.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [exchange-online, moera, onmicrosoft, domains, deliverability]
+
+description: |
+  No mailbox, group or application sends mail with an address in the tenant's Microsoft Online
+  Email Routing Address domain (`<tenant>.onmicrosoft.com`, MOERA). Every mailbox and group has its
+  primary SMTP address in a custom domain, and the default domain of the tenant is a custom domain.
+  The MOERA address stays as a secondary address, as Exchange Online requires.
+rationale: |
+  The `onmicrosoft.com` domains are shared by all tenants and their reputation is shared too.
+  Recipients cannot tell a message from `contoso.onmicrosoft.com` from one sent by an attacker who
+  created a look-alike tenant, and the organization's DMARC, DKIM and branding do not apply.
+  Microsoft now limits outbound mail from MOERA domains to 100 external recipients per day per
+  tenant; messages above the limit are rejected.
+impact: |
+  Accounts whose primary address changes keep receiving mail on the old address. Scripts,
+  applications or devices that send as the MOERA address must be updated. Admin accounts without a
+  mailbox are not affected.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader. Browse to **Settings** > **Domains** and check that a custom domain is marked
+       **Default**.
+    2. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-EXORecipient -ResultSize Unlimited | Where-Object { $_.PrimarySmtpAddress -like '*.onmicrosoft.com' } |
+         Format-Table Name, RecipientTypeDetails, PrimarySmtpAddress
+       Get-MessageTraceV2 -StartDate (Get-Date).AddDays(-10) -EndDate (Get-Date) -SenderAddress "*@<tenant>.onmicrosoft.com" |
+         Group-Object SenderAddress | Select-Object Name, Count
+       ```
+    3. Fail if a mailbox or group other than a documented system object has an `onmicrosoft.com`
+       primary address, or if message trace shows outbound mail sent from the MOERA domain.
+
+remediation:
+  manual: |
+    1. In the Microsoft 365 admin center, **Settings** > **Domains**, select the main custom domain >
+       **Set as default** (Domain Name Administrator).
+    2. For each listed user, **Users** > **Active users** > select the user > **Manage username and
+       email**, add an address in the custom domain and set it as primary (User Administrator or
+       Exchange Administrator). PowerShell equivalent:
+       ```powershell
+       Set-Mailbox -Identity <user> -WindowsEmailAddress user@example.com
+       Set-UnifiedGroup -Identity <group> -PrimarySmtpAddress group@example.com
+       ```
+       For synchronized users, change the `mail` / `proxyAddresses` attributes in Active Directory.
+    3. Update the scripts and devices that send as the MOERA address.
+
+references:
+  - title: Add or remove email addresses for a mailbox in Exchange Online
+    url: https://learn.microsoft.com/exchange/recipients-in-exchange-online/manage-user-mailboxes/add-or-remove-email-addresses
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Exchange Online limits
+    url: https://learn.microsoft.com/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1076 - MOERA should not be used for sent mail
+    url: https://maester.dev/docs/tests/MT.1076
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+  - title: Maester MT.1074 - outbound mail sent with the onmicrosoft.com domain
+    url: https://maester.dev/docs/tests/MT.1074
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

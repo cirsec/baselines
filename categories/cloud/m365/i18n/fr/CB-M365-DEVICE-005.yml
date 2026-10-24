@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas ajouter les administrateurs généraux comme administrateurs locaux à la jonction Entra
+finding:
+  title: Les administrateurs généraux deviennent administrateurs locaux de chaque appareil joint à Entra
+  description: Chaque administrateur général est ajouté au groupe Administrateurs local de chaque appareil Windows nouvellement joint, ce qui expose un compte d'administration cloud sur les postes.
+description: |
+  Le paramètre d'appareil **Global administrator role is added as local administrator on the device
+  during Microsoft Entra join (Preview)** (le rôle d'administrateur général est ajouté comme
+  administrateur local à la jonction) vaut **Non**. L'administration locale des appareils joints à
+  Entra est alors déléguée par le rôle **Administrateur local de l'appareil joint à Microsoft Entra**
+  (paramètre **Gérer les administrateurs locaux supplémentaires sur tous les appareils joints à
+  Microsoft Entra**), ou par une stratégie Intune de protection de compte ciblant des groupes
+  d'appareils.
+rationale: |
+  Les administrateurs généraux contrôlent tout le tenant. Utiliser un tel compte pour ouvrir une
+  session sur un poste expose ses identifiants et ses jetons à tout ce qui s'exécute sur cet
+  appareil : logiciel malveillant, utilisateur local administrateur ou outil d'extraction
+  d'identifiants. Séparer l'administration cloud de l'administration des postes suit le modèle en
+  tiers : un poste compromis ne donne pas accès à une session d'administrateur général.
+impact: |
+  Les administrateurs généraux perdent les droits d'administrateur local implicites sur les
+  appareils joints après le changement. Le support et les administrateurs de postes doivent recevoir
+  leurs droits locaux par le rôle Administrateur local de l'appareil joint à Microsoft Entra ou par
+  des stratégies Intune de groupes locaux avant le changement. Le paramètre ne joue qu'à la
+  jonction : les appareils joints auparavant gardent le SID du rôle administrateur général dans leur
+  groupe Administrateurs local tant qu'une stratégie ne le retire pas (par exemple une stratégie
+  Intune de protection de compte qui remplace l'appartenance au groupe).
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Global administrator role is added as local administrator on the device during Microsoft Entra join (Preview)
+  recommended_value: Non
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**.
+    3. Vérifier que **Global administrator role is added as local administrator on the device during
+       Microsoft Entra join (Preview)** vaut **Non**.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` et lire
+       `azureADJoin.localAdmins.enableGlobalAdmins`.
+    5. Échec si le paramètre vaut **Oui** (`enableGlobalAdmins` à `true`).
+remediation:
+  manual: |
+    1. Vérifier que l'administration des postes est déléguée autrement : attribuer le rôle
+       **Administrateur local de l'appareil joint à Microsoft Entra** (Paramètres de l'appareil >
+       **Gérer les administrateurs locaux supplémentaires sur tous les appareils joints à Microsoft
+       Entra**), ou déployer une stratégie Intune **Protection de compte** > **Appartenance au groupe
+       d'utilisateurs locaux**.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**. Rôle : administrateur
+       d'appareils cloud.
+    3. Régler **Global administrator role is added as local administrator on the device during
+       Microsoft Entra join (Preview)** sur **Non** et enregistrer.
+    4. Équivalent Graph : `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       avec l'objet complet de la stratégie et `azureADJoin.localAdmins.enableGlobalAdmins` à
+       `false`.
+    5. Pour les appareils déjà joints, retirer le SID du rôle administrateur général du groupe
+       Administrateurs local avec une stratégie Intune d'appartenance aux groupes locaux (action
+       **Remplacer**).
+  rollback: |
+    Remettre le paramètre sur **Oui**.

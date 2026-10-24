@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-029
+title: Require token protection for desktop access to Exchange Online, SharePoint Online and Teams
+finding:
+  title: Sign-in sessions of desktop apps are not bound to the device
+  description: A refresh token stolen from a workstation can be replayed from the attacker's machine to read mail and files.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [token-protection, conditional-access, token-theft, session, windows]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy applies the session control **Require token protection for sign-in
+  sessions** to native (desktop) applications that access **Office 365 Exchange Online**, **Office 365
+  SharePoint Online** and **Microsoft Teams Services**, on Windows devices. With this control, only
+  sign-in sessions cryptographically bound to the device (through the Primary Refresh Token) are
+  accepted: a token copied to another machine is refused.
+
+  The policy is scoped with the **Device platforms** condition (Windows, and macOS or iOS when the
+  Enterprise SSO plug-in is deployed) and the **Client apps** condition set to **Mobile apps and
+  desktop clients** only.
+rationale: |
+  Infostealer malware and adversary-in-the-middle kits steal refresh tokens and session cookies,
+  then replay them from attacker infrastructure. MFA does not help once the token is issued. Token
+  protection binds the session to a key held by the device, so the stolen token is useless
+  elsewhere.
+impact: |
+  Only supported clients on Microsoft Entra joined, hybrid joined or registered Windows 10+
+  devices (and MDM-managed Apple devices with the SSO plug-in) can access the targeted resources.
+  Older Office builds, third-party clients and unregistered devices are blocked. Do not target the
+  **Office 365** app group, and do not include **Browser** in the client apps condition, or Teams on
+  the web and other MSAL.js apps break. Roll out to pilot groups first.
+notes: |
+  Browser support is limited (preview, Azure Resource Manager only). Because the policy only covers
+  some platforms, combine it with a policy that blocks unknown or unsupported device platforms
+  (CB-M365-AUTH-021) so an attacker cannot simply present another platform.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where:
+       - **Users** includes all users, or groups covering all users of supported devices;
+       - **Target resources** includes **Office 365 Exchange Online**, **Office 365 SharePoint
+         Online** and **Microsoft Teams Services**;
+       - **Conditions** > **Device platforms** includes **Windows**;
+       - **Conditions** > **Client apps** selects only **Mobile apps and desktop clients**;
+       - **Session** > **Require token protection for sign-in sessions** is selected.
+    4. Browse to **Entra ID** > **Monitoring & health** > **Sign-in logs**, open a recent Outlook
+       sign-in from Windows and check that the policy shows **Success**.
+    5. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`): export the policies
+       with `Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10` and look for the
+       token protection session control in `sessionControls`.
+    6. Fail if no enabled policy requires token protection, or if it covers only a pilot group.
+
+remediation:
+  manual: |
+    1. Check device readiness: Windows devices must be Microsoft Entra joined, hybrid joined or
+       registered, with current Microsoft 365 Apps.
+    2. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    3. Browse to **Entra ID** > **Conditional Access** > **Policies** > **New policy**.
+    4. **Users**: a pilot group first; exclude the emergency access accounts.
+    5. **Target resources** > **Select resources**: **Office 365 Exchange Online**, **Office 365
+       SharePoint Online**, **Microsoft Teams Services** (and Azure Virtual Desktop, Windows 365,
+       Windows Cloud Login if Windows App is used).
+    6. **Conditions** > **Device platforms** > **Windows**; **Client apps** > only **Mobile apps
+       and desktop clients**.
+    7. **Session** > **Require token protection for sign-in sessions**.
+    8. Set **Enable policy** to **Report-only**; review interactive and non-interactive sign-ins
+       for incompatible clients, then switch to **On** and widen the user scope step by step.
+  rollback: |
+    Set the policy to **Report-only** or **Off**, or remove the affected users from its scope.
+
+references:
+  - title: Token protection in Microsoft Entra Conditional Access
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-token-protection
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Token protection deployment guide - Windows
+    url: https://learn.microsoft.com/entra/identity/conditional-access/deployment-guide-token-protection-windows
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.16"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-23
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1550.001
+  - framework: mitre-attack
+    id: T1539
+related_controls:
+  - id: CB-M365-AUTH-021
+    type: requires
+  - id: CB-M365-AUTH-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-012
+title: Block sign-in for shared mailbox accounts
+finding:
+  title: Shared mailbox accounts can sign in directly
+  description: The user account behind a shared mailbox has an active sign-in, so anyone who sets or guesses its password gets in without being tied to a named user.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, shared-mailbox, sign-in, entra-id, accounts]
+
+description: |
+  Every shared mailbox has a Microsoft Entra user object. Sign-in is blocked on all of them
+  (`accountEnabled false`). People reach the shared mailbox through delegated permissions (Full
+  Access, Send As, Send on Behalf) with their own account.
+rationale: |
+  A shared mailbox account is not owned by a single person, often has no MFA method registered and
+  is rarely monitored. If its password is set (during a migration or by a well-meaning admin) the
+  account becomes a back door that Conditional Access and access reviews tend to miss. Blocking
+  sign-in keeps every access attributed to a named user.
+impact: |
+  None known for normal use: delegated access does not need the shared account to sign in. Scripts
+  or devices that sign in as the shared mailbox (for example to send mail) stop working and must use
+  a dedicated, monitored account or an application identity.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Teams & groups** > **Shared mailboxes** and note the shared mailboxes.
+    3. Browse to **Users** > **Active users**, open each of these accounts and check that it shows
+       **Sign-in blocked**.
+    4. Or, in PowerShell (read-only), with Exchange Online and Microsoft Graph
+       (`User.Read.All`):
+       ```powershell
+       Get-EXOMailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited |
+         ForEach-Object { Get-MgUser -UserId $_.ExternalDirectoryObjectId -Property UserPrincipalName,AccountEnabled } |
+         Where-Object AccountEnabled | Select-Object UserPrincipalName, AccountEnabled
+       ```
+       Graph equivalent per account: `GET /users/{id}?$select=userPrincipalName,accountEnabled`.
+    5. Fail if any shared mailbox account has `accountEnabled` set to `true`.
+
+remediation:
+  manual: |
+    1. In the Microsoft 365 admin center, browse to **Users** > **Active users**, select the shared
+       mailbox accounts, then **Block sign-in** (User Administrator).
+    2. PowerShell equivalent (Microsoft Graph, `User.ReadWrite.All`):
+       ```powershell
+       Update-MgUser -UserId <object id> -AccountEnabled:$false
+       ```
+    3. For a synchronized account, disable it in Active Directory instead, otherwise the next sync
+       restores it.
+  rollback: |
+    `Update-MgUser -UserId <object id> -AccountEnabled:$true`.
+
+references:
+  - title: About shared mailboxes
+    url: https://learn.microsoft.com/microsoft-365/admin/email/about-shared-mailboxes
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Shared mailboxes in Exchange Online
+    url: https://learn.microsoft.com/exchange/collaboration-exo/shared-mailboxes
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.2.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

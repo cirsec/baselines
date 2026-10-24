@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Disposer de deux comptes d'accès d'urgence protégés
+finding:
+  title: Aucun accès d'urgence fiable au tenant
+  description: Une erreur d'accès conditionnel, une panne du fournisseur d'identité ou la perte des appareils des administrateurs peut bloquer tous les administrateurs hors du tenant.
+parameters:
+  emergency_access_accounts: Noms d'utilisateur principaux des comptes d'accès d'urgence. Les autres contrôles d'accès conditionnel excluent exactement ces comptes.
+description: |
+  Le tenant dispose d'exactement deux comptes d'accès d'urgence (« bris de glace »), listés dans
+  `{{ emergency_access_accounts }}`. Chaque compte :
+
+  - est cloud uniquement, avec un nom d'utilisateur principal sur le domaine
+    `*.onmicrosoft.com`, et n'est rattaché à aucune personne ;
+  - détient le rôle Administrateur général en attribution **active permanente**, directement (ni
+    via un groupe, ni en éligible dans Privileged Identity Management) ;
+  - s'authentifie avec une méthode résistante au hameçonnage (clé de sécurité FIDO2 ou
+    certificat), indépendante des méthodes et appareils habituels des administrateurs ;
+  - est exclu de toutes les stratégies d'accès conditionnel, sauf au plus une stratégie qui exige
+    seulement une MFA résistante au hameçonnage pour ces comptes ;
+  - a ses secrets (clés de sécurité, mot de passe éventuel) conservés sous scellé dans un coffre,
+    sur deux sites distincts, selon une procédure de garde documentée ;
+  - est testé au moins tous les 90 jours et ses connexions déclenchent une alerte
+    (CB-M365-AUDIT-009).
+rationale: |
+  L'accès conditionnel, les services MFA, la fédération et Privileged Identity Management peuvent
+  tous tomber en panne ou être mal configurés, avec pour résultat qu'aucun administrateur ne peut
+  se connecter. Deux comptes indépendants de ces mécanismes sont le seul moyen de reprendre la main
+  sur le tenant. Microsoft imposant la MFA sur les portails d'administration, les comptes d'urgence
+  ont besoin d'une méthode résistante au hameçonnage qui fonctionne sans les appareils habituels.
+  Deux comptes évitent un point de défaillance unique.
+impact: |
+  Ces comptes sont administrateurs généraux en permanence : leurs secrets doivent être gardés
+  comme le secret le plus sensible de l'organisation. Chaque stratégie d'accès conditionnel doit
+  les exclure, ce qui ajoute une étape à chaque nouvelle stratégie. La garde physique et les tests
+  réguliers coûtent un peu de temps d'exploitation.
+notes: |
+  Les autres contrôles de ce standard (accès conditionnel, PIM, nombre d'administrateurs généraux)
+  désignent ces comptes par le paramètre. Une clé FIDO2 par compte, conservée dans un coffre, est
+  la méthode la plus simple qui satisfait l'exigence de MFA des portails d'administration.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général (Lecteur Sécurité pour l'accès conditionnel).
+    2. Aller dans **Entra ID** > **Rôles et administrateurs** > **Administrateur général** >
+       **Attributions** : les deux comptes de `{{ emergency_access_accounts }}` apparaissent en
+       **Actif**, sans date de fin, attribués directement.
+    3. Ouvrir chaque compte : **Synchronisation locale activée** vaut **Non**, le nom d'utilisateur
+       principal se termine par `.onmicrosoft.com`, et **Méthodes d'authentification** affiche une
+       clé de sécurité FIDO2 ou un certificat.
+    4. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et ouvrir chaque
+       stratégie : les deux comptes (ou leur groupe) figurent dans **Utilisateurs** > **Exclure**,
+       sauf une stratégie unique qui exige seulement une MFA résistante au hameçonnage pour eux.
+    5. Vérifier le registre de garde : stockage des secrets et date du dernier test (90 jours ou
+       moins).
+    6. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       ```
+       Get-MgIdentityConditionalAccessPolicy -All |
+         Select-Object DisplayName, State, @{n='ExcludedUsers';e={$_.Conditions.Users.ExcludeUsers -join ','}}
+       ```
+    7. Échec s'il y a moins ou plus de deux comptes, si l'un est synchronisé, seulement éligible,
+       sans méthode résistante au hameçonnage, inclus dans une stratégie qui pourrait le bloquer,
+       ou non testé depuis 90 jours.
+remediation:
+  manual: |
+    1. Avec un Administrateur général, créer deux utilisateurs dans **Entra ID** > **Utilisateurs**
+       > **Nouvel utilisateur**, sur le domaine `*.onmicrosoft.com`, avec des noms neutres et sans
+       licence.
+    2. Attribuer à chacun le rôle Administrateur général en **Actif**, **Permanent**, dans **Rôles
+       et administrateurs** (avec PIM : **Type d'attribution** **Actif**, **Attribué de manière
+       permanente**).
+    3. Enregistrer une clé de sécurité FIDO2 (ou un certificat) sur chaque compte ; conserver les
+       clés et l'éventuel mot de passe sous enveloppe scellée dans deux coffres distincts.
+    4. Ajouter les deux comptes à un groupe dédié et exclure ce groupe de toutes les stratégies
+       d'accès conditionnel. Renseigner le paramètre avec leurs noms d'utilisateur principaux.
+    5. Créer l'alerte de connexion (CB-M365-AUDIT-009) et planifier une connexion de test tous les
+       90 jours.
+  rollback: |
+    Sans objet : supprimer les comptes d'urgence supprime le moyen de reprise.

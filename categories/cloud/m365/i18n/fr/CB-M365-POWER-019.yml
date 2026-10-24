@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-019
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver l'accès des principaux de service aux API publiques Fabric à des groupes approuvés
+finding:
+  title: Tout principal de service peut appeler les API publiques Fabric
+  description: Chaque application inscrite dans le tenant peut utiliser son principal de service pour appeler les API Fabric, dans la limite des autorisations qu'il détient sur les espaces de travail et éléments.
+description: |
+  Le paramètre du locataire Fabric **Service principals can call Fabric public APIs** (les
+  principaux de service peuvent appeler les API publiques Fabric), dans les paramètres du
+  développeur, est **Désactivé**, ou **Activé** uniquement pour des groupes de sécurité précis
+  contenant les principaux de service d'applications approuvées. Les identifiants de ces principaux
+  sont stockés dans un coffre de clés et revus avec les autres identités de charge de travail.
+rationale: |
+  Les principaux de service s'authentifient sans la MFA ni l'accès conditionnel des utilisateurs,
+  souvent avec des secrets de longue durée. Si n'importe lequel peut appeler les API Fabric, le
+  secret divulgué d'une application sans rapport devient un moyen de lire ou modifier du contenu
+  analytique partout où ce principal a reçu des droits. N'autoriser qu'un groupe nommé réserve
+  l'accès API aux applications revues à cet effet.
+impact: |
+  Les applications dont le principal de service est hors des groupes autorisés reçoivent des erreurs
+  d'autorisation sur les API Fabric. Microsoft active ce paramètre par défaut pour les nouveaux
+  tenants : inventorier les applications qui utilisent les API Fabric (journaux de connexion,
+  supervision d'administration) et ajouter leurs principaux de service au groupe avant de
+  restreindre.
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres du développeur > Service principals can call Fabric public APIs
+  recommended_value: Désactivé, ou Activé pour des groupes de sécurité précis
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric.
+    2. Ouvrir **Paramètres** > **Portail d'administration** > **Paramètres du locataire** >
+       **Paramètres du développeur** et développer **Service principals can call Fabric public
+       APIs**.
+    3. Vérifier qu'il est **Désactivé**, ou **Activé** pour des **Groupes de sécurité spécifiques**
+       dont les membres sont des principaux de service approuvés.
+    4. Alternative en lecture seule : dans `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       lire l'entrée `ServicePrincipalAccessPermissionAPIs`.
+    5. Échec si le paramètre est activé pour toute l'organisation.
+remediation:
+  manual: |
+    1. Créer un groupe de sécurité pour les principaux de service des applications approuvées et les
+       y ajouter.
+    2. Dans **Paramètres du locataire** > **Paramètres du développeur** > **Service principals can
+       call Fabric public APIs**, sélectionner **Désactivé**, ou **Activé** avec **Groupes de sécurité
+       spécifiques** et le groupe. Sélectionner **Appliquer**. Rôle : administrateur Fabric.
+    3. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/ServicePrincipalAccessPermissionAPIs/update`
+       avec l'état cible.
+  rollback: |
+    Remettre le paramètre à son étendue précédente.

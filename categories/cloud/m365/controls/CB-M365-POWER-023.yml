@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-023
+title: Keep maker credentials, hard-coded secrets and cleartext HTTP out of Copilot Studio agents
+finding:
+  title: Copilot Studio agents use maker credentials, embedded secrets or insecure HTTP calls
+  description: Some agents call tools with the author's stored connection, contain API keys or passwords in their topics, or send HTTP requests in cleartext or to non-standard ports.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [copilot-studio, ai-agents, credentials, secrets, http, prompt-injection]
+
+applicability:
+  requires:
+    - "Microsoft Copilot Studio"
+
+description: |
+  Copilot Studio agents follow three rules:
+
+  - connector tools that reach organizational data use **User authentication**, not **Agent author
+    authentication**, except for low-risk public lookups that are documented;
+  - topics, prompts and instructions contain no credential (API key, bearer token, connection
+    string, password); secrets live in environment variables backed by Azure Key Vault or in
+    connector connections;
+  - HTTP request nodes use HTTPS on the standard port, and the tenant data policy blocks the **HTTP**
+    connector or limits it to approved endpoints with endpoint filtering.
+rationale: |
+  With author authentication, every person who chats with the agent acts with the maker's
+  permissions: a user can read or change data they could never reach themselves, and prompt
+  injection can turn the agent against the maker's mailbox or files. Secrets written in topics can
+  be extracted through prompt injection and outlive their rotation elsewhere. Cleartext or unusual
+  HTTP endpoints may leak data and are typical of exfiltration or command-and-control channels.
+impact: |
+  Users must create their own connection the first time an agent calls a tool with user
+  authentication; some channels (Demo website, Facebook, mobile app) do not support it. Agents that
+  rely on blocked HTTP endpoints stop working until they move to connectors or approved HTTPS
+  endpoints. Rotate every secret found in a topic.
+
+audit:
+  manual: |
+    1. In the Power Platform admin center (https://admin.powerplatform.microsoft.com), as at least a
+       Global Reader, browse to **Security** > **Data and privacy** > **Data policy** and check that
+       the policies covering agent environments block the **HTTP** connector, or allow only
+       approved HTTPS endpoints through **Configure connector** > **Connector endpoints**.
+    2. In Copilot Studio (https://copilotstudio.microsoft.com), as an environment admin or System
+       Administrator, open each agent: under **Tools**, check that each connector tool uses **User
+       authentication**; in **Topics**, search HTTP request nodes and text for `http://`, explicit
+       ports, `Bearer`, `apikey`, `password` or connection strings.
+    3. Alternative, read only: export the agent definitions from Dataverse (`bots` and
+       `botcomponents` tables) and search them, or run the Maester tests MT.1115, MT.1118 and MT.1119
+       (`Connect-Maester -Service Dataverse,Graph`).
+    4. Fail if an agent uses author authentication for a tool reaching non-public data without a
+       documented exception, contains a credential, or calls HTTP in cleartext or on a non-standard
+       port.
+
+remediation:
+  manual: |
+    1. Rotate every credential found in an agent, then replace it with an environment variable of
+       type secret (Azure Key Vault) or a connector connection.
+    2. Ask agent owners to switch connector tools to **User authentication** and republish.
+    3. Replace HTTP request nodes with connectors where possible; otherwise use HTTPS on port 443.
+    4. In the data policy covering agent environments, block the **HTTP** connector, or configure
+       endpoint filtering to allow only approved `https://` endpoints. Role: Power Platform
+       Administrator.
+  rollback: |
+    Move the **HTTP** connector back to its previous group or remove the endpoint rules; restore the
+    previous tool authentication if a channel does not support user authentication.
+
+references:
+  - title: Configure user authentication for tools
+    url: https://learn.microsoft.com/microsoft-copilot-studio/configure-enduser-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure data policies for agents
+    url: https://learn.microsoft.com/microsoft-copilot-studio/admin-data-loss-prevention
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1118
+    url: https://maester.dev/docs/tests/MT.1118
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1567
+  - framework: mitre-attack
+    id: T1071.001
+related_controls:
+  - id: CB-M365-POWER-003
+    type: related
+  - id: CB-M365-POWER-022
+    type: related
+  - id: CB-M365-POWER-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

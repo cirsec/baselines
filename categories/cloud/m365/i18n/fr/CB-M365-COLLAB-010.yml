@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire expirer les liens Tout le monde et les limiter à l'affichage
+finding:
+  title: Les liens Tout le monde n'expirent jamais ou permettent la modification
+  description: Les liens qui ne demandent aucune connexion restent valides sans limite et peuvent laisser des inconnus modifier ou déposer du contenu.
+description: |
+  Là où les liens **Tout le monde** sont autorisés (exception à CB-M365-COLLAB-003, pour le tenant, un
+  site ou un OneDrive), ils sont encadrés :
+
+  - ils expirent au plus tard après `{{ anyone_link_max_days }}` jours
+    (`RequireAnonymousLinksExpireInDays`) ;
+  - ils ne donnent que l'autorisation **Afficher**, pour les fichiers comme pour les dossiers
+    (`FileAnonymousLinkType` et `FolderAnonymousLinkType` = `View`).
+
+  Si ni SharePoint ni OneDrive n'autorisent les liens **Tout le monde**, le contrôle est respecté.
+rationale: |
+  Un lien **Tout le monde** est un identifiant au porteur. Une date d'expiration borne la durée
+  d'exposition d'un lien divulgué ou oublié. L'affichage seul empêche des personnes non authentifiées
+  de modifier des documents, de les remplacer par des fichiers malveillants ou d'utiliser un dossier
+  de dépôt pour introduire du contenu dans le tenant.
+impact: |
+  Les utilisateurs doivent recréer les liens après expiration. Une durée plus courte raccourcit aussi
+  les liens existants quand la nouvelle valeur est inférieure. Les **demandes de fichiers** et les
+  liens de dossier **Afficher, modifier et charger** cessent de fonctionner.
+parameters:
+  anyone_link_max_days: Durée de vie maximale d'un lien Tout le monde.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage**. Si les deux curseurs sont en dessous de **Tout le
+       monde**, le contrôle est respecté.
+    3. Sinon, sous **Choisir les options d'expiration et d'autorisation pour les liens Tout le monde**,
+       vérifier que **Ces liens doivent expirer dans ce nombre de jours** est coché avec au plus
+       `{{ anyone_link_max_days }}`, et que **Ces liens peuvent accorder ces autorisations** vaut
+       **Afficher** pour **Fichiers** et **Dossiers**.
+    4. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object SharingCapability, OneDriveSharingCapability, RequireAnonymousLinksExpireInDays, FileAnonymousLinkType, FolderAnonymousLinkType`.
+    5. Échec si les liens **Tout le monde** sont autorisés et que `RequireAnonymousLinksExpireInDays`
+       vaut `0` ou dépasse `{{ anyone_link_max_days }}`, ou si l'un des types de lien n'est pas `View`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Choisir
+       les options d'expiration et d'autorisation pour les liens Tout le monde**.
+    2. Cocher **Ces liens doivent expirer dans ce nombre de jours** et saisir
+       `{{ anyone_link_max_days }}` ou moins.
+    3. Régler **Fichiers** et **Dossiers** sur **Afficher**. Sélectionner **Enregistrer**. Rôle :
+       Administrateur SharePoint.
+    4. Équivalent PowerShell :
+       `Set-SPOTenant -RequireAnonymousLinksExpireInDays {{ anyone_link_max_days }} -FileAnonymousLinkType View -FolderAnonymousLinkType View`.

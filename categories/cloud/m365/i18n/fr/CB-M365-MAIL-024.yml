@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-024
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder la purge automatique zéro heure activée pour les programmes malveillants, le hameçonnage et le spam
+finding:
+  title: Les messages reconnus malveillants après leur remise restent dans les boîtes
+  description: Quand un verdict change après la remise, le message malveillant reste dans la boîte de réception au lieu d'en être retiré automatiquement.
+description: |
+  La purge automatique zéro heure (ZAP) est activée dans chaque stratégie qui s'applique à des
+  utilisateurs :
+
+  - stratégies anti-programme malveillant : `ZapEnabled $true` ;
+  - stratégies anti-courrier indésirable : `PhishZapEnabled $true` et `SpamZapEnabled $true`, avec
+    des actions spam et hameçonnage que ZAP sait exécuter (**Déplacer le message vers le dossier
+    Courrier indésirable** ou **Mettre le message en quarantaine**, pas **Ajouter un en-tête X**,
+    **Ajouter un préfixe à la ligne d'objet** ni **Rediriger**) ;
+  - avec Defender pour Office 365, la stratégie de protection Microsoft Teams : `ZapEnabled $true`.
+rationale: |
+  Beaucoup de campagnes ne sont reconnues que des minutes ou des heures après la remise des premiers
+  messages, par exemple quand un lien devient malveillant après coup. ZAP retire ces messages des
+  boîtes rétroactivement. Il est activé par défaut : un ZAP désactivé trahit souvent un ancien
+  dépannage jamais annulé.
+impact: |
+  Aucun connu. Un message déplacé par erreur peut être libéré de la quarantaine ou du Courrier
+  indésirable.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace**.
+       Dans **Anti-programme malveillant**, vérifier **Activer la purge automatique zéro heure pour les
+       programmes malveillants** dans chaque stratégie. Dans **Anti-courrier indésirable**, vérifier
+       **Purge automatique zéro heure (ZAP)** pour le hameçonnage et le spam dans chaque stratégie
+       entrante, ainsi que les actions spam et hameçonnage.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-MalwareFilterPolicy | Format-Table Name, ZapEnabled
+       Get-HostedContentFilterPolicy | Format-Table Name, PhishZapEnabled, SpamZapEnabled, SpamAction, PhishSpamAction, HighConfidencePhishAction
+       Get-TeamsProtectionPolicy | Format-Table Name, ZapEnabled
+       ```
+    4. Échec si l'une des valeurs ZAP vaut `False` dans une stratégie qui s'applique à des
+       utilisateurs, ou si une action spam ou hameçonnage vaut `AddXHeader`, `ModifySubject` ou
+       `Redirect`.
+remediation:
+  manual: |
+    1. Dans le portail Defender, modifier chaque stratégie anti-programme malveillant et
+       anti-courrier indésirable, activer les options ZAP et régler les actions comme dans
+       CB-M365-MAIL-030.
+    2. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Get-MalwareFilterPolicy | Set-MalwareFilterPolicy -ZapEnabled $true
+       Get-HostedContentFilterPolicy | Set-HostedContentFilterPolicy -PhishZapEnabled $true -SpamZapEnabled $true
+       Set-TeamsProtectionPolicy -Identity "Teams Protection Policy" -ZapEnabled $true
+       ```
+       (Les stratégies prédéfinies ne sont pas modifiables et ont déjà ZAP activé.)

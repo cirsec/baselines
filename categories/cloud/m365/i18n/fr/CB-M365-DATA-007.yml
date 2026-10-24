@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer des stratégies de rétention à Exchange, SharePoint, OneDrive, Teams et Copilot
+finding:
+  title: Le contenu Microsoft 365 peut être supprimé définitivement faute de stratégie de rétention
+  description: Un utilisateur, un initié ou un attaquant qui supprime messages, fichiers ou conversations les fait disparaître pour de bon une fois les corbeilles vidées, ce qui détruit preuves et documents métier.
+description: |
+  Des stratégies de rétention Microsoft Purview conservent le contenu au moins
+  **{{ retention_years }}** ans (ou selon les durées du référentiel de conservation de
+  l'organisation) sur ces emplacements, pour tous les utilisateurs et sites :
+
+  - boîtes aux lettres Exchange ;
+  - sites SharePoint classiques et de communication ;
+  - comptes OneDrive ;
+  - messages de canal Teams et conversations Teams ;
+  - expériences Microsoft Copilot (interactions Copilot).
+
+  Les durées viennent du référentiel légal et réglementaire de conservation validé par le service
+  juridique et le délégué à la protection des données ; l'action est **Conserver les éléments** ou
+  **Conserver puis supprimer** selon ce référentiel.
+rationale: |
+  La rétention protège contre la suppression par erreur, par un initié malveillant, ou par un
+  attaquant qui efface boîtes aux lettres et sites après exfiltration ou lors d'un rançongiciel. Elle
+  conserve aussi les traces nécessaires aux enquêtes, contentieux et demandes des autorités, y compris
+  les invites et réponses Copilot, qui sont des documents métier comme toute autre communication.
+impact: |
+  Le contenu conservé consomme du stockage (éléments récupérables et bibliothèque de conservation) et
+  ne peut pas être supprimé avant la fin de la période, y compris sur demande au titre du RGPD sauf
+  processus d'exception. Des durées trop longues contredisent la minimisation des données : les
+  aligner sur le référentiel de conservation plutôt que tout garder.
+notes: |
+  {{ retention_years }} ans est une valeur par défaut inspirée des pratiques du secteur public ;
+  fixer la valeur selon les obligations légales (par exemple pièces comptables, droit du travail,
+  règles sectorielles).
+parameters:
+  retention_years: Durée minimale de conservation du contenu Microsoft 365 quand aucun référentiel de conservation plus précis ne s'applique.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins le
+       rôle Lecteur général.
+    2. Aller dans **Solutions** > **Gestion du cycle de vie des données** > **Stratégies** >
+       **Stratégies de rétention**.
+    3. Vérifier que des stratégies activées couvrent, pour tous les utilisateurs ou sites, les
+       **Boîtes aux lettres Exchange**, les **Sites SharePoint classiques et de communication**, les
+       **Comptes OneDrive**, les **Messages de canal Teams**, les **Conversations Teams** et les
+       **Expériences Microsoft Copilot**, avec une durée de rétention d'au moins
+       {{ retention_years }} ans ou la durée du référentiel validé.
+    4. Alternative en PowerShell Sécurité et conformité : `Get-RetentionCompliancePolicy
+       -DistributionDetail | Format-List Name,Enabled,Mode,DistributionStatus,ExchangeLocation,SharePointLocation,OneDriveLocation,TeamsChannelLocation,TeamsChatLocation`
+       et `Get-RetentionComplianceRule | Format-List Policy,RetentionDuration,RetentionComplianceAction`.
+    5. Échec si un emplacement n'est pas couvert, si une stratégie est désactivée ou en erreur, ou si
+       la durée de rétention est plus courte qu'exigé.
+remediation:
+  manual: |
+    1. Obtenir le référentiel de conservation validé par le service juridique et le délégué à la
+       protection des données.
+    2. Se connecter au portail Microsoft Purview avec au moins le rôle Administrateur de conformité
+       (ou le rôle Retention Management).
+    3. Aller dans **Solutions** > **Gestion du cycle de vie des données** > **Stratégies** >
+       **Stratégies de rétention** > **Nouvelle stratégie de rétention**.
+    4. Choisir l'étendue **Statique**, puis les emplacements listés dans la description, tous les
+       utilisateurs ou sites.
+    5. Régler **Conserver les éléments pendant une période spécifique** sur la durée exigée, et
+       l'action en fin de période selon le référentiel.
+    6. Créer des stratégies distinctes quand les durées diffèrent (par exemple conversations Teams
+       plus courtes que les boîtes aux lettres).
+    7. Alternative PowerShell : `New-RetentionCompliancePolicy` avec les emplacements, puis
+       `New-RetentionComplianceRule -RetentionDuration <jours> -RetentionComplianceAction Keep`.
+  rollback: |
+    Désactiver ou supprimer la stratégie de rétention. Le contenu suit alors les suppressions
+    normales ; une stratégie avec verrou de conservation (Preservation Lock) ne peut pas être
+    désactivée.

@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-034
+title: Keep Conditional Access policies free of broken references and unprotected exclusions
+finding:
+  title: Conditional Access policies contain silent configuration errors
+  description: Policies that point to deleted objects, have no target resource, leave exclusions uncovered or rely on groups any admin can edit do not protect what their name suggests.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [conditional-access, hygiene, exclusions, restricted-management, governance]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  The set of Conditional Access policies is reviewed at least quarterly, and after each change,
+  against these rules:
+
+  1. No policy includes or excludes a deleted user, group or role (shown as an unknown object ID).
+  2. Every enabled policy has at least one target resource, user action or authentication context.
+  3. Every object excluded from a policy is covered by another policy that gives an equivalent
+     protection (for example a dedicated policy for service accounts), except the emergency access
+     accounts.
+  4. Groups used to include or exclude users in policies are role-assignable groups or are placed
+     in a restricted management administrative unit, so that only privileged administrators can
+     change their membership.
+  5. Microsoft-managed policies are not left in **Report-only**: each one is set to **On**, or to
+     **Off** with a documented equivalent.
+  6. Authentication method policies do not reference deleted groups.
+rationale: |
+  Conditional Access fails open: a policy targeting a deleted group applies to nobody, a policy
+  without resources does nothing, and an exclusion without a fallback is a permanent hole. Attackers
+  who obtain a Groups Administrator or User Administrator role add themselves to an exclusion group
+  to escape MFA. None of these errors raise an alert; only a review finds them.
+impact: |
+  Moving exclusion groups into a restricted management administrative unit means that User and
+  Groups Administrators can no longer change them; the Conditional Access team or a Privileged Role
+  Administrator must do it. The review takes a few hours per quarter.
+notes: |
+  The Maester tests MT.1035, MT.1036, MT.1038, MT.1066, MT.1067, MT.1184 and MT.1224 automate most
+  of these checks. The Conditional Access gap analyzer workbook helps with rule 3.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader (Global Reader to also read administrative units).
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies** and open each policy:
+       - **Users** and **Target resources** show no unresolved object ID (a GUID instead of a name);
+       - **Target resources** is not empty;
+       - every excluded user or group is either an emergency access account or is included in
+         another enabled policy with an equivalent grant.
+    3. Filter the policy list on the name prefix `Microsoft-managed:` and check that none is in
+       **Report-only**.
+    4. For each group used in a policy, open it under **Entra ID** > **Groups** and check that
+       **Microsoft Entra roles can be assigned to the group** is **Yes**, or that it is a member of an
+       administrative unit with **Restricted management** set to **Yes** (**Entra ID** > **Roles &
+       admins** > **Admin units**).
+    5. Browse to **Entra ID** > **Authentication methods** > **Policies** and check that the target
+       groups of each method still exist.
+    6. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`, `Group.Read.All`):
+       list the policies with `Get-MgIdentityConditionalAccessPolicy`, collect the IDs in
+       `Conditions.Users.IncludeGroups` and `ExcludeGroups`, and resolve each with `Get-MgGroup
+       -GroupId <id>`; an error means a deleted group. Or run Maester (read-only) with the tests
+       listed in the notes.
+    7. Fail on any broken reference, any enabled policy without target, any uncovered exclusion,
+       any exclusion group editable by non-privileged administrators, or any Microsoft-managed
+       policy left in **Report-only**.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    2. Remove deleted objects from the policies, or delete policies that no longer have a purpose.
+    3. Add the missing target resources, or delete untargeted policies.
+    4. For each uncovered exclusion, create a dedicated policy for the excluded population (for
+       example service accounts restricted to trusted locations), or remove the exclusion.
+    5. Create an administrative unit with **Restricted management administrative unit** set to
+       **Yes** (Privileged Role Administrator), and move the include and exclude groups into it.
+       New groups can also be created as role-assignable.
+    6. Review each Microsoft-managed policy in report-only mode, exclude the emergency access
+       accounts, then set it to **On** or **Off**.
+    7. Record the review date and repeat it every quarter.
+  rollback: |
+    Remove a group from the restricted management administrative unit to give back the
+    delegated administrators' rights on it.
+
+references:
+  - title: Microsoft-managed Conditional Access policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Restricted management administrative units in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/admin-units-restricted-management
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access - users, groups, agents and workload identities
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-users-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester Conditional Access tests
+    url: https://maester.dev/docs/tests/MT.1036
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1556.009
+related_controls:
+  - id: CB-M365-AUTH-045
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-022
+    type: related
+  - id: CB-M365-ADMIN-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

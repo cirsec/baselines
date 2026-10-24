@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer le transfert automatique des messages vers des destinataires externes
+finding:
+  title: Des règles de boîte aux lettres peuvent transférer le courrier de l'entreprise vers des adresses externes
+  description: Un attaquant qui prend le contrôle d'une boîte aux lettres, ou un salarié sur le départ, peut créer une règle qui copie en silence chaque message reçu vers une adresse extérieure.
+description: |
+  Exchange Online empêche le transfert automatique des messages vers des destinataires extérieurs à
+  l'organisation, quel que soit le mécanisme : règles de boîte de réception, paramètre de transfert
+  de la boîte aux lettres (`ForwardingSmtpAddress`) et transfert depuis Outlook sur le web. Deux
+  couches sont réglées :
+
+  - chaque stratégie de filtrage du courrier indésirable sortant, à commencer par celle par défaut, a
+    **Règles de transfert automatique** réglé sur **Désactivé - Le transfert est désactivé**
+    (`AutoForwardingMode Off`) ;
+  - le domaine distant par défaut (`*`) a **Autoriser le transfert automatique** désactivé
+    (`AutoForwardEnabled $false`).
+
+  Les besoins métier approuvés (boîte d'un partenaire, outil de ticketing) passent par une stratégie
+  sortante dédiée limitée aux expéditeurs nommés, ou par un domaine distant pour le domaine de
+  destination nommé, jamais en rouvrant le transfert pour tous.
+rationale: |
+  Les règles de transfert sont l'une des premières choses qu'un attaquant met en place après avoir
+  compromis une boîte : la règle continue de lui envoyer le courrier après la réinitialisation du mot
+  de passe, et sert à surveiller les échanges de factures avant une fraude au président ou au
+  fournisseur. La fuite par transfert est aussi un risque interne courant. La valeur par défaut
+  `Automatic` laisse Microsoft décider et son comportement peut changer ; un `Off` explicite rend la
+  règle visible et vérifiable.
+impact: |
+  Les utilisateurs qui transfèrent leur courrier professionnel vers une adresse personnelle perdent
+  cette possibilité et les messages transférés sont rejetés avec un NDR (5.7.520). Recenser les
+  transferts externes existants avant le changement (voir l'audit) et créer des exceptions ciblées
+  pour les cas légitimes. Le transfert interne, les délégués et les règles de flux de courrier
+  posées par les administrateurs continuent de fonctionner.
+notes: |
+  La stratégie sortante contrôle le transfert configuré par l'utilisateur (règles de boîte de
+  réception, transfert de boîte aux lettres). Le transfert posé par un administrateur sur la boîte
+  (`ForwardingAddress` vers un contact de messagerie) et les règles de flux de courrier qui
+  redirigent les messages ne sont pas bloqués : les examiner lors de l'audit.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-courrier indésirable**. Ouvrir chaque stratégie sortante (**Stratégie de courrier
+       indésirable sortant (par défaut)** et toute stratégie personnalisée) et vérifier que **Règles de
+       transfert automatique** vaut **Désactivé - Le transfert est désactivé**. Une stratégie
+       personnalisée à **Activé** n'est acceptable que si elle se limite à des expéditeurs nommés et
+       approuvés.
+    3. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général. Aller dans **Flux de courrier** > **Domaines distants**, ouvrir
+       **Default** et vérifier que **Autoriser le transfert automatique** est décoché.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-HostedOutboundSpamFilterPolicy | Format-Table Name, AutoForwardingMode
+       Get-RemoteDomain | Format-Table Name, DomainName, AutoForwardEnabled
+       Get-Mailbox -ResultSize Unlimited -Filter "ForwardingSmtpAddress -ne $null -or ForwardingAddress -ne $null" |
+         Format-Table UserPrincipalName, ForwardingSmtpAddress, ForwardingAddress
+       ```
+    5. Échec si une stratégie sortante qui s'applique à tous a `AutoForwardingMode` à `Automatic` ou
+       `On`, si le domaine distant `*` a `AutoForwardEnabled` à `True`, ou si une boîte transfère vers
+       une adresse externe qui n'est pas une exception documentée.
+remediation:
+  manual: |
+    1. Lister les boîtes qui transfèrent vers l'extérieur (étape 4 de l'audit) et convenir des
+       exceptions avec leurs propriétaires.
+    2. Dans le portail Defender, aller dans **E-mail et collaboration** > **Stratégies et règles** >
+       **Stratégies de menace** > **Anti-courrier indésirable**, ouvrir **Stratégie de courrier
+       indésirable sortant (par défaut)** > **Modifier les paramètres de protection** et régler
+       **Règles de transfert automatique** sur **Désactivé - Le transfert est désactivé**. Faire de
+       même dans chaque stratégie sortante personnalisée qui n'est pas une exception ciblée.
+    3. Pour chaque exception approuvée, créer une stratégie sortante personnalisée limitée à ces
+       expéditeurs avec **Règles de transfert automatique** sur **Activé - Le transfert est activé**.
+    4. Dans le centre d'administration Exchange, aller dans **Flux de courrier** > **Domaines
+       distants** > **Default** > **Modifier les types de réponse** et décocher **Autoriser le
+       transfert automatique**.
+    5. Équivalent PowerShell (Administrateur de la sécurité pour la stratégie, Administrateur Exchange
+       pour le domaine distant) :
+       ```powershell
+       Set-HostedOutboundSpamFilterPolicy -Identity Default -AutoForwardingMode Off
+       Set-RemoteDomain -Identity Default -AutoForwardEnabled $false
+       ```
+    6. Supprimer le `ForwardingSmtpAddress` des boîtes qui ne sont pas des exceptions
+       (`Set-Mailbox -Identity <user> -ForwardingSmtpAddress $null`).
+  rollback: |
+    Remettre `AutoForwardingMode` à `Automatic` sur la stratégie sortante par défaut, ou ajouter
+    l'expéditeur à une stratégie d'exception ciblée.

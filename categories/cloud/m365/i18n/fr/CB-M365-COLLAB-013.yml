@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les nouveaux scripts personnalisés sur les sites SharePoint et OneDrive
+finding:
+  title: Les scripts personnalisés sont autorisés sur des sites SharePoint
+  description: Les propriétaires de sites peuvent insérer du script arbitraire dans des pages exécutées par chaque visiteur, hors de toute gouvernance et de toute revue de code.
+description: |
+  Aucun site SharePoint ni OneDrive n'autorise les scripts personnalisés : chaque site a
+  `DenyAddAndCustomizePages` activé et le paramètre du mode de sécurité de base **Ne pas autoriser de
+  nouveaux scripts personnalisés dans les sites SharePoint** est activé, ce qui supprime
+  définitivement la possibilité d'ajouter de nouveaux scripts personnalisés.
+
+  Les scripts personnalisés sont bloqués par défaut sur OneDrive, les sites créés en libre-service,
+  les sites modernes et les sites créés depuis le centre d'administration ou avec `New-SPOSite`. Un
+  administrateur peut encore les autoriser temporairement sur un site : SharePoint remet le site à
+  **Bloqué** sous 24 heures. Depuis le 15 mars 2026, le tenant ne peut plus retarder cette
+  application.
+rationale: |
+  Un script personnalisé s'exécute dans le navigateur de chaque utilisateur qui ouvre la page, avec la
+  session de cet utilisateur. Toute personne disposant de l'autorisation **Ajouter et personnaliser
+  des pages** (les propriétaires de site par défaut) peut s'en servir pour voler des jetons, modifier
+  du contenu ou rebondir vers d'autres sites, et l'organisation ne peut ni limiter, ni revoir, ni
+  bloquer le code une fois déployé. Les solutions SharePoint Framework offrent la même extensibilité
+  via un catalogue d'applications administré.
+impact: |
+  Sur les sites où les scripts sont bloqués, les propriétaires ne peuvent plus enregistrer un site,
+  une liste ou une bibliothèque comme modèle, utiliser la galerie de thèmes, ajouter des solutions
+  sandbox, des composants Éditeur de script ou Éditeur de contenu, ni charger de fichiers `.aspx`,
+  `.master`, `.swf` et similaires. Les éléments existants continuent de fonctionner. Les composants
+  SharePoint Framework marqués `requiresCustomScript` disparaissent des pages. Les sites de
+  publication classiques qui dépendent de scripts doivent être modernisés.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Sites** > **Sites actifs** et ouvrir la vue **Sites autorisant les scripts
+       personnalisés** (ou ajouter la colonne **Script personnalisé**).
+    3. Dans le centre d'administration Microsoft 365, aller dans **Paramètres** > **Paramètres de
+       l'organisation** > **Sécurité et confidentialité** > **Mode de sécurité de base** et vérifier que
+       **Ne pas autoriser de nouveaux scripts personnalisés dans les sites SharePoint** est activé.
+    4. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOSite -Limit All | Where-Object DenyAddAndCustomizePages -eq 'Disabled' | Select-Object Url`.
+    5. Échec si un site autorise les scripts personnalisés hors d'un changement documenté et limité dans
+       le temps, ou si le paramètre du mode de sécurité de base est désactivé.
+remediation:
+  manual: |
+    1. Pour chaque site listé, voir avec le propriétaire ce qui dépend du script et prévoir un
+       remplacement SharePoint Framework.
+    2. Dans le centre d'administration SharePoint, aller dans **Sites** > **Sites actifs**, sélectionner
+       le site, puis **Paramètres** > **Scripts personnalisés** > **Bloqué**. Équivalent PowerShell :
+       `Set-SPOSite -Identity <URL> -DenyAddAndCustomizePages 1`. Rôle : Administrateur SharePoint.
+    3. Dans le centre d'administration Microsoft 365, aller dans **Paramètres** > **Paramètres de
+       l'organisation** > **Sécurité et confidentialité** > **Mode de sécurité de base**, consulter le
+       rapport d'impact et activer **Ne pas autoriser de nouveaux scripts personnalisés dans les sites
+       SharePoint**.

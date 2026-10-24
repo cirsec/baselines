@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-002
+title: Enable SharePoint and OneDrive integration with Microsoft Entra B2B
+finding:
+  title: SharePoint and OneDrive share with external people outside Microsoft Entra B2B
+  description: External recipients can get SharePoint-only identities that escape guest settings, Conditional Access, access reviews and the guest lifecycle in Entra.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [external-sharing, guest-access, b2b, sharepoint, onedrive]
+
+description: |
+  External sharing from SharePoint and OneDrive goes through Microsoft Entra B2B: every external
+  recipient of a file, folder or site gets a guest account in the directory
+  (`EnableAzureADB2BIntegration` is `True`). Guests who cannot use another method sign in with the
+  Entra B2B email one-time passcode.
+
+  Between May and July 2026 Microsoft turned this integration on for new external sharing in all
+  commercial tenants and removed the ability to turn it off. The control is then met by default; the
+  check remains useful for tenants where the setting still applies and to confirm the state.
+rationale: |
+  Without the integration, people who receive a file link authenticate with a SharePoint-only one-time
+  passcode and never appear as directory objects. Entra guest invitation restrictions, domain allow
+  and deny lists, Conditional Access (MFA for guests), access reviews and guest expiration do not
+  apply to them. With B2B, every external person is a directory object that these controls govern, and
+  sign-in is bound to the invited identity.
+impact: |
+  Each external recipient gets a guest account, so the guest count in Entra grows. Entra external
+  collaboration settings (who can invite, allowed domains) now also restrict file and folder sharing:
+  review them first. Microsoft retires SharePoint one-time passcode authentication for commercial
+  tenants in October 2026; external people without a matching guest account lose access to earlier
+  **Specific people** links until they are invited again.
+
+setting:
+  location: "SharePoint Online Management Shell: Set-SPOTenant -EnableAzureADB2BIntegration (no admin center toggle)"
+  default_value: True (enforced in commercial tenants since July 2026)
+  recommended_value: "True"
+
+audit:
+  manual: |
+    1. As a SharePoint Administrator (no read-only role exists for the SharePoint Online Management
+       Shell), connect with `Connect-SPOService` and run
+       `Get-SPOTenant | Select-Object EnableAzureADB2BIntegration`.
+    2. In a commercial tenant, the integration is enforced regardless of the value; confirm it by
+       sharing a test file with an external address and checking in the Microsoft Entra admin center
+       (**Entra ID** > **Users**, filter **User type** = Guest) that a guest account was created.
+    3. Fail if the property is `False` in a tenant where the setting still controls sharing (for example
+       a sovereign or government cloud).
+
+remediation:
+  manual: |
+    1. Review the Microsoft Entra external collaboration settings (**Entra ID** > **External
+       Identities** > **External collaboration settings**): guest invite restrictions and allowed or
+       blocked domains. Move SharePoint domain restrictions there if needed.
+    2. As a SharePoint Administrator, run `Set-SPOTenant -EnableAzureADB2BIntegration $true`.
+    3. Before the SharePoint one-time passcode retirement reaches the tenant, create guest accounts for
+       external people who still need earlier links (Entra **Users** > **Invite external user**), or
+       reshare one item with them.
+
+references:
+  - title: Microsoft Entra B2B integration for SharePoint & OneDrive
+    url: https://learn.microsoft.com/sharepoint/sharepoint-azureb2b-integration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.1.4v1
+    relation: partial
+    note: Removed from ScubaGear 2.0.0. B2B binds each external person to one directory account, which covers the intent of limiting access to the invited address.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-COLLAB-005
+    type: related
+    note: With B2B integration, the Entra domain allow list also applies.
+  - id: CB-M365-COLLAB-011
+    type: related
+  - id: CB-M365-COLLAB-012
+    type: related
+    note: With B2B integration, Entra session controls replace this setting.
+  - id: CB-M365-TENANT-011
+    type: related
+  - id: CB-M365-TENANT-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

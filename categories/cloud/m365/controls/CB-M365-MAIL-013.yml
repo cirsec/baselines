@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-013
+title: Restrict calendar and contact sharing with external domains
+finding:
+  title: Users can share calendar details or contacts with any external domain
+  description: Meeting subjects, locations, attendees and contact lists can be published to anyone, which helps attackers map the organization and time their phishing.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, sharing-policy, calendar, contacts, external-sharing]
+
+description: |
+  Exchange Online sharing policies control what users can share from their calendar and contacts
+  with people outside the organization. Required value: **{{ external_calendar_sharing }}**.
+
+  - `free_busy_only`: no sharing policy grants calendar details or contacts to all domains or to
+    anonymous users. Entries for `*` or `Anonymous` are limited to free/busy time
+    (`CalendarSharingFreeBusySimple`); `CalendarSharingFreeBusyDetail`,
+    `CalendarSharingFreeBusyReviewer` and `ContactsSharing` are only allowed for named partner
+    domains.
+  - `disabled`: every sharing policy in use is turned off, so users cannot share their calendar
+    with external people at all.
+rationale: |
+  A calendar shared with full details reveals who meets whom, when executives travel and which
+  projects are under way: material for targeted phishing and fraud. Shared contact folders leak
+  names and addresses. Free/busy time is enough for scheduling with partners; anything more should
+  be limited to known domains.
+impact: |
+  Baseline: users can still share free/busy time with anyone and details with listed partner
+  domains. Hardened: external calendar sharing stops, including free/busy, and existing external
+  shares stop working; organization relationships set up by administrators are not affected.
+
+parameters:
+  - name: external_calendar_sharing
+    type: enum
+    description: What users can share from their calendar and contacts with external people.
+    default: free_busy_only
+    profile_defaults:
+      hardened: disabled
+    allowed: [free_busy_only, disabled]
+
+audit:
+  manual: |
+    1. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Organization** > **Sharing** > **Individual sharing** and open each sharing
+       policy, starting with **Default Sharing Policy**.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-SharingPolicy | Format-List Name, Default, Enabled, Domains
+       Get-EXOMailbox -ResultSize Unlimited -Properties SharingPolicy | Group-Object SharingPolicy | Select-Object Name, Count
+       ```
+    4. With `free_busy_only`: fail if an enabled policy has a `*` or `Anonymous` entry with
+       `CalendarSharingFreeBusyDetail`, `CalendarSharingFreeBusyReviewer` or `ContactsSharing`.
+    5. With `disabled`: fail if a policy used by at least one mailbox has `Enabled` set to `True`.
+
+remediation:
+  manual: |
+    1. In the Exchange admin center, browse to **Organization** > **Sharing** > **Individual
+       sharing** and edit **Default Sharing Policy** (Exchange Administrator).
+    2. With `free_busy_only`: change the **All domains** and **Anonymous** rules to **Calendar
+       free/busy information with time only**, remove contact sharing for them, and add named
+       partner domains if details must be shared. PowerShell equivalent:
+       ```powershell
+       Set-SharingPolicy -Identity "Default Sharing Policy" -Domains "*:CalendarSharingFreeBusySimple"
+       ```
+    3. With `disabled`: clear the policy's **On** check box, or run
+       `Set-SharingPolicy -Identity "Default Sharing Policy" -Enabled $false`. Repeat for every policy
+       assigned to mailboxes.
+  rollback: |
+    Restore the previous `Domains` value or set `Enabled` back to `$true` on the policy.
+
+references:
+  - title: Sharing policies in Exchange Online
+    url: https://learn.microsoft.com/exchange/sharing/sharing-policies/sharing-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SharingPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-sharingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.3"
+    relation: looser
+    note: CIS turns external calendar sharing off; our baseline keeps free/busy sharing, the hardened value matches CIS.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.6.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.6.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1591
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

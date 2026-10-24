@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas rendre administrateur local l'utilisateur qui joint l'appareil à Entra
+finding:
+  title: Les utilisateurs qui joignent un appareil en deviennent administrateurs locaux
+  description: La personne qui effectue la jonction Microsoft Entra est ajoutée au groupe Administrateurs local de l'appareil et peut désactiver les outils de sécurité ou installer des logiciels.
+description: |
+  Le paramètre d'appareil **Registering user is added as local administrator on the device during
+  Microsoft Entra join (Preview)** (l'utilisateur qui inscrit l'appareil est ajouté comme
+  administrateur local) vaut **Aucun**, ou **Sélectionné** avec un petit groupe d'administrateurs de
+  postes. Les utilisateurs ordinaires qui joignent un appareil y restent utilisateurs standard.
+rationale: |
+  Un utilisateur standard ne peut ni désactiver Microsoft Defender, ni modifier les stratégies de
+  sécurité, ni lire les données des autres utilisateurs, ni installer pilotes et services. Donner les
+  droits d'administrateur local à toute personne qui joint un appareil transforme n'importe quelle
+  charge d'hameçonnage ou téléchargement malveillant en contrôle total du poste, y compris le vol
+  d'identifiants en mémoire. Le moindre privilège sur les postes est l'une des mesures les plus
+  efficaces contre les rançongiciels et les mouvements latéraux.
+impact: |
+  Les utilisateurs ne peuvent plus installer de logiciels nécessitant une élévation sur les
+  appareils qu'ils joignent. Distribuer les logiciels par Intune ou le Portail d'entreprise, et
+  prévoir un processus d'élévation (Endpoint Privilege Management, élévation par le support via
+  LAPS) pour les exceptions. Le paramètre ne joue qu'à la jonction ; les appareils joints auparavant
+  gardent l'utilisateur dans le groupe Administrateurs local tant qu'une stratégie Intune
+  d'appartenance aux groupes locaux ne le remplace pas. Les profils Windows Autopilot ont leur
+  propre option **Type de compte d'utilisateur**, à régler aussi sur **Standard**.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Registering user is added as local administrator on the device during Microsoft Entra join (Preview)
+  recommended_value: Aucun (ou Sélectionné avec un groupe d'administrateurs de postes)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**.
+    3. Vérifier que **Registering user is added as local administrator on the device during
+       Microsoft Entra join (Preview)** vaut **Aucun**, ou **Sélectionné** avec un groupe
+       d'administrateurs nommé.
+    4. Dans le centre d'administration Intune, aller dans **Appareils** > **Intégration des
+       appareils** > **Inscription** > **Windows** > **Profils de déploiement** et vérifier que chaque
+       profil Autopilot règle **Type de compte d'utilisateur** sur **Standard**.
+    5. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` et lire
+       `azureADJoin.localAdmins.registeringUsers`.
+    6. Échec si le paramètre vaut **Tous** (`allDeviceRegistrationMembership`), ou si un profil
+       Autopilot rend les utilisateurs administrateurs.
+remediation:
+  manual: |
+    1. Préparer la distribution des logiciels par Intune et un processus d'élévation pour les
+       exceptions.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**. Rôle : administrateur
+       d'appareils cloud.
+    3. Régler **Registering user is added as local administrator on the device during Microsoft
+       Entra join (Preview)** sur **Aucun** (ou **Sélectionné** avec le groupe d'administrateurs de
+       postes) et enregistrer.
+    4. Équivalent Graph : `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       avec `azureADJoin.localAdmins.registeringUsers` réglé sur une
+       `noDeviceRegistrationMembership`.
+    5. Régler **Type de compte d'utilisateur** sur **Standard** dans chaque profil de déploiement
+       Windows Autopilot.
+    6. Pour les appareils déjà joints, déployer une stratégie Intune **Protection de compte** >
+       **Appartenance au groupe d'utilisateurs locaux** qui remplace l'appartenance au groupe
+       Administrateurs local.
+  rollback: |
+    Remettre le paramètre sur **Tous**.

@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-005
+title: Limit SharePoint and OneDrive external sharing to approved domains
+finding:
+  title: External sharing is allowed with any email domain
+  description: Users can share files and sites with addresses at any organization, including personal mailboxes and look-alike domains.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [external-sharing, domain-allowlist, sharepoint, onedrive]
+
+description: |
+  SharePoint and OneDrive external sharing is limited to an allow list of partner domains
+  (`SharingDomainRestrictionMode` = `AllowList`, `SharingAllowedDomainList` =
+  `{{ allowed_sharing_domains }}`). Sharing with an address at any other domain is refused. The
+  organization-level list applies to every site and every OneDrive.
+
+  If external sharing is turned off for the whole organization, the control is met without a list.
+rationale: |
+  An allow list turns external sharing from "anyone with an email address" into "the partners we work
+  with". It blocks sharing to personal mailboxes and to typo-squatted partner domains used in
+  exfiltration and social engineering, and it makes each new partner a deliberate decision.
+impact: |
+  Users cannot share with a new partner until an administrator adds the domain; plan a request and
+  approval process. Subdomains must be listed separately. When Entra B2B integration is on
+  (CB-M365-COLLAB-002), the Entra B2B allow or deny list also applies; the more restrictive of the two
+  wins, so keep both consistent or manage the list in Entra (CB-M365-TENANT-012).
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > More external sharing settings > Limit external sharing by domain
+  default_value: Off (SharingDomainRestrictionMode = None)
+  recommended_value: "Allow only these domains: {{ allowed_sharing_domains }}"
+parameters:
+  - name: allowed_sharing_domains
+    type: list
+    description: Partner email domains that users may share with (maximum 5,000).
+    default: []
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** and expand **More external sharing settings**.
+    3. Check that **Limit external sharing by domain** is selected with **Allow only specific domains**,
+       and compare the list with `{{ allowed_sharing_domains }}`.
+    4. Read-only alternative: as a Global Reader, call Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, or `Get-MgAdminSharepointSetting`):
+       `sharingDomainRestrictionMode` must be `allowList` and `sharingAllowedDomainList` must contain
+       only approved domains. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object SharingDomainRestrictionMode, SharingAllowedDomainList`.
+    5. Fail if external sharing is allowed (`sharingCapability` not `disabled`) and the mode is not
+       `allowList`, or if the list contains a domain that is not approved.
+
+remediation:
+  manual: |
+    1. Build the list from current external sharing: audit log activities `SharingInvitationCreated` and
+       `AddedToSecureLink`, grouped by target domain. Have the business owners approve each domain.
+    2. In the SharePoint admin center, browse to **Policies** > **Sharing** > **More external sharing
+       settings**, select **Limit external sharing by domain**, choose **Allow only specific domains**,
+       add each domain and **Save**. Role: SharePoint Administrator.
+    3. PowerShell equivalent:
+       `Set-SPOTenant -SharingDomainRestrictionMode AllowList -SharingAllowedDomainList "partner1.example partner2.example"`
+       (space-separated).
+    4. Align the Microsoft Entra B2B collaboration restrictions (**Entra ID** > **External Identities**
+       > **External collaboration settings**) with the same list.
+  rollback: |
+    Run `Set-SPOTenant -SharingDomainRestrictionMode None`, or add the missing domain to the list.
+
+references:
+  - title: Restrict sharing of SharePoint and OneDrive content by domain
+    url: https://learn.microsoft.com/sharepoint/restricted-domains-sharing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.6"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.1.3v1
+    relation: partial
+    note: SCuBA accepts approved domains or approved security groups; this control covers the domains, CB-M365-COLLAB-006 the groups.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567.002
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-COLLAB-002
+    type: related
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-COLLAB-006
+    type: related
+    note: Domain and group restrictions combine; SCuBA accepts either.
+  - id: CB-M365-TENANT-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

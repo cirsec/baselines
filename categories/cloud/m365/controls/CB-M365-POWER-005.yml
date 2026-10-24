@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-005
+title: Enable Power Platform tenant isolation
+finding:
+  title: Power Platform tenant isolation is off
+  description: Apps and flows can open connections from this tenant to other Microsoft Entra tenants, and users of other tenants can connect to this tenant's data, with valid credentials and no admin control.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [power-platform, tenant-isolation, cross-tenant, connectors, exfiltration]
+
+description: |
+  Power Platform tenant isolation (**Restrict cross-tenant connections**) is turned **On**. Power
+  Platform then blocks inbound and outbound connections that use Microsoft Entra ID-based
+  connectors (Office 365 Outlook, SharePoint, OneDrive for Business, Dataverse...) between this
+  tenant and any other tenant, except the tenants listed as exceptions.
+
+  Tenant isolation is specific to Power Platform connections. It does not replace Microsoft Entra
+  cross-tenant access settings or tenant restrictions, and it does not cover connectors that do not
+  use Entra authentication.
+rationale: |
+  Without isolation, a maker can build a flow that copies SharePoint files or mail into a
+  SharePoint site or mailbox of another tenant they control, simply by signing in to the second
+  tenant in the connection dialog. The reverse also works: a user of another tenant can connect to
+  this tenant's data from their own environment. Tenant isolation closes this exfiltration channel
+  and forces cross-tenant integrations to be declared.
+impact: |
+  Existing apps and flows that use cross-tenant connections fail at runtime about an hour after
+  isolation is enabled, and makers can no longer create such connections. Run the cross-tenant
+  isolation report first, and add the required partner tenants as exceptions
+  (CB-M365-POWER-006). The Azure DevOps connector is a known gap: tenant isolation is not enforced
+  for it, so limit it with data policies.
+
+setting:
+  location: Power Platform admin center > Security > Identity and access > Tenant isolation > Restrict cross-tenant connections
+  default_value: "Off"
+  recommended_value: "On"
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader.
+    2. Browse to **Security** > **Identity and access** > **Tenant isolation**.
+    3. Check that **Restrict cross-tenant connections** is **On**.
+    4. Alternative, read only (Power Platform Administrator): `Add-PowerAppsAccount`, then
+       `Get-PowerAppTenantIsolationPolicy -TenantId <tenant ID>` and read
+       `properties.isDisabled` (must be `False`).
+    5. Fail if tenant isolation is off.
+
+remediation:
+  manual: |
+    1. Run the cross-tenant isolation report (Power Platform admin center, tenant isolation page or
+       the reporting API) to list existing cross-tenant connections.
+    2. In **Security** > **Identity and access** > **Tenant isolation**, add exceptions for the
+       partner tenants and directions that are required (CB-M365-POWER-006). Role: Power Platform
+       Administrator.
+    3. Turn **Restrict cross-tenant connections** **On** and save.
+    4. PowerShell equivalent: read the policy with `Get-PowerAppTenantIsolationPolicy`, set
+       `properties.isDisabled` to `$false`, and apply it with `Set-PowerAppTenantIsolationPolicy`.
+  rollback: |
+    Turn **Restrict cross-tenant connections** **Off**, or add a temporary exception for the
+    affected tenant.
+
+references:
+  - title: Restrict cross-tenant inbound and outbound access
+    url: https://learn.microsoft.com/power-platform/admin/cross-tenant-restrictions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.3.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1537
+  - framework: mitre-attack
+    id: T1567
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-POWER-006
+    type: related
+  - id: CB-M365-POWER-003
+    type: related
+  - id: CB-M365-TENANT-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

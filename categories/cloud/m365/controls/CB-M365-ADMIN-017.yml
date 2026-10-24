@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-017
+title: Limit partner administrative access with scoped, time-bound GDAP relationships
+finding:
+  title: Partners hold broad or permanent administrative access to the tenant
+  description: A compromise of a reseller or managed service provider gives the attacker administrator access to the tenant through delegated permissions.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, partners, gdap, third-party, supply-chain]
+
+parameters:
+  - name: gdap_max_duration_days
+    type: integer
+    description: Maximum duration of a GDAP relationship before it must be renewed.
+    unit: days
+    default: 365
+    minimum: 1
+    maximum: 730
+
+description: |
+  Administrative access by Microsoft partners (Cloud Solution Provider resellers, managed service
+  providers) meets the following rules:
+
+  - no legacy delegated admin privileges (DAP): no partner holds the **Partner Tier1 Support**,
+    **Partner Tier2 Support** or the global "admin agent" access granted by DAP;
+  - each granular delegated admin privileges (GDAP) relationship lists only the roles the contract
+    requires, never Global Administrator or Privileged Role Administrator unless written in the
+    contract for a limited period;
+  - each relationship lasts `{{ gdap_max_duration_days }}` days or less and is not set to
+    auto-extend without review;
+  - relationships are reviewed at least once a year and those without an active contract are
+    terminated.
+
+  Partner staff who administer the tenant every day get named accounts in the tenant instead
+  (CB-M365-ADMIN-001).
+rationale: |
+  Attacks such as the Nobelium campaign compromised resellers and used their delegated access to
+  reach customer tenants. DAP gave partners permanent Global Administrator rights over every
+  customer. GDAP limits partner access to named roles and a fixed duration, and makes it visible
+  to the customer, but only if the customer checks what was granted.
+impact: |
+  Partners must request the narrow roles they need, and renew relationships. Support operations
+  that relied on DAP must move to GDAP or to named accounts.
+notes: |
+  Customers cannot list partner security groups or individual partner users: they see the
+  relationship, its roles and its duration. Sign-ins of partner users appear as cross-tenant
+  sign-ins in the sign-in logs.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Partner relationships**. For each partner, check the
+       **Admin roles** (GDAP or DAP), the roles granted and the end date.
+    3. In the Microsoft Entra admin center, browse to **Entra ID** > **Roles & admins** and open
+       **Partner Tier1 Support** and **Partner Tier2 Support**: they must have no assignment.
+    4. Compare each relationship with the active contracts and the last review date.
+    5. Read-only PowerShell alternative (Microsoft Graph, scope `Directory.Read.All`):
+       `Get-MgContract -All` lists the partners with a contract on the tenant.
+    6. Fail if a DAP relationship or a Partner Tier assignment exists, if a GDAP relationship
+       grants Global Administrator or Privileged Role Administrator without a written, time-bound
+       justification, if it lasts more than `{{ gdap_max_duration_days }}` days, or if it has no
+       active contract.
+
+remediation:
+  manual: |
+    1. With a Global Administrator, browse to **Settings** > **Partner relationships** in the
+       Microsoft 365 admin center.
+    2. For a DAP relationship: select the partner and **Remove admin roles**. Ask the partner for
+       a GDAP request with the roles it needs.
+    3. For a GDAP relationship with excessive roles or duration: ask the partner to create a new
+       request with the reduced scope, approve it, then terminate the old relationship
+       (**Terminate relationship** in the partner panel).
+    4. For a partner without an active contract: terminate the relationship.
+    5. Remove any assignment of **Partner Tier1 Support** and **Partner Tier2 Support** in
+       **Roles & admins**.
+    6. Record the review date and schedule the next one.
+  rollback: |
+    Accept a new GDAP request from the partner.
+
+references:
+  - title: Introduction to granular delegated admin privileges (GDAP)
+    url: https://learn.microsoft.com/partner-center/customers/gdap-introduction
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: GDAP frequently asked questions
+    url: https://learn.microsoft.com/partner-center/customers/gdap-faq
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ANSSI, Recommandations relatives à l'administration sécurisée des SI
+    url: https://cyber.gouv.fr/publications/recommandations-relatives-ladministration-securisee-des-si
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R59"
+    relation: related
+    note: ANSSI recommends a qualified provider; this control only governs the access the provider gets.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R60"
+    relation: related
+    note: The contract terms are a prerequisite; the control checks that granted access matches them.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R64"
+    relation: partial
+    note: GDAP or named accounts give third parties dedicated access instead of shared accounts.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R66"
+    relation: partial
+    note: Time-bound relationships approximate on-demand activation; PIM for named accounts goes further.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R69"
+    relation: partial
+    note: Covers least privilege and review of partner access; traceability relies on the AUDIT domain.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: PS-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1199
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

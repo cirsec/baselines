@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-005
+title: License administrator accounts without mailbox or collaboration apps
+finding:
+  title: Administrator accounts have a mailbox or Teams
+  description: Admin accounts that receive mail and chat messages are exposed to phishing and malicious content directly on the privileged identity.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, admin-accounts, licensing, attack-surface]
+
+description: |
+  Accounts holding a privileged role have no license, or only licenses that do not provide
+  productivity workloads: for example Microsoft Entra ID P1/P2, Microsoft Intune or Microsoft
+  Defender plans. They have no Exchange Online mailbox, no Teams and no OneDrive. The emergency
+  access accounts have no license at all.
+rationale: |
+  A mailbox and Teams expose the account to phishing, malicious attachments and external chat,
+  and invite people to use the admin account for daily work. An admin account without these
+  workloads can only be reached by an attacker through its sign-in, which phishing-resistant MFA
+  protects. Notifications that admins need are sent to their everyday mailbox instead.
+impact: |
+  Administrators read alerts and PIM notifications in their everyday mailbox: set an alternate
+  email address or forward from the service. Some admin tasks (for example testing a mailbox
+  feature) need a separate test account.
+notes: |
+  Entra ID P1 or P2 is still required on admin accounts for Conditional Access and PIM, and is
+  part of the reduced footprint.
+
+audit:
+  manual: |
+    1. List the privileged role holders as in CB-M365-ADMIN-001.
+    2. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader. Browse to **Users** > **Active users**, open each admin account and check
+       **Licenses and apps**: no license that includes Exchange Online, Teams or SharePoint
+       (Microsoft 365 E3/E5, Office 365 E1/E3/E5, Exchange Online plans...).
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `User.Read.All`):
+       ```
+       Get-MgUserLicenseDetail -UserId <upn> | Select-Object -ExpandProperty ServicePlans |
+         Where-Object { $_.ServicePlanName -match '^(EXCHANGE_S_|TEAMS|SHAREPOINT)' -and $_.ProvisioningStatus -ne 'Disabled' }
+       ```
+    4. Fail if an admin account has an enabled Exchange Online, Teams or SharePoint service plan.
+
+remediation:
+  manual: |
+    1. In the Microsoft 365 admin center, open each admin account > **Licenses and apps**, remove
+       the productivity license and keep only Entra ID P1/P2 (or a security-only plan). Required
+       role: License Administrator or User Administrator.
+    2. If the license is assigned by a group, remove the account from that group.
+    3. Set an alternate email for notifications on the account (**Properties** > **Contact
+       information**).
+    4. Equivalent with Microsoft Graph PowerShell:
+       `Set-MgUserLicense -UserId <upn> -AddLicenses @() -RemoveLicenses @('<skuId>')`.
+  rollback: |
+    Reassign the license. The mailbox stays recoverable for 30 days after license removal.
+
+references:
+  - title: Protect your Microsoft 365 global administrator accounts
+    url: https://learn.microsoft.com/microsoft-365/enterprise/protect-your-global-administrator-accounts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Securing privileged access for hybrid and cloud deployments in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/security-planning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.1.4"
+    relation: equivalent
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R29"
+    relation: partial
+    note: Removing productivity workloads keeps admin accounts to administration; it does not cover the workstation side.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-ADMIN-001
+    type: related
+  - id: CB-M365-MAIL-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

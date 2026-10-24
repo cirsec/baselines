@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'approbation multi-administrateur pour les changements Intune sensibles
+finding:
+  title: Intune applique des changements sensibles sans approbation d'un second administrateur
+  description: Un seul compte administrateur Intune compromis peut réinitialiser le parc, pousser un script sur tous les appareils ou modifier les rôles sans que personne d'autre n'approuve.
+description: |
+  Des stratégies d'accès Intune **Approbation multi-administrateur** protègent au moins ces types de
+  ressources : **Actions sur les appareils** (réinitialisation, mise hors service, suppression),
+  **Scripts** (scripts PowerShell Windows), **Applications** et **Contrôle d'accès en fonction du
+  rôle**. Chaque stratégie d'accès désigne un groupe de sécurité d'approbateurs d'au moins deux
+  administrateurs distincts des demandeurs. Les stratégies de conformité, les stratégies de
+  configuration et la configuration du locataire peuvent être ajoutées selon le processus de
+  changement de l'organisation.
+rationale: |
+  Des attaquants qui ont pris un compte administrateur Intune s'en sont servis pour réinitialiser
+  des milliers d'appareils ou déployer un logiciel malveillant sous forme de script sur tout le parc
+  en quelques minutes. Exiger l'approbation d'un second administrateur transforme la compromission
+  d'un seul compte en demande qu'un humain doit valider, et trace une justification métier pour
+  chaque changement. Les approbations s'appliquent aussi à l'automatisation qui appelle l'API
+  Microsoft Graph.
+impact: |
+  Les changements protégés attendent une approbation (les demandes expirent après 3 jours) puis le
+  demandeur doit sélectionner **Terminer**. Intune n'envoie aucune notification : les approbateurs
+  doivent consulter la page **Demandes reçues** ou être prévenus directement. L'automatisation qui
+  modifie des ressources protégées doit gérer le circuit d'approbation, ou être exclue explicitement
+  (les exclusions d'applications portent sur les appels en contexte application et affaiblissent la
+  protection). Protéger d'abord le type **Rôle** peut bloquer les attributions RBAC dont dépendent
+  les approbations : le configurer en dernier.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Intune (https://intune.microsoft.com) avec
+       au moins le rôle Lecteur général (ou un compte disposant de l'autorisation **Lire la stratégie
+       d'accès**).
+    2. Aller dans **Administration du locataire** > **Approbation multi-administrateur** >
+       **Stratégies d'accès**.
+    3. Vérifier que des stratégies existent pour **Actions sur les appareils**, **Scripts**,
+       **Applications** et **Contrôle d'accès en fonction du rôle**, chacune avec un groupe
+       d'approbateurs d'au moins deux administrateurs, et examiner les applications d'entreprise
+       exclues de chaque stratégie.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/deviceManagement/operationApprovalPolicies` (étendue
+       `DeviceManagementRBAC.Read.All`).
+    5. Échec si aucune stratégie d'accès n'existe, ou si les actions sur les appareils ou les scripts
+       ne sont pas protégés.
+remediation:
+  manual: |
+    1. Créer un groupe de sécurité d'approbateurs (au moins deux administrateurs, membres directs) et
+       l'ajouter comme groupe membre d'une attribution de rôle Intune disposant des autorisations de
+       lecture des ressources protégées.
+    2. Aller dans **Administration du locataire** > **Approbation multi-administrateur** >
+       **Stratégies d'accès** > **Créer**. Rôle : administrateur Intune, ou rôle personnalisé avec
+       les autorisations de stratégie d'accès de l'approbation multi-administrateur.
+    3. Choisir le **Type de profil** (commencer par **Actions sur les appareils**), sélectionner le
+       groupe d'approbateurs, laisser **Exclusions** vide, saisir une justification métier et
+       sélectionner **Soumettre pour approbation**.
+    4. Faire approuver la stratégie d'accès par un autre administrateur, puis sélectionner
+       **Terminer** avec le premier compte.
+    5. Recommencer pour **Scripts**, **Applications**, et enfin **Contrôle d'accès en fonction du
+       rôle**.
+  rollback: |
+    Supprimer la stratégie d'accès (ce changement exige aussi l'approbation d'un second
+    administrateur).

@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-048
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Afficher une mention légale sur la page de connexion
+finding:
+  title: La page de connexion n'indique pas que l'accès est réservé et surveillé
+  description: Sans mention, l'organisation dispose d'une base plus faible pour agir contre un usage abusif, et les utilisateurs n'ont aucun repère visuel indiquant qu'ils sont sur la vraie page de l'entreprise.
+description: |
+  L'identité de marque du tenant règle le **Texte de la page de connexion** sur une courte mention
+  légale : `{{ sign_in_notice_text }}`. Le texte apparaît en bas du cadre de connexion pour tout
+  utilisateur qui se connecte via la page personnalisée du tenant, y compris sous Windows pendant
+  Autopilot.
+
+  Le texte est validé par le service juridique et traduit dans les langues des utilisateurs via les
+  localisations de l'identité de marque si nécessaire.
+rationale: |
+  Une mention indiquant que le système est réservé aux utilisateurs autorisés et que l'activité est
+  journalisée appuie une action disciplinaire ou judiciaire après un abus, et est exigée par certaines
+  réglementations et certains contrats. Avec le logo de l'entreprise, elle aide aussi les utilisateurs
+  à reconnaître la vraie page de connexion.
+impact: |
+  Aucun connu. Le texte est public : quiconque saisit une adresse du tenant le voit, il ne doit donc
+  pas contenir d'information interne comme les numéros de poste des administrateurs. Il est limité à
+  1 024 caractères.
+notes: |
+  Les kits d'hameçonnage copient l'identité de marque de leurs cibles : la mention n'est pas un
+  contrôle anti-hameçonnage. La personnalisation de la marque exige Microsoft Entra ID P1 ou P2, ou une
+  licence Office 365.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Personnalisation de marque > Identité de marque de l'entreprise > Expérience de connexion par défaut > Formulaire de connexion > Texte de la page de connexion
+  recommended_value: "{{ sign_in_notice_text }}"
+parameters:
+  sign_in_notice_text: Mention légale affichée sur la page de connexion, validée par le service juridique (1 024 caractères au plus).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Personnalisation de marque** > **Identité de marque de
+       l'entreprise** et ouvrir **Expérience de connexion par défaut** > **Formulaire de connexion**.
+    3. Vérifier que **Texte de la page de connexion** contient la mention approuvée.
+    4. Alternative (Microsoft Graph, étendue `Organization.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/organization/{tenant-id}/branding` et lire
+       `signInPageText`.
+    5. Échec si le texte est vide ou diffère de la mention approuvée.
+remediation:
+  manual: |
+    1. Faire valider la mention par le service juridique.
+    2. Se connecter au centre d'administration Microsoft Entra en tant qu'Administrateur de la
+       personnalisation de marque de l'organisation.
+    3. Aller dans **Entra ID** > **Personnalisation de marque** > **Identité de marque de
+       l'entreprise** > **Expérience de connexion par défaut** > **Modifier** (ou **Configurer** la
+       première fois).
+    4. Dans l'onglet **Formulaire de connexion**, saisir la mention dans **Texte de la page de
+       connexion**, puis **Vérifier** et **Enregistrer**.
+    5. Ajouter des versions localisées sous **Personnaliser selon la langue du navigateur** si les
+       utilisateurs travaillent dans plusieurs langues.
+
+    Dans Microsoft Graph : `PATCH https://graph.microsoft.com/v1.0/organization/{tenant-id}/branding`
+    avec `{"signInPageText": "..."}`.
+  rollback: |
+    Vider **Texte de la page de connexion** et enregistrer.

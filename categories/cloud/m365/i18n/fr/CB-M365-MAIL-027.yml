@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-027
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les documents fiables pour les clients Office, sans contournement
+finding:
+  title: Les fichiers Office ouverts en mode protégé ne sont pas vérifiés avant que l'utilisateur active la modification
+  description: Un utilisateur peut quitter le mode protégé sur un document malveillant, ce qui exécute son contenu sur le poste.
+applicability:
+  conditions: |
+    Les documents fiables dépendent du plan de service **Office 365 SafeDocs**, inclus dans Microsoft
+    365 E5, A5 et G5 et dans Microsoft Defender Suite, pas dans Defender pour Office 365 Plan 1 ou 2.
+    Les utilisateurs doivent avoir Microsoft 365 Apps for enterprise version 2004 ou ultérieure.
+description: |
+  Dans les paramètres globaux des pièces jointes fiables :
+
+  - **Activer les documents fiables pour les clients Office** est activé (`EnableSafeDocs $true`) ;
+  - **Autoriser les utilisateurs à quitter le mode protégé même si les documents fiables ont identifié
+    le fichier comme malveillant** est désactivé (`AllowSafeDocsOpen $false`).
+
+  Les fichiers Office ouverts en mode protégé sont envoyés au cloud Microsoft Defender pour point de
+  terminaison pour analyse avant que l'utilisateur puisse quitter le mode protégé.
+rationale: |
+  Les fichiers téléchargés depuis Internet ou reçus de l'extérieur s'ouvrent en mode protégé, et en
+  sortir est le moment où une macro ou un exploit malveillant s'exécute. Les documents fiables
+  vérifient le fichier à ce moment ; sans contournement, un fichier reconnu malveillant ne peut pas
+  être ouvert du tout.
+impact: |
+  Les utilisateurs attendent un court instant avant de pouvoir activer la modification. Les fichiers
+  signalés comme malveillants restent en mode protégé. Les informations sur les fichiers sont
+  envoyées au cloud Defender pour point de terminaison et conservées moins de 24 heures.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Pièces jointes fiables** > **Paramètres globaux**.
+    3. Vérifier que **Activer les documents fiables pour les clients Office** est activé et que
+       **Autoriser les utilisateurs à quitter le mode protégé même si les documents fiables ont
+       identifié le fichier comme malveillant** est désactivé.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-AtpPolicyForO365 | Format-List EnableSafeDocs, AllowSafeDocsOpen
+       ```
+    5. Échec si `EnableSafeDocs` vaut `False` ou `AllowSafeDocsOpen` vaut `True`.
+remediation:
+  manual: |
+    1. Dans le portail Defender, **Pièces jointes fiables** > **Paramètres globaux**, activer
+       **Activer les documents fiables pour les clients Office**, désactiver l'option de contournement,
+       et enregistrer.
+    2. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-AtpPolicyForO365 -EnableSafeDocs $true -AllowSafeDocsOpen $false
+       ```
+  rollback: |
+    `Set-AtpPolicyForO365 -AllowSafeDocsOpen $true`, ou `-EnableSafeDocs $false`.

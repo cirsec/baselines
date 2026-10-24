@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-012
+title: Disable email one-time passcodes
+finding:
+  title: Email one-time passcodes are allowed
+  description: Guests can redeem invitations and sign in with a code sent to their mailbox, and members can reset their password with one, so control of a mailbox is enough to authenticate.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [email-otp, guests, b2b, authentication-methods]
+
+description: |
+  The **Email OTP** method is disabled in the Authentication methods policy, including its
+  **Allow external users to use email OTP** option, and **Email one-time passcode for guests** is
+  set to **No** under External Identities. Guests then authenticate with their own Entra ID
+  account, a Microsoft account or a configured identity provider; members reset their password
+  with stronger methods.
+rationale: |
+  An email code proves only access to a mailbox, often a personal or poorly protected one outside
+  any MFA policy. It is a common entry point for guest account takeover and for password reset
+  abuse.
+impact: |
+  Guests without an Entra ID or Microsoft account can no longer redeem invitations; they are asked
+  to create a Microsoft account. Guests who already redeemed with a code cannot sign in until
+  their redemption status is reset. Members lose email as a password reset method. List existing
+  guests that use email OTP before the change.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Email OTP**: check
+       that **Enable** is off and, on **Configure**, that **Allow external users to use email
+       OTP** is **No**.
+    3. Browse to **Entra ID** > **External Identities** > **All identity providers**, **Built-in**
+       tab, **Email one-time passcode**: check **Email one-time passcode for guests** is **No**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Email | Select-Object State, @{n='External';e={$_.AdditionalProperties.allowExternalIdToUseEmailOtp}}`
+    5. Fail if the method is enabled, or if `allowExternalIdToUseEmailOtp` is `enabled` or
+       `default`.
+
+remediation:
+  manual: |
+    1. List guests whose sign-ins use email OTP and agree an alternative with their sponsors.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Email OTP**. On
+       **Configure**, set **Allow external users to use email OTP** to **No**; on **Enable and
+       target**, turn **Enable** off. Save.
+    4. Browse to **Entra ID** > **External Identities** > **All identity providers** > **Email
+       one-time passcode** and set **Email one-time passcode for guests** to **No**. Save.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Email`
+    with `{"@odata.type": "#microsoft.graph.emailAuthenticationMethodConfiguration", "state": "disabled", "allowExternalIdToUseEmailOtp": "disabled"}`.
+  rollback: |
+    Set **Email one-time passcode for guests** back to **Yes** and re-enable the method. Reset the
+    redemption status of guests who were locked out.
+
+references:
+  - title: Email one-time passcode authentication for B2B guest users
+    url: https://learn.microsoft.com/entra/external-id/one-time-passcode
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: How to migrate MFA and SSPR policy settings to the Authentication methods policy
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-methods-manage
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.7"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.5v2
+    relation: partial
+    note: Covers the email OTP part only (SMS and voice are CB-M365-AUTH-011); hardened profile here, a SHALL in SCuBA.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-011
+    type: related
+  - id: CB-M365-COLLAB-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

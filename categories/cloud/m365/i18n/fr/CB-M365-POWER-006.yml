@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les exceptions d'isolation du locataire Power Platform aux tenants approuvés
+finding:
+  title: Les exceptions d'isolation du locataire Power Platform manquent, sont trop larges ou ne sont pas revues
+  description: La liste d'autorisation de l'isolation du locataire contient des entrées génériques ou des tenants sans besoin métier documenté, ce qui rouvre les connexions inter-tenant.
+description: |
+  La liste d'exceptions de l'isolation du locataire ne contient que des tenants partenaires avec un
+  besoin métier documenté, chacun avec le sens le plus étroit nécessaire (**Entrant**, **Sortant**
+  ou **Les deux**). Aucune entrée n'utilise le caractère générique `*`, qui autorise tous les tenants
+  dans un sens. La liste est revue au moins une fois par an avec les propriétaires des intégrations.
+  Une liste vide est conforme quand aucune intégration inter-tenant n'existe.
+rationale: |
+  L'isolation du locataire ne protège que dans la mesure de ses exceptions. Une entrée `*`, ajoutée
+  pour ne pas casser de flux lors de l'activation, annule la protection dans ce sens. Les entrées
+  obsolètes laissent des connexions ouvertes vers d'anciens partenaires. Une liste courte et revue
+  garde les flux de données inter-tenant délibérés et traçables.
+impact: |
+  Retirer une exception casse les applications et flux qui utilisent des connexions vers ce tenant
+  dans le sens retiré. Confirmer avec les propriétaires des intégrations, à l'aide du rapport
+  d'isolation inter-tenant, avant de retirer des entrées.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général.
+    2. Aller dans **Sécurité** > **Identité et accès** > **Isolation du locataire** et examiner la
+       liste d'exceptions (ID ou domaine du tenant, sens autorisé).
+    3. Vérifier qu'aucune entrée n'utilise `*` et que chaque tenant correspond à une intégration
+       documentée et actuelle, avec le sens le plus étroit.
+    4. Alternative en lecture seule (administrateur Power Platform) :
+       `(Get-PowerAppTenantIsolationPolicy -TenantId <ID du tenant>).properties.allowedTenants`.
+    5. Échec si une entrée `*` existe, ou si une entrée n'a ni propriétaire ni besoin documentés.
+remediation:
+  manual: |
+    1. Lancer le rapport d'isolation inter-tenant pour voir quels tenants et sens sont réellement
+       utilisés.
+    2. Dans **Sécurité** > **Identité et accès** > **Isolation du locataire**, remplacer toute entrée
+       `*` par les tenants précis nécessaires, restreindre les entrées **Les deux** à **Entrant** ou
+       **Sortant** quand c'est possible, et supprimer les entrées inutilisées. Rôle : administrateur
+       Power Platform.
+    3. Équivalent PowerShell : modifier `properties.allowedTenants` dans l'objet renvoyé par
+       `Get-PowerAppTenantIsolationPolicy` et l'appliquer avec `Set-PowerAppTenantIsolationPolicy`.
+    4. Consigner chaque exception restante (partenaire, propriétaire, sens, date de revue).
+  rollback: |
+    Rajouter l'exception retirée avec son sens d'origine.

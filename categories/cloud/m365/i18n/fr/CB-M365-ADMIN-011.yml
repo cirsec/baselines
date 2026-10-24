@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Retirer les attributions de rôles privilégiés inutilisées ou orphelines
+finding:
+  title: Des rôles privilégiés sont détenus par des comptes désactivés, inactifs ou qui ne s'en servent pas
+  description: Les comptes privilégiés dormants sont des cibles faciles, car personne ne remarque leur réutilisation.
+parameters:
+  stale_days: Nombre de jours sans connexion ou sans activation de rôle au-delà duquel une attribution privilégiée est considérée comme inutilisée.
+description: |
+  Aucun rôle privilégié (actif ou éligible) n'est détenu par :
+
+  - un compte désactivé, ou un compte supprimé encore présent comme attribution orpheline ;
+  - un compte qui ne s'est pas connecté depuis `{{ stale_days }}` jours ;
+  - un utilisateur éligible qui n'a pas activé le rôle depuis `{{ stale_days }}` jours, ou un
+    titulaire actif qui ne l'a pas utilisé sur cette période (alerte PIM **Les administrateurs
+    n'utilisent pas leurs rôles privilégiés**).
+
+  Les comptes d'accès d'urgence (CB-M365-ADMIN-002) sont exclus des critères d'inactivité.
+rationale: |
+  Les privilèges inutilisés ajoutent de la surface d'attaque sans bénéfice. Un compte
+  d'administration dormant est rarement surveillé, son titulaire ne remarquerait pas une prise de
+  contrôle, et ses méthodes peuvent être obsolètes. Retirer ces attributions entre deux révisions
+  maintient la population privilégiée au plus près du besoin réel.
+impact: |
+  Les administrateurs occasionnels (tâches annuelles, suppléants) perdent leur éligibilité et
+  doivent la redemander. Documenter ces cas comme exceptions plutôt que d'abaisser le seuil pour
+  tout le monde.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles Microsoft
+       Entra** > **Alertes** et ouvrir **Les administrateurs n'utilisent pas leurs rôles
+       privilégiés** (régler son seuil sur `{{ stale_days }}` jours dans **Paramètre** si besoin).
+    3. Dans **Attributions**, lister les titulaires éligibles et actifs ; pour chacun, ouvrir
+       l'utilisateur et vérifier **Compte activé** et la date de dernière connexion (**Journaux de
+       connexion** ou vue d'ensemble de l'utilisateur).
+    4. Alternative PowerShell en lecture seule (Microsoft Graph, étendues
+       `RoleManagement.Read.Directory`, `AuditLog.Read.All`) :
+       ```
+       Get-MgUser -UserId <id> -Property AccountEnabled,SignInActivity |
+         Select-Object AccountEnabled, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}}
+       ```
+       et `GET /roleManagement/directory/roleAssignmentScheduleRequests` pour trouver la dernière
+       activation par principal.
+    5. Échec si une attribution privilégiée appartient à un compte désactivé, à un compte sans
+       connexion depuis `{{ stale_days }}` jours, ou à un utilisateur qui n'a pas utilisé le rôle
+       sur cette période, hors exceptions documentées.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié, aller dans **Gouvernance des ID** > **Privileged
+       Identity Management** > **Rôles Microsoft Entra** > **Attributions**.
+    2. Pour chaque constat, confirmer avec le manager du titulaire, puis sélectionner **Supprimer**
+       sur l'attribution.
+    3. Désactiver le compte d'administration s'il ne détient plus aucun rôle.
+    4. Équivalent avec Microsoft Graph :
+       `New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -Action adminRemove` (éligible)
+       ou `New-MgRoleManagementDirectoryRoleAssignmentScheduleRequest -Action adminRemove`
+       (actif).
+  rollback: |
+    Réattribuer le rôle en éligible dans PIM.

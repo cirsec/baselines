@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le partage externe SharePoint aux invités authentifiés
+finding:
+  title: SharePoint autorise des liens de partage que n'importe qui peut ouvrir sans se connecter
+  description: Un lien « Tout le monde » transféré ou divulgué expose le contenu à quiconque le détient, sans identité ni moyen de savoir qui l'a ouvert.
+description: |
+  Le niveau de partage externe de SharePoint au niveau de l'organisation est au plus
+  `{{ sharepoint_sharing_level }}` : les liens **Tout le monde** ne sont pas disponibles, chaque
+  destinataire externe s'authentifie comme invité.
+
+  Niveaux, du plus permissif au plus restrictif : **Tout le monde** (`ExternalUserAndGuestSharing`),
+  **Invités nouveaux et existants** (`ExternalUserSharingOnly`), **Invités existants**
+  (`ExistingExternalUserSharingOnly`), **Uniquement les personnes de votre organisation**
+  (`Disabled`). La baseline autorise les invités nouveaux et existants ; le profil renforcé n'autorise
+  que les invités déjà présents dans l'annuaire, et l'invitation d'une nouvelle personne externe passe
+  par le processus d'invitation des invités.
+
+  Chaque site peut être réglé plus strictement que l'organisation, jamais plus largement.
+rationale: |
+  Un lien **Tout le monde** est un jeton au porteur : quiconque a l'URL obtient le contenu, y compris
+  après un transfert, une copie dans un ticket ou une indexation par une passerelle de messagerie.
+  Aucune identité n'est enregistrée : l'accès ne peut être ni audité, ni révoqué par personne, ni
+  couvert par l'accès conditionnel. Exiger l'authentification des invités rattache chaque accès
+  externe à un objet de l'annuaire. Limiter le partage aux invités existants ajoute un contrôle :
+  quelqu'un décide qui devient invité avant tout partage.
+impact: |
+  Les utilisateurs ne peuvent plus créer de liens **Tout le monde** ; les liens existants cessent de
+  fonctionner quand le niveau baisse. Les **demandes de fichiers** (dépôt anonyme) exigent **Tout le
+  monde** sur OneDrive et ne fonctionnent plus. Les destinataires externes doivent se connecter ou
+  utiliser un code à usage unique. Avec **Invités existants**, impossible de partager avec une
+  nouvelle adresse externe tant que la personne n'est pas invitée, ce qui suppose un processus
+  d'invitation des invités (CB-M365-TENANT-011).
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Partage externe > SharePoint
+  recommended_value: "{{ sharepoint_sharing_level }} ou plus restrictif"
+parameters:
+  sharepoint_sharing_level: Niveau de partage externe SharePoint le plus permissif autorisé (valeur de SharingCapability).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage**. Sous **Partage externe**, lire le curseur SharePoint.
+    3. Alternative en lecture seule : en Lecteur général, appeler Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, ou `Get-MgAdminSharepointSetting`) et lire
+       `sharingCapability`. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object SharingCapability`.
+    4. Facultatif : lister les sites réglés plus largement que prévu :
+       `Get-SPOSite -Limit All | Where-Object SharingCapability -eq 'ExternalUserAndGuestSharing'`.
+    5. Échec si le niveau est plus permissif que `{{ sharepoint_sharing_level }}` (ordre :
+       `ExternalUserAndGuestSharing` > `ExternalUserSharingOnly` > `ExistingExternalUserSharingOnly` >
+       `Disabled`).
+remediation:
+  manual: |
+    1. Recenser les liens **Tout le monde** avant de les couper : rapports de partage de chaque site, ou
+       journal d'audit (**Purview** > **Audit**, activité `AnonymousLinkCreated`). Prévenir les
+       propriétaires des liens qui cesseront de fonctionner.
+    2. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** et placer le
+       curseur SharePoint sur le niveau correspondant à `{{ sharepoint_sharing_level }}` (**Invités
+       nouveaux et existants**, **Invités existants** ou **Uniquement les personnes de votre
+       organisation**). Le curseur OneDrive suit s'il était plus permissif. Sélectionner
+       **Enregistrer**. Rôle : Administrateur SharePoint.
+    3. Équivalent PowerShell : `Set-SPOTenant -SharingCapability {{ sharepoint_sharing_level }}`.
+       Équivalent Graph : `PATCH /admin/sharepoint/settings` avec `sharingCapability`.
+  rollback: |
+    Replacer le curseur au niveau précédent. Les liens désactivés par le changement refonctionnent s'ils
+    n'ont pas expiré.

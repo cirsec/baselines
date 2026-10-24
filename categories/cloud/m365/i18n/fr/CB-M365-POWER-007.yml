@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer la Content Security Policy aux applications pilotées par modèle et canevas
+finding:
+  title: La Content Security Policy n'est pas appliquée aux Power Apps
+  description: Des applications pilotées par modèle ou canevas sont servies sans Content Security Policy appliquée ; n'importe quel site peut les encadrer et le navigateur n'apporte aucune protection contre le contenu injecté.
+description: |
+  Dans chaque environnement Power Platform doté d'une base Dataverse, les paramètres
+  **Confidentialité + Sécurité** appliquent la Content Security Policy aux deux types
+  d'applications : **Appliquer la stratégie de sécurité du contenu** est **Activé** pour **Piloté
+  par modèle** et pour **Canevas**. La directive `frame-ancestors` garde sa valeur par défaut
+  (`'self' https://*.powerapps.com`) ou ne liste que les hôtes approuvés qui intègrent les
+  applications (Teams, Outlook, Power BI, intranet).
+rationale: |
+  Un en-tête CSP appliqué indique au navigateur quelles origines peuvent encadrer l'application et
+  charger des ressources. Sans lui, un site malveillant peut intégrer une Power App dans un cadre
+  caché et piéger les clics des utilisateurs (clickjacking), et le contenu injecté n'est pas
+  contraint par le navigateur. Activer l'application est une couche de défense peu coûteuse fournie
+  par la plateforme.
+impact: |
+  Les applications intégrées dans des hôtes absents de `frame-ancestors` ne se chargent plus dans ces
+  hôtes. Le mode strict peut bloquer des scripts ou ressources personnalisés chargés depuis d'autres
+  origines. Activer d'abord le rapport avec un point de terminaison (mode rapport seul), appliquer
+  sur un environnement de test, puis en production une fois qu'aucune violation n'est remontée. Les
+  environnements sans Dataverse sont hors périmètre.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général, ou comme
+       administrateur de chaque environnement.
+    2. Aller dans **Gérer** > **Environnements** et, pour chaque environnement avec Dataverse, le
+       sélectionner, puis **Paramètres** > **Produit** > **Confidentialité + Sécurité**.
+    3. Sous **Stratégie de sécurité du contenu**, vérifier sur les pivots **Piloté par modèle** et
+       **Canevas** que **Appliquer la stratégie de sécurité du contenu** est **Activé**, et examiner
+       les sources de `frame-ancestors`.
+    4. Alternative en lecture seule : API Web Dataverse
+       `GET https://<org>.crm.dynamics.com/api/data/v9.2/organizations?$select=iscontentsecuritypolicyenabled,iscontentsecuritypolicyenabledforcanvas,contentsecuritypolicyconfiguration`
+       avec un utilisateur qui peut lire la table organization.
+    5. Échec si l'application est désactivée pour l'un des types d'applications dans un
+       environnement Dataverse, ou si `frame-ancestors` contient un hôte générique.
+remediation:
+  manual: |
+    1. Pour chaque environnement Dataverse, aller dans **Gérer** > **Environnements** > le
+       sélectionner > **Paramètres** > **Produit** > **Confidentialité + Sécurité**. Rôle :
+       administrateur Power Platform, ou administrateur système de l'environnement.
+    2. Activer **Activer la création de rapports** avec un point de terminaison, et laisser
+       l'application désactivée quelques jours pour collecter les violations (mode rapport seul).
+    3. Ajouter à `frame-ancestors` les hôtes d'intégration légitimes (par exemple
+       `https://teams.microsoft.com/` pour l'intégration Teams).
+    4. Activer **Appliquer la stratégie de sécurité du contenu** sur le pivot **Piloté par modèle**,
+       puis sur le pivot **Canevas**, en commençant par les environnements de test.
+    5. Équivalent : régler les colonnes `iscontentsecuritypolicyenabled` et
+       `iscontentsecuritypolicyenabledforcanvas` de la table organization à `true` via l'API Web
+       Dataverse.
+  rollback: |
+    Désactiver **Appliquer la stratégie de sécurité du contenu** pour le type d'application concerné ;
+    garder le rapport actif.

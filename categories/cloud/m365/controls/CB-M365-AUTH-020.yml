@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-020
+title: Require a compliant or hybrid joined device to access resources
+finding:
+  title: Unmanaged devices can access Microsoft 365 resources
+  description: Any device, including a personal computer or an attacker's machine, can open a session with valid credentials and download the organisation's data.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [conditional-access, device-compliance, intune, managed-device, hybrid-join]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+    - "Microsoft Intune"
+
+description: |
+  A Conditional Access policy for **All users** on **All resources** grants access only if the
+  device is **marked as compliant** by Intune or is **Microsoft Entra hybrid joined** (**Require
+  one of the selected controls**). Intune compliance policies exist for each platform in use,
+  and devices without a compliance policy are marked not compliant.
+
+  The policy excludes only the emergency access accounts, the **Directory Synchronization
+  Accounts** role on hybrid tenants and, if documented, guests. Organisations that allow personal
+  devices can tailor this control: keep the policy for desktop clients and mobile apps, and give
+  browsers on unmanaged devices limited web-only access through app enforced restrictions.
+rationale: |
+  A stolen password or session cookie is only useful from a device the attacker controls.
+  Requiring a managed device moves the trust decision to a device the organisation configures,
+  patches, encrypts and can wipe, and stops data from being synchronised to unknown machines.
+impact: |
+  Strong impact where personal devices are used: users can no longer reach Microsoft 365 from a
+  device the organisation does not manage. Enroll every corporate device in Intune first, check
+  compliance results, and plan the personal-device scenario (web-only access, app protection
+  policies on mobiles). Guests from partner tenants need cross-tenant trust of their device
+  claims, or an exclusion.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** (not Report-only) where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the accounts
+         listed above;
+       - **Target resources** includes **All resources**, without exclusions;
+       - **Grant** is **Require device to be marked as compliant** and/or **Require Microsoft
+         Entra hybrid joined device**.
+       If the organisation tailored the control for personal devices, check that the excluded
+       client apps are only **Browser** and that a second policy applies app enforced restrictions
+       to them.
+    4. In the Intune admin center (https://intune.microsoft.com), as at least a Global Reader,
+       check under **Devices** > **Compliance** that a policy exists per platform and that
+       **Compliance policy settings** marks devices with no policy as **Not compliant**.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.GrantControls.BuiltInControls -match 'compliantDevice|domainJoinedDevice' } | Select-Object DisplayName, State, @{n='Users';e={$_.Conditions.Users.IncludeUsers}}, @{n='Apps';e={$_.Conditions.Applications.IncludeApplications}}`
+    6. Fail if no such policy exists, if it is Report-only or Off, or if it does not cover all
+       users and all resources.
+
+remediation:
+  manual: |
+    1. Create Intune compliance policies for each platform and enroll corporate devices; check
+       that they report **Compliant**.
+    2. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `ALL - Require managed device`.
+    4. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts and the
+       **Directory Synchronization Accounts** role.
+    5. **Target resources** > **Resources** > **Include**: **All resources**.
+    6. **Grant** > **Grant access**: select **Require device to be marked as compliant** and
+       **Require Microsoft Entra hybrid joined device**, then **Require one of the selected
+       controls**.
+    7. Set **Enable policy** to **Report-only**, save, and review the sign-in logs for at least two
+       weeks to find unmanaged devices.
+    8. Switch **Enable policy** to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with
+    `grantControls.builtInControls` set to `compliantDevice` and `domainJoinedDevice` and
+    operator `OR`.
+  rollback: |
+    Set the policy to **Report-only**. Sign in with an emergency access account if needed.
+
+references:
+  - title: Require device compliance with Conditional Access
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-compliance
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Use application enforced restrictions for unmanaged devices
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-app-enforced-restrictions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.9"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.7v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1539
+related_controls:
+  - id: CB-M365-AUTH-019
+    type: related
+  - id: CB-M365-AUTH-021
+    type: related
+  - id: CB-M365-AUTH-028
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-DEVICE-001
+    type: requires
+  - id: CB-M365-COLLAB-015
+    type: related
+  - id: CB-M365-COLLAB-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

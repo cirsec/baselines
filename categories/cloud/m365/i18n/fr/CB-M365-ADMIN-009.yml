@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Alerter sur l'attribution et l'activation des rôles hautement privilégiés
+finding:
+  title: Les attributions et activations de rôles privilégiés passent inaperçues
+  description: Un attaquant qui attribue ou active un rôle hautement privilégié ne déclenche aucune alerte ; l'équipe sécurité ne l'apprend que lors d'une investigation ultérieure.
+parameters:
+  pim_alert_recipients: Boîtes aux lettres supervisées (SOC, boîte partagée de l'équipe sécurité) qui reçoivent les notifications PIM. Doit contenir au moins une adresse.
+description: |
+  Pour chaque rôle hautement privilégié (liste dans CB-M365-ADMIN-006), les paramètres de
+  notification de Privileged Identity Management envoient un e-mail à `{{ pim_alert_recipients }}`,
+  en plus des destinataires par défaut, quand :
+
+  - un membre est attribué en **éligible** au rôle ;
+  - un membre est attribué en **actif** au rôle ;
+  - un membre éligible **active** le rôle (obligatoire pour Administrateur général).
+
+  Les destinataires sont des boîtes supervisées, ou les alertes atteignent le SIEM par un autre
+  chemin (export des journaux d'audit, CB-M365-AUDIT-002).
+rationale: |
+  Les nouvelles attributions et activations privilégiées sont des événements rares et
+  significatifs : une activation inattendue est souvent la première étape visible d'une prise de
+  contrôle du tenant. Les notifications PIM par défaut partent vers les administrateurs eux-mêmes,
+  qui peuvent être la partie compromise ; une boîte sécurité supervisée donne une vue
+  indépendante.
+impact: |
+  La boîte sécurité reçoit un e-mail par attribution et par activation ; le volume dépend du nombre
+  d'administrateurs. L'acheminer vers une règle de ticketing ou de SIEM plutôt que de le lire à la
+  main.
+notes: |
+  Les alertes de sécurité intégrées de PIM (par exemple rôles attribués hors de PIM) complètent ces
+  notifications et se consultent dans **Privileged Identity Management** > **Alertes**.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles Microsoft
+       Entra** > **Rôles**, ouvrir chaque rôle hautement privilégié > **Paramètres de rôle** >
+       **Notification**.
+    3. Vérifier que **Envoyer des notifications quand des membres sont attribués comme éligibles à
+       ce rôle**, **Envoyer des notifications quand des membres sont attribués comme actifs à ce
+       rôle** et **Envoyer des notifications quand des membres éligibles activent ce rôle**, ligne
+       **Alerte d'attribution de rôle**, listent les adresses de `{{ pim_alert_recipients }}` sous
+       **Destinataires supplémentaires**.
+    4. Alternative en lecture seule avec Microsoft Graph (étendue `RoleManagementPolicy.Read.Directory`) :
+       développer les règles de la stratégie du rôle comme dans CB-M365-ADMIN-007 et lire
+       `Notification_Admin_Admin_Eligibility`, `Notification_Admin_Admin_Assignment` et
+       `Notification_Admin_EndUser_Assignment` : `notificationRecipients` contient les adresses.
+    5. Échec si le paramètre est vide, ou si l'une des trois notifications d'un rôle hautement
+       privilégié n'atteint pas une adresse supervisée.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié, aller dans **Gouvernance des ID** > **Privileged
+       Identity Management** > **Rôles Microsoft Entra** > **Rôles**, ouvrir chaque rôle hautement
+       privilégié > **Paramètres de rôle** > **Modifier** > **Notification**.
+    2. Pour les trois sections (attribution éligible, attribution active, activation), sur la ligne
+       **Alerte d'attribution de rôle**, ajouter les adresses supervisées sous **Destinataires
+       supplémentaires**. Laisser **Destinataires par défaut** coché.
+    3. Sélectionner **Mettre à jour**. Activer un rôle avec un compte de test et vérifier que
+       l'e-mail arrive.
+    4. Équivalent avec Microsoft Graph :
+       `PATCH /policies/roleManagementPolicies/{policyId}/rules/Notification_Admin_EndUser_Assignment`
+       (et les deux autres règles) avec les adresses dans `notificationRecipients`.
+  rollback: |
+    Retirer les destinataires supplémentaires des paramètres de notification.
