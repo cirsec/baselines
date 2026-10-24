@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-018
+title: Make sure every member user has registered an MFA method
+finding:
+  title: Some member users have no MFA method registered
+  description: An account without a registered method can be claimed by whoever first signs in with its password, who then registers their own method.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [mfa, registration, registration-campaign, authentication-methods]
+
+description: |
+  Every enabled member user is **MFA capable**: they have registered at least one method allowed
+  by the Authentication methods policy and usable for MFA. The only exceptions are new accounts
+  waiting for their first registration with a Temporary Access Pass, and accounts that never sign
+  in interactively (shared mailboxes with sign-in blocked, resource accounts), which are blocked
+  from sign-in.
+
+  A registration campaign in the Authentication methods policy keeps nudging users who are not
+  yet registered.
+rationale: |
+  MFA policies only protect users who have a method. An unregistered account is the easiest
+  takeover: an attacker with the password signs in, is asked to register, and registers their own
+  phone or passkey.
+impact: |
+  None known for users. The help desk must follow up the users found, and service accounts that
+  still sign in interactively must be replaced with workload identities or blocked.
+notes: |
+  The **User registration details** report needs Entra ID P1. Without it, check each user's
+  methods with `Get-MgUserAuthenticationMethod`.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Reports Reader (Security Reader and Global Reader also work).
+    2. Browse to **Entra ID** > **Authentication methods** > **User registration details**.
+    3. Filter **User type** on **Member** and **MFA capable** on **Not capable**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `AuditLog.Read.All`):
+       `Get-MgReportAuthenticationMethodUserRegistrationDetail -All -Filter "userType eq 'member' and isMfaCapable eq false" | Select-Object UserPrincipalName, MethodsRegistered`
+    5. Compare the result with the enabled accounts (disabled accounts are not listed).
+    6. Fail if an enabled member that can sign in is not MFA capable and is not a new account
+       waiting for its first registration.
+
+remediation:
+  manual: |
+    1. Export the list of members who are not MFA capable and contact them, or issue a Temporary
+       Access Pass so they register a method.
+    2. Block sign-in on accounts that should never sign in interactively (**Entra ID** > **Users**
+       > user > **Edit properties** > **Settings** > **Account enabled** off, role User
+       Administrator).
+    3. As an Authentication Policy Administrator, browse to **Entra ID** > **Authentication
+       methods** > **Registration campaign**, set **State** to **Enabled** (or keep **Microsoft
+       managed**), target the method you deploy (passkeys or Microsoft Authenticator) for **All
+       users**, and save.
+    Graph equivalent for the campaign: `PATCH /policies/authenticationMethodsPolicy` with
+    `registrationEnforcement.authenticationMethodsRegistrationCampaign`.
+  rollback: |
+    Set the registration campaign back to **Microsoft managed**.
+
+references:
+  - title: Authentication methods activity
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-authentication-methods-activity
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Run a registration campaign to set up authentication methods
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-registration-campaign
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1098.005
+related_controls:
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-019
+    type: related
+  - id: CB-M365-AUTH-030
+    type: related
+  - id: CB-M365-AUTH-031
+    type: related
+  - id: CB-M365-APPS-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

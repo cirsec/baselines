@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-009
+title: Disable SMTP AUTH client submission for the organization
+finding:
+  title: Authenticated SMTP submission is enabled for the organization
+  description: SMTP AUTH accepts a user name and password from any client, which lets attackers test stolen or sprayed passwords and send mail as the user.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online, smtp-auth, legacy-authentication, password-spray]
+
+description: |
+  SMTP AUTH client submission (port 587 on `smtp.office365.com`) is turned off for the whole
+  organization (`SmtpClientAuthenticationDisabled $true`). Mailboxes that still need it, typically
+  devices or applications that cannot use another method, are listed exceptions enabled one by one
+  (`Set-CASMailbox -SmtpClientAuthenticationDisabled $false`) and use OAuth where possible.
+
+  Every other mailbox has the per-mailbox value empty (inherit the organization setting) or `True`.
+rationale: |
+  SMTP AUTH is a frequent target of password spray because it often still accepts basic
+  authentication and returns a clear success or failure. A valid password lets the attacker send
+  mail from a legitimate mailbox. Microsoft disables basic authentication for SMTP AUTH by default
+  at the end of 2026 and plans to remove it in the second half of 2027; turning the protocol off
+  where it is not needed also closes the OAuth path for unused mailboxes.
+impact: |
+  Scanners, printers, line-of-business applications and scripts that send through
+  `smtp.office365.com` with a mailbox account stop working unless their mailbox is an exception.
+  Inventory them first with the **SMTP AUTH clients** report (Exchange admin center > **Reports** >
+  **Mail flow**) and move them to Microsoft Graph, High Volume Email, or a connector-based relay.
+
+audit:
+  manual: |
+    1. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Mail flow** and check that **Turn off SMTP AUTH protocol for your
+       organization** is selected.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-TransportConfig | Format-List SmtpClientAuthenticationDisabled
+       Get-CASMailbox -ResultSize Unlimited -Filter "SmtpClientAuthenticationDisabled -eq $false" |
+         Format-Table PrimarySmtpAddress, SmtpClientAuthenticationDisabled
+       ```
+    4. Fail if `SmtpClientAuthenticationDisabled` is `False` at organization level, or if a mailbox
+       with the per-mailbox value `False` is not a documented exception.
+
+remediation:
+  manual: |
+    1. Review the **SMTP AUTH clients** report and the sign-in logs (client app **Authenticated
+       SMTP**) to find the remaining users.
+    2. Enable the exceptions first, mailbox by mailbox (Exchange Administrator):
+       ```powershell
+       Set-CASMailbox -Identity scanner@example.com -SmtpClientAuthenticationDisabled $false
+       ```
+    3. In the Exchange admin center, browse to **Settings** > **Mail flow**, select **Turn off SMTP
+       AUTH protocol for your organization** and save. PowerShell equivalent:
+       ```powershell
+       Set-TransportConfig -SmtpClientAuthenticationDisabled $true
+       ```
+    4. Block legacy authentication with Conditional Access so the exceptions use OAuth.
+  rollback: |
+    `Set-TransportConfig -SmtpClientAuthenticationDisabled $false`, or enable SMTP AUTH on the single
+    mailbox that needs it.
+
+references:
+  - title: Enable or disable authenticated client SMTP submission (SMTP AUTH) in Exchange Online
+    url: https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-TransportConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-transportconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.5.4"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.5.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-MAIL-006
+    type: related
+  - id: CB-M365-MAIL-010
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

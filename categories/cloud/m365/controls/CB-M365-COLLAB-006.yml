@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-006
+title: Allow only members of approved security groups to share externally
+finding:
+  title: Every user can share SharePoint and OneDrive content with external people
+  description: External sharing rights are not limited to the people whose role requires it, so any compromised or careless account can send content outside.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [external-sharing, least-privilege, sharepoint, onedrive]
+
+description: |
+  Only members of the security groups `{{ external_sharing_groups }}` can share SharePoint and
+  OneDrive content with guests. In the SharePoint admin center this is **Allow only users in specific
+  security groups to share externally**; the groups are stored in
+  `WhoCanShareAuthenticatedGuestAllowList` (and `WhoCanShareAnonymousAllowList` if **Anyone** links
+  are allowed). Other users can still share inside the organization.
+rationale: |
+  Most users never need to share outside the organization. Restricting the right to named groups
+  reduces the number of accounts that can exfiltrate content by sharing, makes the remaining external
+  sharing reviewable through group membership, and limits what a compromised ordinary account can
+  expose.
+impact: |
+  Users outside the groups get an error when they try to share with an external address and must ask a
+  group member or request membership. Plan the request process and the group owners. The list only
+  accepts security groups (not Microsoft 365 groups). Guests already added to a team or site keep
+  their access.
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > More external sharing settings > Allow only users in specific security groups to share externally
+  default_value: Off (all users can share externally)
+  recommended_value: "On, limited to {{ external_sharing_groups }}"
+parameters:
+  - name: external_sharing_groups
+    type: list
+    description: Security groups (names or object IDs) whose members may share externally.
+    default: []
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** > **More external sharing settings**.
+    3. Check that **Allow only users in specific security groups to share externally** is selected and
+       that **Manage security groups** lists only `{{ external_sharing_groups }}`.
+    4. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object WhoCanShareAuthenticatedGuestAllowList, WhoCanShareAnonymousAllowList`
+       and resolve the GUIDs in Entra.
+    5. Fail if external sharing is allowed and the restriction is off, or if a group outside the
+       approved list is present.
+
+remediation:
+  manual: |
+    1. Create (or reuse) a security group for the people allowed to share externally, with an owner who
+       approves membership. Optionally review it with an access review.
+    2. In the SharePoint admin center, browse to **Policies** > **Sharing** > **More external sharing
+       settings**, select **Allow only users in specific security groups to share externally**, then
+       **Manage security groups**, add the groups and choose **Can share with authenticated guests**.
+       Select **Save**. Role: SharePoint Administrator.
+    3. PowerShell equivalent:
+       `Set-SPOTenant -WhoCanShareAuthenticatedGuestAllowList "<group object ID>"` (comma-separated
+       object IDs).
+  rollback: |
+    Clear **Allow only users in specific security groups to share externally**, or add the missing
+    group.
+
+references:
+  - title: Manage security groups for external sharing
+    url: https://learn.microsoft.com/sharepoint/manage-security-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.8"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.1.3v1
+    relation: partial
+    note: SCuBA accepts approved domains or approved security groups; this control covers the groups, CB-M365-COLLAB-005 the domains.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-COLLAB-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

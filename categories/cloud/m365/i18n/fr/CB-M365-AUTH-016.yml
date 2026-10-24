@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les passkeys aux modèles d'authentificateurs approuvés
+finding:
+  title: N'importe quel modèle de passkey peut être enregistré
+  description: Sans restriction de clés, les utilisateurs peuvent enregistrer des authentificateurs que l'organisation n'a pas évalués, y compris des modèles non certifiés ou présentant des faiblesses connues.
+description: |
+  Chaque profil de clé d'accès de la méthode **Passkey (FIDO2)** a **Appliquer l'attestation** sur
+  **Oui** et **Appliquer les restrictions de clé** sur **Oui** avec le comportement **Autoriser**,
+  limité aux AAGUID listés dans `{{ approved_aaguids }}` : les modèles de clés de sécurité et
+  fournisseurs de passkeys que l'organisation a évalués et distribue.
+
+  Un AAGUID identifie la marque et le modèle d'un authentificateur. Il n'est fiable que si
+  l'attestation est imposée, c'est pourquoi les deux réglages vont ensemble.
+parameters:
+  approved_aaguids: AAGUID des modèles de clés de sécurité et fournisseurs de passkeys approuvés (par exemple une clé de sécurité certifiée et Microsoft Authenticator pour iOS et Android).
+rationale: |
+  Restreindre les modèles permet à l'organisation d'exiger du matériel certifié (niveau de
+  certification FIDO, FIPS 140, ou produit qualifié par l'ANSSI), de garder un processus connu de
+  support et de révocation, et de réagir vite quand un modèle est jugé vulnérable en retirant son
+  AAGUID.
+impact: |
+  Les utilisateurs disposant d'une passkey d'un modèle absent de la liste ne peuvent plus
+  l'enregistrer ni s'en servir pour se connecter, y compris les passkeys enregistrées avant la
+  restriction. Les passkeys synchronisées ne peuvent pas être attestées et sont exclues.
+  L'organisation doit acheter, distribuer et remplacer les clés approuvées.
+notes: |
+  L'AAGUID d'une passkey enregistrée apparaît dans le détail des méthodes d'authentification de
+  l'utilisateur. Microsoft publie la liste des clés de sécurité éligibles à l'attestation.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Passkey
+       (FIDO2)** > **Configurer**.
+    3. Pour chaque profil de clé d'accès, vérifier que **Appliquer l'attestation** vaut **Oui**, que
+       **Appliquer les restrictions de clé** vaut **Oui**, que le comportement est **Autoriser** et
+       que la liste d'AAGUID correspond à `{{ approved_aaguids }}`.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Fido2).AdditionalProperties.keyRestrictions`
+    5. Échec si un profil n'impose pas l'attestation et les restrictions de clé, utilise le
+       comportement **Bloquer**, ou autorise un AAGUID hors de la liste approuvée.
+remediation:
+  manual: |
+    1. Inventorier les passkeys enregistrées (AAGUID dans les méthodes d'authentification de chaque
+       utilisateur) et choisir les modèles approuvés.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Passkey
+       (FIDO2)** > **Configurer** et modifier chaque profil de clé d'accès.
+    4. Régler **Appliquer l'attestation** sur **Oui**, **Appliquer les restrictions de clé** sur
+       **Oui**, comportement **Autoriser**, et saisir les AAGUID approuvés. Enregistrer.
+    5. Remplacer les clés non approuvées des utilisateurs avant le changement ou juste après.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Fido2`
+    avec `keyRestrictions` à `{"isEnforced": true, "enforcementType": "allow", "aaGuids": [...]}`.
+  rollback: |
+    Remettre **Appliquer les restrictions de clé** sur **Non** dans le profil.

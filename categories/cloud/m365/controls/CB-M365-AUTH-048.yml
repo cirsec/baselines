@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-048
+title: Display a legal notice on the sign-in page
+finding:
+  title: The sign-in page does not tell users that access is restricted and monitored
+  description: Without a notice, the organization has a weaker basis to act against misuse, and users get no visual cue that they are on the real company page.
+status: active
+profiles: [hardened]
+risk:
+  severity: info
+assessment: manual
+tags: [branding, sign-in-page, legal-notice]
+
+description: |
+  The company branding of the tenant sets **Sign-in page text** to a short legal notice:
+  `{{ sign_in_notice_text }}`. The text appears at the bottom of the sign-in box for every user who
+  signs in through the tenant's branded page, including on Windows during Autopilot.
+
+  The text is validated by the legal department and translated into the languages of the users
+  through branding localizations if needed.
+rationale: |
+  A notice that the system is restricted to authorized users and that activity is logged supports
+  disciplinary or legal action after misuse, and is required by some regulations and contracts.
+  Together with the company logo, it also helps users recognize the genuine sign-in page.
+impact: |
+  None known. The text is public: anyone who enters an address of the tenant sees it, so it must not
+  contain internal information such as phone extensions of administrators. It is limited to 1,024
+  characters.
+notes: |
+  Phishing kits copy the branding of their targets, so the notice is not an anti-phishing control.
+  Company branding needs Microsoft Entra ID P1 or P2, or an Office 365 license.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Custom Branding > Company branding > Default sign-in experience > Sign-in form > Sign-in page text
+  default_value: Empty
+  recommended_value: "{{ sign_in_notice_text }}"
+
+parameters:
+  - name: sign_in_notice_text
+    type: string
+    description: Legal notice shown on the sign-in page, validated by the legal department (1,024 characters at most).
+    default: "Access to this system is restricted to authorized users. Activity is logged and may be monitored. Unauthorized use may lead to disciplinary and legal action."
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Custom Branding** > **Company branding** and open **Default
+       sign-in experience** > **Sign-in form**.
+    3. Check that **Sign-in page text** contains the approved notice.
+    4. Alternative (Microsoft Graph, scope `Organization.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/organization/{tenant-id}/branding` and read
+       `signInPageText`.
+    5. Fail if the text is empty or differs from the approved notice.
+
+remediation:
+  manual: |
+    1. Have the notice validated by the legal department.
+    2. Sign in to the Microsoft Entra admin center as an Organizational Branding Administrator.
+    3. Browse to **Entra ID** > **Custom Branding** > **Company branding** > **Default sign-in
+       experience** > **Edit** (or **Configure** the first time).
+    4. On the **Sign-in form** tab, enter the notice in **Sign-in page text**, then **Review** and
+       **Save**.
+    5. Add localized versions under **Customize by browser language** if users work in several
+       languages.
+
+    In Microsoft Graph: `PATCH https://graph.microsoft.com/v1.0/organization/{tenant-id}/branding`
+    with `{"signInPageText": "..."}`.
+  rollback: |
+    Clear **Sign-in page text** and save.
+
+references:
+  - title: Add company branding to your organization's sign-in page
+    url: https://learn.microsoft.com/entra/fundamentals/how-to-customize-branding
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: organizationalBranding resource type
+    url: https://learn.microsoft.com/graph/api/resources/organizationalbranding
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-8
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

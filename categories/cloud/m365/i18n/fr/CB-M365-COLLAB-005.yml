@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le partage externe SharePoint et OneDrive aux domaines approuvés
+finding:
+  title: Le partage externe est autorisé vers n'importe quel domaine de messagerie
+  description: Les utilisateurs peuvent partager fichiers et sites avec des adresses de n'importe quelle organisation, y compris des messageries personnelles et des domaines sosies.
+description: |
+  Le partage externe SharePoint et OneDrive est limité à une liste de domaines partenaires
+  (`SharingDomainRestrictionMode` = `AllowList`, `SharingAllowedDomainList` =
+  `{{ allowed_sharing_domains }}`). Le partage vers une adresse d'un autre domaine est refusé. La
+  liste au niveau de l'organisation s'applique à chaque site et à chaque OneDrive.
+
+  Si le partage externe est coupé pour toute l'organisation, le contrôle est respecté sans liste.
+rationale: |
+  Une liste d'autorisation transforme le partage externe « vers toute adresse e-mail » en « vers les
+  partenaires avec qui nous travaillons ». Elle bloque le partage vers les messageries personnelles et
+  vers les domaines partenaires usurpés par typosquatting, utilisés pour l'exfiltration et
+  l'ingénierie sociale, et fait de chaque nouveau partenaire une décision explicite.
+impact: |
+  Les utilisateurs ne peuvent pas partager avec un nouveau partenaire tant qu'un administrateur n'a
+  pas ajouté le domaine : prévoir un processus de demande et d'approbation. Les sous-domaines doivent
+  être listés séparément. Quand l'intégration Entra B2B est active (CB-M365-COLLAB-002), la liste
+  d'autorisation ou de refus Entra B2B s'applique aussi ; la plus restrictive l'emporte : garder les
+  deux cohérentes ou gérer la liste dans Entra (CB-M365-TENANT-012).
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Plus de paramètres de partage externe > Limiter le partage externe par domaine
+  recommended_value: "Autoriser uniquement ces domaines : {{ allowed_sharing_domains }}"
+parameters:
+  allowed_sharing_domains: Domaines de messagerie partenaires avec lesquels les utilisateurs peuvent partager (5 000 au maximum).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage** et développer **Plus de paramètres de partage externe**.
+    3. Vérifier que **Limiter le partage externe par domaine** est coché avec **Autoriser uniquement des
+       domaines spécifiques**, et comparer la liste à `{{ allowed_sharing_domains }}`.
+    4. Alternative en lecture seule : en Lecteur général, appeler Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, ou `Get-MgAdminSharepointSetting`) :
+       `sharingDomainRestrictionMode` doit valoir `allowList` et `sharingAllowedDomainList` ne contenir
+       que des domaines approuvés. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object SharingDomainRestrictionMode, SharingAllowedDomainList`.
+    5. Échec si le partage externe est autorisé (`sharingCapability` différent de `disabled`) et que le
+       mode n'est pas `allowList`, ou si la liste contient un domaine non approuvé.
+remediation:
+  manual: |
+    1. Construire la liste à partir des partages externes actuels : activités d'audit
+       `SharingInvitationCreated` et `AddedToSecureLink`, regroupées par domaine cible. Faire approuver
+       chaque domaine par les responsables métier.
+    2. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Plus de
+       paramètres de partage externe**, cocher **Limiter le partage externe par domaine**, choisir
+       **Autoriser uniquement des domaines spécifiques**, ajouter chaque domaine puis **Enregistrer**.
+       Rôle : Administrateur SharePoint.
+    3. Équivalent PowerShell :
+       `Set-SPOTenant -SharingDomainRestrictionMode AllowList -SharingAllowedDomainList "partner1.example partner2.example"`
+       (séparés par des espaces).
+    4. Aligner les restrictions de collaboration Microsoft Entra B2B (**Entra ID** > **External
+       Identities** > **Paramètres de collaboration externe**) sur la même liste.
+  rollback: |
+    Exécuter `Set-SPOTenant -SharingDomainRestrictionMode None`, ou ajouter le domaine manquant à la
+    liste.

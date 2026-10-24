@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-036
+title: Require TLS and restrict partners on Exchange Online connectors
+finding:
+  title: Exchange Online connectors accept or send partner mail without enforced TLS or sender restriction
+  description: Mail exchanged with partners can travel in clear text or be intercepted, and a loosely defined inbound connector can be abused by anyone who matches it.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, connectors, tls, mail-flow, partners]
+
+description: |
+  Every enabled connector is defined as narrowly as possible:
+
+  - partner and on-premises inbound connectors require TLS (`RequireTls $true`) and identify the
+    sender by its certificate (`TlsSenderCertificateName`, `RestrictDomainsToCertificate $true`) or
+    by its IP addresses (`SenderIPAddresses`, `RestrictDomainsToIPAddresses $true`); `SenderDomains`
+    lists named domains, not `*`, unless the connector is restricted by certificate or IP address;
+  - outbound connectors to partners or smart hosts use TLS with certificate validation
+    (`TlsSettings` set to `CertificateValidation` or `DomainValidation`, never empty or
+    `EncryptionOnly`) and list named recipient domains;
+  - connectors that are no longer used are removed.
+rationale: |
+  Partner connectors usually carry sensitive exchanges (finance, legal, subsidiaries). Without
+  enforced TLS and certificate checks, the traffic can be read or redirected by a network attacker.
+  An inbound connector that trusts a domain without checking the source lets anyone send as that
+  domain with the trust the connector grants.
+impact: |
+  Partners whose servers do not present a valid certificate, or whose IP addresses changed, can no
+  longer deliver through the connector. Agree on certificates and addresses with each partner and
+  test with a validation run before enforcing.
+
+audit:
+  manual: |
+    1. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Mail flow** > **Connectors** and open each enabled connector.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-InboundConnector | Format-List Name, Enabled, ConnectorType, SenderDomains, SenderIPAddresses, RequireTls,
+         TlsSenderCertificateName, RestrictDomainsToCertificate, RestrictDomainsToIPAddresses
+       Get-OutboundConnector | Format-List Name, Enabled, ConnectorType, RecipientDomains, SmartHosts, UseMXRecord, TlsSettings, TlsDomain
+       ```
+    4. Fail if a partner or on-premises inbound connector has `RequireTls` set to `False`, or is
+       restricted neither by certificate nor by IP address; if an outbound connector has
+       `TlsSettings` empty or `EncryptionOnly`; or if an enabled connector has no documented owner.
+
+remediation:
+  manual: |
+    1. For each connector, confirm its purpose, owner and partner with the business; remove unused
+       ones.
+    2. In the Exchange admin center, **Mail flow** > **Connectors**, edit the connector (Exchange
+       Administrator): require TLS, identify the partner by certificate or IP address, and for
+       outbound connectors require a trusted certificate (and the expected domain name).
+    3. PowerShell equivalent:
+       ```powershell
+       Set-InboundConnector -Identity "<partner>" -RequireTls $true -TlsSenderCertificateName "mail.partner.example" -RestrictDomainsToCertificate $true
+       Set-OutboundConnector -Identity "<partner>" -TlsSettings DomainValidation -TlsDomain "mail.partner.example"
+       ```
+    4. Run **Validate this connector** in the Exchange admin center after each change.
+  rollback: |
+    Restore the previous connector settings (`-RequireTls $false`, `-TlsSettings EncryptionOnly`) while
+    the partner fixes its certificate.
+
+references:
+  - title: Set up connectors for secure mail flow with a partner organization
+    url: https://learn.microsoft.com/exchange/mail-flow-best-practices/use-connectors-to-configure-mail-flow/set-up-connectors-for-secure-mail-flow-with-a-partner
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-InboundConnector
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-inboundconnector
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OutboundConnector
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-outboundconnector
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud - Connectors
+    url: https://blueprint.asd.gov.au/configuration/exchange-online/mail-flow/connectors/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1040
+related_controls:
+  - id: CB-M365-MAIL-010
+    type: related
+  - id: CB-M365-MAIL-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

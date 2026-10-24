@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-020
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Marquer les comptes prioritaires et les protéger par la stratégie de sécurité prédéfinie Stricte
+finding:
+  title: Les dirigeants et autres utilisateurs à forte valeur ne reçoivent aucune protection e-mail supplémentaire
+  description: Les comptes que les attaquants visent en premier pour la fraude et le hameçonnage sont filtrés comme les autres et ne ressortent pas dans les alertes et rapports.
+description: |
+  Les utilisateurs sensibles de l'organisation ({{ priority_accounts }}) sont :
+
+  - marqués **Compte prioritaire** (jusqu'à 250 utilisateurs) ;
+  - couverts par la **Protection des comptes prioritaires**, activée pour le tenant
+    (`EnablePriorityAccountProtection $true`), qui leur applique des heuristiques de détection
+    supplémentaires ;
+  - affectés à la stratégie de sécurité prédéfinie **Protection stricte**, pour Exchange Online
+    Protection et Defender pour Office 365, de préférence via un groupe ;
+  - listés comme utilisateurs protégés contre l'emprunt d'identité dans les stratégies Standard et
+    Stricte (CB-M365-MAIL-029).
+rationale: |
+  Dirigeants, équipes financières, assistants et administrateurs reçoivent le plus de hameçonnage
+  ciblé et de tentatives de compromission de messagerie, et une erreur de leur part coûte le plus
+  cher. Les valeurs Stricte mettent plus agressivement en quarantaine, et la balise de compte
+  prioritaire fait ressortir leurs incidents dans les alertes, l'Explorateur de menaces et les
+  rapports pour que le SOC les traite en premier.
+impact: |
+  Les utilisateurs prioritaires ont plus de messages en quarantaine (Stricte met en quarantaine le
+  spam, le courrier en nombre et l'usurpation) et ont besoin d'un circuit de libération rapide via le
+  support. Tenir le groupe à jour quand les personnes changent de poste.
+parameters:
+  priority_accounts: Qui doit être marqué comme compte prioritaire.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **Paramètres** > **E-mail et collaboration** > **Protection des comptes
+       prioritaires** et vérifier qu'elle est activée.
+    3. Aller dans **Paramètres** > **Microsoft Defender XDR** > **Gestion des règles de ressources**
+       (ou **Balises utilisateur**, selon le tenant) et vérifier que la balise **Compte prioritaire**
+       contient les utilisateurs attendus.
+    4. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Stratégies de sécurité prédéfinies** et vérifier que **Protection stricte** est activée et
+       s'applique aux mêmes utilisateurs, pour Exchange Online Protection et Defender pour Office 365.
+    5. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-EmailTenantSettings | Format-List EnablePriorityAccountProtection
+       Get-EOPProtectionPolicyRule -Identity "Strict Preset Security Policy" | Format-List State, SentTo, SentToMemberOf, RecipientDomainIs
+       Get-ATPProtectionPolicyRule -Identity "Strict Preset Security Policy" | Format-List State, SentTo, SentToMemberOf, RecipientDomainIs
+       ```
+    6. Échec si la protection des comptes prioritaires est désactivée, si aucun utilisateur n'est
+       marqué, ou si un utilisateur prioritaire n'est pas couvert par la stratégie Stricte.
+remediation:
+  manual: |
+    1. Créer ou réutiliser un groupe de sécurité à extension messagerie contenant {{ priority_accounts }}.
+    2. Marquer les utilisateurs : dans le centre d'administration Microsoft 365, **Utilisateurs** >
+       **Utilisateurs actifs**, les sélectionner > **Gérer les comptes prioritaires** (ou utiliser la
+       balise **Compte prioritaire** dans le portail Defender) (Administrateur de la sécurité ou
+       Administrateur Exchange).
+    3. Dans le portail Defender, **Paramètres** > **E-mail et collaboration** > **Protection des
+       comptes prioritaires** : l'activer. Équivalent PowerShell :
+       ```powershell
+       Set-EmailTenantSettings -EnablePriorityAccountProtection $true
+       ```
+    4. Dans **Stratégies de sécurité prédéfinies** > **Protection stricte** > **Gérer les paramètres de
+       protection**, appliquer les deux protections au groupe, ajouter les mêmes utilisateurs à la
+       protection contre l'emprunt d'identité, et activer la protection stricte.
+  rollback: |
+    Retirer le groupe de la stratégie Stricte ; les utilisateurs repassent sur la stratégie Standard.

@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'affectation des utilisateurs pour les applications d'entreprise tierces
+finding:
+  title: Des applications tierces laissent se connecter n'importe quel utilisateur du tenant
+  description: Quand l'affectation n'est pas obligatoire, tout compte, y compris un compte compromis, peut se connecter à l'application et utiliser les permissions consenties pour elle.
+description: |
+  Les applications d'entreprise publiées par des tiers (principaux de service dont
+  `appOwnerOrganizationId` n'est ni le tenant ni Microsoft) ont **Affectation obligatoire ?** à
+  **Oui**. L'accès est donné aux groupes qui correspondent au besoin métier. Les applications
+  destinées à tout le personnel sont affectées à un groupe « tous les salariés » plutôt que laissées
+  ouvertes.
+rationale: |
+  Une application ouverte à tous étend la portée de chaque compte compromis : l'attaquant peut s'y
+  connecter, obtenir des jetons avec les permissions déléguées consenties et utiliser l'application
+  comme canal vers les données. Exiger l'affectation donne aussi une liste d'accès qu'on peut revoir
+  et retirer au départ des personnes.
+impact: |
+  Les utilisateurs non affectés obtiennent une erreur à la connexion. Affecter les groupes avant de
+  changer le réglage, et consulter les journaux de connexion de l'application pour trouver les
+  utilisateurs actuels.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Toutes les applications**, filtrer
+       sur **Type d'application** = **Applications d'entreprise**, et pour chaque application tierce
+       ouvrir **Propriétés** et lire **Affectation obligatoire ?**.
+    3. En Microsoft Graph PowerShell (étendue `Application.Read.All`), exécuter
+       `Get-MgServicePrincipal -All -Property displayName,appId,appOwnerOrganizationId,appRoleAssignmentRequired,accountEnabled`
+       et garder les entrées dont `appOwnerOrganizationId` diffère de l'ID du tenant et de
+       `f8cdef31-a31e-4b4a-93e4-5f571e91255a` (Microsoft).
+    4. Échec si une application tierce activée a `appRoleAssignmentRequired` = `false` sans exception
+       documentée.
+remediation:
+  manual: |
+    1. Trouver les utilisateurs actuels dans **Applications d'entreprise** > l'application >
+       **Journaux de connexion**.
+    2. Dans **Utilisateurs et groupes**, affecter les groupes qui ont besoin de l'accès.
+    3. Dans **Propriétés**, régler **Affectation obligatoire ?** sur **Oui** et sélectionner
+       **Enregistrer**.
+    4. Alternative Graph (étendue `Application.ReadWrite.All`) :
+       `Update-MgServicePrincipal -ServicePrincipalId <id> -AppRoleAssignmentRequired:$true`.
+    5. Rôle requis : Administrateur d'applications cloud ou Administrateur d'applications.
+  rollback: |
+    Remettre **Affectation obligatoire ?** sur **Non**.

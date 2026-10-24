@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-024
+title: Limit administrator sessions with sign-in frequency and non-persistent browsers
+finding:
+  title: Administrator sessions last too long or persist in the browser
+  description: An administrator session that survives browser restarts and lasts for days gives a long window to anyone who steals the session cookie or uses an unattended computer.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [conditional-access, session, sign-in-frequency, privileged-access]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy for the privileged directory roles (the same list as
+  CB-M365-AUTH-004), on **All resources**, sets two session controls: **Sign-in frequency** to
+  **Periodic reauthentication** every `{{ admin_signin_frequency_hours }}` hours or less, and
+  **Persistent browser session** to **Never persistent**.
+
+  The policy excludes only the emergency access accounts.
+parameters:
+  - name: admin_signin_frequency_hours
+    type: integer
+    unit: hours
+    description: Maximum time before an administrator must sign in again.
+    default: 4
+    minimum: 1
+    maximum: 24
+rationale: |
+  Stolen session cookies bypass MFA until the session ends. Short administrator sessions limit
+  how long a stolen cookie or an unlocked workstation can be used, and a non-persistent browser
+  session ends when the browser closes.
+impact: |
+  Administrators are asked to sign in again every `{{ admin_signin_frequency_hours }}` hours and
+  after closing the browser. With phishing-resistant methods such as Windows Hello for Business
+  the prompt is light. On Entra joined devices, the primary refresh token is refreshed every four
+  hours, so a lower frequency may not prompt as often as expected.
+notes: |
+  The persistent browser setting requires the policy to target all resources. With Privileged
+  Identity Management, the policy applies while the role is active; PIM activation duration is
+  another lever.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where **Users** includes the privileged
+       directory roles of CB-M365-AUTH-004 (only emergency access accounts excluded), **Target
+       resources** includes **All resources**, and **Session** has **Sign-in frequency** set to
+       **Periodic reauthentication** at `{{ admin_signin_frequency_hours }}` hours or less and
+       **Persistent browser session** set to **Never persistent**. Both settings can sit in two
+       policies with the same scope.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Users.IncludeRoles } | Select-Object DisplayName, State, @{n='SIF';e={"$($_.SessionControls.SignInFrequency.Value) $($_.SessionControls.SignInFrequency.Type)"}}, @{n='Persistent';e={$_.SessionControls.PersistentBrowser.Mode}}`
+    5. Fail if no such policy exists, if it is Report-only or Off, if a role is missing, if the
+       frequency is longer than `{{ admin_signin_frequency_hours }}` hours, or if the browser
+       session can persist.
+
+remediation:
+  manual: |
+    1. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**.
+    2. Name it, for example `ADM - Session lifetime`.
+    3. **Users** > **Include** > **Directory roles**: the privileged roles. **Exclude**: the
+       emergency access accounts.
+    4. **Target resources** > **Resources** > **Include**: **All resources**.
+    5. **Session**: select **Sign-in frequency**, **Periodic reauthentication**,
+       `{{ admin_signin_frequency_hours }}` **Hours**; select **Persistent browser session**,
+       **Never persistent**.
+    6. Set **Enable policy** to **Report-only**, save, then switch to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with
+    `sessionControls.signInFrequency` (`value`, `type: hours`, `isEnabled: true`) and
+    `sessionControls.persistentBrowser` (`mode: never`, `isEnabled: true`).
+  rollback: |
+    Set the policy to **Report-only** or **Off**.
+
+references:
+  - title: Configure adaptive session lifetime policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/howto-conditional-access-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access adaptive session lifetime
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.4"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R12"
+    relation: related
+    note: ANSSI asks to limit the validity of authenticated sessions; this control does it for administrators.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1539
+  - framework: mitre-attack
+    id: T1550.004
+related_controls:
+  - id: CB-M365-AUTH-004
+    type: related
+  - id: CB-M365-AUTH-025
+    type: related
+  - id: CB-M365-AUTH-027
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-AUTH-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

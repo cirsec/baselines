@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les fournisseurs de stockage supplémentaires dans Outlook sur le web
+finding:
+  title: Outlook sur le web permet de joindre et d'enregistrer des fichiers dans un stockage cloud personnel
+  description: Les utilisateurs peuvent joindre des fichiers depuis, ou enregistrer des pièces jointes vers, Dropbox, Google Drive, Box ou un OneDrive personnel, hors du contrôle de l'organisation.
+description: |
+  Chaque stratégie de boîte aux lettres Outlook sur le web utilisée a
+  `AdditionalStorageProvidersAvailable` à `$false`. Les utilisateurs ne peuvent alors joindre que des
+  fichiers de l'appareil ou du OneDrive et du SharePoint de l'organisation, et ne peuvent pas
+  connecter de comptes de stockage tiers ou personnels dans Outlook sur le web et le nouvel Outlook.
+rationale: |
+  Un compte de stockage personnel connecté est un chemin facile pour sortir des fichiers de
+  l'organisation, hors prévention des pertes de données, rétention et audit. Les fichiers partagés
+  depuis un stockage tiers ne sont pas non plus analysés par les pièces jointes fiables comme le sont
+  ceux de OneDrive et SharePoint.
+impact: |
+  Les utilisateurs qui utilisaient Box, Dropbox ou Google Drive dans Outlook sur le web perdent cette
+  option. Les équipes qui échangent des fichiers avec des partenaires via ces services doivent les
+  télécharger et les joindre à nouveau, ou utiliser le partage SharePoint.
+audit:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-OwaMailboxPolicy | Format-Table Name, IsDefault, AdditionalStorageProvidersAvailable
+       Get-CASMailbox -ResultSize Unlimited | Group-Object OwaMailboxPolicy | Select-Object Name, Count
+       ```
+    3. Échec si une stratégie utilisée par au moins une boîte (un `OwaMailboxPolicy` vide désigne la
+       stratégie par défaut) a `AdditionalStorageProvidersAvailable` à `True`.
+remediation:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange.
+    2. Pour chaque stratégie utilisée :
+       ```powershell
+       Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -AdditionalStorageProvidersAvailable $false
+       ```
+  rollback: |
+    Remettre `AdditionalStorageProvidersAvailable` à `$true` sur la stratégie.

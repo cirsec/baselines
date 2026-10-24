@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-038
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller les comptes après {{ lockout_threshold }} échecs de connexion pendant au moins {{ lockout_duration_seconds }} secondes
+finding:
+  title: Le verrouillage intelligent autorise trop de tentatives ou verrouille trop brièvement
+  description: Un seuil relevé ou un verrouillage de quelques secondes permet à un attaquant d'essayer de nombreux mots de passe par compte.
+description: |
+  Le verrouillage intelligent de Microsoft Entra est configuré avec un **Seuil de verrouillage**
+  d'au plus {{ lockout_threshold }} échecs de connexion et une **Durée de verrouillage en secondes**
+  d'au moins {{ lockout_duration_seconds }}. Chaque nouvel échec après le premier verrouillage
+  verrouille de nouveau le compte, pour une durée croissante.
+
+  Le verrouillage intelligent tient des compteurs séparés pour les emplacements familiers et non
+  familiers et ignore les essais répétés du même mauvais mot de passe : l'utilisateur légitime est
+  rarement verrouillé par un attaquant.
+rationale: |
+  Limiter le nombre d'essais par compte et par unité de temps rend impraticables la force brute en
+  ligne et la pulvérisation lente de mots de passe. Le seuil doit rester assez haut pour que les
+  attaquants ne puissent pas verrouiller les utilisateurs à volonté : les comptes Microsoft Entra
+  sont joignables depuis tout internet, c'est pourquoi un seuil très bas comme 3 n'est pas retenu.
+impact: |
+  Les utilisateurs qui se trompent souvent de mot de passe attendent la fin du verrouillage ou
+  utilisent la réinitialisation en libre-service (**J'ai oublié mon mot de passe** remet le
+  verrouillage à zéro). Avec l'authentification directe, le seuil Entra doit être inférieur à celui
+  d'Active Directory et la durée plus longue, pour que les attaquants ne puissent pas verrouiller les
+  comptes locaux via le cloud. La valeur hardened de 5 augmente légèrement les appels au support.
+notes: |
+  Sans Microsoft Entra ID P1, les valeurs par défaut s'appliquent (10 tentatives, 60 secondes) et ne
+  peuvent pas être changées ; elles satisfont déjà le profil baseline. Le suivi des mauvais mots de
+  passe répétés n'est pas disponible avec l'authentification directe.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Protection par mot de passe > Verrouillage intelligent personnalisé
+  recommended_value: "Seuil de verrouillage {{ lockout_threshold }} ou moins, durée de verrouillage {{ lockout_duration_seconds }} secondes ou plus"
+parameters:
+  lockout_threshold: Nombre maximal d'échecs de connexion avant le premier verrouillage.
+  lockout_duration_seconds: Durée minimale du premier verrouillage.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Protection par mot de passe**.
+    3. Sous **Verrouillage intelligent personnalisé**, vérifier que **Seuil de verrouillage** vaut
+       {{ lockout_threshold }} ou moins et **Durée de verrouillage en secondes**
+       {{ lockout_duration_seconds }} ou plus.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Directory.Read.All`) :
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       affiche `LockoutThreshold` et `LockoutDurationInSeconds`. Aucun objet signifie les valeurs par
+       défaut (10 et 60).
+    5. Si l'authentification directe est utilisée, vérifier dans la stratégie de verrouillage Active
+       Directory que son seuil vaut au moins le double de celui d'Entra et sa durée est plus courte.
+    6. Échec si le seuil dépasse {{ lockout_threshold }} ou si la durée est inférieure à
+       {{ lockout_duration_seconds }} secondes.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Protection par mot de passe**.
+    3. Sous **Verrouillage intelligent personnalisé**, régler **Seuil de verrouillage** sur
+       {{ lockout_threshold }} et **Durée de verrouillage en secondes** sur
+       {{ lockout_duration_seconds }} ou plus.
+    4. Sélectionner **Enregistrer**.
+  rollback: |
+    Remettre les valeurs à 10 et 60 secondes.

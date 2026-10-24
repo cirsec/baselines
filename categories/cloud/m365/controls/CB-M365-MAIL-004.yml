@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-004
+title: Prevent users from installing Outlook add-ins
+finding:
+  title: Users can install Outlook add-ins that read and send their mail
+  description: A user tricked into installing a malicious or over-privileged add-in gives a third party access to the content of their mailbox.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, outlook, add-ins, role-assignment-policy, third-party-apps]
+
+description: |
+  The role assignment policies applied to mailboxes do not grant the user roles that allow
+  installing add-ins: **My Custom Apps**, **My Marketplace Apps** and **My ReadWriteMailbox Apps**.
+  Add-ins the organization needs are deployed centrally by an administrator from **Integrated apps**
+  in the Microsoft 365 admin center.
+rationale: |
+  Outlook add-ins run with the user's mailbox permissions; an add-in with the ReadWriteMailbox
+  permission can read, change and send any message. Marketplace add-ins are published by third
+  parties and a custom add-in can be side-loaded from a manifest URL sent by an attacker. Central
+  deployment keeps the list of add-ins short, reviewed and known.
+impact: |
+  Users can no longer add add-ins themselves, including popular ones (meeting tools, CRM
+  connectors). Ask the business which add-ins they use before the change and deploy the approved
+  ones centrally. Add-ins already installed by users keep working until they are removed.
+
+audit:
+  manual: |
+    1. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Roles** > **User roles**. For each role assignment policy (start with **Default
+       Role Assignment Policy**), open **Manage permissions** and check that **My Custom Apps**, **My
+       Marketplace Apps** and **My ReadWriteMailbox Apps** are cleared.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-RoleAssignmentPolicy | Select-Object Name, IsDefault,
+         @{n='AppRoles';e={($_.AssignedRoles | Where-Object { $_ -like 'My*Apps' }) -join ', '}}
+       Get-EXOMailbox -ResultSize Unlimited -Properties RoleAssignmentPolicy |
+         Group-Object RoleAssignmentPolicy | Select-Object Name, Count
+       ```
+    4. Fail if a role assignment policy used by at least one mailbox still holds one of the three
+       roles.
+
+remediation:
+  manual: |
+    1. Review the add-ins in use (**Microsoft 365 admin center** > **Settings** > **Integrated apps**)
+       and deploy the approved ones to the relevant users or groups.
+    2. In the Exchange admin center, browse to **Roles** > **User roles**, open each role assignment
+       policy in use > **Manage permissions**, clear **My Custom Apps**, **My Marketplace Apps** and
+       **My ReadWriteMailbox Apps**, and save.
+    3. PowerShell equivalent (Exchange Administrator), for each policy:
+       ```powershell
+       Get-ManagementRoleAssignment -RoleAssignee "Default Role Assignment Policy" |
+         Where-Object { $_.Role -in 'My Custom Apps','My Marketplace Apps','My ReadWriteMailbox Apps' } |
+         Remove-ManagementRoleAssignment -Confirm:$false
+       ```
+  rollback: |
+    Re-add the role to the policy:
+    `New-ManagementRoleAssignment -Policy "Default Role Assignment Policy" -Role "My Marketplace Apps"`.
+
+references:
+  - title: Specify the administrators and users who can install and manage add-ins for Outlook in Exchange Online
+    url: https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/add-ins-for-outlook/specify-who-can-install-and-manage-add-ins
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1041
+    url: https://maester.dev/docs/tests/MT.1041
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.3.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1137
+related_controls:
+  - id: CB-M365-MAIL-008
+    type: related
+  - id: CB-M365-TENANT-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

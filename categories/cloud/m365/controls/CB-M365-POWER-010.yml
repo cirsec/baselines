@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-010
+title: Restrict guest user access to Microsoft Fabric
+finding:
+  title: All guest users can access Microsoft Fabric
+  description: Every Microsoft Entra B2B guest of the tenant can sign in to Fabric and Power BI and reach the items shared with them or their groups.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, guests, external-access]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Guest users can access Microsoft Fabric** (Export and sharing
+  settings) is **Disabled**, or **Enabled** only for specific security groups that contain the
+  guests with an approved need. It is never enabled for the entire organization.
+rationale: |
+  Guests are invited for many reasons (a Teams channel, a SharePoint site) unrelated to business
+  intelligence. If Fabric is open to all of them, any report, semantic model or lakehouse shared
+  with a broad group becomes readable by external accounts whose lifecycle the organization does
+  not control. Limiting Fabric to a named guest group keeps external access to analytics data
+  deliberate.
+impact: |
+  Guests outside the allowed groups get an error when they open Fabric or Power BI, including items
+  they were granted access to. Disabling the setting for the whole organization also prevents
+  inviting guests through Fabric sharing. Create a security group for guests who legitimately use
+  Power BI content (for example distributed reports) before restricting.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Export and sharing settings > Guest users can access Microsoft Fabric
+  recommended_value: Disabled, or Enabled for specific security groups
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator
+       (Fabric has no read-only role for tenant settings).
+    2. Open **Settings** (gear) > **Admin portal** > **Tenant settings** (also reachable from
+       **OneLake catalog** > **Govern** > **Configurations** > **Tenant settings**).
+    3. Under **Export and sharing settings**, expand **Guest users can access Microsoft Fabric**.
+    4. Check that it is **Disabled**, or **Enabled** with **Apply to** set to **Specific security
+       groups** listing only approved guest groups.
+    5. Alternative, read only: `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`
+       (scope `Tenant.Read.All`, for example with `Invoke-PowerBIRestMethod -Method Get -Url
+       'https://api.fabric.microsoft.com/v1/admin/tenantsettings'` after
+       `Connect-PowerBIServiceAccount`) and read the entry `AllowGuestUserToAccessSharedContent`:
+       `enabled` must be `false`, or `true` with `enabledSecurityGroups` set.
+    6. Fail if the setting is enabled for the entire organization.
+
+remediation:
+  manual: |
+    1. Create a security group for the guests who need Fabric access and add them.
+    2. In **Tenant settings** > **Export and sharing settings** > **Guest users can access
+       Microsoft Fabric**, select **Disabled**, or keep **Enabled** with **Specific security
+       groups** and the guest group. Select **Apply**. Role: Fabric Administrator.
+    3. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/AllowGuestUserToAccessSharedContent/update`
+       with `{"enabled": true, "enabledSecurityGroups": [{"graphId": "<group id>", "name": "<group
+       name>"}]}` or `{"enabled": false}`.
+  rollback: |
+    Set the setting back to its previous scope.
+
+references:
+  - title: Export and sharing tenant settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-export-sharing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Tenants - List Tenant Settings (Fabric REST API)
+    url: https://learn.microsoft.com/rest/api/fabric/admin/tenants/list-tenant-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power BI baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerbi.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERBI.2.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-POWER-011
+    type: related
+  - id: CB-M365-POWER-012
+    type: related
+  - id: CB-M365-TENANT-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

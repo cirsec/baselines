@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-005
+title: Keep mailbox auditing on by default for the organization
+finding:
+  title: Mailbox auditing is turned off at the organization level
+  description: With AuditDisabled set to True, no mailbox records owner, delegate or administrator actions, whatever its own settings say.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [audit, logging, exchange, mailbox-audit]
+
+description: |
+  Mailbox auditing on by default is in effect for the organization: `AuditDisabled` is `False` in
+  the Exchange Online organization configuration, so every user, shared and resource mailbox
+  records the default audit actions and sends them to the unified audit log.
+rationale: |
+  Mailbox audit records are the evidence of what happened inside a mailbox: messages moved or
+  deleted, inbox rules created, delegate access, messages sent as another user. An attacker or an
+  administrator can turn auditing off for the whole organization with one command; this setting
+  overrides the `AuditEnabled` value of each mailbox.
+impact: |
+  None known. This is the Microsoft default.
+
+setting:
+  location: Exchange Online PowerShell, Get-OrganizationConfig AuditDisabled
+  default_value: "False"
+  recommended_value: "False"
+
+audit:
+  manual: |
+    1. Connect to Exchange Online PowerShell as at least a member of View-Only Organization
+       Management (or Global Reader).
+    2. Run `Get-OrganizationConfig | Format-List AuditDisabled`.
+    3. Fail if `AuditDisabled` is `True`.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell with the Organization Management role (or Audit Logs
+       role).
+    2. Run `Set-OrganizationConfig -AuditDisabled $false`.
+    3. Alert on any later change (audit operation `Set-OrganizationConfig` with the `AuditDisabled`
+       parameter).
+  rollback: |
+    Not recommended. `Set-OrganizationConfig -AuditDisabled $true` stops mailbox auditing for the
+    whole organization.
+
+references:
+  - title: Manage mailbox auditing
+    url: https://learn.microsoft.com/purview/audit-mailboxes
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.1.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.13.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1562.008
+  - framework: mitre-attack
+    id: T1114.002
+related_controls:
+  - id: CB-M365-AUDIT-004
+    type: related
+  - id: CB-M365-AUDIT-006
+    type: related
+  - id: CB-M365-AUDIT-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

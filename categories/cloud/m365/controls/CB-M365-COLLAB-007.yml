@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-007
+title: Prevent guests from resharing items they do not own
+finding:
+  title: Guests can reshare files, folders and sites they do not own
+  description: A guest with edit rights can pass content on to other external people without the owner or the organization deciding it.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [external-sharing, guest-access, sharepoint, onedrive]
+
+description: |
+  Guests cannot share files, folders or sites that they do not own, even with full control or edit
+  permission (`PreventExternalUsersFromResharing` = `True`). In the SharePoint admin center the
+  **Allow guests to share items they don't own** option is cleared.
+rationale: |
+  Each guest is an identity the organization trusted for a specific purpose. Letting guests reshare
+  extends that trust to people nobody in the organization chose, and the chain can repeat. Blocking
+  resharing keeps every external recipient tied to an internal decision and to the sharing audit trail
+  of an internal user.
+impact: |
+  Guests who coordinate their own team (for example a contractor adding colleagues) must ask an
+  internal owner to share or invite. None known otherwise.
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > More external sharing settings > Allow guests to share items they don't own
+  default_value: Selected (guests with full control can reshare)
+  recommended_value: Cleared (PreventExternalUsersFromResharing = True)
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** > **More external sharing settings** and check that **Allow
+       guests to share items they don't own** is cleared.
+    3. Read-only alternative: as a Global Reader, call Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, or `Get-MgAdminSharepointSetting`):
+       `isResharingByExternalUsersEnabled` must be `false`. With the SharePoint Online Management Shell
+       (SharePoint Administrator): `Get-SPOTenant | Select-Object PreventExternalUsersFromResharing`
+       must return `True`.
+    4. Fail if guests can reshare.
+
+remediation:
+  manual: |
+    1. In the SharePoint admin center, browse to **Policies** > **Sharing** > **More external sharing
+       settings**, clear **Allow guests to share items they don't own** and **Save**. Role: SharePoint
+       Administrator.
+    2. PowerShell equivalent: `Set-SPOTenant -PreventExternalUsersFromResharing $true`. Graph
+       equivalent: `PATCH /admin/sharepoint/settings` with
+       `{"isResharingByExternalUsersEnabled": false}`.
+
+references:
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: sharepointSettings resource type (Microsoft Graph)
+    url: https://learn.microsoft.com/graph/api/resources/sharepointsettings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-COLLAB-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

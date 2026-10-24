@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-047
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les comptes sans connexion réussie depuis {{ inactive_days }} jours
+finding:
+  title: Des comptes inutilisés depuis des mois restent activés
+  description: Les comptes dormants sont pris sans que personne ne le remarque, car leur titulaire ne les regarde plus.
+description: |
+  Les comptes membres et invités dont la dernière connexion réussie date de plus de
+  {{ inactive_days }} jours, ou qui ne se sont jamais connectés plus de {{ inactive_days }} jours
+  après leur création, sont désactivés (**Compte activé** = **Non**), puis supprimés après une durée
+  de conservation fixée par l'organisation. La vérification a lieu au moins chaque mois.
+
+  Les exceptions documentées sont tenues dans une liste : comptes d'accès d'urgence (surveillés à
+  part), comptes de salariés en congé long signalés par les RH, et comptes de ressources ou de boîtes
+  partagées déjà bloqués à la connexion.
+rationale: |
+  Un compte inactif garde ses appartenances aux groupes, ses licences et parfois ses rôles, mais
+  personne ne surveille ses connexions ni ses invites MFA. Anciens salariés, anciens prestataires et
+  comptes de test oubliés sont un point d'entrée classique de la pulvérisation de mots de passe. Les
+  désactiver supprime la cible sans perdre de données.
+impact: |
+  Les utilisateurs de retour d'une absence de plus de {{ inactive_days }} jours doivent demander au
+  support de réactiver leur compte. Les comptes utilisés seulement par des services ou des connexions
+  non interactives paraissent inactifs : les examiner avant de les désactiver, et les remplacer par
+  des identités de charge de travail quand c'est possible.
+notes: |
+  `lastSuccessfulSignInDateTime` exige Microsoft Entra ID P1 pour être lu et peut avoir jusqu'à un
+  jour de retard. Microsoft Entra ID Governance peut automatiser le processus avec des révisions
+  d'accès des utilisateurs inactifs ou un workflow de cycle de vie. Les comptes synchronisés doivent
+  être désactivés dans Active Directory, sinon la synchronisation suivante les réactive.
+parameters:
+  inactive_days: Nombre de jours sans connexion réussie après lequel un compte est désactivé.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur de rapports (Lecteur général convient aussi).
+    2. Aller dans **Entra ID** > **Utilisateurs**, sélectionner **Gérer la vue** > **Modifier les
+       colonnes** et ajouter **Dernière connexion réussie** (ou **Heure de la dernière connexion
+       interactive**).
+    3. Filtrer sur **Compte activé** = **Oui** et une date de dernière connexion antérieure à
+       {{ inactive_days }} jours.
+    4. Alternative PowerShell (Microsoft Graph, étendues `User.Read.All` et `AuditLog.Read.All`) :
+       `$limit = (Get-Date).AddDays(-{{ inactive_days }}); Get-MgUser -All -Filter "accountEnabled eq true" -Property displayName,userPrincipalName,createdDateTime,signInActivity | Where-Object { ($_.SignInActivity.LastSuccessfulSignInDateTime -lt $limit) -and ($_.CreatedDateTime -lt $limit) }`
+    5. Échec si des comptes activés de plus de {{ inactive_days }} jours n'ont aucune connexion
+       réussie sur cette période et ne figurent pas dans la liste d'exceptions.
+remediation:
+  manual: |
+    1. Exporter la liste issue de l'audit et la faire confirmer par les managers ou les RH.
+    2. Désactiver les comptes confirmés : dans **Entra ID** > **Utilisateurs**, ouvrir l'utilisateur,
+       **Modifier les propriétés** > **Paramètres** > décocher **Compte activé** ; ou en PowerShell
+       (étendue `User.ReadWrite.All`, Administrateur d'utilisateurs)
+       `Update-MgUser -UserId <id> -AccountEnabled:$false`. Désactiver les comptes synchronisés dans
+       Active Directory.
+    3. Révoquer leurs sessions (`Revoke-MgUserSignInSession -UserId <id>`).
+    4. Les supprimer après la durée de conservation, en gardant la boîte aux lettres et les fichiers
+       selon les obligations.
+    5. Automatiser avec une révision d'accès des utilisateurs inactifs ou un workflow de cycle de vie
+       si Microsoft Entra ID Governance est disponible.
+  rollback: |
+    Réactiver le compte (**Compte activé** = **Oui**) après avoir vérifié la demande avec le manager.

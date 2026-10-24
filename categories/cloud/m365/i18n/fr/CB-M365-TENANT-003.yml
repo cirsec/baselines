@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la création de groupes de sécurité aux administrateurs
+finding:
+  title: Tout utilisateur peut créer des groupes de sécurité
+  description: Les utilisateurs peuvent créer des groupes de sécurité susceptibles de servir ensuite à accorder l'accès à des applications, des fichiers ou des stratégies, sans aucune gouvernance.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Utilisateurs > Paramètres utilisateur > Les utilisateurs peuvent créer des groupes de sécurité (Users can create security groups ; aussi sous Entra ID > Groupes > Général)
+  recommended_value: "Non"
+description: |
+  Le paramètre **Les utilisateurs peuvent créer des groupes de sécurité** vaut **Non**
+  (`defaultUserRolePermissions.allowedToCreateSecurityGroups` = `false`). Seuls des administrateurs
+  dotés d'un rôle de gestion des groupes créent des groupes de sécurité.
+rationale: |
+  Les groupes de sécurité accordent l'accès aux applications, aux sites SharePoint et aux portées
+  d'accès conditionnel. Les groupes créés par les utilisateurs se multiplient sans propriétaire ni
+  revue, et un groupe au nom d'apparence officielle peut être utilisé par erreur dans une décision
+  d'accès.
+impact: |
+  Les utilisateurs qui ont besoin d'un groupe de sécurité s'adressent au support ou à un
+  Administrateur de groupes. La création de groupes pour les équipes et la collaboration passe par
+  les groupes Microsoft 365 (CB-M365-TENANT-006).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur** (ou **Entra ID** >
+       **Groupes** > **Général**) et lire **Les utilisateurs peuvent créer des groupes de
+       sécurité**.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateSecurityGroups`.
+    4. Échec si le paramètre vaut **Oui** (valeur `true`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de rôle privilégié.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    3. Régler **Les utilisateurs peuvent créer des groupes de sécurité** sur **Non** et sélectionner
+       **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) :
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateSecurityGroups = $false }`.
+  rollback: |
+    Repasser l'option sur **Oui**.

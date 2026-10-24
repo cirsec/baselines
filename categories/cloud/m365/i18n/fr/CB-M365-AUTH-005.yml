@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une MFA résistante au hameçonnage pour tous les utilisateurs
+finding:
+  title: Les utilisateurs peuvent satisfaire la MFA avec des méthodes hameçonnables
+  description: Les notifications push, codes à usage unique et méthodes téléphoniques peuvent être relayés par une page adversary-in-the-middle, qui vole ensuite la session de tout utilisateur qui s'y laisse prendre.
+description: |
+  Une stratégie d'accès conditionnel exige la force d'authentification intégrée **MFA résistante au
+  hameçonnage** pour **Tous les utilisateurs** sur **Toutes les ressources**. Méthodes acceptées :
+  passkeys (clés de sécurité FIDO2, passkeys Microsoft Authenticator, passkeys synchronisées si le
+  profil de clé d'accès les autorise), Windows Hello Entreprise, l'authentification unique de
+  plateforme macOS et l'authentification par certificat avec liaison multifacteur.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence. Les invités peuvent être sortis du
+  périmètre et couverts par une stratégie distincte si leurs tenants d'origine ne peuvent pas
+  fournir de méthode résistante au hameçonnage ; dans ce cas, le documenter.
+
+  Ce contrôle étend CB-M365-AUTH-004 des administrateurs à tous les utilisateurs.
+rationale: |
+  Les kits d'hameçonnage adversary-in-the-middle se vendent en service et contournent le push, les
+  codes et les méthodes téléphoniques en les relayant en temps réel. Une fois une boîte aux lettres
+  prise, les attaquants s'en servent pour de l'hameçonnage interne et de la fraude au paiement. Les
+  méthodes résistantes au hameçonnage sont liées à la véritable origine de la connexion : une page
+  proxy ne peut pas les utiliser.
+impact: |
+  Chaque utilisateur a besoin d'une méthode résistante au hameçonnage avant l'application : Windows
+  Hello Entreprise sur les postes Windows gérés, une passkey dans Microsoft Authenticator ou un
+  gestionnaire d'identifiants de la plateforme, ou une clé de sécurité. Prévoir une campagne
+  d'inscription aux passkeys et des Temporary Access Pass pour l'arrivée et la récupération. Les
+  postes partagés, les travailleurs de terrain sans smartphone et les méthodes d'authentification
+  externes demandent des solutions au cas par cas. Certains clients anciens et applications tierces
+  ne savent pas terminer une connexion par passkey.
+notes: |
+  Microsoft active par défaut les passkeys pour les utilisateurs SMS et voix depuis septembre 2026
+  et retire ses propres SMS et appels en 2027, ce qui facilite la transition. Déployer par groupes :
+  inclure d'abord un groupe pilote, puis étendre la stratégie à tous les utilisateurs.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** (pas Rapport seul) où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes d'accès d'urgence (et, si c'est documenté, un groupe d'invités couvert par
+         une autre stratégie) ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Accorder** vaut **Exiger la force d'authentification** réglé sur **MFA résistante au
+         hameçonnage** ou une force personnalisée limitée aux méthodes résistantes.
+    4. Aller dans **Entra ID** > **Méthodes d'authentification** > **Détails de l'inscription des
+       utilisateurs** et vérifier que les utilisateurs sans passkey, Windows Hello Entreprise ni
+       certificat sont seulement ceux attendus (nouveaux arrivants munis d'un Temporary Access
+       Pass).
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.GrantControls.AuthenticationStrength.Id -eq '00000000-0000-0000-0000-000000000004' } | Select-Object DisplayName, State, @{n='Users';e={$_.Conditions.Users.IncludeUsers}}`
+    6. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si elle ne couvre pas tous les utilisateurs et toutes les ressources.
+remediation:
+  manual: |
+    1. Activer les passkeys et les autres méthodes résistantes dans la stratégie des méthodes
+       d'authentification (CB-M365-AUTH-015) et lancer une campagne d'inscription aux passkeys.
+    2. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**.
+    3. La nommer, par exemple `ALL - Require phishing-resistant MFA`.
+    4. **Utilisateurs** > **Inclure** : d'abord un groupe pilote. **Exclure** : les comptes d'accès
+       d'urgence.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Accorder** > **Accorder l'accès** > **Exiger la force d'authentification** > **MFA
+       résistante au hameçonnage**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion.
+    8. Passer à **Activé**, puis élargir **Inclure** à **Tous les utilisateurs** groupe par groupe.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `grantControls.authenticationStrength.id` à `00000000-0000-0000-0000-000000000004` (force
+    intégrée MFA résistante au hameçonnage).
+  rollback: |
+    Passer la stratégie en **Rapport seul**, ou ramener **Inclure** au groupe pilote. La stratégie
+    MFA simple (CB-M365-AUTH-003) continue de protéger les utilisateurs entre-temps.

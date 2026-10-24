@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-020
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les profils de principaux de service Power BI à des groupes approuvés
+finding:
+  title: Tout principal de service peut créer et utiliser des profils Power BI
+  description: Chaque principal de service peut créer des profils dotés de leurs propres droits sur les espaces de travail, ce qui multiplie des identités difficiles à revoir.
+description: |
+  Le paramètre du locataire Fabric **Allow service principals to create and use profiles**
+  (autoriser les principaux de service à créer et utiliser des profils), dans les paramètres du
+  développeur, est **Désactivé**, ou **Activé** uniquement pour des groupes de sécurité précis
+  contenant les principaux de service d'applications d'intégration multitenant approuvées.
+rationale: |
+  Les profils de principaux de service permettent à une application d'agir sous de nombreuses
+  identités isolées, une par client, chacune avec ses propres accès aux espaces de travail. Ils
+  servent aux scénarios d'éditeurs Power BI Embedded et à rien d'autre. Laisser la fonction ouverte à
+  tous les principaux de service crée des identités et des droits absents des revues Entra
+  habituelles ; la restreindre les réserve aux applications conçues pour cela.
+impact: |
+  Les applications hors des groupes autorisés ne peuvent plus créer ni utiliser de profils. Seules
+  les applications Power BI Embedded multitenant dépendent normalement de cette fonction.
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres du développeur > Allow service principals to create and use profiles
+  recommended_value: Désactivé, ou Activé pour des groupes de sécurité précis
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric.
+    2. Ouvrir **Paramètres** > **Portail d'administration** > **Paramètres du locataire** >
+       **Paramètres du développeur** et développer **Allow service principals to create and use
+       profiles**.
+    3. Vérifier qu'il est **Désactivé**, ou **Activé** pour des **Groupes de sécurité spécifiques**
+       seulement.
+    4. Alternative en lecture seule : dans `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       lire l'entrée `AllowServicePrincipalsCreateAndUseProfiles`.
+    5. Échec si le paramètre est activé pour toute l'organisation.
+remediation:
+  manual: |
+    1. Dans **Paramètres du locataire** > **Paramètres du développeur** > **Allow service principals
+       to create and use profiles**, sélectionner **Désactivé**, ou **Activé** avec **Groupes de
+       sécurité spécifiques**. Sélectionner **Appliquer**. Rôle : administrateur Fabric.
+    2. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/AllowServicePrincipalsCreateAndUseProfiles/update`
+       avec l'état cible.
+  rollback: |
+    Remettre le paramètre à son étendue précédente.

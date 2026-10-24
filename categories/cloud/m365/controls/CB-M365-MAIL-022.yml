@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-022
+title: Block an extended list of risky file types in anti-malware policies
+finding:
+  title: Only the default file types are blocked in email attachments
+  description: Scripts, archives, macro-enabled documents and other formats often used for initial access still reach mailboxes.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online-protection, anti-malware, attachments, file-types]
+
+description: |
+  On top of the default list (CB-M365-MAIL-021), the common attachments filter of every
+  anti-malware policy that applies to users also blocks these file types:
+
+  {{ extended_file_types }}
+
+  The list is chosen from the additional file types Microsoft offers in the Defender portal and
+  covers scripts, shortcuts and shell files, Access and help files, disk images and less common
+  archives, and macro-enabled Office formats. Policies of the Standard and Strict presets cannot be
+  edited: the extended list requires a custom anti-malware policy with a higher priority, applied to
+  the same recipients.
+rationale: |
+  Attackers move to whatever format is not blocked: JavaScript and HTML application files,
+  shortcut files, OneNote files, ISO and VHD images, password-protected archives, macro-enabled
+  documents. Blocking the ones the organization does not exchange by email removes many initial
+  access paths without relying on detection.
+impact: |
+  Legitimate exchanges of these formats (archives with partners, macro-enabled spreadsheets,
+  scripts between IT staff) are rejected. Review the list with the business and remove formats that
+  are really needed, or route those exchanges through SharePoint or OneDrive.
+
+parameters:
+  - name: extended_file_types
+    type: list
+    description: File types blocked in addition to Microsoft's default list.
+    default: [7z, 7zip, accde, ade, adp, appxbundle, bas, bin, chm, command, cpl, csh, dmg, dylib, gadget, hlp, inf, ins, isp, its, js, jse, ksh, mad, maf, mag, mam, maq, mar, mas, mat, mau, mav, maw, mda, mdb, mde, mdt, mdw, mdz, mht, mhtml, msh, msh1, msh1xml, msh2, msh2xml, mshxml, msixbundle, one, onenote, pkg, plg, prf, prg, ps1, ps1xml, ps2, ps2xml, psc1, psc2, py, rar, rpm, scpt, service, sh, shb, shs, so, tmp, url, vhd, vsmacros, vsw, ws, xnk, dotm, xlsm, xltm, xla, xlam, pptm, ppsm, vstm, vsdm]
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-malware** and open the policies that apply to users.
+    3. Check that the common attachments filter lists the default types and every type of the
+       parameter.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       $required = @('7z','js','one','vhd','ps1')   # replace with the full parameter list
+       foreach ($p in Get-MalwareFilterPolicy) {
+         [pscustomobject]@{ Name = $p.Name; Missing = ($required | Where-Object { $_ -notin $p.FileTypes }) -join ',' }
+       }
+       ```
+    5. Fail if a policy that applies to users lacks one of the listed types.
+
+remediation:
+  manual: |
+    1. In the Defender portal, create a custom anti-malware policy (or edit the default one) that
+       applies to all accepted domains, with a higher priority than the default policy.
+    2. In **Protection settings**, select **Enable the common attachments filter** > **Select file
+       types**, add the types of the parameter, choose **Reject the message with a non-delivery
+       report (NDR)** and save.
+    3. PowerShell equivalent (Security Administrator):
+       ```powershell
+       $types = (Get-MalwareFilterPolicy -Identity Default).FileTypes + @('7z','js','one','vhd','ps1')  # full parameter list
+       Set-MalwareFilterPolicy -Identity Default -EnableFileFilter $true -FileTypes ($types | Sort-Object -Unique)
+       ```
+  rollback: |
+    Set `-FileTypes` back to the previous list.
+
+references:
+  - title: Anti-malware protection for email in Microsoft 365 (common attachments filter)
+    url: https://learn.microsoft.com/defender-office-365/anti-malware-protection-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-MalwareFilterPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-malwarefilterpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.11"
+    relation: partial
+    note: Our list is chosen from Microsoft's additional file types and differs from the CIS list in content.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.001
+related_controls:
+  - id: CB-M365-MAIL-021
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

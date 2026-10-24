@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger un poste d'administration dédié pour les rôles d'administration
+finding:
+  title: Les administrateurs peuvent se connecter depuis n'importe quel appareil
+  description: Des sessions d'administration peuvent s'exécuter sur le poste qui navigue sur Internet et lit les e-mails, où un logiciel malveillant peut voler les jetons de session.
+parameters:
+  paw_device_filter: Règle de filtre d'appareil de l'accès conditionnel qui désigne les postes d'administration dédiés.
+description: |
+  Une stratégie d'accès conditionnel cible les utilisateurs détenant des rôles d'annuaire
+  privilégiés (même liste de rôles que CB-M365-AUTH-004), sur toutes les ressources, et bloque
+  l'accès depuis tout appareil qui n'est pas un poste d'administration dédié. Les postes sont
+  identifiés par le filtre d'appareil `{{ paw_device_filter }}` (renseigné par un administrateur
+  Intune ou d'appareils, pas par les utilisateurs) et sont gérés par Intune et conformes. Les
+  comptes d'accès d'urgence sont exclus.
+
+  Les postes d'administration suivent les règles de durcissement de l'organisation : pas de
+  navigation Internet générale, pas de messagerie, logiciels restreints.
+rationale: |
+  Les identifiants et jetons d'administration ne sont pas plus sûrs que l'appareil qui les
+  utilise. Un jeton volé sur un poste du quotidien par un infostealer contourne la MFA. Réserver les
+  connexions d'administration à des appareils dédiés et durcis tient les sessions privilégiées à
+  l'écart des appareils les plus exposés à l'hameçonnage et aux téléchargements malveillants.
+impact: |
+  Chaque administrateur a besoin d'un appareil dédié (physique, ou machine virtuelle durcie si le
+  modèle de l'organisation le permet), et l'attribut d'appareil doit être renseigné et protégé. Le
+  travail d'administration depuis d'autres appareils est bloqué, y compris l'astreinte depuis le
+  domicile sans le poste.
+notes: |
+  Les filtres d'appareil s'appuient sur des attributs comme `extensionAttribute1` à
+  `extensionAttribute15`, que seul un administrateur d'appareils peut renseigner via Microsoft
+  Graph. Une alternative consiste à exiger un appareil conforme avec une stratégie de conformité
+  Intune dédiée, attribuée aux seuls postes d'administration.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et trouver une stratégie à
+       l'**État** **Activé** où :
+       - **Utilisateurs** > **Inclure** liste les **Rôles d'annuaire** privilégiés ; **Exclure** ne
+         contient que les comptes d'accès d'urgence ;
+       - **Ressources cibles** inclut **Toutes les ressources** ;
+       - **Conditions** > **Filtrer les appareils** exclut les appareils correspondant à
+         `{{ paw_device_filter }}`, et **Accorder** vaut **Bloquer l'accès** (ou la stratégie exige
+         un appareil conforme avec une stratégie de conformité attribuée aux seuls postes).
+    3. Vérifier dans Intune que les appareils correspondant au filtre sont les postes
+       d'administration inventoriés.
+    4. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy -All | Where-Object { $_.Conditions.Devices.DeviceFilter.Rule }`.
+    5. Échec si aucune stratégie de ce type n'est activée ou si des appareils hors inventaire
+       correspondent au filtre.
+remediation:
+  manual: |
+    1. Avec un Administrateur Intune ou Administrateur d'appareils cloud, renseigner l'attribut sur
+       chaque poste d'administration, par exemple avec Microsoft Graph :
+       `PATCH /devices/{id}` avec `{"extensionAttributes": {"extensionAttribute1": "PAW"}}`.
+    2. Avec un Administrateur de l'accès conditionnel, aller dans **Entra ID** > **Accès
+       conditionnel** > **Stratégies** > **Nouvelle stratégie**, la nommer
+       `ADM - Require administration workstation`.
+    3. **Utilisateurs** : inclure les rôles d'annuaire privilégiés, exclure les comptes d'accès
+       d'urgence.
+    4. **Ressources cibles** : **Toutes les ressources**.
+    5. **Conditions** > **Filtrer les appareils** : **Configurer** **Oui**, **Exclure les appareils
+       filtrés de la stratégie**, règle `{{ paw_device_filter }}`.
+    6. **Accorder** : **Bloquer l'accès**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, examiner les journaux de connexion
+       quelques jours, puis passer à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

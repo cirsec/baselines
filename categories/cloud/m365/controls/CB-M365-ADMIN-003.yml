@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-003
+title: Keep between two and four Global Administrators
+finding:
+  title: The number of Global Administrators is outside the allowed range
+  description: Too many Global Administrators multiply the accounts that can take over the tenant; a single one is a single point of failure.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, global-admin, least-privilege]
+
+parameters:
+  - name: ga_min
+    type: integer
+    description: Minimum number of Global Administrators.
+    default: 2
+    minimum: 2
+  - name: ga_max
+    type: integer
+    description: Maximum number of Global Administrators. Raise it only for very large tenants, with a written justification.
+    default: 4
+    minimum: 2
+
+description: |
+  The tenant counts at least `{{ ga_min }}` and at most `{{ ga_max }}` principals with the Global
+  Administrator role. The count includes active and eligible assignments (Privileged Identity
+  Management), members of groups assigned to the role, and the emergency access accounts
+  (CB-M365-ADMIN-002).
+rationale: |
+  Global Administrator is the only role with full control over every service and every other
+  role. Each additional holder is one more account an attacker can phish or take over to own the
+  tenant. Keeping at least two avoids losing control of the tenant when one account is unavailable.
+  Day-to-day tasks use narrower roles (CB-M365-ADMIN-004).
+impact: |
+  In large tenants the cap forces a review of who really needs the role and a move to finer
+  roles. With the two emergency access accounts counted, only two named administrators remain
+  under the default cap: make them eligible through PIM rather than active.
+notes: |
+  Service principals holding Global Administrator count too, and are a strong finding on their
+  own.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Roles & admins** > **Roles & admins** > **Global
+       Administrator** > **Assignments**. Count the **Eligible assignments** and **Active
+       assignments**; for each group, open it and count its members.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `RoleManagement.Read.Directory`):
+       ```
+       $ga = '62e90394-69f5-4237-9190-012177145e10'
+       $active   = Get-MgRoleManagementDirectoryRoleAssignment -All -Filter "roleDefinitionId eq '$ga'"
+       $eligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All -Filter "roleDefinitionId eq '$ga'"
+       ($active.PrincipalId + $eligible.PrincipalId | Sort-Object -Unique).Count
+       ```
+       Expand group principals with `Get-MgGroupTransitiveMember`.
+    4. Fail if the number of distinct principals is below `{{ ga_min }}` or above `{{ ga_max }}`.
+
+remediation:
+  manual: |
+    1. If there are too few: assign the role to a second named cloud-only administrator
+       (CB-M365-ADMIN-001), preferably as eligible in PIM, with a Privileged Role Administrator.
+    2. If there are too many: for each holder, identify the tasks really performed (audit logs,
+       role usage in PIM) and assign the matching narrower roles (Exchange Administrator, User
+       Administrator, Security Administrator...).
+    3. Remove the Global Administrator assignment from those holders in **Roles & admins** or
+       in **ID Governance** > **Privileged Identity Management** > **Microsoft Entra roles** >
+       **Assignments**.
+  rollback: |
+    Reassign the role with a Privileged Role Administrator or an emergency access account.
+
+references:
+  - title: Best practices for Microsoft Entra roles
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft Entra built-in roles, privileged roles and permissions
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/privileged-roles-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.1.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.1v1
+    relation: stricter
+    note: SCuBA allows up to eight Global Administrators; ours caps at four by default.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-ADMIN-004
+    type: related
+  - id: CB-M365-ADMIN-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

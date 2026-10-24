@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver ou supprimer les applications inactives, de test et de démonstration
+finding:
+  title: Des applications inutilisées, de test ou de démonstration restent actives dans le tenant
+  description: Les applications oubliées gardent leurs permissions et identifiants, ne sont revues par personne et offrent une cachette facile à un attaquant.
+description: |
+  Les inscriptions d'applications et principaux de service sans connexion depuis
+  **{{ app_inactivity_days }}** jours, et les applications dont le nom ou les notes indiquent un
+  usage de test, de démonstration ou de preuve de concept, sont désactivées puis supprimées après
+  confirmation de leur propriétaire. Les applications de test vivent dans un tenant de
+  développement séparé.
+rationale: |
+  Chaque application active est une identité avec des permissions et parfois des identifiants. Les
+  applications inutilisées n'apportent rien et sont rarement surveillées, ce qui les rend
+  intéressantes pour la persistance : ajouter un secret à une application dormante attire moins
+  l'attention qu'en créer une nouvelle. Les applications de test sont souvent créées avec des
+  permissions larges et des réglages faibles.
+impact: |
+  Une application utilisée une fois par an (campagne annuelle, reprise d'activité) peut sembler
+  inactive. Désactiver avant de supprimer, et tenir une courte liste d'exceptions documentée. Les
+  applications supprimées restent restaurables pendant 30 jours.
+parameters:
+  app_inactivity_days: Nombre de jours sans connexion au-delà duquel une application est considérée comme inactive.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Vue d'ensemble** > **Recommandations** et ouvrir **Supprimer les
+       applications inutilisées** ; noter chaque élément actif.
+    3. Aller dans **Entra ID** > **Supervision et intégrité** > **Utilisation et insights** et
+       examiner l'activité de connexion par application et principal de service.
+    4. Avec Microsoft Graph (étendue `AuditLog.Read.All`, beta), lire
+       `GET https://graph.microsoft.com/beta/reports/servicePrincipalSignInActivities` pour la
+       dernière connexion de chaque application.
+    5. Rechercher dans les noms d'applications des termes comme `test`, `demo`, `poc`, `sandbox`,
+       `temp`.
+    6. Échec si une application active n'a eu aucune connexion depuis {{ app_inactivity_days }}
+       jours, ou si une application de test ou de démonstration existe dans le tenant de production,
+       sans exception documentée.
+remediation:
+  manual: |
+    1. Contacter le propriétaire de chaque application relevée.
+    2. Désactiver d'abord la connexion : **Applications d'entreprise** > l'application >
+       **Propriétés** > **Activé pour que les utilisateurs se connectent ?** = **Non** (Graph :
+       `Update-MgServicePrincipal -AccountEnabled:$false`).
+    3. Après une période d'observation sans réclamation, supprimer l'application dans
+       **Inscriptions d'applications** > l'application > **Supprimer** (ou **Applications
+       d'entreprise** > **Propriétés** > **Supprimer** pour les principaux de service tiers).
+    4. Rôle requis : Administrateur d'applications cloud ou Administrateur d'applications.
+  rollback: |
+    Réactiver la connexion, ou restaurer l'application depuis **Inscriptions d'applications** >
+    **Applications supprimées** dans les 30 jours.

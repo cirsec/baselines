@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-010
+title: Restrict guest access to their own directory objects
+finding:
+  title: Guests can enumerate users and groups in the directory
+  description: A guest account, which may be compromised in its home organization, can list the tenant's users, groups and memberships.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, guests, external-identities, reconnaissance]
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > External Identities > External collaboration settings > Guest user access restrictions
+  default_value: Guest users have limited access to properties and memberships of directory objects
+  recommended_value: Guest user access is restricted to properties and memberships of their own directory objects (most restrictive)
+
+description: |
+  **Guest user access restrictions** is set to **Guest user access is restricted to properties and
+  memberships of their own directory objects (most restrictive)** (`guestUserRoleId` =
+  `2af84b1e-32c8-42b7-82bc-daa82404023b`). Guests can read their own profile only; they cannot list
+  other users, groups or group memberships.
+rationale: |
+  The organization does not control how guests authenticate in their home tenant. A compromised
+  guest account with directory read access gives an attacker the full list of employees, groups
+  and managers, which feeds phishing and privilege escalation. Collaboration in Teams and
+  SharePoint keeps working with the most restrictive level.
+impact: |
+  Guests cannot browse the people picker beyond the people they already work with, and cannot see
+  the members of groups they belong to in some apps. Teams and SharePoint collaboration is not
+  affected.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **External Identities** > **External collaboration settings** (the
+       same option also appears in **Entra ID** > **Users** > **User settings**) and read **Guest
+       user access restrictions**.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).GuestUserRoleId`.
+    4. Fail if the value is not `2af84b1e-32c8-42b7-82bc-daa82404023b`.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an External Identity Provider
+       Administrator (or Global Administrator).
+    2. Browse to **Entra ID** > **External Identities** > **External collaboration settings**.
+    3. Under **Guest user access restrictions**, select **Guest user access is restricted to
+       properties and memberships of their own directory objects (most restrictive)** and
+       **Save**.
+    4. Equivalent with Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`):
+       `Update-MgPolicyAuthorizationPolicy -GuestUserRoleId '2af84b1e-32c8-42b7-82bc-daa82404023b'`.
+  rollback: |
+    Select **Guest users have limited access to properties and memberships of directory objects**
+    (`10dae51f-b6af-4016-8d66-8c2a99b929b3`).
+
+references:
+  - title: Configure external collaboration settings
+    url: https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: What are the default user permissions in Microsoft Entra ID?
+    url: https://learn.microsoft.com/entra/fundamentals/users-default-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.6.2"
+    relation: stricter
+    note: CIS also accepts the limited access level; ours requires the most restrictive one.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.8.1v1
+    relation: stricter
+    note: SCuBA accepts limited or restricted access; ours requires restricted.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1087.004
+related_controls:
+  - id: CB-M365-TENANT-011
+    type: related
+  - id: CB-M365-TENANT-013
+    type: related
+  - id: CB-M365-POWER-010
+    type: related
+  - id: CB-M365-POWER-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

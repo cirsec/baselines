@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-022
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer une liste étendue de types de fichiers à risque dans les stratégies anti-programme malveillant
+finding:
+  title: Seuls les types de fichiers par défaut sont bloqués dans les pièces jointes
+  description: Scripts, archives, documents à macros et autres formats souvent utilisés pour l'accès initial arrivent encore dans les boîtes.
+description: |
+  En plus de la liste par défaut (CB-M365-MAIL-021), le filtre des pièces jointes courantes de chaque
+  stratégie anti-programme malveillant qui s'applique à des utilisateurs bloque aussi ces types de
+  fichiers :
+
+  {{ extended_file_types }}
+
+  La liste est choisie parmi les types supplémentaires proposés par Microsoft dans le portail
+  Defender et couvre scripts, raccourcis et fichiers shell, fichiers Access et d'aide, images disque et
+  archives moins courantes, et formats Office à macros. Les stratégies Standard et Stricte ne sont pas
+  modifiables : la liste étendue demande une stratégie anti-programme malveillant personnalisée de
+  priorité plus élevée, appliquée aux mêmes destinataires.
+rationale: |
+  Les attaquants passent au format qui n'est pas bloqué : fichiers JavaScript et applications HTML,
+  raccourcis, fichiers OneNote, images ISO et VHD, archives protégées par mot de passe, documents à
+  macros. Bloquer ceux que l'organisation n'échange pas par e-mail supprime de nombreux chemins
+  d'accès initial sans dépendre de la détection.
+impact: |
+  Les échanges légitimes de ces formats (archives avec des partenaires, classeurs à macros, scripts
+  entre informaticiens) sont rejetés. Revoir la liste avec les métiers et retirer les formats
+  réellement nécessaires, ou faire passer ces échanges par SharePoint ou OneDrive.
+parameters:
+  extended_file_types: Types de fichiers bloqués en plus de la liste par défaut de Microsoft.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-programme malveillant** et ouvrir les stratégies qui s'appliquent à des utilisateurs.
+    3. Vérifier que le filtre des pièces jointes courantes liste les types par défaut et chaque type du
+       paramètre.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       $required = @('7z','js','one','vhd','ps1')   # replace with the full parameter list
+       foreach ($p in Get-MalwareFilterPolicy) {
+         [pscustomobject]@{ Name = $p.Name; Missing = ($required | Where-Object { $_ -notin $p.FileTypes }) -join ',' }
+       }
+       ```
+    5. Échec si une stratégie qui s'applique à des utilisateurs ne contient pas l'un des types listés.
+remediation:
+  manual: |
+    1. Dans le portail Defender, créer une stratégie anti-programme malveillant personnalisée (ou
+       modifier celle par défaut) qui s'applique à tous les domaines acceptés, avec une priorité plus
+       élevée que la stratégie par défaut.
+    2. Dans **Paramètres de protection**, cocher **Activer le filtre des pièces jointes courantes** >
+       **Sélectionner les types de fichiers**, ajouter les types du paramètre, choisir **Rejeter le
+       message avec une notification d'échec de remise (NDR)** et enregistrer.
+    3. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       $types = (Get-MalwareFilterPolicy -Identity Default).FileTypes + @('7z','js','one','vhd','ps1')  # full parameter list
+       Set-MalwareFilterPolicy -Identity Default -EnableFileFilter $true -FileTypes ($types | Sort-Object -Unique)
+       ```
+  rollback: |
+    Remettre `-FileTypes` à la liste précédente.

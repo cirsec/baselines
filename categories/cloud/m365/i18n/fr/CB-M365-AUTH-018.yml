@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: S'assurer que chaque utilisateur membre a enregistré une méthode MFA
+finding:
+  title: Des utilisateurs membres n'ont enregistré aucune méthode MFA
+  description: Un compte sans méthode enregistrée peut être revendiqué par le premier qui se connecte avec son mot de passe, et qui enregistre alors sa propre méthode.
+description: |
+  Chaque utilisateur membre activé est **compatible MFA** : il a enregistré au moins une méthode
+  autorisée par la stratégie des méthodes d'authentification et utilisable pour la MFA. Seules
+  exceptions : les nouveaux comptes en attente de leur premier enregistrement avec un Temporary
+  Access Pass, et les comptes qui ne se connectent jamais de façon interactive (boîtes aux lettres
+  partagées à connexion bloquée, comptes de ressources), dont la connexion est bloquée.
+
+  Une campagne d'inscription dans la stratégie des méthodes d'authentification relance les
+  utilisateurs pas encore inscrits.
+rationale: |
+  Les stratégies MFA ne protègent que les utilisateurs qui ont une méthode. Un compte non inscrit
+  est la prise de contrôle la plus facile : un attaquant muni du mot de passe se connecte, se voit
+  demander de s'inscrire, et enregistre son propre téléphone ou sa propre passkey.
+impact: |
+  Aucun connu pour les utilisateurs. Le support doit relancer les utilisateurs trouvés, et les
+  comptes de service qui se connectent encore de façon interactive doivent être remplacés par des
+  identités de charge de travail ou bloqués.
+notes: |
+  Le rapport **Détails de l'inscription des utilisateurs** nécessite Entra ID P1. Sans P1, vérifier
+  les méthodes de chaque utilisateur avec `Get-MgUserAuthenticationMethod`.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur de rapports (Lecteur Sécurité et Lecteur général conviennent aussi).
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Détails de l'inscription des
+       utilisateurs**.
+    3. Filtrer **Type d'utilisateur** sur **Membre** et **Compatible MFA** sur **Non compatible**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `AuditLog.Read.All`) :
+       `Get-MgReportAuthenticationMethodUserRegistrationDetail -All -Filter "userType eq 'member' and isMfaCapable eq false" | Select-Object UserPrincipalName, MethodsRegistered`
+    5. Comparer le résultat aux comptes activés (les comptes désactivés ne sont pas listés).
+    6. Échec si un membre activé capable de se connecter n'est pas compatible MFA et n'est pas un
+       nouveau compte en attente de son premier enregistrement.
+remediation:
+  manual: |
+    1. Exporter la liste des membres non compatibles MFA et les contacter, ou leur remettre un
+       Temporary Access Pass pour qu'ils enregistrent une méthode.
+    2. Bloquer la connexion des comptes qui ne doivent jamais se connecter de façon interactive
+       (**Entra ID** > **Utilisateurs** > utilisateur > **Modifier les propriétés** > **Paramètres**
+       > **Compte activé** décoché, rôle Administrateur d'utilisateurs).
+    3. Avec le rôle Administrateur de la stratégie d'authentification, aller dans **Entra ID** >
+       **Méthodes d'authentification** > **Campagne d'inscription**, régler **État** sur **Activé**
+       (ou garder **Géré par Microsoft**), cibler la méthode déployée (passkeys ou Microsoft
+       Authenticator) pour **Tous les utilisateurs**, et enregistrer.
+    Équivalent Graph pour la campagne : `PATCH /policies/authenticationMethodsPolicy` avec
+    `registrationEnforcement.authenticationMethodsRegistrationCampaign`.
+  rollback: |
+    Remettre la campagne d'inscription sur **Géré par Microsoft**.

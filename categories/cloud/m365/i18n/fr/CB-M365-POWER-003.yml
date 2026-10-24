@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une stratégie de données restrictive à l'environnement Power Platform par défaut
+finding:
+  title: Aucune stratégie de données ne restreint les connecteurs dans l'environnement Power Platform par défaut
+  description: Chaque utilisateur du tenant peut créer dans l'environnement par défaut des applications, flux et agents qui envoient des données métier vers n'importe quel connecteur, y compris des services personnels et externes.
+description: |
+  Une stratégie de données Power Platform au niveau du locataire couvre l'environnement par défaut
+  (étendue **Ajouter tous les environnements**, ou une étendue par liste ou par exclusion qui
+  l'inclut) et :
+
+  - ne place dans **Professionnel** que les connecteurs nécessaires à la productivité personnelle,
+    en général les connecteurs Microsoft 365 non bloquables ;
+  - déplace tous les autres connecteurs bloquables, y compris HTTP et les services grand public,
+    dans **Bloqué** ;
+  - règle le groupe par défaut des nouveaux connecteurs sur **Bloqué** ;
+  - bloque les connecteurs personnalisés par une règle de refus sur le modèle d'URL `*`, sauf
+    points de terminaison explicitement autorisés.
+
+  Les connecteurs virtuels Copilot Studio (par exemple **Chat without Microsoft Entra ID
+  authentication in Copilot Studio**) sont classés dans la même stratégie.
+rationale: |
+  L'environnement par défaut est partagé par tous les utilisateurs sous licence et sa création ne
+  peut pas être restreinte. Sans stratégie de données, un concepteur peut relier en quelques clics
+  des données SharePoint ou Outlook à un Dropbox personnel, à Gmail, à un point de terminaison HTTP
+  ou à un réseau social, volontairement ou non. Une stratégie qui bloque tout sauf un petit ensemble
+  de connecteurs professionnels fait de l'environnement par défaut un espace de productivité
+  personnelle et pousse les vraies solutions vers des environnements gouvernés.
+impact: |
+  Les applications, flux et agents existants de l'environnement par défaut qui utilisent des
+  connecteurs désormais bloqués, ou qui mélangent connecteurs professionnels et non professionnels,
+  sont suspendus et leurs connexions désactivées ; ils doivent migrer vers un environnement dédié
+  doté de sa propre stratégie. L'application peut prendre jusqu'à 24 heures sur les grands tenants.
+  Inventorier l'usage des connecteurs dans l'environnement par défaut (Center of Excellence Starter
+  Kit ou inventaire Power Platform) avant d'appliquer, et publier le message d'erreur de gouvernance
+  avec une adresse de contact.
+notes: |
+  Certains connecteurs Microsoft 365 ne peuvent pas être bloqués (par exemple SharePoint, Office 365
+  Outlook, Teams, OneDrive Entreprise, Approbations). Leurs actions peuvent être limitées par des
+  stratégies de connecteurs avancées sur les environnements gérés. Quand plusieurs stratégies
+  s'appliquent, la plus restrictive l'emporte.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général.
+    2. Aller dans **Sécurité** > **Données et confidentialité** > **Stratégie de données**.
+    3. Repérer les stratégies dont la colonne **Appliqué à** inclut l'environnement par défaut
+       (**Tous les environnements**, **Tous les environnements, sauf (n)** sans l'environnement par
+       défaut, ou une liste qui le nomme).
+    4. Ouvrir la stratégie avec **Modifier la stratégie** (sans enregistrer) et contrôler les groupes
+       de **Connecteurs prédéfinis** : les connecteurs bloquables autres que les connecteurs
+       professionnels approuvés sont dans **Bloqué**, et **Définir le groupe par défaut** vaut
+       **Bloqué**. Contrôler **Connecteurs personnalisés** : un modèle `*` est refusé ou bloqué.
+    5. Alternative en lecture seule (administrateur Power Platform) : `Add-PowerAppsAccount`, puis
+       `Get-DlpPolicy` et examiner les stratégies dont l'étendue inclut l'environnement par défaut
+       (`Get-AdminPowerAppEnvironment -Default` donne son nom).
+    6. Échec si aucune stratégie de données ne s'applique à l'environnement par défaut, ou si la
+       stratégie laisse débloqués des connecteurs non professionnels bloquables (HTTP, stockage ou
+       messagerie grand public, réseaux sociaux).
+remediation:
+  manual: |
+    1. Inventorier l'usage des connecteurs dans l'environnement par défaut et contacter les
+       propriétaires des solutions à migrer.
+    2. Dans le centre d'administration Power Platform, aller dans **Sécurité** > **Données et
+       confidentialité** > **Stratégie de données** > **Nouvelle stratégie**. Rôle : administrateur
+       Power Platform.
+    3. Nommer la stratégie, par exemple `DLP - Default environment`.
+    4. **Connecteurs prédéfinis** : déplacer les connecteurs approuvés vers **Professionnel**,
+       déplacer tous les autres connecteurs bloquables vers **Bloqué**, et sélectionner **Définir le
+       groupe par défaut** > **Bloqué**.
+    5. **Connecteurs personnalisés** : ajouter une règle qui bloque le modèle `*` (avec, avant elle,
+       des règles d'autorisation pour les points de terminaison approuvés, toujours en HTTPS).
+    6. **Étendue** : **Ajouter plusieurs environnements**, puis ajouter l'environnement par défaut
+       (ou **Ajouter tous les environnements** pour une stratégie de base à l'échelle du tenant).
+    7. Vérifier et **Créer la stratégie**. Personnaliser le message d'erreur de gouvernance avec
+       `Set-PowerAppDlpErrorSettings`.
+  rollback: |
+    Modifier la stratégie et remettre les connecteurs concernés dans **Non professionnel**, ou
+    supprimer la stratégie. Les flux suspendus doivent être réactivés par leurs propriétaires.

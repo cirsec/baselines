@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-010
+title: Configure an Intune cleanup rule for inactive devices
+finding:
+  title: No Intune device cleanup rule is configured
+  description: Devices that stopped checking in long ago stay in the Intune inventory and reports, hiding the real fleet and keeping stale records around.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [intune, device-lifecycle, inventory, hygiene]
+
+applicability:
+  requires:
+    - "Microsoft Intune"
+
+description: |
+  An Intune device cleanup rule (platform **All platforms**, or one rule per platform in use) hides
+  devices that have not checked in for `{{ device_cleanup_days }}` days or less. The Microsoft
+  Entra device objects of the same devices are reviewed and disabled, then deleted, by a separate
+  stale device process.
+rationale: |
+  An inventory full of retired, lost or reimaged devices skews compliance reports and makes it
+  harder to spot devices that should be investigated. Stale records also keep old device
+  certificates and identities usable longer than needed. A cleanup rule keeps the Intune view
+  limited to devices that are actually managed.
+impact: |
+  Hidden devices disappear from Intune views and reports; no wipe or retire action is sent. A
+  hidden device that checks in again before its management certificate expires reappears;
+  afterwards it must re-enroll. Devices that are offline for long periods by design (spare stock,
+  seasonal workers) need a longer threshold or a dedicated process. The rule does not delete
+  Microsoft Entra device objects.
+
+parameters:
+  - name: device_cleanup_days
+    type: integer
+    unit: days
+    description: Highest accepted inactivity period before Intune hides a device.
+    default: 90
+    minimum: 30
+    maximum: 270
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Devices** > **Organize devices** > **Device cleanup rules**.
+    3. Check that a rule exists for **All platforms**, or for each platform in use, and that
+       **Remove devices that haven't checked in for this many days** is `{{ device_cleanup_days }}`
+       or less. When both exist, the rule with fewer days applies.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/deviceManagement/managedDeviceCleanupRules` (scope
+       `DeviceManagementManagedDevices.Read.All`).
+    5. Fail if no rule exists, or if the effective threshold for a platform in use is above
+       `{{ device_cleanup_days }}` days.
+
+remediation:
+  manual: |
+    1. In the Intune admin center, browse to **Devices** > **Organize devices** > **Device cleanup
+       rules** > **Create**. Role: Intune Administrator, or a custom role with **Managed Device
+       Cleanup Rules/Update** and **Managed Device Cleanup Settings/Update**.
+    2. Enter a name, choose **All platforms** (or a platform), and select **Next**.
+    3. Set **Remove devices that haven't checked in for this many days** to
+       `{{ device_cleanup_days }}`. Use **Preview affected devices** to check the list, then create
+       the rule.
+    4. Handle Microsoft Entra device objects separately: in **Entra ID** > **Devices** > **All
+       devices**, filter on **Activity** older than the same period, disable the devices, and delete
+       them after a grace period (keep BitLocker and LAPS secrets you still need).
+  rollback: |
+    Delete the cleanup rule. Hidden devices reappear when they check in again.
+
+references:
+  - title: Automatically hide devices with cleanup rules
+    url: https://learn.microsoft.com/intune/governance/configure-cleanup-rules
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1053
+    url: https://maester.dev/docs/tests/MT.1053
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8(1)
+    relation: related
+related_controls:
+  - id: CB-M365-DEVICE-001
+    type: related
+  - id: CB-M365-DEVICE-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

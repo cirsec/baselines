@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une MFA résistante au phishing pour les rôles d'administration
+finding:
+  title: Les administrateurs peuvent se connecter avec des méthodes MFA hameçonnables
+  description: Un attaquant qui relaie le mot de passe et la notification ou le code via une fausse page de connexion obtient une session privilégiée sur le tenant.
+description: |
+  Une stratégie d'accès conditionnel exige la force d'authentification intégrée **MFA résistante au
+  hameçonnage** pour tout utilisateur détenant un rôle d'annuaire privilégié, sur toutes les
+  ressources. Méthodes acceptées : passkeys (clés de sécurité FIDO2 ou passkeys Microsoft
+  Authenticator), Windows Hello Entreprise et authentification par certificat avec liaison
+  multifacteur.
+
+  La stratégie inclut au moins ces rôles intégrés : administrateur général, administrateur de rôle
+  privilégié, administrateur d'authentification privilégié, administrateur de la sécurité,
+  administrateur de l'accès conditionnel, administrateur Exchange, administrateur SharePoint,
+  administrateur d'utilisateurs, administrateur d'applications, administrateur d'applications
+  cloud, administrateur d'authentification, administrateur du support technique, administrateur de
+  mots de passe, administrateur de facturation et administrateur d'identité hybride. Elle n'exclut
+  que les comptes d'accès d'urgence (CB-M365-ADMIN-002).
+
+  Ce contrôle couvre la MFA simple des administrateurs : une méthode résistante au hameçonnage est
+  une forme plus forte de MFA.
+rationale: |
+  Les notifications push, les codes à usage unique, les SMS et les appels vocaux peuvent tous être
+  relayés en temps réel par un kit d'hameçonnage de type adversary-in-the-middle, qui vole ensuite le
+  cookie de session. Les méthodes résistantes au hameçonnage sont liées à l'origine de la connexion :
+  une fausse page ne peut pas les utiliser. Les comptes administrateurs sont la première cible de ces
+  kits, car une seule session suffit à prendre le contrôle du tenant.
+impact: |
+  Chaque administrateur doit enregistrer une passkey, une clé de sécurité ou Windows Hello Entreprise
+  avant l'application de la stratégie, sinon il est bloqué. Remettre un Temporary Access Pass pour
+  enregistrer la première méthode (CB-M365-AUTH-017). Les administrateurs qui travaillent aussi depuis
+  des postes partagés ou non Windows ont besoin d'une clé de sécurité itinérante ou d'une passkey
+  Authenticator. Les méthodes d'authentification externes ne se combinent pas avec les forces
+  d'authentification.
+notes: |
+  L'accès conditionnel ne s'applique qu'aux rôles intégrés attribués au niveau de l'annuaire. Les
+  rôles limités à une unité administrative et les rôles personnalisés ne sont pas couverts :
+  protéger ces comptes avec un groupe inclus dans la même stratégie. Avec Privileged Identity
+  Management, la stratégie s'applique une fois le rôle activé ; exiger aussi la MFA à l'activation
+  dans les paramètres du rôle.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** (pas Rapport seul) où :
+       - **Utilisateurs** > **Inclure** liste des **Rôles d'annuaire** avec au moins les rôles
+         ci-dessus ;
+       - **Utilisateurs** > **Exclure** ne contient que les comptes d'accès d'urgence ou leur groupe ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Accorder** vaut **Exiger la force d'authentification** réglé sur **MFA résistante au
+         hameçonnage** (ou une force personnalisée qui n'autorise que passkeys, Windows Hello
+         Entreprise ou certificats multifacteurs).
+    4. Aller dans **Entra ID** > **Supervision et intégrité** > **Journaux de connexion**, filtrer sur
+       un administrateur, ouvrir une connexion interactive récente et vérifier sous **Accès
+       conditionnel** que la stratégie indique **Réussite**.
+    5. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, ou
+       si un rôle privilégié de la liste manque.
+remediation:
+  manual: |
+    1. Vérifier que chaque administrateur a enregistré une méthode résistante au hameçonnage : aller
+       dans **Entra ID** > **Méthodes d'authentification** > **Détails de l'inscription des
+       utilisateurs** et filtrer sur les administrateurs. Remettre un Temporary Access Pass à ceux
+       qui n'en ont pas.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle
+       stratégie**.
+    3. La nommer, par exemple `ADM - Require phishing-resistant MFA`.
+    4. **Utilisateurs** > **Inclure** > **Sélectionner des utilisateurs et des groupes** > **Rôles
+       d'annuaire** : sélectionner les rôles listés ci-dessus. **Exclure** : sélectionner les comptes
+       d'accès d'urgence.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Accorder** > **Accorder l'accès** > **Exiger la force d'authentification** > **MFA
+       résistante au hameçonnage**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion quelques jours avec le filtre **Rapport seul**.
+    8. Passer **Activer la stratégie** à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**. Se connecter avec un compte d'accès
+    d'urgence si plus aucun administrateur ne peut se connecter.

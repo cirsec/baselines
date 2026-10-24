@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre et protéger les propriétaires des applications privilégiées
+finding:
+  title: Des applications privilégiées ont pour propriétaires des comptes moins protégés que l'application elle-même
+  description: Un utilisateur propriétaire d'une application peut lui ajouter un identifiant et agir avec toutes ses permissions ; un compte propriétaire mal protégé est donc un raccourci vers les privilèges de l'application.
+description: |
+  La propriété des inscriptions d'applications et des principaux de service suit deux règles :
+
+  - les applications qui détiennent des permissions d'API privilégiées (CB-M365-APPS-011) ou un
+    rôle d'annuaire privilégié n'ont aucun propriétaire utilisateur ; elles sont gérées par des
+    administrateurs via des rôles ;
+  - chaque propriétaire d'une autre application est un compte membre actif avec une MFA
+    enregistrée.
+rationale: |
+  Les propriétaires peuvent gérer les identifiants de leurs applications sans aucun rôle
+  d'administration. Si un utilisateur standard possède une application qui a
+  `RoleManagement.ReadWrite.Directory` ou le rôle Administrateur de rôle privilégié, compromettre cet
+  utilisateur suffit pour devenir administrateur général. Retirer les propriétaires des applications
+  privilégiées et exiger la MFA de tous les propriétaires ferme ce chemin d'escalade.
+impact: |
+  Les anciens propriétaires d'applications privilégiées doivent demander à un Administrateur
+  d'applications ou Administrateur d'applications cloud de modifier identifiants ou paramètres.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Pour chaque application privilégiée identifiée dans CB-M365-APPS-011 et chaque principal de
+       service listé dans **Entra ID** > **Rôles et administrateurs** avec un rôle privilégié,
+       ouvrir **Inscriptions d'applications** > l'application > **Propriétaires** et **Applications
+       d'entreprise** > l'application > **Propriétaires**.
+    3. En Microsoft Graph PowerShell (étendues `Application.Read.All`, `Directory.Read.All`), lister
+       les propriétaires avec `Get-MgApplicationOwner -ApplicationId <id>` et
+       `Get-MgServicePrincipalOwner -ServicePrincipalId <id>`.
+    4. Pour les propriétaires des autres applications, vérifier l'enregistrement MFA dans **Entra
+       ID** > **Méthodes d'authentification** > **Détails de l'inscription des utilisateurs** (ou
+       `Get-MgReportAuthenticationMethodUserRegistrationDetail`, champ `isMfaRegistered`).
+    5. Échec si une application privilégiée a un propriétaire utilisateur, ou si un propriétaire est
+       désactivé, invité sans justification, ou n'a aucune méthode MFA enregistrée.
+remediation:
+  manual: |
+    1. Retirer les propriétaires utilisateurs des applications privilégiées : **Inscriptions
+       d'applications** > l'application > **Propriétaires** > **Supprimer des propriétaires**, et de
+       même dans **Applications d'entreprise**. Alternative Graph :
+       `Remove-MgApplicationOwnerByRef` et `Remove-MgServicePrincipalOwnerByRef`.
+    2. Déléguer la gestion de ces applications via les rôles Administrateur d'applications ou
+       Administrateur d'applications cloud, limités à l'application quand c'est possible, et
+       éligibles via PIM.
+    3. Pour les autres applications, demander aux propriétaires sans MFA d'enregistrer une méthode,
+       ou les remplacer.
+    4. Rôle requis : Administrateur d'applications cloud (Administrateur de rôle privilégié pour les
+       applications titulaires de rôles privilégiés).
+  rollback: |
+    Ajouter de nouveau l'ancien propriétaire dans **Propriétaires**.

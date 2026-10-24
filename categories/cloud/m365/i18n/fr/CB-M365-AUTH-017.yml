@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le Temporary Access Pass à un usage unique
+finding:
+  title: Les Temporary Access Pass sont utilisables plusieurs fois
+  description: Un passe qui reste valable pour plusieurs connexions pendant sa durée de vie peut être réutilisé par quiconque l'intercepte, par exemple dans un ticket de support ou un message.
+description: |
+  Quand la méthode **Temporary Access Pass** est activée dans la stratégie des méthodes
+  d'authentification, sa configuration a **Utilisation unique** sur **Oui**, de sorte que chaque
+  passe créé dans le tenant ne sert qu'à une seule connexion, et **Durée de vie maximale** reste à
+  8 heures ou moins.
+
+  La méthode elle-même est recommandée : c'est la façon sûre d'enregistrer une première passkey ou
+  de récupérer un utilisateur qui a perdu toutes ses méthodes. Ce contrôle ne s'applique pas si la
+  méthode est désactivée.
+rationale: |
+  Un Temporary Access Pass satisfait à lui seul la MFA. Un passe réutilisable se comporte comme un
+  identifiant fort pendant toute sa durée de vie ; un passe à usage unique limite la fenêtre à
+  l'enregistrement pour lequel il a été émis.
+impact: |
+  Un utilisateur dont l'enregistrement échoue à mi-chemin a besoin d'un nouveau passe. Windows
+  Autopilot et certains parcours de préparation d'appareil se connectent plusieurs fois : émettre
+  le passe juste avant l'usage, ou prévoir une procédure distincte pour eux.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Stratégies > Temporary Access Pass > Configurer
+  recommended_value: Utilisation unique Oui, durée de vie maximale 8 heures ou moins
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et sélectionner
+       **Temporary Access Pass**.
+    3. Si elle est activée, ouvrir **Configurer** et lire **Utilisation unique** et **Durée de vie
+       maximale**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId TemporaryAccessPass | Select-Object State -ExpandProperty AdditionalProperties`
+       (regarder `isUsableOnce` et `maximumLifetimeInMinutes`).
+    5. Échec si la méthode est activée et que **Utilisation unique** vaut **Non** (`isUsableOnce`
+       vaut `false`), ou si la durée de vie maximale dépasse 480 minutes.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Temporary
+       Access Pass** > **Configurer**.
+    3. Régler **Utilisation unique** sur **Oui**, garder **Durée de vie maximale** à 8 heures ou
+       moins, sélectionner **Mettre à jour**, puis **Enregistrer**.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/TemporaryAccessPass`
+    avec `{"@odata.type": "#microsoft.graph.temporaryAccessPassAuthenticationMethodConfiguration", "isUsableOnce": true}`.
+  rollback: |
+    Remettre **Utilisation unique** sur **Non**.

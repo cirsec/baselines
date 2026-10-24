@@ -1,0 +1,156 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-005
+title: Require phishing-resistant MFA for all users
+finding:
+  title: Users can satisfy MFA with methods that can be phished
+  description: Push notifications, one-time codes and phone methods can be relayed by an adversary-in-the-middle page, which then steals the session of any user who falls for it.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [mfa, phishing-resistant, conditional-access, passkeys, authentication-strength]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy requires the built-in **Phishing-resistant MFA** authentication
+  strength for **All users** on **All resources**. Accepted methods are passkeys (FIDO2 security
+  keys, Microsoft Authenticator passkeys, synced passkeys where the passkey profile allows them),
+  Windows Hello for Business, macOS Platform SSO and certificate-based authentication with
+  multifactor binding.
+
+  The policy excludes only the emergency access accounts. Guests can be scoped out and covered by
+  a separate policy if their home tenants cannot provide a phishing-resistant method; in that
+  case document it.
+
+  This control extends CB-M365-AUTH-004 from administrators to every user.
+rationale: |
+  Adversary-in-the-middle phishing kits are sold as a service and defeat push, code and phone
+  methods by relaying them in real time. Once a mailbox is taken, attackers use it for internal
+  phishing and payment fraud. Phishing-resistant methods are bound to the real sign-in origin, so
+  a proxy page cannot use them.
+impact: |
+  Every user needs a phishing-resistant method before enforcement: Windows Hello for Business on
+  managed Windows devices, a passkey in Microsoft Authenticator or a platform credential manager,
+  or a security key. Plan a passkey registration campaign and Temporary Access Passes for
+  onboarding and recovery. Shared devices, frontline workers without a smartphone and external
+  authentication methods need case-by-case solutions. Some older clients and third-party
+  applications cannot complete passkey sign-in.
+notes: |
+  Microsoft enables passkeys by default for SMS and voice users since September 2026 and retires
+  its own SMS and voice delivery in 2027, which eases the move. Roll out by groups: include a
+  pilot group first, then extend the policy to all users.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** (not Report-only) where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the emergency
+         access accounts (and, if documented, a guest group covered by another policy);
+       - **Target resources** includes **All resources**, without exclusions;
+       - **Grant** is **Require authentication strength** set to **Phishing-resistant MFA** or a
+         custom strength limited to phishing-resistant methods.
+    4. Browse to **Entra ID** > **Authentication methods** > **User registration details** and
+       check that users without a passkey, Windows Hello for Business or certificate are only
+       those expected (new hires holding a Temporary Access Pass).
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.GrantControls.AuthenticationStrength.Id -eq '00000000-0000-0000-0000-000000000004' } | Select-Object DisplayName, State, @{n='Users';e={$_.Conditions.Users.IncludeUsers}}`
+    6. Fail if no such policy exists, if it is Report-only or Off, or if it does not cover all
+       users and all resources.
+
+remediation:
+  manual: |
+    1. Enable passkeys and the other phishing-resistant methods in the Authentication methods
+       policy (CB-M365-AUTH-015) and run a passkey registration campaign.
+    2. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `ALL - Require phishing-resistant MFA`.
+    4. **Users** > **Include**: a pilot group first. **Exclude**: the emergency access accounts.
+    5. **Target resources** > **Resources** > **Include**: **All resources**.
+    6. **Grant** > **Grant access** > **Require authentication strength** > **Phishing-resistant
+       MFA**.
+    7. Set **Enable policy** to **Report-only**, save, and review the sign-in logs.
+    8. Switch to **On**, then widen **Include** to **All users** group by group.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with
+    `grantControls.authenticationStrength.id` set to `00000000-0000-0000-0000-000000000004`
+    (built-in Phishing-resistant MFA strength).
+  rollback: |
+    Set the policy to **Report-only**, or narrow **Include** back to the pilot group. The plain MFA
+    policy (CB-M365-AUTH-003) keeps protecting users meanwhile.
+
+references:
+  - title: Require phishing-resistant multifactor authentication for administrators
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-admin-phish-resistant-mfa
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Plan a phishing-resistant passwordless authentication deployment in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-deploy-phishing-resistant-passwordless-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access authentication strengths
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-strengths
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.1v1
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R2"
+    relation: related
+    note: ANSSI prefers strong authentication means; phishing-resistant methods are our reading of strong in a cloud context.
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R39"
+    relation: related
+    note: ANSSI asks for a certified possession factor; we accept any phishing-resistant method, certified hardware only in CB-M365-AUTH-016.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(6)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(8)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1539
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+  - id: CB-M365-AUTH-015
+    type: requires
+  - id: CB-M365-ADMIN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

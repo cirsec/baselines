@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les utilisateurs d'ajouter des applications du Store et de démarrer des essais
+finding:
+  title: Les utilisateurs peuvent installer des compléments de l'Office Store et démarrer des essais pour l'organisation
+  description: Les utilisateurs peuvent introduire dans le tenant des compléments et des services d'essai non évalués, capables de lire leurs e-mails et documents.
+description: |
+  Dans **Applications et services détenus par l'utilisateur**, les deux options sont décochées :
+
+  - **Autoriser les utilisateurs à accéder à l'Office Store** (`isOfficeStoreEnabled` = `false`) ;
+  - **Autoriser les utilisateurs à démarrer des essais au nom de votre organisation**
+    (`isAppAndServicesTrialEnabled` = `false`).
+
+  Les compléments dont les utilisateurs ont besoin sont déployés de façon centralisée depuis
+  **Applications intégrées** après revue.
+rationale: |
+  Les compléments du Store s'exécutent avec l'accès de l'utilisateur à ses e-mails et documents et
+  sont publiés par des tiers de confiance variable. Les essais démarrés par les utilisateurs
+  activent des services que l'organisation n'a pas évalués, avec leurs propres conditions de
+  traitement des données. Le déploiement centralisé garde les deux sous revue.
+impact: |
+  Les utilisateurs ne peuvent plus installer de compléments depuis l'Office Store ni démarrer
+  eux-mêmes des essais ; ils s'adressent à la DSI. Les compléments déjà installés continuent de
+  fonctionner jusqu'à leur retrait. Les compléments Outlook relèvent aussi des rôles utilisateur
+  Exchange (domaine MAIL).
+notes: |
+  Les achats en libre-service de produits (Power BI Pro, Copilot et autres) se gèrent séparément,
+  produit par produit, dans **Facturation** > **Achats en libre-service** ou avec le module
+  `MSCommerce`.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Services** > **Applications
+       et services détenus par l'utilisateur**.
+    3. Alternative en lecture seule avec Microsoft Graph (bêta, étendue `OrgSettings-AppsAndServices.Read.All`) :
+       `GET https://graph.microsoft.com/beta/admin/appsAndServices` et lire
+       `settings.isOfficeStoreEnabled` et `settings.isAppAndServicesTrialEnabled`.
+    4. Échec si l'une des options est cochée (`true`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 avec au moins le rôle Administrateur
+       général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Services** > **Applications
+       et services détenus par l'utilisateur**.
+    3. Décocher **Autoriser les utilisateurs à accéder à l'Office Store** et **Autoriser les
+       utilisateurs à démarrer des essais au nom de votre organisation**, puis **Enregistrer**.
+    4. Équivalent avec Microsoft Graph (bêta, étendue `OrgSettings-AppsAndServices.ReadWrite.All`) :
+       `PATCH https://graph.microsoft.com/beta/admin/appsAndServices` avec
+       `{"settings": {"isOfficeStoreEnabled": false, "isAppAndServicesTrialEnabled": false}}`.
+  rollback: |
+    Recocher les options.

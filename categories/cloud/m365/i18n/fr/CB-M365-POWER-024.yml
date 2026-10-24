@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-024
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Gouverner le cycle de vie des agents Copilot Studio
+finding:
+  title: Des agents Copilot Studio fonctionnent sans propriétaire actif, sans revue ni garde-fous de comportement
+  description: Certains agents ont des propriétaires désactivés ou supprimés, n'ont pas été modifiés depuis longtemps, utilisent des serveurs MCP non revus, envoient des courriels au contenu choisi par l'IA, ou utilisent l'orchestration générative sans instructions.
+description: |
+  Chaque agent Copilot Studio publié est revu au moins tous les `{{ agent_dormant_days }}` jours et
+  remplit ces conditions :
+
+  - son propriétaire est un compte actif ; les agents dont le propriétaire est parti sont réattribués
+    ou dépubliés ;
+  - il a été modifié ou explicitement réapprouvé dans les `{{ agent_dormant_days }}` derniers jours ;
+    les agents dormants sont mis à jour, dépubliés ou supprimés ;
+  - chaque serveur MCP qu'il utilise appartient à l'organisation ou à un partenaire de confiance, est
+    joint en HTTPS avec authentification, et est consigné comme revu ;
+  - les éventuels outils d'envoi de courriel utilisent des destinataires fixes ou restreints, et non
+    des adresses ou contenus choisis par le modèle à partir de la saisie utilisateur ;
+  - les agents en orchestration générative ont des instructions personnalisées qui fixent leur
+    objectif, leurs limites et la conduite à tenir face aux tentatives de contournement.
+rationale: |
+  Les agents accumulent droits, connexions et sources de connaissances. Sans propriétaire, personne
+  ne corrige leur configuration ni ne répond d'un incident ; les agents dormants continuent de
+  tourner avec des réglages dépassés. Les serveurs MCP sont du code tiers auquel l'agent fait
+  confiance : un serveur compromis ou empoisonné peut ordonner à l'agent d'exfiltrer des données. Un
+  agent qui laisse le modèle choisir le destinataire d'un courriel est un canal d'exfiltration tout
+  prêt pour l'injection d'invite, et un agent en orchestration générative sans instructions s'en
+  remet entièrement au comportement par défaut du modèle.
+impact: |
+  Les propriétaires d'agents doivent répondre aux revues périodiques et peuvent devoir republier
+  leurs agents avec de nouvelles instructions ou des outils restreints. Dépublier des agents dormants
+  ou orphelins peut casser des usages encore actifs : prévenir d'abord leurs utilisateurs.
+parameters:
+  agent_dormant_days: Durée maximale pendant laquelle un agent publié peut rester sans modification ni réapprobation.
+audit:
+  manual: |
+    1. Pour chaque environnement, se connecter à Copilot Studio (https://copilotstudio.microsoft.com)
+       comme administrateur d'environnement ou administrateur système et lister les agents publiés
+       avec leur propriétaire et leur date de dernière modification. Contrôler chaque propriétaire
+       dans le centre d'administration Microsoft Entra (**Entra ID** > **Utilisateurs**) avec le rôle
+       Lecteur général.
+    2. Ouvrir chaque agent et contrôler : **Outils** pour les serveurs MCP (comparer avec la liste des
+       serveurs revus) et les outils de courriel (destinataire fixe ou restreint) ; **Vue
+       d'ensemble** > **Instructions** quand l'orchestration générative est active.
+    3. Alternative en lecture seule : interroger les tables Dataverse `bots` et `botcomponents`, ou
+       lancer les tests Maester MT.1116, MT.1117, MT.1120, MT.1121 et MT.1122
+       (`Connect-Maester -Service Dataverse,Graph`).
+    4. Échec si un agent a un propriétaire désactivé ou supprimé, n'a pas été modifié ni réapprouvé
+       depuis plus de `{{ agent_dormant_days }}` jours, utilise un serveur MCP non consigné comme
+       revu, envoie des courriels dont le destinataire ou le contenu est choisi par le modèle, ou
+       utilise l'orchestration générative sans instructions.
+remediation:
+  manual: |
+    1. Réattribuer les agents orphelins à un propriétaire actif (partage de l'agent en **Éditeur**,
+       ou champ propriétaire dans Dataverse), ou les dépublier et les supprimer. Rôle :
+       administrateur d'environnement ou administrateur système.
+    2. Demander aux propriétaires des agents dormants de les mettre à jour ou de les réapprouver ;
+       dépublier les autres.
+    3. Revoir chaque serveur MCP (propriétaire, hébergement, authentification, HTTPS) ; retirer ceux
+       qui ne sont pas revus, ou les remplacer par des connecteurs personnalisés couverts par les
+       stratégies de données.
+    4. Restreindre les outils de courriel à des destinataires fixes, ou les retirer ; bloquer les
+       actions d'envoi d'Office 365 Outlook par des stratégies de connecteurs avancées là où les
+       agents ne doivent pas envoyer de courriel.
+    5. Ajouter des instructions personnalisées aux agents en orchestration générative et republier.
+    6. Planifier la revue tous les `{{ agent_dormant_days }}` jours.
+  rollback: |
+    Republier un agent depuis sa version précédente si un changement casse un usage légitime.

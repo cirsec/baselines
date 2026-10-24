@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-007
+title: Limit the lifetime of application client secrets
+finding:
+  title: Application client secrets can be created with a long or unlimited lifetime
+  description: A secret that stays valid for years keeps working long after it leaked in a script, a repository or a former employee's notes.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, workload-identities, credentials, client-secrets, app-management-policy]
+
+description: |
+  The tenant-wide app management policy enforces a maximum lifetime of
+  **{{ app_secret_max_days }}** days for password credentials (client secrets) on applications
+  and service principals. Secrets that already exist with a longer lifetime are tracked and
+  replaced (CB-M365-APPS-010).
+rationale: |
+  Where secrets cannot be avoided yet (CB-M365-APPS-006 exceptions, or existing applications), a
+  short lifetime limits how long a leaked secret can be used and forces regular rotation, which
+  also keeps the list of people who know the secret current.
+impact: |
+  Teams that manage applications with secrets must rotate them at least every
+  {{ app_secret_max_days }} days. Plan rotation reminders, for example with the Entra
+  recommendation on expiring credentials.
+
+setting:
+  location: Entra admin center > Entra ID > Enterprise apps > Application policies > Restrict max password lifetime (Graph policies/defaultAppManagementPolicy, passwordCredentials restriction passwordLifetime)
+  default_value: Not configured
+  recommended_value: On, at most {{ app_secret_max_days }} days, applies to all applications
+parameters:
+  - name: app_secret_max_days
+    type: integer
+    description: Maximum lifetime of a new client secret.
+    unit: days
+    default: 180
+    minimum: 1
+    maximum: 180
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies**.
+    3. Check that the password lifetime restriction is **On**, set to at most
+       {{ app_secret_max_days }} days, and applies to **All applications**.
+    4. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Check that
+       `isEnabled` is `true` and that `passwordCredentials` in both `applicationRestrictions` and
+       `servicePrincipalRestrictions` contains `passwordLifetime` with `state` = `enabled` and
+       `maxLifetime` of at most `P{{ app_secret_max_days }}D`.
+    5. Fail if the restriction is missing, disabled, longer than {{ app_secret_max_days }} days,
+       or set for only one of the two object types.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as a Security Administrator together with
+       Application Administrator or Cloud Application Administrator.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies** and open the password
+       lifetime restriction.
+    3. Set it to **On**, enter a maximum lifetime of {{ app_secret_max_days }} days, set **Applies
+       to** to **All applications** and select **Save**.
+    4. Graph alternative (scope `Policy.ReadWrite.ApplicationConfiguration`):
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` adding
+       `{"restrictionType": "passwordLifetime", "state": "enabled", "maxLifetime": "P{{ app_secret_max_days }}D"}`
+       to `passwordCredentials` for applications and service principals, keeping existing
+       restrictions.
+  rollback: |
+    Set the password lifetime restriction to **Off** or raise the maximum lifetime.
+
+references:
+  - title: Configure restrictions on how applications can be configured
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-app-management-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: tenantAppManagementPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/tenantappmanagementpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.4"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.6v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-M365-APPS-006
+    type: related
+  - id: CB-M365-APPS-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

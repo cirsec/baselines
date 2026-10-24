@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès des invités à leurs propres objets d'annuaire
+finding:
+  title: Les invités peuvent énumérer les utilisateurs et groupes de l'annuaire
+  description: Un compte invité, éventuellement compromis dans son organisation d'origine, peut lister les utilisateurs, groupes et appartenances du tenant.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Identités externes > Paramètres de collaboration externe > Restrictions d'accès des utilisateurs invités (Guest user access restrictions)
+  recommended_value: L'accès des utilisateurs invités est limité aux propriétés et appartenances de leurs propres objets d'annuaire (le plus restrictif)
+description: |
+  **Restrictions d'accès des utilisateurs invités** vaut **L'accès des utilisateurs invités est
+  limité aux propriétés et appartenances de leurs propres objets d'annuaire (le plus restrictif)**
+  (`guestUserRoleId` = `2af84b1e-32c8-42b7-82bc-daa82404023b`). Les invités ne peuvent lire que leur
+  propre profil ; ils ne peuvent pas lister les autres utilisateurs, les groupes ni les
+  appartenances aux groupes.
+rationale: |
+  L'organisation ne contrôle pas la façon dont les invités s'authentifient dans leur tenant
+  d'origine. Un compte invité compromis avec un accès en lecture à l'annuaire donne à un attaquant
+  la liste complète des salariés, des groupes et des managers, qui alimente l'hameçonnage et
+  l'élévation de privilèges. La collaboration dans Teams et SharePoint continue de fonctionner au
+  niveau le plus restrictif.
+impact: |
+  Les invités ne peuvent pas parcourir le sélecteur de personnes au-delà des personnes avec qui ils
+  travaillent déjà, et ne voient pas les membres de leurs groupes dans certaines applications. La
+  collaboration Teams et SharePoint n'est pas affectée.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**
+       (la même option figure aussi dans **Entra ID** > **Utilisateurs** > **Paramètres
+       utilisateur**) et lire **Restrictions d'accès des utilisateurs invités**.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).GuestUserRoleId`.
+    4. Échec si la valeur n'est pas `2af84b1e-32c8-42b7-82bc-daa82404023b`.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de fournisseur d'identité externe (ou Administrateur général).
+    2. Aller dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**.
+    3. Sous **Restrictions d'accès des utilisateurs invités**, sélectionner **L'accès des
+       utilisateurs invités est limité aux propriétés et appartenances de leurs propres objets
+       d'annuaire (le plus restrictif)** et **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) :
+       `Update-MgPolicyAuthorizationPolicy -GuestUserRoleId '2af84b1e-32c8-42b7-82bc-daa82404023b'`.
+  rollback: |
+    Sélectionner **Les utilisateurs invités ont un accès limité aux propriétés et appartenances des
+    objets d'annuaire** (`10dae51f-b6af-4016-8d66-8c2a99b929b3`).

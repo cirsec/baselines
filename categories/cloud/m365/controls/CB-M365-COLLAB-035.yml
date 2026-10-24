@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-035
+title: Make end-to-end encryption available for Teams calls
+finding:
+  title: Users cannot turn on end-to-end encryption for Teams calls
+  description: Sensitive one-to-one calls rely only on service-side encryption, so their media is readable by the service during processing.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, encryption, calls, meetings]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  The Global enhanced encryption policy lets users turn on end-to-end encryption (E2EE) for one-to-one
+  calls (**End-to-end call encryption** = **Not enabled, but users can enable**,
+  `CallingEndtoEndEncryptionEnabledType` = `DisabledUserOverride`). Where organizers have Teams
+  Premium, **End-to-end meeting encryption** is also available (`MeetingEndToEndEncryption` =
+  `DisabledUserOverride`).
+
+  E2EE stays opt-in: users switch it on in their Teams settings, or meeting templates and sensitivity
+  labels enforce it for sensitive meetings.
+rationale: |
+  Standard Teams encryption protects media in transit and at rest but the service can decrypt it.
+  End-to-end encryption keeps the keys on the endpoints, so audio, video and screen sharing of a
+  sensitive call cannot be read by the service or by someone with privileged access to it. Making it
+  available lets people who handle sensitive matters use it when they need it.
+impact: |
+  During an end-to-end encrypted call or meeting, recording, live captions and transcription, Copilot,
+  call transfer and merge, breakout rooms, PowerPoint Live and PSTN dial-in are unavailable. Users
+  subject to compliance recording cannot use E2EE. Teams on the web and VDI cannot join encrypted
+  meetings. Train users to keep E2EE for calls that need it.
+
+setting:
+  location: Teams admin center > Enhanced encryption policies > Global (Org-wide default) > End-to-end call encryption
+  default_value: Not enabled (Disabled)
+  recommended_value: Not enabled, but users can enable (DisabledUserOverride)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Enhanced encryption policies** and open the **Global (Org-wide default)** policy and
+       the custom policies assigned to users.
+    3. Check that **End-to-end call encryption** is **Not enabled, but users can enable** (and, with
+       Teams Premium, that **End-to-end meeting encryption** is the same).
+    4. With Microsoft Teams PowerShell:
+       `Get-CsTeamsEnhancedEncryptionPolicy | Select-Object Identity, CallingEndtoEndEncryptionEnabledType, MeetingEndToEndEncryption`.
+    5. Fail if `CallingEndtoEndEncryptionEnabledType` is `Disabled` in the Global policy.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Enhanced encryption policies**, open the **Global
+       (Org-wide default)** policy, set **End-to-end call encryption** to **Not enabled, but users can
+       enable** and **Save**. Role: Teams Administrator.
+    2. PowerShell equivalent:
+       `Set-CsTeamsEnhancedEncryptionPolicy -Identity Global -CallingEndtoEndEncryptionEnabledType DisabledUserOverride`.
+    3. Tell users how to turn on end-to-end encrypted calling and when to use it.
+
+references:
+  - title: Manage end-to-end encryption for Microsoft Teams meetings and one-to-one calls
+    url: https://learn.microsoft.com/microsoftteams/teams-end-to-end-encryption
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsEnhancedEncryptionPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsenhancedencryptionpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-M365-COLLAB-031
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

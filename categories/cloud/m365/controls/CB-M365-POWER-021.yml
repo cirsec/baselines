@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-021
+title: Restrict service principals from creating Fabric workspaces, connections and deployment pipelines
+finding:
+  title: Any service principal can create Fabric workspaces, connections and deployment pipelines
+  description: Service principals can call Fabric APIs that no item permission protects and create new workspaces, data connections or pipelines.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, service-principals, api, workspaces, workload-identities]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Service principals can create workspaces, connections, and
+  deployment pipelines** (Developer settings) is **Disabled**, or **Enabled** only for specific
+  security groups containing the service principals of approved automation (for example a CI/CD
+  pipeline).
+rationale: |
+  The Create Workspace, Create Connection and Create Deployment Pipeline APIs are not protected by
+  a Fabric permission model: once the tenant setting allows a service principal, it can create these
+  objects freely. A compromised application secret can then be used to create workspaces outside
+  governance or connections that reach external data stores with stored credentials. Limiting the
+  setting to a reviewed automation group closes that path.
+impact: |
+  Automation whose service principal is outside the allowed groups can no longer create workspaces,
+  connections or deployment pipelines. Microsoft disables this setting by default for new tenants;
+  check existing CI/CD and provisioning scripts before restricting it in older tenants.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Developer settings > Service principals can create workspaces, connections, and deployment pipelines
+  default_value: Disabled (new tenants)
+  recommended_value: Disabled, or Enabled for specific security groups
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Developer settings** and
+       expand **Service principals can create workspaces, connections, and deployment pipelines**.
+    3. Check that it is **Disabled**, or **Enabled** for **Specific security groups** only.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `ServicePrincipalAccessGlobalAPIs`.
+    5. Fail if the setting is enabled for the entire organization.
+
+remediation:
+  manual: |
+    1. In **Tenant settings** > **Developer settings** > **Service principals can create
+       workspaces, connections, and deployment pipelines**, select **Disabled**, or **Enabled** with
+       **Specific security groups**. Select **Apply**. Role: Fabric Administrator.
+    2. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/ServicePrincipalAccessGlobalAPIs/update`
+       with the target state.
+  rollback: |
+    Set the setting back to its previous scope.
+
+references:
+  - title: Developer admin settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-developer
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.12"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059.009
+related_controls:
+  - id: CB-M365-POWER-019
+    type: related
+  - id: CB-M365-APPS-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

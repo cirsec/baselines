@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-025
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne laisser que les personnes de l'organisation contourner la salle d'attente Teams
+finding:
+  title: Des participants externes sont admis aux réunions Teams sans passer par la salle d'attente
+  description: "Invités, utilisateurs fédérés ou participants anonymes entrent directement dans les réunions : l'organisateur ne peut pas vérifier qui rejoint."
+description: |
+  Par défaut, seules les personnes de l'organisation (hors invités), les personnes invitées, ou seuls
+  les organisateurs et coorganisateurs rejoignent directement ; tous les autres attendent dans la
+  salle d'attente qu'un organisateur, coorganisateur ou présentateur les admette. **Qui peut
+  contourner la salle d'attente** vaut **Personnes de mon organisation**, **Personnes invitées** ou
+  **Uniquement les organisateurs et coorganisateurs** (`AutoAdmittedUsers` =
+  `EveryoneInCompanyExcludingGuests`, `InvitedUsers` ou `OrganizerOnly`) dans chaque stratégie de
+  réunion.
+rationale: |
+  La salle d'attente est le seul moment où l'organisateur voit qui va rejoindre avant que cette
+  personne n'entende et ne voie la réunion. Admettre automatiquement invités, utilisateurs fédérés ou
+  participants anonymes laisse entrer sans contrôle quiconque dispose d'un lien transféré ou d'une
+  identité usurpée dans des échanges confidentiels.
+impact: |
+  Les participants externes attendent d'être admis, ce qui ajoute une étape aux réunions avec des
+  partenaires. La stratégie fixe la valeur par défaut des **Options de réunion** ; les organisateurs
+  peuvent la changer par réunion. Pour l'imposer aux réunions sensibles, utiliser un modèle de réunion
+  ou une étiquette de confidentialité (Teams Premium). La valeur par défaut de l'éditeur (**Personnes
+  de mon organisation et invités**) admet directement les invités et ne respecte pas ce contrôle.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Participation à la réunion et salle d'attente > Qui peut contourner la salle d'attente
+  recommended_value: Personnes de mon organisation, Personnes invitées, ou Uniquement les organisateurs et coorganisateurs
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Participation à la réunion et salle d'attente**, vérifier que **Qui peut
+       contourner la salle d'attente** est **Personnes de mon organisation**, **Personnes invitées** ou
+       **Uniquement les organisateurs et coorganisateurs**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AutoAdmittedUsers`.
+    5. Échec si une stratégie renvoie `Everyone`, `EveryoneInSameAndFederatedCompany` ou
+       `EveryoneInCompany`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Participation à la réunion et salle d'attente**, régler **Qui peut contourner
+       la salle d'attente** sur **Personnes de mon organisation** puis **Enregistrer**. Rôle :
+       Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -AutoAdmittedUsers EveryoneInCompanyExcludingGuests`
+       (répéter avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements
+       peuvent prendre jusqu'à 24 heures.

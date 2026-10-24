@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-003
+title: Apply a restrictive data policy to the default Power Platform environment
+finding:
+  title: No data policy restricts connectors in the default Power Platform environment
+  description: Every user of the tenant can build apps, flows and agents in the default environment that move business data to any connector, including personal and external services.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [power-platform, data-policy, dlp, connectors, default-environment, exfiltration]
+
+description: |
+  A tenant-level Power Platform data policy covers the default environment (scope **Add all
+  environments**, or a list or exclusion scope that includes it) and:
+
+  - places only the connectors needed for personal productivity in **Business**, typically the
+    non-blockable Microsoft 365 connectors;
+  - moves every other blockable connector, including HTTP and consumer services, to **Blocked**;
+  - sets the default group for new connectors to **Blocked**;
+  - blocks custom connectors with a deny rule on the `*` URL pattern, unless specific endpoints are
+    allowed.
+
+  Copilot Studio virtual connectors (for example **Chat without Microsoft Entra ID authentication
+  in Copilot Studio**) are classified in the same policy.
+rationale: |
+  The default environment is shared by every licensed user and cannot be restricted for creation.
+  Without a data policy, a maker can connect SharePoint or Outlook data to a personal Dropbox,
+  Gmail, an HTTP endpoint or a social network in a few clicks, intentionally or not. A data policy
+  that blocks everything except a small set of business connectors turns the default environment
+  into a personal productivity space and pushes real solutions into governed environments.
+impact: |
+  Existing apps, flows and agents in the default environment that use connectors now blocked, or
+  combine Business and Non-business connectors, are suspended and their connections disabled; they
+  must move to a dedicated environment with its own policy. Enforcement can take up to 24 hours on
+  large tenants. Run an inventory of connector usage in the default environment (Center of
+  Excellence Starter Kit or Power Platform inventory) before enforcing, and publish the governance
+  error message with a contact address.
+notes: |
+  Some Microsoft 365 connectors cannot be blocked (for example SharePoint, Office 365 Outlook,
+  Teams, OneDrive for Business, Approvals). Their actions can be limited with advanced connector
+  policies on managed environments. When several policies apply, the most restrictive one wins.
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader.
+    2. Browse to **Security** > **Data and privacy** > **Data policy**.
+    3. Find the policies whose **Applied to** column includes the default environment (**All
+       environments**, **All environments, except (n)** without the default one, or a list naming
+       it).
+    4. Open the policy with **Edit Policy** (do not save) and check the **Prebuilt connectors**
+       groups: blockable connectors other than approved business ones are in **Blocked**, and **Set
+       default group** is **Blocked**. Check **Custom connectors**: a `*` pattern is denied or
+       blocked.
+    5. Alternative, read only (Power Platform Administrator): `Add-PowerAppsAccount`, then
+       `Get-DlpPolicy` and inspect the policies whose environment scope includes the default
+       environment (`Get-AdminPowerAppEnvironment -Default` gives its name).
+    6. Fail if no data policy applies to the default environment, or if the policy leaves
+       blockable non-business connectors (HTTP, consumer storage or mail, social networks)
+       unblocked.
+
+remediation:
+  manual: |
+    1. Inventory connector usage in the default environment and contact the owners of solutions
+       that must move.
+    2. In the Power Platform admin center, browse to **Security** > **Data and privacy** > **Data
+       policy** > **New Policy**. Role: Power Platform Administrator.
+    3. Name the policy, for example `DLP - Default environment`.
+    4. **Prebuilt connectors**: move the approved connectors to **Business**, move every other
+       blockable connector to **Blocked**, and select **Set default group** > **Blocked**.
+    5. **Custom connectors**: add a rule that blocks the `*` pattern (add allow rules before it for
+       approved endpoints, always over HTTPS).
+    6. **Scope**: **Add multiple environments**, then add the default environment (or use **Add all
+       environments** for a tenant-wide baseline policy).
+    7. Review and **Create policy**. Customize the governance error message with
+       `Set-PowerAppDlpErrorSettings`.
+  rollback: |
+    Edit the policy and move the affected connectors back to **Non-business**, or delete the policy.
+    Suspended flows must be turned back on by their owners.
+
+references:
+  - title: Manage data policies
+    url: https://learn.microsoft.com/power-platform/admin/prevent-data-loss
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Secure the default environment
+    url: https://learn.microsoft.com/power-platform/guidance/adoption/secure-default-environment
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.2.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(10)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+  - framework: mitre-attack
+    id: T1048
+related_controls:
+  - id: CB-M365-POWER-004
+    type: related
+  - id: CB-M365-POWER-005
+    type: related
+  - id: CB-M365-POWER-022
+    type: related
+  - id: CB-M365-POWER-023
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

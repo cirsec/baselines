@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter l'accès d'administration des partenaires par des relations GDAP restreintes et limitées dans le temps
+finding:
+  title: Des partenaires détiennent un accès d'administration large ou permanent au tenant
+  description: La compromission d'un revendeur ou d'un infogérant donne à l'attaquant un accès administrateur au tenant via les permissions déléguées.
+parameters:
+  gdap_max_duration_days: Durée maximale d'une relation GDAP avant renouvellement obligatoire.
+description: |
+  L'accès d'administration des partenaires Microsoft (revendeurs Cloud Solution Provider,
+  infogérants) respecte les règles suivantes :
+
+  - aucun privilège d'administration délégué hérité (DAP) : aucun partenaire ne détient les rôles
+    **Support partenaire de niveau 1**, **Support partenaire de niveau 2** ni l'accès « agent
+    d'administration » global accordé par DAP ;
+  - chaque relation de privilèges d'administration délégués granulaires (GDAP) ne liste que les
+    rôles exigés par le contrat, jamais Administrateur général ni Administrateur de rôle
+    privilégié, sauf mention au contrat pour une période limitée ;
+  - chaque relation dure `{{ gdap_max_duration_days }}` jours ou moins et n'est pas en
+    prolongation automatique sans revue ;
+  - les relations sont revues au moins une fois par an et celles sans contrat actif sont
+    résiliées.
+
+  Le personnel partenaire qui administre le tenant au quotidien reçoit plutôt des comptes
+  nominatifs dans le tenant (CB-M365-ADMIN-001).
+rationale: |
+  Des attaques comme la campagne Nobelium ont compromis des revendeurs et utilisé leur accès
+  délégué pour atteindre les tenants de leurs clients. DAP donnait aux partenaires des droits
+  d'administrateur général permanents sur tous leurs clients. GDAP limite l'accès partenaire à des
+  rôles nommés et à une durée fixe, et le rend visible au client, à condition que celui-ci vérifie
+  ce qui a été accordé.
+impact: |
+  Les partenaires doivent demander les rôles restreints dont ils ont besoin et renouveler les
+  relations. Les opérations de support qui reposaient sur DAP doivent passer à GDAP ou à des comptes
+  nominatifs.
+notes: |
+  Le client ne peut pas lister les groupes de sécurité ni les utilisateurs du partenaire : il voit
+  la relation, ses rôles et sa durée. Les connexions des utilisateurs partenaires apparaissent comme
+  connexions inter-locataires dans les journaux de connexion.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Relations de partenaires**. Pour chaque partenaire, vérifier
+       les **Rôles d'administrateur** (GDAP ou DAP), les rôles accordés et la date de fin.
+    3. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Rôles et
+       administrateurs** et ouvrir **Support partenaire de niveau 1** et **Support partenaire de
+       niveau 2** : ils ne doivent avoir aucune attribution.
+    4. Comparer chaque relation aux contrats actifs et à la date de dernière revue.
+    5. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Directory.Read.All`) :
+       `Get-MgContract -All` liste les partenaires sous contrat sur le tenant.
+    6. Échec si une relation DAP ou une attribution Support partenaire existe, si une relation GDAP
+       accorde Administrateur général ou Administrateur de rôle privilégié sans justification écrite
+       et limitée dans le temps, si elle dure plus de `{{ gdap_max_duration_days }}` jours, ou si
+       elle n'a pas de contrat actif.
+remediation:
+  manual: |
+    1. Avec un Administrateur général, aller dans **Paramètres** > **Relations de partenaires** dans
+       le centre d'administration Microsoft 365.
+    2. Pour une relation DAP : sélectionner le partenaire et **Supprimer les rôles
+       d'administrateur**. Demander au partenaire une demande GDAP avec les rôles dont il a besoin.
+    3. Pour une relation GDAP aux rôles ou à la durée excessifs : demander au partenaire une
+       nouvelle demande au périmètre réduit, l'approuver, puis résilier l'ancienne relation
+       (**Résilier la relation** dans le volet du partenaire).
+    4. Pour un partenaire sans contrat actif : résilier la relation.
+    5. Retirer toute attribution de **Support partenaire de niveau 1** et **Support partenaire de
+       niveau 2** dans **Rôles et administrateurs**.
+    6. Consigner la date de revue et planifier la suivante.
+  rollback: |
+    Accepter une nouvelle demande GDAP du partenaire.

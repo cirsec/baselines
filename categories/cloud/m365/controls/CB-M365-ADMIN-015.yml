@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-015
+title: Disable self-service password reset for administrators
+finding:
+  title: Administrators can reset their own password with self-service
+  description: An attacker who controls an admin's phone number or recovery mailbox can reset the admin password without any other administrator being involved.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, sspr, password-reset, authorization-policy]
+
+setting:
+  location: "Microsoft Graph: /policies/authorizationPolicy, property allowedToUseSSPR"
+  default_value: "true"
+  recommended_value: "false"
+
+description: |
+  The tenant authorization policy sets `allowedToUseSSPR` to `false`, so accounts holding an
+  administrative role cannot use self-service password reset. Their password (if they still use
+  one) is reset by another administrator with the Privileged Authentication Administrator role.
+rationale: |
+  The administrator SSPR policy is managed by Microsoft and always accepts two methods among
+  mobile phone, email and app, which can be taken over through SIM swapping or a compromised
+  personal mailbox. Turning it off removes this recovery path for the most valuable accounts.
+  Administrators who sign in with passkeys do not need password reset anyway.
+impact: |
+  An administrator who forgets a password must ask another administrator, which needs a
+  documented and staffed procedure. Emergency access accounts are not affected because they use
+  security keys.
+notes: |
+  The setting has no portal toggle. It can take up to 60 minutes to apply.
+
+audit:
+  manual: |
+    1. Connect to Microsoft Graph PowerShell with a Global Reader account (scope
+       `Policy.Read.All`).
+    2. Run `(Get-MgPolicyAuthorizationPolicy).AllowedToUseSspr`, or call
+       `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy` and read
+       `allowedToUseSSPR`.
+    3. Fail if the value is `true`.
+
+remediation:
+  manual: |
+    1. Make sure a password reset procedure exists for administrators (Privileged Authentication
+       Administrator, identity check of the requester).
+    2. Connect to Microsoft Graph PowerShell as at least a Privileged Role Administrator (scope
+       `Policy.ReadWrite.Authorization`).
+    3. Run `Update-MgPolicyAuthorizationPolicy -AllowedToUseSspr:$false`, or call
+       `PATCH https://graph.microsoft.com/v1.0/policies/authorizationPolicy` with
+       `{"allowedToUseSSPR": false}`.
+  rollback: |
+    Run `Update-MgPolicyAuthorizationPolicy -AllowedToUseSspr:$true`.
+
+references:
+  - title: Self-service password reset policies, administrator reset policy differences
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: authorizationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/authorizationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-AUTH-039
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

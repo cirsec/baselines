@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver Microsoft Authenticator sur les applications compagnons
+finding:
+  title: Outlook mobile peut servir d'authentificateur MFA
+  description: Authenticator Lite permet d'approuver des demandes MFA ou de lire des codes dans Outlook mobile, une application qui n'est pas gérée comme authentificateur et qui tourne sur le même appareil que la boîte aux lettres.
+description: |
+  Dans la configuration de Microsoft Authenticator de la stratégie des méthodes d'authentification,
+  **Microsoft Authenticator on companion applications** (Authenticator Lite) est réglé sur
+  **Disabled**. Les utilisateurs terminent la MFA dans Microsoft Authenticator lui-même ou avec une
+  autre méthode autorisée, pas dans Outlook mobile.
+
+  La valeur par défaut est **Microsoft managed**, dont la valeur actuelle est activée.
+rationale: |
+  Authenticator Lite place le second facteur dans l'application qu'il protège : qui contrôle le
+  téléphone et Outlook a à la fois la session de messagerie et l'approbation. Il ne prend pas non
+  plus en charge les passkeys et dépend de versions d'Outlook que l'organisation ne gère pas
+  forcément.
+impact: |
+  Les utilisateurs qui ont enregistré Authenticator Lite dans Outlook doivent installer Microsoft
+  Authenticator ou utiliser une autre méthode. Vérifier d'abord les **Détails de l'inscription des
+  utilisateurs**.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Stratégies > Microsoft Authenticator > Configurer > Microsoft Authenticator on companion applications
+  recommended_value: Disabled
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Microsoft
+       Authenticator**.
+    3. Dans l'onglet **Configurer**, lire **Microsoft Authenticator on companion applications**.
+    4. Alternative en lecture seule avec Microsoft Graph (bêta, étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`,
+       propriété `featureSettings.companionAppAllowedState.state`.
+    5. Échec si l'état est **Enabled** ou **Microsoft managed** (`default`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Microsoft
+       Authenticator** > **Configurer**.
+    3. Régler **Microsoft Authenticator on companion applications** sur **Disabled** et
+       enregistrer.
+    Équivalent Graph : `PATCH https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`
+    avec `featureSettings.companionAppAllowedState.state` à `disabled` (renvoyer la configuration
+    entière).
+  rollback: |
+    Remettre le réglage sur **Microsoft managed**.

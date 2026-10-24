@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-001
+title: Block legacy authentication with Conditional Access
+finding:
+  title: Legacy authentication protocols are not blocked
+  description: Clients that use IMAP, POP3, SMTP AUTH, Exchange ActiveSync basic authentication or other legacy protocols sign in with a password alone, so MFA never applies to them.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [legacy-authentication, conditional-access, password-spray, mfa-bypass]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy blocks every sign-in that comes from a legacy authentication client,
+  for all users and all resources. In Conditional Access, legacy clients are the **Exchange
+  ActiveSync clients** and **Other clients** client app types: IMAP, POP3, authenticated SMTP,
+  MAPI over HTTP, Exchange Web Services and Autodiscover with basic authentication, older Office
+  clients and similar protocols that cannot carry an MFA challenge.
+
+  The policy excludes only the emergency access accounts. Microsoft can also create a
+  Microsoft-managed policy named **Block legacy authentication**, and Baseline security mode
+  creates one from the Microsoft 365 admin center: either satisfies this control once it is **On**
+  and covers the same scope.
+rationale: |
+  Legacy protocols accept a user name and password and nothing else. Password spray and credential
+  stuffing campaigns use them precisely because a stolen or guessed password is enough, whatever MFA
+  policy the tenant has. Blocking them at the identity provider closes the bypass for every
+  workload at once, including protocols a workload still accepts.
+impact: |
+  Applications, scripts, printers and scanners that still send mail or read mailboxes with basic
+  authentication stop working. Before enforcing, list them from the sign-in logs (filter **Client
+  app** on the legacy values, interactive and non-interactive) and move them to modern
+  authentication, OAuth for SMTP, or a connector. Old Office clients (2010 and earlier) can no
+  longer sign in.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** (not Report-only) where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the emergency
+         access accounts or their group;
+       - **Target resources** includes **All resources**, without exclusions;
+       - **Conditions** > **Client apps** is configured with only **Exchange ActiveSync clients**
+         and **Other clients** selected;
+       - **Grant** is **Block access**.
+       A Microsoft-managed or Baseline security mode policy named **Block legacy authentication**
+       counts if it meets the same criteria.
+    4. Browse to **Entra ID** > **Monitoring & health** > **Sign-in logs**, add the **Client app**
+       filter with the legacy values and check, on both the interactive and non-interactive tabs,
+       that recent attempts show **Failure** with the policy listed under **Conditional Access**.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.ClientAppTypes -contains 'other' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Fail if no such policy exists, if it is Report-only or Off, if it does not cover all users
+       and all resources, or if exclusions go beyond the emergency access accounts.
+
+remediation:
+  manual: |
+    1. In **Entra ID** > **Monitoring & health** > **Sign-in logs**, filter **Client app** on the
+       legacy values for the last 30 days and fix or retire every client found.
+    2. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**. If a Microsoft-managed
+       **Block legacy authentication** policy exists, you can enable it instead after checking its
+       exclusions.
+    3. Name it, for example `ALL - Block legacy authentication`.
+    4. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    5. **Target resources** > **Resources** > **Include**: **All resources**.
+    6. **Conditions** > **Client apps**: set **Configure** to **Yes**, select only **Exchange
+       ActiveSync clients** and **Other clients**.
+    7. **Grant**: **Block access**.
+    8. Set **Enable policy** to **Report-only**, save, and review the sign-in logs for a week with
+       the **Report-only** result filter.
+    9. Switch **Enable policy** to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with `conditions.clientAppTypes`
+    set to `exchangeActiveSync` and `other` and `grantControls.builtInControls` set to `block`.
+  rollback: |
+    Set the policy to **Report-only** or **Off**, or exclude a dedicated group holding the service
+    accounts that still need legacy authentication while they are migrated.
+
+references:
+  - title: Block legacy authentication with Conditional Access
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-block-legacy-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.1.1v1
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R11"
+    relation: related
+    note: ANSSI asks for authentication over a protected channel; blocking protocols that send a bare password is one part of it.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-AUTH-002
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-MAIL-009
+    type: related
+  - id: CB-M365-COLLAB-001
+    type: related
+  - id: CB-M365-AUTH-034
+    type: related
+  - id: CB-M365-MAIL-006
+    type: related
+  - id: CB-M365-MAIL-011
+    type: related
+  - id: CB-M365-DEVICE-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

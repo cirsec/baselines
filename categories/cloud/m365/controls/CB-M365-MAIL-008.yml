@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-008
+title: Block additional storage providers in Outlook on the web
+finding:
+  title: Outlook on the web lets users attach and save files with personal cloud storage
+  description: Users can attach files from, or save attachments to, Dropbox, Google Drive, Box or a personal OneDrive, outside the organization's control.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, outlook, owa-policy, cloud-storage, data-leakage]
+
+description: |
+  Every Outlook on the web mailbox policy in use has `AdditionalStorageProvidersAvailable` set to
+  `$false`. Users can then only attach files from the device or from the organization's OneDrive
+  and SharePoint, and cannot connect third-party or personal storage accounts in Outlook on the web
+  and the new Outlook.
+rationale: |
+  A connected personal storage account is an easy path to move work files out of the
+  organization, outside data loss prevention, retention and audit. Files shared from third-party
+  storage are also not scanned by Safe Attachments the way OneDrive and SharePoint files are.
+impact: |
+  Users who used Box, Dropbox or Google Drive in Outlook on the web lose that option. Teams that
+  exchange files with partners through those services must download and re-attach them, or use
+  SharePoint sharing.
+
+audit:
+  manual: |
+    1. Connect to Exchange Online PowerShell as at least a Global Reader.
+    2. Run (read-only):
+       ```powershell
+       Get-OwaMailboxPolicy | Format-Table Name, IsDefault, AdditionalStorageProvidersAvailable
+       Get-CASMailbox -ResultSize Unlimited | Group-Object OwaMailboxPolicy | Select-Object Name, Count
+       ```
+    3. Fail if a policy used by at least one mailbox (an empty `OwaMailboxPolicy` means the default
+       policy) has `AdditionalStorageProvidersAvailable` set to `True`.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell as an Exchange Administrator.
+    2. For each policy in use:
+       ```powershell
+       Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -AdditionalStorageProvidersAvailable $false
+       ```
+  rollback: |
+    Set `AdditionalStorageProvidersAvailable` back to `$true` on the policy.
+
+references:
+  - title: Set-OwaMailboxPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-owamailboxpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Outlook on the web mailbox policies in Exchange Online
+    url: https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/outlook-on-the-web/outlook-web-app-mailbox-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.5.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-MAIL-004
+    type: related
+  - id: CB-M365-MAIL-005
+    type: related
+  - id: CB-M365-TENANT-017
+    type: related
+  - id: CB-M365-COLLAB-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

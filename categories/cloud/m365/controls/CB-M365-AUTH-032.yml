@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-032
+title: Define the organization's trusted network locations
+finding:
+  title: No trusted network locations are defined in Conditional Access
+  description: Policies cannot tell corporate egress addresses from the rest of the internet, and ID Protection loses a signal to rate sign-in risk.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [conditional-access, named-locations, network]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  The public IP ranges used by the organization to reach Microsoft 365 (internet egress of offices,
+  data centers, VPN concentrators, cloud proxy) are declared as **IP ranges** named locations in
+  Conditional Access and marked as **trusted**. The list is owned by the network team and reviewed
+  when egress points change.
+rationale: |
+  Trusted locations reduce false positives in ID Protection (sign-ins from them are rated lower
+  risk) and let administrators write precise policies, for example restricting security info
+  registration or service accounts to the corporate network (CB-M365-AUTH-019). A missing or stale
+  list leads to broad exclusions instead.
+impact: |
+  None by itself: a named location changes nothing until a policy uses it. Do not use a trusted
+  location as a reason to skip MFA for everyone; an attacker on the corporate network or on a
+  compromised device inside it would then bypass it.
+notes: |
+  Only public egress addresses count; private ranges (10.0.0.0/8 and similar) are never seen by
+  Microsoft Entra ID. With a cloud proxy or SSE solution, declare the proxy's egress ranges, or use
+  Global Secure Access source IP restoration.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Named locations**.
+    3. Check that at least one **IP ranges** location exists with **Trusted** set to **Yes**, and
+       that its ranges match the current list of corporate egress addresses provided by the network
+       team.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessNamedLocation | Where-Object { $_.AdditionalProperties.isTrusted } | Select-Object DisplayName, @{n='Ranges';e={$_.AdditionalProperties.ipRanges.cidrAddress}}`
+    5. Fail if no trusted IP location exists, or if it contains ranges the organization does not own
+       or no longer uses.
+
+remediation:
+  manual: |
+    1. Get the list of public egress IP ranges from the network team.
+    2. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    3. Browse to **Entra ID** > **Conditional Access** > **Named locations** > **IP ranges
+       location**.
+    4. Enter a name, add each range in CIDR notation, select **Mark as trusted location** and
+       **Create**.
+    5. Record the owner of the list and review it at each network change.
+
+    In PowerShell: `New-MgIdentityConditionalAccessNamedLocation` with `@odata.type`
+    `#microsoft.graph.ipNamedLocation`, `ipRanges` and `isTrusted = $true`.
+  rollback: |
+    Clear **Mark as trusted location**, or delete the location once no policy references it.
+
+references:
+  - title: Network-based Conditional Access - named locations
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-assignment-network
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.14"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-033
+    type: related
+  - id: CB-M365-AUTH-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

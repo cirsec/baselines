@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-037
+title: Enforce Microsoft Entra Password Protection on Windows Server Active Directory
+finding:
+  title: Banned password lists are not enforced on on-premises domain controllers
+  description: Users of synchronized accounts can set weak passwords on-premises, which are then synchronized and accepted for cloud sign-in.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [passwords, password-protection, active-directory, hybrid, banned-passwords]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+    - "Identities synchronized from Active Directory (Microsoft Entra Connect or Cloud Sync)"
+
+description: |
+  **Enable password protection on Windows Server Active Directory** is set to **Yes** and **Mode** is
+  set to **Enforced**. The Microsoft Entra Password Protection proxy service and the DC agent are
+  installed (proxy on at least two member servers, agent on every domain controller), so that each
+  password change or reset in Active Directory is checked against the global and custom banned
+  password lists (CB-M365-AUTH-036).
+rationale: |
+  For synchronized users the password is set on-premises: the cloud check never runs. Without the
+  DC agent, the organization's custom list and Microsoft's global list do not apply to most of its
+  accounts, and those passwords also protect the Active Directory itself.
+impact: |
+  Software must be installed on every domain controller (a reboot is needed for the DC agent) and
+  on proxy servers with outbound HTTPS to Microsoft Entra ID. In **Enforced** mode, password changes
+  that hit a banned term are refused with a generic complexity error; tell the help desk. Run in
+  **Audit** mode first to measure the rejection rate.
+notes: |
+  The DC agent only validates new passwords; existing weak passwords stay until the next change. A
+  domain controller without the agent accepts any password that meets the Active Directory policy,
+  so the coverage must be complete. Agents report their health in the DC event logs and through
+  `Get-AzureADPasswordProtectionDCAgent`.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Password protection > Password protection for Windows Server Active Directory
+  default_value: Enable password protection on Windows Server Active Directory = Yes, Mode = Audit
+  recommended_value: Enable = Yes, Mode = Enforced, DC agent on every domain controller
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Password protection**.
+    3. Under **Password protection for Windows Server Active Directory**, check that **Enable
+       password protection on Windows Server Active Directory** is **Yes** and **Mode** is
+       **Enforced**.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Directory.Read.All`):
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       shows `EnableBannedPasswordCheckOnPremises` = `True` and
+       `BannedPasswordCheckOnPremisesMode` = `Enforce`.
+    5. On a server with the proxy module, run `Get-AzureADPasswordProtectionDCAgent` (read-only)
+       and compare the list with all domain controllers of each domain (`Get-ADDomainController
+       -Filter *`); check that each agent has a recent heartbeat.
+    6. Fail if the mode is **Audit**, if the feature is disabled, or if a domain controller has no
+       agent.
+
+remediation:
+  manual: |
+    1. Install the Microsoft Entra Password Protection proxy service on at least two member servers
+       and register it (`Register-AzureADPasswordProtectionProxy`,
+       `Register-AzureADPasswordProtectionForest`), with an account that is Global Administrator or
+       Security Administrator in the tenant and Domain Admin in the root domain.
+    2. Install the DC agent on every domain controller and reboot them in turn.
+    3. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator, browse to **Entra ID** > **Authentication methods** > **Password protection**,
+       set **Enable password protection on Windows Server Active Directory** to **Yes** and **Mode**
+       to **Audit**, and save.
+    4. Review the DC agent events (Applications and Services Logs > Microsoft > AzureADPasswordProtection
+       > DCAgent > Admin) for a few weeks, then set **Mode** to **Enforced** and save.
+  rollback: |
+    Set **Mode** back to **Audit**. Uninstalling the DC agent is the last resort.
+
+references:
+  - title: Enable on-premises Microsoft Entra Password Protection
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-password-ban-bad-on-premises-operations
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Plan and deploy on-premises Microsoft Entra Password Protection
+    url: https://learn.microsoft.com/entra/identity/authentication/howto-password-ban-bad-on-premises-deploy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Enforce on-premises Microsoft Entra Password Protection for Active Directory Domain Services
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-password-ban-bad-on-premises
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+related_controls:
+  - id: CB-M365-AUTH-036
+    type: related
+  - id: CB-M365-AUTH-044
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

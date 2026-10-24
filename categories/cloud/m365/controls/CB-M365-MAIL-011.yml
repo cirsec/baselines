@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-011
+title: Disable Exchange Web Services, or restrict it to approved applications
+finding:
+  title: Exchange Web Services is open to every application
+  description: Any client or tool, including attacker tooling with stolen credentials or tokens, can read and export mailboxes through EWS.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online, ews, legacy-protocols, application-access, retirement]
+
+description: |
+  Exchange Web Services (EWS) is turned off for the organization (`EwsEnabled $false`). When an
+  application still needs EWS until it is migrated to Microsoft Graph, EWS stays on only for that
+  application: `EwsApplicationAccessPolicy` is set to `EnforceAllowList` and `EwsAllowList` lists
+  its user agent, or EWS is enabled on the single mailboxes concerned (`Set-CASMailbox -EwsEnabled`).
+
+  Microsoft is retiring EWS in Exchange Online: it disables EWS progressively from 1 October 2026 in
+  tenants where administrators took no action, and removes it completely on 1 April 2027. After
+  that date the control no longer applies.
+rationale: |
+  EWS is an old, broad API that gives full mailbox access and is widely used by mailbox export
+  and search tools, including the ones attackers use after taking over an account or an
+  application. Turning it off before the retirement removes an exfiltration path and shows which
+  applications still depend on it, while there is time to migrate them.
+impact: |
+  Applications that still use EWS stop working: older Outlook for Mac versions, some third-party
+  backup, archiving, CRM, scheduling or migration tools, and custom scripts. Inventory them with
+  vendors and through the application sign-ins to Office 365 Exchange Online before the change, and
+  plan their move to Microsoft Graph.
+
+audit:
+  manual: |
+    1. There is no portal page for this setting. Connect to Exchange Online PowerShell as at least a
+       Global Reader.
+    2. Run (read-only):
+       ```powershell
+       Get-OrganizationConfig | Format-List EwsEnabled, EwsApplicationAccessPolicy, EwsAllowList, EwsBlockList
+       Get-CASMailbox -ResultSize Unlimited -Filter "EwsEnabled -eq $true" | Format-Table PrimarySmtpAddress, EwsEnabled
+       ```
+    3. Pass if `EwsEnabled` is `False`, or if `EwsApplicationAccessPolicy` is `EnforceAllowList`
+       with a short, documented `EwsAllowList`.
+    4. Fail if `EwsEnabled` is `True` or empty with no allow list, or if the allow list contains a
+       wildcard that matches any client.
+
+remediation:
+  manual: |
+    1. List the applications that still use EWS and their owners, and agree on a migration date.
+    2. Connect to Exchange Online PowerShell as an Exchange Administrator.
+    3. If no application needs EWS:
+       ```powershell
+       Set-OrganizationConfig -EwsEnabled $false
+       ```
+    4. Otherwise, restrict it to the remaining applications:
+       ```powershell
+       Set-OrganizationConfig -EwsApplicationAccessPolicy EnforceAllowList -EwsAllowList "<user agent 1>","<user agent 2>"
+       ```
+       or keep EWS off for the organization and enable it on the mailboxes that need it
+       (`Set-CASMailbox -Identity <mailbox> -EwsEnabled $true`).
+  rollback: |
+    `Set-OrganizationConfig -EwsEnabled $true` until 1 April 2027.
+
+references:
+  - title: Control access to EWS in Exchange
+    url: https://learn.microsoft.com/exchange/client-developer/exchange-web-services/how-to-control-access-to-ews-in-exchange
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.002
+related_controls:
+  - id: CB-M365-MAIL-006
+    type: related
+  - id: CB-M365-MAIL-037
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

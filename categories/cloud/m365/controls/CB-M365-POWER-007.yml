@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-007
+title: Enforce Content Security Policy for model-driven and canvas apps
+finding:
+  title: Content Security Policy is not enforced for Power Apps
+  description: Model-driven or canvas apps are served without an enforced Content Security Policy, so they can be framed by any site and get no browser-side protection against injected content.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [power-platform, power-apps, csp, clickjacking, dataverse]
+
+description: |
+  In every Power Platform environment with a Dataverse database, the **Privacy + Security**
+  settings enforce Content Security Policy for both app types: **Enforce content security policy**
+  is **On** for **Model-driven** and for **Canvas**. The `frame-ancestors` directive keeps its
+  default value (`'self' https://*.powerapps.com`) or lists only the approved hosts that embed the
+  apps (Teams, Outlook, Power BI, intranet).
+rationale: |
+  An enforced CSP header tells the browser which origins may frame the app and load resources.
+  Without it, a malicious site can embed a Power App in a hidden frame and trick users into
+  clicking (clickjacking), and injected content is not constrained by the browser. Turning on
+  enforcement is a low-cost, platform-provided layer of defense.
+impact: |
+  Apps embedded in hosts not listed in `frame-ancestors` stop loading in those hosts. Strict mode
+  can block custom scripts or resources loaded from other origins. Enable reporting with an
+  endpoint first (report-only mode), enforce on a test environment, then in production once no
+  violation is reported. Environments without Dataverse are out of scope.
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader, or as an environment admin of each environment.
+    2. Browse to **Manage** > **Environments** and, for each environment with Dataverse, select it,
+       then **Settings** > **Product** > **Privacy + Security**.
+    3. Under **Content security policy**, check on both the **Model-driven** and **Canvas** pivots
+       that **Enforce content security policy** is **On**, and review the `frame-ancestors` sources.
+    4. Alternative, read only: Dataverse Web API
+       `GET https://<org>.crm.dynamics.com/api/data/v9.2/organizations?$select=iscontentsecuritypolicyenabled,iscontentsecuritypolicyenabledforcanvas,contentsecuritypolicyconfiguration`
+       with a user who can read the organization table.
+    5. Fail if enforcement is off for either app type in any Dataverse environment, or if
+       `frame-ancestors` contains a wildcard host.
+
+remediation:
+  manual: |
+    1. For each Dataverse environment, browse to **Manage** > **Environments** > select it >
+       **Settings** > **Product** > **Privacy + Security**. Role: Power Platform Administrator, or
+       System Administrator of the environment.
+    2. Turn on **Enable reporting** with a reporting endpoint, and leave enforcement off for a few
+       days to collect violations (report-only mode).
+    3. Add the legitimate embedding hosts to `frame-ancestors` (for example
+       `https://teams.microsoft.com/` for Teams integration).
+    4. Turn on **Enforce content security policy** on the **Model-driven** pivot, then on the
+       **Canvas** pivot, starting with test environments.
+    5. Equivalent: set the organization columns `iscontentsecuritypolicyenabled` and
+       `iscontentsecuritypolicyenabledforcanvas` to `true` through the Dataverse Web API.
+  rollback: |
+    Turn **Enforce content security policy** off for the affected app type; keep reporting on.
+
+references:
+  - title: Content security policy
+    url: https://learn.microsoft.com/power-platform/admin/content-security-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.4.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-18
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1189
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

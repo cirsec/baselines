@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-021
+title: Turn on the common attachments filter in every anti-malware policy
+finding:
+  title: Executable and script attachments are not blocked by file type
+  description: Files such as .exe, .cmd or .vbe reach mailboxes as long as no malware signature matches them yet.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online-protection, anti-malware, attachments, file-types]
+
+description: |
+  Every anti-malware policy that applies to users (the default policy, custom policies and the
+  preset policies) has the **common attachments filter** turned on (`EnableFileFilter $true`) with
+  at least Microsoft's default list of file types, which includes `exe`, `cmd` and `vbe`. Matching
+  messages are rejected with an NDR (`FileTypeAction Reject`) or quarantined (`Quarantine`).
+
+  The filter detects the real file type, not only the extension, for the types that support true
+  type matching. Custom policies are enabled and their recipient conditions do not leave users
+  without a policy other than the default one.
+rationale: |
+  Executables, scripts, installers and disk images have no place in normal email and are a classic
+  first stage of malware delivery. Blocking them by type stops new samples that signature scanning
+  does not know yet, at no cost to legitimate mail.
+impact: |
+  Users can no longer receive the listed file types by email, also from internal senders. Teams
+  that exchange such files (developers, IT) use SharePoint, OneDrive or another approved channel.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-malware** and open each policy.
+    3. Under **Protection settings**, check that **Enable the common attachments filter** is selected,
+       that the file type list contains at least the default types, and that **When these file types
+       are found** is **Reject the message with a non-delivery report (NDR)** or **Quarantine the
+       message**.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-MalwareFilterPolicy | Format-List Name, EnableFileFilter, FileTypeAction, FileTypes
+       Get-MalwareFilterRule | Format-Table Name, State, Priority
+       ```
+    5. Fail if a policy that applies to users has `EnableFileFilter` set to `False`, if `FileTypes`
+       lacks `exe`, `cmd` or `vbe` or other default types, or if a custom policy is disabled while
+       users depend on it.
+
+remediation:
+  manual: |
+    1. In the Defender portal, open the policy > **Edit protection settings**.
+    2. Select **Enable the common attachments filter**, keep the default file types (select
+       **Select file types** to add more), choose **Reject the message with a non-delivery report
+       (NDR)** and save.
+    3. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Set-MalwareFilterPolicy -Identity Default -EnableFileFilter $true -FileTypeAction Reject
+       ```
+       Removing types from the list needs `-FileTypes` with the full list; do not remove default types.
+  rollback: |
+    `Set-MalwareFilterPolicy -Identity <policy> -EnableFileFilter $false` (not recommended).
+
+references:
+  - title: Anti-malware protection for email in Microsoft 365
+    url: https://learn.microsoft.com/defender-office-365/anti-malware-protection-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure anti-malware policies in EOP
+    url: https://learn.microsoft.com/defender-office-365/anti-malware-policies-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-205, ORCA-232)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.1.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.001
+related_controls:
+  - id: CB-M365-MAIL-019
+    type: related
+  - id: CB-M365-MAIL-022
+    type: related
+  - id: CB-M365-MAIL-023
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

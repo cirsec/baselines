@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-018
+title: Block ResourceKey authentication in Power BI
+finding:
+  title: Power BI accepts ResourceKey authentication for streaming and push datasets
+  description: Anyone holding a dataset's resource key URL can push data into it without a Microsoft Entra token.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, api, authentication, secrets]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Block ResourceKey Authentication** (Developer settings) is
+  **Enabled**. Streaming and push datasets then only accept data through the API with Microsoft
+  Entra authentication. The setting applies to the whole organization.
+rationale: |
+  A resource key is a static secret embedded in a URL. It is easily copied into scripts, IoT
+  devices or chat messages, never expires on its own, and its use is not tied to an identity.
+  Whoever obtains it can inject false or malicious data into dashboards that people rely on.
+  Requiring Entra authentication removes these anonymous write paths.
+impact: |
+  Integrations that push data to streaming or push datasets with a resource key (often IoT or
+  Power Automate flows using the key URL) stop working. Move them to authenticated API calls with
+  a service principal or user identity before enabling the block.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Developer settings > Block ResourceKey Authentication
+  default_value: Disabled
+  recommended_value: Enabled
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Developer settings** and
+       expand **Block ResourceKey Authentication**.
+    3. Check that it is **Enabled**.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `BlockResourceKeyAuthentication` (`enabled` must be `true`).
+    5. Fail if the block is disabled.
+
+remediation:
+  manual: |
+    1. Identify streaming and push datasets fed with resource keys and move their sources to
+       authenticated API calls.
+    2. In **Tenant settings** > **Developer settings** > **Block ResourceKey Authentication**,
+       select **Enabled** and **Apply**. Role: Fabric Administrator.
+    3. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/BlockResourceKeyAuthentication/update`
+       with `{"enabled": true}`.
+  rollback: |
+    Set the setting back to **Disabled**.
+
+references:
+  - title: Developer admin settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-developer
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power BI baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerbi.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.9"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERBI.5.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1565.001
+  - framework: mitre-attack
+    id: T1552
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'inscription en libre-service au tenant
+finding:
+  title: Des personnes peuvent rejoindre le tenant ou s'inscrire à des services par elles-mêmes
+  description: Toute personne disposant d'une boîte aux lettres sur un domaine vérifié, ou tout utilisateur externe via un flux utilisateur, peut créer un compte dans l'annuaire sans administrateur.
+description: |
+  La création de comptes en libre-service est désactivée :
+
+  - `allowedToSignUpEmailBasedSubscriptions` = `false` : les utilisateurs ne peuvent pas s'inscrire
+    à des abonnements basés sur l'e-mail (essais gratuits, Power BI, inscriptions virales) qui
+    créent des comptes dans le tenant ;
+  - `allowEmailVerifiedUsersToJoinOrganization` = `false` : les personnes qui vérifient une adresse
+    e-mail sur l'un des domaines du tenant ne peuvent pas rejoindre l'annuaire comme membres ;
+  - **Activer l'inscription en libre-service des invités via des flux d'utilisateurs** vaut **Non**
+    dans les paramètres de collaboration externe : les utilisateurs externes ne peuvent pas créer de
+    comptes invités via un flux d'inscription.
+rationale: |
+  Les comptes créés hors du processus d'arrivée n'ont ni propriétaire, ni lien RH, ni processus de
+  départ. Un ancien salarié ou prestataire qui reçoit encore du courrier sur un domaine de
+  l'entreprise pourrait rejoindre le tenant. L'inscription en libre-service des invités permet à des
+  externes de créer des comptes qui contournent les restrictions d'invitation.
+impact: |
+  Les utilisateurs ne peuvent plus lancer certains essais gratuits ou inscriptions en libre-service
+  qui créent des comptes ; ceux-ci passent par la DSI. Les achats et essais en libre-service sont
+  gérés séparément (CB-M365-TENANT-015).
+notes: |
+  Les deux propriétés d'annuaire n'ont pas d'interrupteur dans le portail. L'inscription des
+  invités via des flux d'utilisateurs suppose aussi un flux activé sur une application ;
+  désactiver l'interrupteur les désactive tous.
+audit:
+  manual: |
+    1. Se connecter à Microsoft Graph PowerShell avec un compte Lecteur général (étendue
+       `Policy.Read.All`) et exécuter :
+       ```
+       Get-MgPolicyAuthorizationPolicy |
+         Select-Object AllowedToSignUpEmailBasedSubscriptions, AllowEmailVerifiedUsersToJoinOrganization
+       ```
+       (ou `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy`).
+    2. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com), aller
+       dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe** et lire
+       **Activer l'inscription en libre-service des invités via des flux d'utilisateurs**.
+    3. Échec si l'une des propriétés vaut `true` ou si l'inscription en libre-service des invités
+       vaut **Oui**.
+remediation:
+  manual: |
+    1. Se connecter à Microsoft Graph PowerShell avec au moins le rôle Administrateur de rôle
+       privilégié (étendue `Policy.ReadWrite.Authorization`) et exécuter :
+       ```
+       Update-MgPolicyAuthorizationPolicy -AllowedToSignUpEmailBasedSubscriptions:$false `
+         -AllowEmailVerifiedUsersToJoinOrganization:$false
+       ```
+    2. Avec un Administrateur de fournisseur d'identité externe ou un Administrateur général, aller
+       dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**, régler
+       **Activer l'inscription en libre-service des invités via des flux d'utilisateurs** sur
+       **Non** et **Enregistrer**.
+  rollback: |
+    Repasser les propriétés à `true` et l'interrupteur sur **Oui**.

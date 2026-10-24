@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-002
+title: Do not bypass spam filtering for sender domains in mail flow rules
+finding:
+  title: Mail flow rules let mail from listed sender domains skip spam filtering
+  description: Any message that claims to come from an allow-listed domain, including spoofed ones, reaches the inbox without spam or phishing verdicts.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online, mail-flow, transport-rules, allow-list, spoofing]
+
+description: |
+  No Exchange mail flow rule (transport rule) sets the spam confidence level to **Bypass spam
+  filtering** (`SetSCL -1`) based on the sender domain (`SenderDomainIs`, `FromAddressContains`,
+  `FromAddressMatchesPatterns`). This applies above all to the organization's own accepted domains.
+
+  A rule that sets `SCL -1` is acceptable only when it is tied to a condition the sender cannot
+  forge, such as the connector or IP address of a known system (`SenderIpRanges`), and it is
+  documented. Legitimate senders that are wrongly filtered are handled with the Tenant Allow/Block
+  List, the spoof intelligence insight or the advanced delivery policy.
+rationale: |
+  The From and envelope domains are trivial to forge. A rule that trusts a sender domain lets every
+  spoofed message from that domain skip spam, bulk and part of the phishing filtering. Allow-listing
+  the organization's own domain is the worst case: an outsider can then send mail that looks
+  internal to any employee.
+impact: |
+  Messages from the formerly listed partners go through normal filtering again and some may land
+  in Junk Email until the sender fixes its SPF, DKIM and DMARC or an allow entry is created in the
+  Tenant Allow/Block List.
+
+audit:
+  manual: |
+    1. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Mail flow** > **Rules** and open every enabled rule.
+    3. Look for rules whose action is **Modify the message properties** > **Set the spam confidence
+       level (SCL)** > **Bypass spam filtering** and whose condition is on the sender's domain or
+       address.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-TransportRule | Where-Object { $_.SetSCL -eq -1 } |
+         Format-List Name, State, Priority, SenderDomainIs, FromAddressContainsWords, FromAddressMatchesPatterns, SenderIpRanges
+       ```
+    5. Fail if an enabled rule sets `SCL -1` with a sender domain or address condition, and always if
+       the listed domain is one of the organization's accepted domains (`Get-AcceptedDomain`).
+
+remediation:
+  manual: |
+    1. For each offending rule, note why it was created (which partner, which false positive).
+    2. Replace it: report the false positive to Microsoft from **Actions & submissions** >
+       **Submissions**, add an allow entry in **Tenant Allow/Block Lists** if needed, or, for an
+       internal system, restrict the rule to the system's IP range or inbound connector.
+    3. In the Exchange admin center, browse to **Mail flow** > **Rules**, select the rule and
+       turn it off; delete it once the replacement is tested.
+    4. PowerShell equivalent (Exchange Administrator):
+       ```powershell
+       Disable-TransportRule -Identity "<rule name>"
+       Remove-TransportRule -Identity "<rule name>"
+       ```
+  rollback: |
+    Turn the rule back on (`Enable-TransportRule`) while the replacement is being set up.
+
+references:
+  - title: Mail flow rules (transport rules) in Exchange Online
+    url: https://learn.microsoft.com/exchange/security-and-compliance/mail-flow-rules/mail-flow-rules
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Create safe sender lists in EOP
+    url: https://learn.microsoft.com/defender-office-365/create-safe-sender-lists-in-office-365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-118-2, ORCA-118-4)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+  - title: Maester MT.1043
+    url: https://maester.dev/docs/tests/MT.1043
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.2.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-030
+    type: related
+  - id: CB-M365-MAIL-032
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

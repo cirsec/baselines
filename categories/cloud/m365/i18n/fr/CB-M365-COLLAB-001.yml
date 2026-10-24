@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les protocoles d'authentification hérités vers SharePoint et OneDrive
+finding:
+  title: SharePoint et OneDrive acceptent les protocoles d'authentification hérités
+  description: Les clients qui utilisent IDCRL ou d'autres protocoles non modernes accèdent aux fichiers avec un simple mot de passe, hors authentification multifacteur et accès conditionnel.
+description: |
+  SharePoint Online refuse l'authentification par protocoles hérités. Deux paramètres du tenant sont
+  désactivés :
+
+  - `LegacyAuthProtocolsEnabled` : Identity Client Runtime Library (IDCRL), authentification par
+    formulaire et classe `SharePointOnlineCredentials` utilisée par les anciens clients Office, les
+    scripts et les outils tiers ;
+  - `LegacyBrowserAuthProtocolsEnabled` : le protocole navigateur Relying Party Suite (RPS).
+
+  Dans le centre d'administration SharePoint, c'est le paramètre **Applications qui n'utilisent pas
+  l'authentification moderne** réglé sur **Bloquer l'accès**. Le mode de sécurité de base expose les
+  deux mêmes paramètres.
+rationale: |
+  Les protocoles hérités envoient un nom d'utilisateur et un mot de passe au service et ne peuvent
+  porter ni défi multifacteur ni information d'appareil. C'est la voie habituelle de la pulvérisation
+  de mots de passe et du bourrage d'identifiants contre SharePoint, et ils contournent les stratégies
+  d'accès conditionnel qui exigent la MFA ou un appareil géré, y compris les restrictions SharePoint
+  sur les appareils non gérés.
+impact: |
+  Les clients Office antérieurs à Office 2013, les scripts qui se connectent avec
+  `SharePointOnlineCredentials` et les outils tiers qui stockent un mot de passe cessent de
+  fonctionner. Réécrire les scripts avec une inscription d'application (certificat) ou une connexion
+  déléguée moderne. Le changement peut prendre jusqu'à 24 heures. Microsoft a déprécié
+  l'authentification navigateur RPS pour les tenants entreprise en octobre 2025 :
+  `LegacyBrowserAuthProtocolsEnabled` ne peut plus être remis à `True`.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Contrôle d'accès > Applications qui n'utilisent pas l'authentification moderne
+  recommended_value: Bloquer l'accès (LegacyAuthProtocolsEnabled = False, LegacyBrowserAuthProtocolsEnabled = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Contrôle d'accès** > **Applications qui n'utilisent pas
+       l'authentification moderne**.
+    3. Vérifier que **Bloquer l'accès** est sélectionné.
+    4. Alternative en lecture seule : en Lecteur général, appeler Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, ou `Get-MgAdminSharepointSetting`) et vérifier que
+       `isLegacyAuthProtocolsEnabled` vaut `false`. Avec SharePoint Online Management Shell (rôle
+       Administrateur SharePoint requis), exécuter
+       `Get-SPOTenant | Select-Object LegacyAuthProtocolsEnabled, LegacyBrowserAuthProtocolsEnabled`.
+    5. Échec si **Autoriser l'accès** est sélectionné ou si l'une des propriétés vaut `True`.
+remediation:
+  manual: |
+    1. Identifier qui utilise encore des protocoles hérités : la page Mode de sécurité de base du centre
+       d'administration Microsoft 365 (**Paramètres** > **Paramètres de l'organisation** > **Sécurité et
+       confidentialité** > **Mode de sécurité de base**) propose un rapport d'impact pour les paramètres
+       IDCRL et RPS. Les connexions SharePoint dans les journaux de connexion Entra (filtre
+       **Application cliente** sur les clients hérités) donnent la même vue.
+    2. Migrer les scripts et outils restants vers l'authentification moderne.
+    3. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Contrôle d'accès** >
+       **Applications qui n'utilisent pas l'authentification moderne**, sélectionner **Bloquer l'accès**
+       puis **Enregistrer**. Rôle : Administrateur SharePoint.
+    4. Équivalent PowerShell :
+       `Set-SPOTenant -LegacyAuthProtocolsEnabled $false -LegacyBrowserAuthProtocolsEnabled $false`.
+       Équivalent Graph : `PATCH /admin/sharepoint/settings` avec
+       `{"isLegacyAuthProtocolsEnabled": false}`.
+  rollback: |
+    Exécuter `Set-SPOTenant -LegacyAuthProtocolsEnabled $true` le temps de migrer un client. Le
+    paramètre RPS ne peut plus être réactivé.

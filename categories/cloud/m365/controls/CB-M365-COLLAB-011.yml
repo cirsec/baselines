@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-011
+title: Expire guest access to sites and OneDrive automatically
+finding:
+  title: Guest access to SharePoint sites and OneDrive never expires
+  description: Guests keep access to shared sites and files long after the collaboration ended, unless someone remembers to remove them.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [guest-access, external-sharing, sharepoint, onedrive, lifecycle]
+
+description: |
+  Guest access to a SharePoint site or a OneDrive expires automatically after
+  `{{ guest_access_expiration_days }}` days (`ExternalUserExpirationRequired` = `True`,
+  `ExternalUserExpireInDays`). The expiry is set when the guest joins the site, through a sharing link
+  or direct access; site owners can extend it for a guest who still needs access.
+rationale: |
+  Guest access is rarely removed when a project ends. Stale guest permissions are a standing exposure:
+  the external account may be compromised, its owner may have changed employer, and nobody reviews it.
+  An automatic expiry makes access time-bound by default and forces a conscious renewal.
+impact: |
+  Guests lose access to the site or OneDrive after the period unless an owner extends it from the site
+  permissions page (**Manage guest expiration**). Expiry values are set as guests join: guests already
+  present before the policy are not covered until they join again. The guest account itself stays in
+  Entra; remove inactive guests with access reviews (CB-M365-TENANT-013).
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > More external sharing settings > Guest access to a site or OneDrive will expire automatically after this many days
+  default_value: Off (ExternalUserExpirationRequired = False)
+  recommended_value: "On, {{ guest_access_expiration_days }} days or less"
+parameters:
+  - name: guest_access_expiration_days
+    type: integer
+    description: Days after which a guest's access to a site or OneDrive expires (SharePoint accepts 30 to 730).
+    unit: days
+    default: 30
+    minimum: 30
+    maximum: 730
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** > **More external sharing settings** and check that **Guest
+       access to a site or OneDrive will expire automatically after this many days** is selected with at
+       most `{{ guest_access_expiration_days }}`.
+    3. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object ExternalUserExpirationRequired, ExternalUserExpireInDays`.
+    4. Fail if external sharing is allowed and `ExternalUserExpirationRequired` is `False` or
+       `ExternalUserExpireInDays` is greater than `{{ guest_access_expiration_days }}`.
+
+remediation:
+  manual: |
+    1. Tell site owners that guests will expire and how to extend them.
+    2. In the SharePoint admin center, browse to **Policies** > **Sharing** > **More external sharing
+       settings**, select **Guest access to a site or OneDrive will expire automatically after this many
+       days**, enter `{{ guest_access_expiration_days }}` and **Save**. Role: SharePoint Administrator.
+    3. PowerShell equivalent:
+       `Set-SPOTenant -ExternalUserExpirationRequired $true -ExternalUserExpireInDays {{ guest_access_expiration_days }}`.
+  rollback: |
+    Run `Set-SPOTenant -ExternalUserExpirationRequired $false`. Expiry dates already set on guests are
+    not cleared automatically; owners can extend them.
+
+references:
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage guest expiration for a site
+    url: https://support.microsoft.com/office/manage-guest-expiration-for-a-site-25bee24f-42ad-4ee8-8402-4186eed74dea
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.9"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-COLLAB-002
+    type: related
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-TENANT-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-017
+title: Block third-party storage services in Microsoft 365 on the web
+finding:
+  title: Users can open files from third-party storage in Microsoft 365 on the web
+  description: Users can connect personal Dropbox, Box or Google Drive accounts to Microsoft 365 on the web and move work files there.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [microsoft-365, third-party-storage, data-exfiltration, shadow-it]
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Services > Microsoft 365 on the web > Let users open files stored in third-party storage services in Microsoft 365 on the web
+  default_value: Checked
+  recommended_value: Cleared
+
+description: |
+  The option **Let users open files stored in third-party storage services in Microsoft 365 on the
+  web** is cleared. Technically, the service principal of the application **Microsoft 365 web
+  third-party storage** (app ID `c1f33bc0-bdb4-4248-ba9b-096807ddb43e`) exists in the tenant with
+  **Enabled for users to sign-in** set to **No** (`accountEnabled` = `false`).
+rationale: |
+  Third-party storage connected to Microsoft 365 on the web lets users save and open work documents
+  in personal cloud accounts that the organization does not manage, back up or monitor. Turning it
+  off removes an easy exfiltration path and keeps files in governed storage.
+impact: |
+  Users who open files from Dropbox, Box or Google Drive in Microsoft 365 on the web can no longer
+  do so. Desktop sync clients for those services are not affected; control them on devices.
+notes: |
+  Outlook on the web storage providers are a separate Exchange setting (MAIL domain). If the
+  service principal does not exist, the feature is on.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Services** > **Microsoft 365 on the web** and
+       read the third-party storage option.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Application.Read.All`):
+       ```
+       Get-MgServicePrincipal -Filter "appId eq 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e'" |
+         Select-Object DisplayName, AccountEnabled
+       ```
+    4. Fail if the option is checked, if the service principal does not exist, or if
+       `AccountEnabled` is `true`.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center as at least a Global Administrator.
+    2. Browse to **Settings** > **Org settings** > **Services** > **Microsoft 365 on the web**.
+    3. Clear **Let users open files stored in third-party storage services in Microsoft 365 on the
+       web** and **Save**.
+    4. Equivalent with Microsoft Graph PowerShell (scope `Application.ReadWrite.All`, at least
+       Cloud Application Administrator):
+       ```
+       $sp = Get-MgServicePrincipal -Filter "appId eq 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e'"
+       if (-not $sp) { $sp = New-MgServicePrincipal -AppId 'c1f33bc0-bdb4-4248-ba9b-096807ddb43e' }
+       Update-MgServicePrincipal -ServicePrincipalId $sp.Id -AccountEnabled:$false
+       ```
+  rollback: |
+    Check the option again, or set `AccountEnabled` back to `true`.
+
+references:
+  - title: Set up OneDrive file storage and sharing
+    url: https://learn.microsoft.com/microsoft-365/admin/setup/set-up-file-storage-and-sharing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.7"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-MAIL-008
+    type: related
+  - id: CB-M365-COLLAB-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-019
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les pages Bookings partagées à des utilisateurs choisis
+finding:
+  title: Tout utilisateur peut créer une page Bookings publique
+  description: Chaque utilisateur peut publier une page Bookings accessible depuis Internet, qui collecte des données personnelles et peut servir à l'hameçonnage ou au spam au nom de l'organisation.
+description: |
+  Les pages Bookings partagées (calendriers de réservation) ne peuvent être créées que par des
+  utilisateurs choisis :
+
+  - soit Bookings est désactivé pour l'organisation (`BookingsEnabled` = `False`) ;
+  - soit la stratégie de boîte aux lettres Outlook sur le web par défaut a
+    `BookingsMailboxCreationEnabled` = `False`, et seule une stratégie dédiée attribuée aux
+    utilisateurs approuvés l'autorise.
+rationale: |
+  Une page Bookings partagée est une page web publique et une boîte aux lettres. Des pages créées
+  librement peuvent exposer noms et agendas du personnel, collecter des données personnelles sans
+  analyse RGPD, ou servir à envoyer des messages convaincants depuis le domaine de l'organisation.
+  Réserver la création aux personnes qui en ont le besoin garde ces pages connues et revues.
+impact: |
+  Les utilisateurs hors de la stratégie approuvée ne peuvent plus créer de pages de réservation
+  partagées. Les pages existantes continuent de fonctionner ; revoir et supprimer celles qui ne
+  sont pas approuvées. Les pages de réservation personnelles (« Bookings avec moi ») relèvent d'un
+  réglage distinct.
+audit:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec au moins un compte Lecteur général ou
+       View-Only Organization Management.
+    2. Exécuter `Get-OrganizationConfig | Format-List BookingsEnabled`.
+    3. Si la valeur est `True`, exécuter
+       `Get-OwaMailboxPolicy | Format-Table Name, IsDefault, BookingsMailboxCreationEnabled`.
+    4. Lister les utilisateurs de chaque stratégie qui autorise la création avec
+       `Get-CASMailbox -ResultSize Unlimited | Where-Object OwaMailboxPolicy -eq '<policy>'`.
+    5. Échec si Bookings est activé et que la stratégie par défaut a
+       `BookingsMailboxCreationEnabled` = `True`, ou si une stratégie qui autorise la création est
+       attribuée à des utilisateurs non approuvés.
+remediation:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec au moins le rôle Administrateur Exchange.
+    2. Pour désactiver Bookings entièrement : `Set-OrganizationConfig -BookingsEnabled $false`, ou
+       dans le centre d'administration Microsoft 365 **Paramètres** > **Paramètres de
+       l'organisation** > **Services** > **Bookings**, décocher **Autoriser votre organisation à
+       utiliser Bookings**.
+    3. Pour le restreindre : `Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -BookingsMailboxCreationEnabled $false`,
+       puis créer une stratégie pour les utilisateurs approuvés :
+       ```
+       New-OwaMailboxPolicy -Name 'Bookings creators'
+       Set-OwaMailboxPolicy -Identity 'Bookings creators' -BookingsMailboxCreationEnabled $true
+       Set-CASMailbox -Identity <user> -OwaMailboxPolicy 'Bookings creators'
+       ```
+  rollback: |
+    Repasser `BookingsMailboxCreationEnabled` à `$true` sur la stratégie par défaut.

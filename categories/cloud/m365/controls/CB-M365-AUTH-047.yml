@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-047
+title: Disable accounts with no successful sign-in for {{ inactive_days }} days
+finding:
+  title: Accounts that have not been used for months remain enabled
+  description: Dormant accounts are taken over without anyone noticing, because their owner no longer looks at them.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [accounts, inactive-accounts, lifecycle, access-review]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  Member and guest user accounts whose last successful sign-in is older than {{ inactive_days }}
+  days, or that never signed in more than {{ inactive_days }} days after creation, are disabled
+  (**Account enabled** = **No**), then deleted after a retention period defined by the
+  organization. The check runs at least monthly.
+
+  Documented exceptions are kept in a list: emergency access accounts (monitored separately),
+  accounts of staff on long leave flagged by HR, and resource or shared mailbox accounts that are
+  already blocked for sign-in.
+rationale: |
+  An inactive account keeps its group memberships, licenses and sometimes roles, but nobody watches
+  its sign-ins or MFA prompts. Departed staff, former contractors and forgotten test accounts are a
+  classic entry point for password spray. Disabling them removes the target without losing data.
+impact: |
+  Users back from leave longer than {{ inactive_days }} days must ask the help desk to re-enable
+  their account. Accounts used only by services or non-interactive sign-ins appear inactive: review
+  them before disabling, and replace them with workload identities where possible.
+notes: |
+  `lastSuccessfulSignInDateTime` needs Microsoft Entra ID P1 to be read and can lag up to a day.
+  Microsoft Entra ID Governance can automate the process with access reviews of inactive users or a
+  lifecycle workflow. Synchronized accounts must be disabled in Active Directory, or the next sync
+  re-enables them.
+
+parameters:
+  - name: inactive_days
+    type: integer
+    description: Number of days without a successful sign-in after which an account is disabled.
+    unit: days
+    default: 90
+    minimum: 30
+    maximum: 365
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Reports Reader (Global Reader also works).
+    2. Browse to **Entra ID** > **Users**, select **Manage view** > **Edit columns** and add **Last
+       successful sign-in** (or **Last interactive sign-in time**).
+    3. Filter on **Account enabled** = **Yes** and the last sign-in date older than
+       {{ inactive_days }} days.
+    4. Alternative in PowerShell (Microsoft Graph, scopes `User.Read.All` and `AuditLog.Read.All`):
+       `$limit = (Get-Date).AddDays(-{{ inactive_days }}); Get-MgUser -All -Filter "accountEnabled eq true" -Property displayName,userPrincipalName,createdDateTime,signInActivity | Where-Object { ($_.SignInActivity.LastSuccessfulSignInDateTime -lt $limit) -and ($_.CreatedDateTime -lt $limit) }`
+    5. Fail if enabled accounts older than {{ inactive_days }} days have no successful sign-in in
+       that period and are not on the exception list.
+
+remediation:
+  manual: |
+    1. Export the list from the audit and send it to managers or HR for confirmation.
+    2. Disable confirmed accounts: in **Entra ID** > **Users**, open the user, **Edit properties** >
+       **Settings** > clear **Account enabled**; or in PowerShell (scope `User.ReadWrite.All`, User
+       Administrator) `Update-MgUser -UserId <id> -AccountEnabled:$false`. Disable synchronized
+       accounts in Active Directory.
+    3. Revoke their sessions (`Revoke-MgUserSignInSession -UserId <id>`).
+    4. Delete them after the retention period, keeping the mailbox and files as required.
+    5. Automate with an access review of inactive users or a lifecycle workflow if Microsoft Entra
+       ID Governance is available.
+  rollback: |
+    Re-enable the account (**Account enabled** = **Yes**) after checking the request with the
+    manager.
+
+references:
+  - title: How to manage inactive user accounts
+    url: https://learn.microsoft.com/entra/identity/monitoring-health/howto-manage-inactive-user-accounts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage users with inactivity using lifecycle workflows
+    url: https://learn.microsoft.com/entra/id-governance/lifecycle-workflow-inactive-users
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

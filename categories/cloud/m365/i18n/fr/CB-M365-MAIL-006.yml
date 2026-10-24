@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder l'authentification moderne activée pour Exchange Online
+finding:
+  title: L'authentification moderne est désactivée pour Exchange Online
+  description: Outlook se rabat sur des invites d'authentification de base, qui échappent à l'authentification multifacteur et à l'accès conditionnel.
+description: |
+  L'authentification moderne (OAuth 2.0) est activée pour Exchange Online au niveau de
+  l'organisation (`OAuth2ClientProfileEnabled $true`). Outlook pour Windows et Mac se connecte alors
+  via Microsoft Entra ID, avec authentification multifacteur et accès conditionnel.
+
+  L'authentification moderne est activée par défaut dans les tenants créés après août 2017 ; le
+  contrôle vérifie qu'elle n'a jamais été désactivée.
+rationale: |
+  Sans authentification moderne, Outlook demande le mot de passe dans une boîte de dialogue
+  d'authentification de base. Ces invites ne gèrent pas la MFA, sont faciles à imiter et maintiennent
+  l'usage des protocoles hérités. Bloquer l'authentification héritée par l'accès conditionnel ne
+  fonctionne que si les clients peuvent utiliser l'authentification moderne.
+impact: |
+  Aucun connu sur les clients pris en charge. Les très anciennes versions d'Outlook (2010, 2013 sans
+  les clés de registre) ne peuvent plus se connecter et doivent être mises à jour.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Services** > **Authentification
+       moderne** et vérifier que **Activer l'authentification moderne pour Outlook 2013 pour Windows
+       et versions ultérieures** est coché.
+    3. Ou, dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-OrganizationConfig | Format-List OAuth2ClientProfileEnabled
+       ```
+    4. Échec si `OAuth2ClientProfileEnabled` vaut `False`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Microsoft 365, aller dans **Paramètres** > **Paramètres de
+       l'organisation** > **Services** > **Authentification moderne**, cocher **Activer
+       l'authentification moderne pour Outlook 2013 pour Windows et versions ultérieures** et
+       enregistrer.
+    2. Équivalent PowerShell (Administrateur Exchange) :
+       ```powershell
+       Set-OrganizationConfig -OAuth2ClientProfileEnabled $true
+       ```
+    3. Les utilisateurs peuvent devoir redémarrer Outlook pour que le changement s'applique.

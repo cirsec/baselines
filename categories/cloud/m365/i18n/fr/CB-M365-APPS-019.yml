@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-019
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Gouverner les identités d'agents IA (propriétaires, sponsors, identifiants et privilèges)
+finding:
+  title: Des identités d'agents IA n'ont pas de responsable ou détiennent des privilèges et identifiants excessifs
+  description: Des identités d'agents et blueprints orphelins, dormants ou trop privilégiés donnent à un attaquant un accès autonome aux données du tenant que personne ne revoit.
+description: |
+  Les identités d'agent, blueprints d'identité d'agent, principaux de blueprint et agent users de
+  Microsoft Entra Agent ID sont revus au moins tous les 90 jours selon ces règles :
+
+  - chaque identité d'agent a un principal de blueprint existant et activé, chaque principal de
+    blueprint a un blueprint existant, et chaque agent user a une identité d'agent parente
+    existante ;
+  - chaque identité d'agent, blueprint et principal de blueprint a au moins un propriétaire activé
+    et un sponsor ;
+  - les identités d'agent activées sans connexion depuis **{{ agent_inactivity_days }}** jours sont
+    désactivées ;
+  - les blueprints n'ont pas de secrets client expirés ou de longue durée (CB-M365-APPS-006 et
+    CB-M365-APPS-007 s'appliquent), ni d'URI de redirection avec caractère générique ou en `http`
+    simple (CB-M365-APPS-013) ;
+  - aucune identité d'agent, aucun principal de blueprint ni agent user ne détient de rôle
+    d'annuaire privilégié ou d'appartenance à un groupe assignable à un rôle, et les agents
+    étrangers (multitenant) ne détiennent aucun rôle d'annuaire ;
+  - les identités d'agent ne détiennent aucune permission Microsoft Graph à haut risque (liste de
+    CB-M365-APPS-011) ;
+  - les blueprints n'utilisent pas le modèle d'héritage `allAllowed` pour les étendues déléguées ou
+    les rôles d'application, et les principaux de blueprint exigent l'affectation pour les rôles
+    d'application qu'ils exposent.
+rationale: |
+  Les agents se multiplient vite et sont souvent créés par des utilisateurs métier via Copilot
+  Studio ou par des tiers. Sans humain responsable (sponsor) ni revue régulière, les agents gardent
+  leurs permissions après la fin de leur projet, héritent de tout ce que leur blueprint autorise, et
+  deviennent un chemin sans surveillance vers les données. Un agent privilégié est aussi dangereux
+  qu'un principal de service privilégié, et plus difficile à repérer.
+impact: |
+  Les sponsors doivent être désignés et répondre aux revues. Désactiver un agent dormant arrête des
+  automatisations rarement exécutées ; confirmer d'abord avec le sponsor.
+notes: |
+  Les fonctionnalités de Microsoft Entra Agent ID sont en partie en préversion. L'hygiène des agents
+  Copilot Studio dans Power Platform est couverte par le domaine POWER.
+parameters:
+  agent_inactivity_days: Nombre de jours sans connexion au-delà duquel une identité d'agent activée est désactivée.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Agent ID** > **Toutes les identités d'agent** (ainsi que les vues
+       des blueprints et des agent users) et examiner pour chaque objet : lien au blueprint,
+       propriétaires, sponsors, dernière connexion, identifiants, rôles attribués et permissions
+       accordées.
+    3. Aller dans **Entra ID** > **Rôles et administrateurs** et filtrer les attributions sur les
+       identités d'agent et les agent users.
+    4. Avec Microsoft Graph (beta, étendues `Application.Read.All`, `Directory.Read.All`,
+       `AuditLog.Read.All`), lister les identités d'agent et blueprints, leurs propriétaires et
+       sponsors, identifiants, attributions de rôles d'application et attributions de rôles.
+    5. Les tests Maester MT.1200 à MT.1213 et MT.1223 automatisent ces vérifications et peuvent être
+       exécutés en lecture comme référence.
+    6. Échec si une règle de la description n'est pas respectée sans exception documentée.
+remediation:
+  manual: |
+    1. Attribuer un sponsor et au moins un propriétaire à chaque identité d'agent et blueprint
+       (portail Mon compte pour les sponsors et propriétaires, ou centre d'administration avec le
+       rôle Administrateur Agent ID).
+    2. Supprimer les identités d'agent, principaux de blueprint et agent users orphelins dont le
+       parent n'existe plus.
+    3. Désactiver les identités d'agent inactives depuis {{ agent_inactivity_days }} jours après
+       confirmation du sponsor.
+    4. Retirer aux agents les rôles d'annuaire privilégiés et appartenances à des groupes
+       assignables à un rôle ; retirer les permissions Graph à haut risque ou les remplacer par des
+       permissions restreintes.
+    5. Sur les blueprints, retirer les secrets au profit d'identifiants fédérés ou de certificats,
+       corriger les URI de redirection, remplacer l'héritage `allAllowed` par une liste explicite,
+       et exiger l'affectation sur les rôles d'application exposés.
+    6. Rôles requis : Administrateur Agent ID ; Administrateur de rôle privilégié pour retirer les
+       attributions de rôles et les rôles d'application Graph.
+  rollback: |
+    Réactiver un agent désactivé ou restaurer une permission retirée après revue.

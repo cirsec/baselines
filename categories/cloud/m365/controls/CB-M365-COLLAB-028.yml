@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-028
+title: Make only organizers and co-organizers presenters by default
+finding:
+  title: Every Teams meeting participant can present by default
+  description: Any participant, including external and anonymous ones, can share their screen or content to the whole meeting without the organizer granting it.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, meetings, presenters]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  In meetings organized by users of the organization, only the organizer and co-organizers are
+  presenters by default; other participants are attendees until promoted (**Who can present** = **Only
+  organizers and co-organizers**, `DesignatedPresenterRoleMode` = `OrganizerOnlyUserOverride`).
+  Organizers can change the value in **Meeting options**.
+rationale: |
+  Presenters can share screens, mute and remove participants, admit people from the lobby and start
+  recording. Granting this to everyone by default lets an uninvited or malicious participant broadcast
+  offensive or misleading content, or disrupt the meeting, before the organizer reacts.
+impact: |
+  Organizers must promote presenters before or during the meeting, which adds a step for collaborative
+  meetings. Organizers who prefer the old behavior can change it per meeting.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Content sharing > Who can present
+  default_value: Everyone (EveryoneUserOverride)
+  recommended_value: Only organizers and co-organizers (OrganizerOnlyUserOverride)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Content sharing** section, check that **Who can present** is **Only organizers and
+       co-organizers**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, DesignatedPresenterRoleMode`.
+    5. Fail if any policy returns a value other than `OrganizerOnlyUserOverride`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Content sharing** section, set **Who can present** to **Only organizers and
+       co-organizers** and **Save**. Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -DesignatedPresenterRoleMode OrganizerOnlyUserOverride`
+       (repeat with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+
+references:
+  - title: Manage who can present and request control in Teams meetings
+    url: https://learn.microsoft.com/microsoftteams/meeting-who-present-request-control
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.6"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+related_controls:
+  - id: CB-M365-COLLAB-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

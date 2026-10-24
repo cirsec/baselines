@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Permettre à tous les utilisateurs de signaler les demandes MFA suspectes
+finding:
+  title: Les utilisateurs ne peuvent pas signaler les demandes MFA qu'ils n'ont pas initiées
+  description: Un utilisateur qui reçoit une demande MFA inattendue peut seulement la refuser ; la tentative ne lève donc aucun signal de risque et le mot de passe compromis reste utilisé.
+description: |
+  Dans les paramètres de la stratégie des méthodes d'authentification, **Signaler une activité
+  suspecte** est réglé sur **Activé** pour **Tous les utilisateurs**. Un utilisateur qui reçoit une
+  demande MFA qu'il n'a pas initiée peut la signaler depuis Microsoft Authenticator ou pendant
+  l'appel téléphonique. Le signalement refuse la connexion, passe le risque utilisateur à **Élevé**
+  dans ID Protection et écrit une détection de risque **User Reported Suspicious Activity**.
+
+  La valeur **Géré par Microsoft** laisse actuellement la fonctionnalité désactivée : il faut donc
+  la régler explicitement.
+rationale: |
+  Une demande inattendue signifie que l'attaquant a déjà le mot de passe. Transformer la réaction
+  de l'utilisateur en risque utilisateur élevé permet à une stratégie de risque d'imposer un
+  changement de mot de passe sécurisé ou de bloquer le compte (Entra ID P2), et donne à l'équipe
+  sécurité une détection exploitable avec P1.
+impact: |
+  Les utilisateurs qui signalent par erreur sont marqués à risque élevé et peuvent être bloqués ou
+  invités à changer leur mot de passe par les stratégies de risque. Expliquer la fonctionnalité aux
+  utilisateurs et au support, et décider qui examine les détections.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Paramètres > Signaler une activité suspecte
+  recommended_value: Activé, Tous les utilisateurs
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Paramètres**.
+    3. Lire **Signaler une activité suspecte** et sa cible.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicy).ReportSuspiciousActivitySettings | Format-List`
+       (Graph : `GET https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy`,
+       propriété `reportSuspiciousActivitySettings`).
+    5. Échec si l'état est **Désactivé** ou **Géré par Microsoft** (`default`), ou si la cible n'est
+       pas **Tous les utilisateurs** (`all_users`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Paramètres**.
+    3. Régler **Signaler une activité suspecte** sur **Activé** et cibler **Tous les utilisateurs**.
+    4. Laisser le **Code de signalement** par défaut, sauf si des messages d'accueil téléphoniques
+       personnalisés sont chargés.
+    5. Sélectionner **Enregistrer**.
+    6. S'assurer que quelqu'un examine **ID Protection** > **Détections de risques**, ou qu'une
+       stratégie de risque utilisateur traite les utilisateurs à risque élevé.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy` avec
+    `reportSuspiciousActivitySettings` à `{"state": "enabled", "includeTarget": {"targetType": "group", "id": "all_users"}}`.
+  rollback: |
+    Remettre **Signaler une activité suspecte** sur **Géré par Microsoft**.

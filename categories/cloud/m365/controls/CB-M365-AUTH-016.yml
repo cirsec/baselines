@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-016
+title: Restrict passkeys to approved authenticator models
+finding:
+  title: Any passkey model can be registered
+  description: Without key restrictions, users can register authenticators the organisation has not evaluated, including models without certification or with known weaknesses.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [passkeys, fido2, aaguid, attestation, authentication-methods]
+
+description: |
+  Every passkey profile of the **Passkey (FIDO2)** method has **Enforce attestation** set to
+  **Yes** and **Enforce key restrictions** set to **Yes** with the behaviour **Allow**, limited to
+  the AAGUIDs listed in `{{ approved_aaguids }}`: the security key models and passkey providers
+  the organisation has evaluated and issues.
+
+  An AAGUID identifies the make and model of an authenticator. It is only trustworthy when
+  attestation is enforced, which is why both settings go together.
+parameters:
+  - name: approved_aaguids
+    type: list
+    description: AAGUIDs of the approved security key models and passkey providers (for example a certified security key and Microsoft Authenticator for iOS and Android).
+    default: []
+rationale: |
+  Restricting models lets the organisation require certified hardware (FIDO certification level,
+  FIPS 140, or an ANSSI qualified product), keep a known support and revocation process, and react
+  quickly when a model is found vulnerable by removing its AAGUID.
+impact: |
+  Users with a passkey from a model that is not on the list can no longer register it or sign in
+  with it, including passkeys registered before the restriction. Synced passkeys cannot be
+  attested and are excluded. The organisation must buy, distribute and replace the approved keys.
+notes: |
+  The AAGUID of a registered passkey is shown in the user's authentication method details.
+  Microsoft publishes the list of security keys eligible for attestation.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Passkey (FIDO2)** >
+       **Configure**.
+    3. For each passkey profile, check **Enforce attestation** is **Yes**, **Enforce key
+       restrictions** is **Yes**, the behaviour is **Allow** and the AAGUID list matches
+       `{{ approved_aaguids }}`.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Fido2).AdditionalProperties.keyRestrictions`
+    5. Fail if a profile does not enforce attestation and key restrictions, uses the **Block**
+       behaviour, or allows an AAGUID outside the approved list.
+
+remediation:
+  manual: |
+    1. Inventory registered passkeys (AAGUID in each user's authentication methods) and decide the
+       approved models.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Passkey (FIDO2)** >
+       **Configure** and edit each passkey profile.
+    4. Set **Enforce attestation** to **Yes**, **Enforce key restrictions** to **Yes**, behaviour
+       **Allow**, and enter the approved AAGUIDs. Save.
+    5. Replace users' unapproved keys before or right after the change.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Fido2`
+    with `keyRestrictions` set to `{"isEnforced": true, "enforcementType": "allow", "aaGuids": [...]}`.
+  rollback: |
+    Set **Enforce key restrictions** to **No** on the profile.
+
+references:
+  - title: How to enable passkeys (FIDO2) in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-passkeys-fido2
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft Entra ID attestation for FIDO2 security key vendors
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-fido2-hardware-vendor
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R39"
+    relation: related
+    note: An allow-list of attested models is how a tenant enforces the certified or qualified possession factor ANSSI asks for.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-11
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-015
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

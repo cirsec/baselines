@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-023
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les participants anonymes de rejoindre les réunions Teams
+finding:
+  title: Des participants anonymes peuvent rejoindre les réunions Teams
+  description: Des personnes non connectées, ou issues d'organisations non approuvées, peuvent rejoindre les réunions sous n'importe quel nom d'affichage.
+description: |
+  Les réunions organisées par les utilisateurs de l'organisation n'admettent pas de participants
+  anonymes (`AllowAnonymousUsersToJoinMeeting` = `False` dans la stratégie de réunion globale et dans
+  chaque stratégie personnalisée). Sont anonymes les personnes non connectées et les utilisateurs
+  d'organisations non approuvées dans l'accès externe. Les invités, les utilisateurs d'organisations
+  approuvées et les appelants téléphoniques peuvent toujours rejoindre.
+rationale: |
+  Un participant anonyme choisit son nom d'affichage : il peut usurper un collègue ou un partenaire,
+  et rien ne rattache sa présence à une identité dans la trace d'audit. Dans un environnement
+  sensible, exiger une identité authentifiée pour chaque participant supprime l'écoute et l'usurpation
+  via des liens de réunion transférés ou devinés.
+impact: |
+  Les personnes sans compte professionnel Microsoft 365 dans une organisation approuvée, sans compte
+  invité ni ligne téléphonique ne peuvent pas rejoindre : clients, candidats et public ont besoin
+  d'une invitation comme invité ou d'une stratégie dédiée pour les organisateurs qui les reçoivent.
+  Les webinaires et assemblées ouverts au public demandent une stratégie distincte. Le paramètre
+  d'organisation **Les utilisateurs anonymes peuvent rejoindre une réunion** dans **Réunions** >
+  **Paramètres de réunion** est en cours de retrait ; utiliser la stratégie de réunion.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Participation à la réunion et salle d'attente > Les utilisateurs anonymes peuvent rejoindre une réunion
+  recommended_value: Désactivé (AllowAnonymousUsersToJoinMeeting = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Participation à la réunion et salle d'attente**, vérifier que **Les
+       utilisateurs anonymes peuvent rejoindre une réunion** est **Désactivé**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowAnonymousUsersToJoinMeeting`.
+    5. Échec si la stratégie globale ou une stratégie personnalisée attribuée à d'autres utilisateurs
+       qu'une exception documentée autorise la participation anonyme.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Participation à la réunion et salle d'attente**, régler **Les utilisateurs
+       anonymes peuvent rejoindre une réunion** sur **Désactivé** puis **Enregistrer**. Rôle :
+       Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowAnonymousUsersToJoinMeeting $false` (répéter
+       avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements peuvent prendre
+       jusqu'à 24 heures.
+    5. Créer une stratégie personnalisée autorisant les anonymes pour les organisateurs qui doivent
+       recevoir le public, et la leur attribuer.

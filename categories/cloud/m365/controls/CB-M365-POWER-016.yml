@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-016
+title: Restrict Power BI links that grant access to everyone in the organization
+finding:
+  title: Any user can create Power BI links that open content to the whole organization
+  description: Reports can be shared through a link that any member of the organization can open, regardless of whether they need the data.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, sharing, oversharing, links]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Allow shareable links to grant access to everyone in your
+  organization** (Export and sharing settings) is **Disabled**, or **Enabled** only for specific
+  security groups. Other users share with **Specific people** or **People with existing access**.
+rationale: |
+  A **People in your organization** link works for anyone in the tenant who obtains it: forwarded
+  emails, chat messages and pasted URLs spread it far beyond the intended audience, and nobody
+  reviews who opened the report. Restricting organization-wide links forces explicit recipients for
+  sensitive analytics, in line with need-to-know.
+impact: |
+  Users outside the allowed groups can no longer create organization-wide links; existing links keep
+  working until removed. Content meant for everyone should be published through a Power BI app or
+  shared with an all-employees group.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Export and sharing settings > Allow shareable links to grant access to everyone in your organization
+  default_value: Enabled
+  recommended_value: Disabled, or Enabled for specific security groups
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Export and sharing settings**
+       and expand **Allow shareable links to grant access to everyone in your organization**.
+    3. Check that it is **Disabled**, or **Enabled** for **Specific security groups** only.
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `ShareLinkToEntireOrg`; `GET
+       https://api.powerbi.com/v1.0/myorg/admin/widelySharedArtifacts/linksSharedToWholeOrganization`
+       lists items already shared this way.
+    5. Fail if the setting is enabled for the entire organization.
+
+remediation:
+  manual: |
+    1. In **Tenant settings** > **Export and sharing settings** > **Allow shareable links to grant
+       access to everyone in your organization**, select **Disabled**, or **Enabled** with
+       **Specific security groups**. Select **Apply**. Role: Fabric Administrator.
+    2. Review the items already shared with the whole organization and ask owners to replace the
+       links with specific recipients or an app.
+    3. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/ShareLinkToEntireOrg/update` with
+       the target state.
+  rollback: |
+    Set the setting back to its previous scope.
+
+references:
+  - title: Export and sharing tenant settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-export-sharing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.7"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1213
+related_controls:
+  - id: CB-M365-POWER-013
+    type: related
+  - id: CB-M365-POWER-015
+    type: related
+  - id: CB-M365-POWER-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

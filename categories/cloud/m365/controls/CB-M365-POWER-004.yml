@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-004
+title: Cover every non-default Power Platform environment with a data policy
+finding:
+  title: Some Power Platform environments have no data policy
+  description: Apps, flows and agents in these environments can combine any connectors, so business data can flow to external services without restriction.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [power-platform, data-policy, dlp, connectors, environments]
+
+description: |
+  Every Power Platform environment other than the default one (production, sandbox, trial,
+  developer, Dataverse for Teams) is in the scope of at least one data policy. The simplest way is
+  a tenant-wide baseline policy with scope **Add all environments**, which also covers
+  environments created later, completed by environment-specific policies that open the connectors
+  each solution needs.
+rationale: |
+  Data policies only apply to the environments in their scope. An environment left out, often a
+  recent one or one created before the governance existed, lets makers combine business and
+  consumer connectors freely. A tenant-wide baseline guarantees a minimum level everywhere, and the
+  most restrictive policy wins when several apply.
+impact: |
+  Solutions in environments that had no policy may use connectors the new baseline blocks; they are
+  suspended until the environment receives an adapted policy. Inventory connector usage per
+  environment first, and agree the baseline connector classification with the solution owners.
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader.
+    2. Browse to **Manage** > **Environments** and list the environments.
+    3. Browse to **Security** > **Data and privacy** > **Data policy** and, using the **Applied to**
+       column, check that every environment falls within the scope of at least one policy. A policy
+       applied to **All environments** covers them all.
+    4. Alternative, read only (Power Platform Administrator): compare
+       `Get-AdminPowerAppEnvironment` with the environment scopes returned by `Get-DlpPolicy`.
+    5. Fail if any non-default environment is outside every data policy.
+
+remediation:
+  manual: |
+    1. In **Security** > **Data and privacy** > **Data policy**, create (or edit) a baseline policy
+       with scope **Add all environments**. Role: Power Platform Administrator.
+    2. Classify connectors as in the default environment policy (approved business connectors,
+       everything else blockable in **Blocked**, default group **Blocked**, custom connectors
+       denied by default).
+    3. For environments hosting reviewed solutions, add environment-level or tenant-level policies
+       limited to those environments that place the required connectors in **Business**; the
+       baseline policy keeps blocking everything else.
+  rollback: |
+    Remove the environments from the policy scope, or delete the baseline policy.
+
+references:
+  - title: Manage data policies
+    url: https://learn.microsoft.com/power-platform/admin/prevent-data-loss
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Data policies
+    url: https://learn.microsoft.com/power-platform/admin/wp-data-loss-prevention
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.2.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(10)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-POWER-001
+    type: related
+  - id: CB-M365-POWER-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

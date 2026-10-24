@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les liens Power BI qui donnent accès à toute l'organisation
+finding:
+  title: Tout utilisateur peut créer des liens Power BI qui ouvrent le contenu à toute l'organisation
+  description: Des rapports peuvent être partagés par un lien que n'importe quel membre de l'organisation peut ouvrir, qu'il ait besoin ou non des données.
+description: |
+  Le paramètre du locataire Fabric **Allow shareable links to grant access to everyone in your
+  organization** (autoriser les liens partageables donnant accès à toute l'organisation), dans les
+  paramètres d'exportation et de partage, est **Désactivé**, ou **Activé** uniquement pour des
+  groupes de sécurité précis. Les autres utilisateurs partagent avec des **Personnes spécifiques** ou
+  des **Personnes ayant un accès existant**.
+rationale: |
+  Un lien **Personnes de votre organisation** fonctionne pour quiconque dans le tenant l'obtient :
+  courriels transférés, messages et URL collées le diffusent bien au-delà du public visé, et personne
+  ne revoit qui a ouvert le rapport. Restreindre les liens à l'échelle de l'organisation impose des
+  destinataires explicites pour les données analytiques sensibles, conformément au besoin d'en
+  connaître.
+impact: |
+  Les utilisateurs hors des groupes autorisés ne peuvent plus créer de liens pour toute
+  l'organisation ; les liens existants fonctionnent jusqu'à leur suppression. Le contenu destiné à
+  tous doit être publié via une application Power BI ou partagé avec un groupe de tous les employés.
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres d'exportation et de partage > Allow shareable links to grant access to everyone in your organization
+  recommended_value: Désactivé, ou Activé pour des groupes de sécurité précis
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric.
+    2. Ouvrir **Paramètres** > **Portail d'administration** > **Paramètres du locataire** >
+       **Paramètres d'exportation et de partage** et développer **Allow shareable links to grant
+       access to everyone in your organization**.
+    3. Vérifier qu'il est **Désactivé**, ou **Activé** pour des **Groupes de sécurité spécifiques**
+       seulement.
+    4. Alternative en lecture seule : dans `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       lire l'entrée `ShareLinkToEntireOrg` ; `GET
+       https://api.powerbi.com/v1.0/myorg/admin/widelySharedArtifacts/linksSharedToWholeOrganization`
+       liste les éléments déjà partagés ainsi.
+    5. Échec si le paramètre est activé pour toute l'organisation.
+remediation:
+  manual: |
+    1. Dans **Paramètres du locataire** > **Paramètres d'exportation et de partage** > **Allow
+       shareable links to grant access to everyone in your organization**, sélectionner
+       **Désactivé**, ou **Activé** avec **Groupes de sécurité spécifiques**. Sélectionner
+       **Appliquer**. Rôle : administrateur Fabric.
+    2. Revoir les éléments déjà partagés avec toute l'organisation et demander aux propriétaires de
+       remplacer les liens par des destinataires précis ou une application.
+    3. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/ShareLinkToEntireOrg/update` avec
+       l'état cible.
+  rollback: |
+    Remettre le paramètre à son étendue précédente.

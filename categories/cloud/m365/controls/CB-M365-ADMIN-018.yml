@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-018
+title: Keep Global Administrator elevated access to Azure resources turned off
+finding:
+  title: A Global Administrator holds User Access Administrator on the whole Azure tenant root
+  description: The elevation left on gives an Entra ID administrator full control of every Azure subscription and management group.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [privileged-access, azure, global-administrator, elevation]
+
+description: |
+  A Global Administrator can turn on **Access management for Azure resources** in the tenant
+  properties. Microsoft then assigns that user the Azure **User Access Administrator** role at the
+  root scope (`/`), above every management group and subscription. The elevation is meant for a
+  one-off recovery task and must be turned off right after.
+
+  No user holds User Access Administrator at root scope outside a documented intervention.
+rationale: |
+  An attacker who takes over a Global Administrator account can use the elevation to grant
+  themselves Owner on every subscription, reach virtual machines, key vaults and storage, and
+  pivot from Microsoft 365 to Azure workloads. A lingering root assignment also bypasses the
+  role reviews done at subscription level.
+impact: |
+  None known. The elevation can be turned on again when a recovery task needs it.
+notes: |
+  The toggle is per user: it only shows and changes the state of the signed-in Global
+  Administrator. To find every holder, list role assignments at scope `/`. Tenants with no Azure
+  subscription are still exposed if one is created later.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Overview > Properties > Access management for Azure resources
+  default_value: "No"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Azure portal (https://portal.azure.com) with an account that can read role
+       assignments at root scope (for example a Global Administrator who temporarily elevates,
+       or a Reader at root management group).
+    2. Run in Azure Cloud Shell (read-only):
+       `Get-AzRoleAssignment -Scope "/" | Where-Object RoleDefinitionName -eq 'User Access Administrator'`
+       or `az role assignment list --scope "/" --role "User Access Administrator"`.
+    3. In the Microsoft Entra admin center, browse to **Entra ID** > **Overview** >
+       **Properties** and read **Access management for Azure resources** for each Global
+       Administrator account in use.
+    4. Fail if a user holds User Access Administrator at scope `/` without an open, documented
+       intervention.
+
+remediation:
+  manual: |
+    1. Each Global Administrator who turned it on signs in to the Microsoft Entra admin center,
+       browses to **Entra ID** > **Overview** > **Properties**, sets **Access management for
+       Azure resources** to **No** and selects **Save**.
+    2. For a former holder who cannot sign in, remove the assignment with
+       `Remove-AzRoleAssignment -SignInName <upn> -RoleDefinitionName 'User Access Administrator' -Scope "/"`.
+    3. Create an alert on the audit event for elevated access (Azure Monitor activity log,
+       operation `Microsoft.Authorization/elevateAccess/action`) and route it to the SOC.
+
+references:
+  - title: Elevate access to manage all Azure subscriptions and management groups
+    url: https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R39"
+    relation: partial
+    note: Applies least privilege to the Entra ID to Azure elevation path only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(7)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-003
+    type: related
+  - id: CB-M365-ADMIN-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

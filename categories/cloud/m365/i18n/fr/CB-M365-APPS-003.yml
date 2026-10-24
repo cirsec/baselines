@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Laisser activé le consentement renforcé basé sur le risque
+finding:
+  title: Les utilisateurs peuvent consentir à des applications signalées comme risquées par Microsoft
+  description: Le consentement renforcé basé sur le risque est désactivé ; un utilisateur peut donc approuver une demande de consentement que Microsoft a détectée comme risquée au lieu qu'elle soit envoyée à un administrateur.
+description: |
+  Le paramètre d'annuaire **Consent Policy Settings** garde `BlockUserConsentForRiskyApps` à
+  `True`. Quand Microsoft détecte une demande de consentement utilisateur risquée (par exemple une
+  application multitenant récente, non vérifiée, qui demande des permissions au-delà des permissions
+  de base), la demande bascule vers un consentement administrateur au lieu d'être accordée par
+  l'utilisateur.
+rationale: |
+  Cette protection est active par défaut et ne joue que tant que le consentement utilisateur est
+  autorisé (CB-M365-APPS-002 avec `low-risk`). La désactiver supprime la détection par Microsoft
+  des demandes de consentement malveillantes, une couche efficace contre les campagnes
+  d'hameçonnage par consentement qui utilisent des applications fraîchement créées.
+impact: |
+  Aucun connu. Les utilisateurs qui tombent sur une demande risquée voient qu'une approbation
+  administrateur est nécessaire et peuvent envoyer une demande via le workflow de consentement
+  administrateur (CB-M365-APPS-005).
+notes: |
+  Si l'objet **Consent Policy Settings** n'a jamais été créé dans le tenant, la valeur du modèle
+  (`True`) s'applique. Le réglage n'a pas de page dans le centre d'administration : il se lit et se
+  modifie uniquement avec Microsoft Graph.
+setting:
+  location: Paramètre d'annuaire Microsoft Graph « Consent Policy Settings » (modèle dffd5d46-495d-40a9-8e21-954ff55e198a), valeur BlockUserConsentForRiskyApps
+  recommended_value: "True"
+audit:
+  manual: |
+    1. Se connecter à Microsoft Graph PowerShell (module beta) avec au moins le rôle Lecteur général
+       et l'étendue `Directory.Read.All`.
+    2. Exécuter :
+       `Get-MgBetaDirectorySetting -All | Where-Object TemplateId -eq 'dffd5d46-495d-40a9-8e21-954ff55e198a' | Select-Object -ExpandProperty Values`
+       ou appeler Graph `GET https://graph.microsoft.com/beta/settings`.
+    3. Si aucun objet n'est renvoyé, la valeur par défaut s'applique (`True`) et le contrôle est
+       conforme.
+    4. Échec si `BlockUserConsentForRiskyApps` vaut `False`.
+remediation:
+  manual: |
+    1. Se connecter à Microsoft Graph PowerShell (module beta) avec le rôle Administrateur de rôle
+       privilégié et l'étendue `Directory.ReadWrite.All`.
+    2. Lire l'objet **Consent Policy Settings** existant et conserver ses autres valeurs
+       (`EnableGroupSpecificConsent`, `ConstrainGroupSpecificConsentToMembersOfGroupId`,
+       `EnableAdminConsentRequests`...).
+    3. Passer `BlockUserConsentForRiskyApps` à `True` avec `Update-MgBetaDirectorySetting
+       -DirectorySettingId <id> -BodyParameter <valeurs>`, en transmettant toutes les valeurs de
+       l'objet.
+  rollback: |
+    Remettre `BlockUserConsentForRiskyApps` à sa valeur précédente.

@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver la soumission SMTP AUTH pour l'organisation
+finding:
+  title: La soumission SMTP authentifiée est activée pour l'organisation
+  description: SMTP AUTH accepte un nom d'utilisateur et un mot de passe depuis n'importe quel client, ce qui permet aux attaquants de tester des mots de passe volés ou pulvérisés et d'envoyer du courrier au nom de l'utilisateur.
+description: |
+  La soumission client SMTP AUTH (port 587 sur `smtp.office365.com`) est désactivée pour toute
+  l'organisation (`SmtpClientAuthenticationDisabled $true`). Les boîtes qui en ont encore besoin,
+  typiquement des appareils ou applications qui ne peuvent pas utiliser une autre méthode, sont des
+  exceptions listées activées une par une (`Set-CASMailbox -SmtpClientAuthenticationDisabled $false`)
+  et utilisent OAuth quand c'est possible.
+
+  Toutes les autres boîtes ont la valeur par boîte vide (héritage du réglage de l'organisation) ou
+  `True`.
+rationale: |
+  SMTP AUTH est une cible fréquente de pulvérisation de mots de passe car il accepte souvent encore
+  l'authentification de base et renvoie un succès ou un échec clair. Un mot de passe valide permet à
+  l'attaquant d'envoyer du courrier depuis une boîte légitime. Microsoft désactive par défaut
+  l'authentification de base pour SMTP AUTH fin 2026 et prévoit de la retirer au second semestre
+  2027 ; couper le protocole là où il ne sert pas ferme aussi le chemin OAuth pour les boîtes
+  inutilisées.
+impact: |
+  Scanners, imprimantes, applications métier et scripts qui envoient via `smtp.office365.com` avec un
+  compte de boîte aux lettres cessent de fonctionner, sauf si leur boîte est une exception. Les
+  recenser d'abord avec le rapport **Clients SMTP AUTH** (centre d'administration Exchange >
+  **Rapports** > **Flux de courrier**) et les faire passer à Microsoft Graph, High Volume Email ou un
+  relais par connecteur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Flux de courrier** et vérifier que **Désactiver le protocole SMTP
+       AUTH pour votre organisation** est coché.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-TransportConfig | Format-List SmtpClientAuthenticationDisabled
+       Get-CASMailbox -ResultSize Unlimited -Filter "SmtpClientAuthenticationDisabled -eq $false" |
+         Format-Table PrimarySmtpAddress, SmtpClientAuthenticationDisabled
+       ```
+    4. Échec si `SmtpClientAuthenticationDisabled` vaut `False` au niveau de l'organisation, ou si une
+       boîte avec la valeur `False` n'est pas une exception documentée.
+remediation:
+  manual: |
+    1. Examiner le rapport **Clients SMTP AUTH** et les journaux de connexion (application cliente
+       **Authenticated SMTP**) pour trouver les derniers utilisateurs.
+    2. Activer d'abord les exceptions, boîte par boîte (Administrateur Exchange) :
+       ```powershell
+       Set-CASMailbox -Identity scanner@example.com -SmtpClientAuthenticationDisabled $false
+       ```
+    3. Dans le centre d'administration Exchange, aller dans **Paramètres** > **Flux de courrier**,
+       cocher **Désactiver le protocole SMTP AUTH pour votre organisation** et enregistrer. Équivalent
+       PowerShell :
+       ```powershell
+       Set-TransportConfig -SmtpClientAuthenticationDisabled $true
+       ```
+    4. Bloquer l'authentification héritée par l'accès conditionnel pour que les exceptions utilisent
+       OAuth.
+  rollback: |
+    `Set-TransportConfig -SmtpClientAuthenticationDisabled $false`, ou activer SMTP AUTH sur la seule
+    boîte qui en a besoin.

@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer le workflow de demande de consentement administrateur
+finding:
+  title: Les utilisateurs n'ont aucun moyen encadré de demander l'accès à une application
+  description: Sans workflow de consentement administrateur, les utilisateurs bloqués ne peuvent pas demander une application par un circuit revu et cherchent des contournements, ou le tenant assouplit le consentement utilisateur pour éviter les tickets.
+description: |
+  Le workflow de consentement administrateur est actif. Les utilisateurs qui ne peuvent pas
+  consentir à une application envoient une demande justifiée. Des relecteurs désignés (un groupe ou
+  des rôles, jamais une seule personne) reçoivent un e-mail pour chaque demande et un rappel avant
+  expiration, et les demandes expirent au bout de **{{ admin_consent_request_expiry_days }}** jours
+  au plus.
+rationale: |
+  Restreindre le consentement utilisateur (CB-M365-APPS-002) ne tient que si les utilisateurs ont un
+  chemin légitime pour demander une application. Le workflow trace qui a demandé, pourquoi et qui a
+  approuvé, et place une revue de sécurité avant tout accès aux données du tenant. Une expiration
+  courte évite que des demandes anciennes soient approuvées des mois plus tard sans contexte.
+impact: |
+  Les relecteurs doivent traiter les demandes dans un délai raisonnable. Seuls les administrateurs
+  généraux (ou les administrateurs de rôle privilégié pour les permissions déléguées) peuvent
+  approuver les demandes portant sur des permissions d'application Microsoft Graph ; les autres
+  relecteurs peuvent quand même examiner, refuser ou bloquer.
+parameters:
+  admin_consent_request_expiry_days: Nombre maximal de jours avant qu'une demande de consentement administrateur sans réponse expire.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et autorisations** >
+       **Paramètres de consentement administrateur**.
+    3. Vérifier que :
+       - **Les utilisateurs peuvent demander le consentement administrateur pour les applications
+         auxquelles ils ne peuvent pas consentir** vaut **Oui** ;
+       - **Qui peut examiner les demandes de consentement administrateur** liste au moins un groupe
+         ou un rôle avec des membres actifs (ou plusieurs utilisateurs nommés) ;
+       - **Les utilisateurs sélectionnés recevront des notifications par e-mail pour les demandes**
+         vaut **Oui** ;
+       - **Les utilisateurs sélectionnés recevront des rappels d'expiration des demandes** vaut
+         **Oui** ;
+       - **La demande de consentement expire après (jours)** vaut au plus
+         {{ admin_consent_request_expiry_days }}.
+    4. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/v1.0/policies/adminConsentRequestPolicy`, ou
+       `Get-MgPolicyAdminConsentRequestPolicy` ; vérifier `isEnabled`, `reviewers`,
+       `notifyReviewers`, `remindersEnabled` et `requestDurationInDays`.
+    5. Échec si le workflow est désactivé, n'a aucun relecteur, a les notifications ou les rappels
+       désactivés, ou conserve les demandes plus de {{ admin_consent_request_expiry_days }} jours.
+remediation:
+  manual: |
+    1. Créer ou choisir un groupe de relecteurs dans l'équipe qui gère les applications et la
+       sécurité.
+    2. Se connecter au centre d'administration Microsoft Entra en tant qu'Administrateur général (ou
+       mettre à jour la stratégie via Graph en tant qu'Administrateur de rôle privilégié).
+    3. Aller dans **Entra ID** > **Applications d'entreprise** > **Consentement et autorisations** >
+       **Paramètres de consentement administrateur**.
+    4. Régler **Les utilisateurs peuvent demander le consentement administrateur pour les
+       applications auxquelles ils ne peuvent pas consentir** sur **Oui**, ajouter les relecteurs,
+       activer les notifications par e-mail et les rappels d'expiration, et régler **La demande de
+       consentement expire après (jours)** sur {{ admin_consent_request_expiry_days }} ou moins.
+    5. Sélectionner **Enregistrer**. L'activation du workflow peut prendre jusqu'à une heure.
+    6. Alternative Graph (étendue `Policy.ReadWrite.ConsentRequest`) :
+       `PUT https://graph.microsoft.com/v1.0/policies/adminConsentRequestPolicy` avec `isEnabled`,
+       `notifyReviewers`, `remindersEnabled`, `requestDurationInDays` et `reviewers`.
+  rollback: |
+    Remettre **Les utilisateurs peuvent demander le consentement administrateur pour les
+    applications auxquelles ils ne peuvent pas consentir** sur **Non**.

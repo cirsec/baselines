@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-006
+title: Do not make the joining user a local administrator at Entra join
+finding:
+  title: Users who join a device become its local administrator
+  description: The person who performs Microsoft Entra join is added to the device's local Administrators group and can disable security tools or install software.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, device-join, local-admin, least-privilege]
+
+description: |
+  The device setting **Registering user is added as local administrator on the device during
+  Microsoft Entra join (Preview)** is set to **None**, or to **Selected** with a small group of
+  device administrators. Regular users who join a device stay standard users on it.
+rationale: |
+  A standard user cannot turn off Microsoft Defender, change security policies, read other users'
+  data or install drivers and services. Granting local administrator rights to every person who
+  joins a device turns any phishing payload or malicious download into full control of the
+  endpoint, including credential theft from memory. Least privilege on endpoints is one of the
+  most effective mitigations against ransomware and lateral movement.
+impact: |
+  Users can no longer install software that needs elevation on devices they join. Provide software
+  through Intune or the Company Portal, and an elevation process (Endpoint Privilege Management,
+  LAPS-based helpdesk elevation) for exceptions. The setting acts at join time only; devices joined
+  earlier keep the user in the local Administrators group until an Intune local group membership
+  policy replaces it. Windows Autopilot profiles have their own **User account type** option, which
+  must also be set to **Standard**.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Registering user is added as local administrator on the device during Microsoft Entra join (Preview)
+  default_value: All
+  recommended_value: None (or Selected with a device administrators group)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**.
+    3. Check that **Registering user is added as local administrator on the device during Microsoft
+       Entra join (Preview)** is **None**, or **Selected** with a named administrators group.
+    4. In the Intune admin center, browse to **Devices** > **Device onboarding** > **Enrollment** >
+       **Windows** > **Deployment profiles** and check that each Autopilot profile sets **User
+       account type** to **Standard**.
+    5. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` and read
+       `azureADJoin.localAdmins.registeringUsers`.
+    6. Fail if the setting is **All** (`allDeviceRegistrationMembership`), or if an Autopilot
+       profile makes users administrators.
+
+remediation:
+  manual: |
+    1. Prepare software distribution through Intune and an elevation process for exceptions.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**. Role: Cloud Device
+       Administrator.
+    3. Set **Registering user is added as local administrator on the device during Microsoft Entra
+       join (Preview)** to **None** (or **Selected** with the device administrators group) and save.
+    4. Graph equivalent: `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       with `azureADJoin.localAdmins.registeringUsers` set to a `noDeviceRegistrationMembership`.
+    5. Set **User account type** to **Standard** in every Windows Autopilot deployment profile.
+    6. For devices already joined, deploy an Intune **Account protection** > **Local user group
+       membership** policy that replaces the local Administrators group membership.
+  rollback: |
+    Set the setting back to **All**.
+
+references:
+  - title: How to manage local administrators on Microsoft Entra joined devices
+    url: https://learn.microsoft.com/entra/identity/devices/assign-local-admin
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage devices in Microsoft Entra ID - Configure device settings
+    url: https://learn.microsoft.com/entra/identity/devices/manage-device-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.4"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.003
+  - framework: mitre-attack
+    id: T1562.001
+related_controls:
+  - id: CB-M365-DEVICE-005
+    type: related
+  - id: CB-M365-DEVICE-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

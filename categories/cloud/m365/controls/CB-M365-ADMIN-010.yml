@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-010
+title: Review privileged role assignments periodically
+finding:
+  title: Privileged role assignments are never reviewed
+  description: Administrators keep roles after changing jobs or finishing projects, and nobody checks whether each assignment is still needed.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, access-reviews, pim, governance]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+parameters:
+  - name: role_review_frequency
+    type: enum
+    description: Recurrence of the privileged role access review.
+    default: quarterly
+    allowed: [weekly, monthly, quarterly]
+
+description: |
+  A recurring access review in Privileged Identity Management covers the highly privileged roles
+  (list in CB-M365-ADMIN-006), both eligible and active assignments, every
+  `{{ role_review_frequency }}`. The review:
+
+  - has reviewers who are not reviewing themselves (a security manager, or the managers of the
+    role holders);
+  - enables mail notifications and reminders, and requires a reason on approval;
+  - lasts 14 days or less;
+  - applies results automatically at the end.
+rationale: |
+  Privileges accumulate: people change teams, projects end, contractors leave, and roles stay.
+  A periodic review by someone other than the holder removes assignments nobody can justify and
+  documents the ones that remain, which auditors ask for.
+impact: |
+  Reviewers spend some time each cycle. If **If reviewers don't respond** is set to remove access,
+  a missed review can remove an administrator: keep it on **No change** for roles and follow up
+  late reviews.
+notes: |
+  Unused and orphaned assignments between reviews are covered by CB-M365-ADMIN-011.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **ID Governance** > **Privileged Identity Management** > **Microsoft Entra
+       roles** > **Access reviews** (or **ID Governance** > **Access reviews**).
+    3. Find an active review whose scope includes the highly privileged roles, with **Role
+       assignment type** **Eligible and Active**, and check: reviewers are not the holders
+       themselves; **Frequency** is `{{ role_review_frequency }}` or more frequent; **Duration**
+       14 days or less; **Mail notifications**, **Reminders**, **Require reason on approval** and
+       **Auto apply results to resource** are enabled.
+    4. Open the last completed instance and check that decisions were taken.
+    5. Read-only alternative with Microsoft Graph (scope `AccessReview.Read.All`):
+       `GET /identityGovernance/accessReviews/definitions` and look for a definition whose scope
+       queries `/roleManagement/directory/roleAssignmentScheduleInstances` or
+       `roleEligibilityScheduleInstances`.
+    6. Fail if no such review exists, if it is less frequent than the parameter, or if its last
+       instance was not completed.
+
+remediation:
+  manual: |
+    1. With a Privileged Role Administrator (or Identity Governance Administrator), browse to
+       **ID Governance** > **Privileged Identity Management** > **Microsoft Entra roles** >
+       **Access reviews** > **New**.
+    2. Name it, set **Frequency** to `{{ role_review_frequency }}`, **Duration** to 14 days or
+       less, **End** to **Never**.
+    3. **Scope**: **Users and Groups**; **Role**: select the highly privileged roles;
+       **Assignment type**: **Eligible and Active**.
+    4. **Reviewers**: selected users (security manager) or **Manager**, with a fallback reviewer.
+    5. **Upon completion settings**: **Auto apply results to resource** **Enable**; **If
+       reviewers don't respond** **No change**.
+    6. **Advanced settings**: enable **Require reason on approval**, **Mail notifications** and
+       **Reminders**. Select **Start**.
+  rollback: |
+    Stop or delete the access review; decisions already applied are not reverted.
+
+references:
+  - title: Create an access review of Azure resource and Microsoft Entra roles in PIM
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-create-roles-and-resource-roles-review
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: What are access reviews?
+    url: https://learn.microsoft.com/entra/id-governance/access-reviews-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.3.3"
+    relation: looser
+    note: CIS asks for a monthly review; ours defaults to quarterly, tunable with the parameter.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R32"
+    relation: partial
+    note: Covers the periodic review of privileged roles, one part of the admin account management process.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+related_controls:
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-ADMIN-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

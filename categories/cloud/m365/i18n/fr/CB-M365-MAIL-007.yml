@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer les infos-courrier, y compris les avertissements de destinataires externes
+finding:
+  title: Outlook n'avertit pas les utilisateurs avant un envoi vers l'extérieur ou un large public
+  description: Rien ne signale à l'utilisateur qu'une réponse part hors de l'organisation ou vers un très grand groupe, ce qui mène à des divulgations accidentelles.
+description: |
+  Les infos-courrier (MailTips) sont activées pour l'organisation avec ces réglages :
+
+  - `MailTipsAllTipsEnabled` : `$true` ;
+  - `MailTipsExternalRecipientsTipsEnabled` : `$true` (avertissement quand un destinataire est
+    extérieur à l'organisation) ;
+  - `MailTipsGroupMetricsEnabled` : `$true` (taille des groupes connue d'Outlook) ;
+  - `MailTipsLargeAudienceThreshold` : au plus {{ large_audience_threshold }} destinataires.
+rationale: |
+  Les infos-courrier affichent une bannière pendant la rédaction, avant l'envoi. L'info destinataire
+  externe attrape l'erreur classique d'une adresse personnelle ou partenaire saisie par
+  auto-complétion, et l'info large public attrape les réponses à toute une liste de distribution.
+  C'est un moyen peu coûteux de réduire les fuites accidentelles.
+impact: |
+  Les utilisateurs voient davantage de bannières en écrivant à des destinataires externes ou à de
+  larges publics. Aucun message n'est bloqué.
+parameters:
+  large_audience_threshold: Nombre de destinataires au-delà duquel Outlook affiche l'info-courrier large public.
+audit:
+  manual: |
+    1. Ces paramètres n'apparaissent pas dans les centres d'administration. Se connecter à Exchange
+       Online PowerShell avec au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-OrganizationConfig | Format-List MailTips*
+       ```
+    3. Échec si `MailTipsAllTipsEnabled`, `MailTipsExternalRecipientsTipsEnabled` ou
+       `MailTipsGroupMetricsEnabled` vaut `False`, ou si `MailTipsLargeAudienceThreshold` dépasse
+       {{ large_audience_threshold }}.
+remediation:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange.
+    2. Exécuter :
+       ```powershell
+       Set-OrganizationConfig -MailTipsAllTipsEnabled $true -MailTipsExternalRecipientsTipsEnabled $true `
+         -MailTipsGroupMetricsEnabled $true -MailTipsLargeAudienceThreshold 25
+       ```
+       Remplacer `25` par le seuil choisi.
+  rollback: |
+    `Set-OrganizationConfig -MailTipsExternalRecipientsTipsEnabled $false`.

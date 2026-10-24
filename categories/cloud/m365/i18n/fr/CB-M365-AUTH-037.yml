@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-037
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer Microsoft Entra Password Protection sur Windows Server Active Directory
+finding:
+  title: Les listes de mots de passe interdits ne sont pas appliquées sur les contrôleurs de domaine locaux
+  description: Les utilisateurs de comptes synchronisés peuvent définir des mots de passe faibles en local, qui sont ensuite synchronisés et acceptés pour la connexion cloud.
+description: |
+  **Activer la protection par mot de passe sur Windows Server Active Directory** est sur **Oui** et le
+  **Mode** est **Appliqué**. Le service proxy et l'agent DC de Microsoft Entra Password Protection
+  sont installés (proxy sur au moins deux serveurs membres, agent sur chaque contrôleur de domaine),
+  pour que chaque changement ou réinitialisation de mot de passe dans Active Directory soit vérifié
+  par rapport aux listes globale et personnalisée de mots de passe interdits (CB-M365-AUTH-036).
+rationale: |
+  Pour les utilisateurs synchronisés, le mot de passe est défini en local : la vérification cloud ne
+  s'exécute jamais. Sans agent DC, la liste personnalisée de l'organisation et la liste globale de
+  Microsoft ne s'appliquent pas à la plupart de ses comptes, alors que ces mots de passe protègent
+  aussi l'Active Directory lui-même.
+impact: |
+  Un logiciel doit être installé sur chaque contrôleur de domaine (redémarrage nécessaire pour
+  l'agent DC) et sur des serveurs proxy disposant d'un accès HTTPS sortant vers Microsoft Entra ID. En
+  mode **Appliqué**, les changements de mot de passe qui contiennent un terme interdit sont refusés
+  avec une erreur générique de complexité : prévenir le support. Commencer en mode **Audit** pour
+  mesurer le taux de refus.
+notes: |
+  L'agent DC ne valide que les nouveaux mots de passe ; les mots de passe faibles existants restent
+  jusqu'au prochain changement. Un contrôleur de domaine sans agent accepte tout mot de passe conforme
+  à la stratégie Active Directory : la couverture doit être complète. Les agents signalent leur état
+  dans les journaux d'événements des DC et via `Get-AzureADPasswordProtectionDCAgent`.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Protection par mot de passe > Protection par mot de passe pour Windows Server Active Directory
+  recommended_value: Activer = Oui, Mode = Appliqué, agent DC sur chaque contrôleur de domaine
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Protection par mot de passe**.
+    3. Sous **Protection par mot de passe pour Windows Server Active Directory**, vérifier que
+       **Activer la protection par mot de passe sur Windows Server Active Directory** est sur **Oui** et
+       que **Mode** vaut **Appliqué**.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Directory.Read.All`) :
+       `(Get-MgGroupSetting | Where-Object DisplayName -eq 'Password Rule Settings').Values`
+       affiche `EnableBannedPasswordCheckOnPremises` = `True` et
+       `BannedPasswordCheckOnPremisesMode` = `Enforce`.
+    5. Sur un serveur doté du module proxy, exécuter `Get-AzureADPasswordProtectionDCAgent` (lecture
+       seule) et comparer la liste avec tous les contrôleurs de domaine de chaque domaine
+       (`Get-ADDomainController -Filter *`) ; vérifier que chaque agent a un signal récent.
+    6. Échec si le mode est **Audit**, si la fonction est désactivée, ou si un contrôleur de domaine
+       n'a pas d'agent.
+remediation:
+  manual: |
+    1. Installer le service proxy Microsoft Entra Password Protection sur au moins deux serveurs
+       membres et l'inscrire (`Register-AzureADPasswordProtectionProxy`,
+       `Register-AzureADPasswordProtectionForest`), avec un compte Administrateur général ou
+       Administrateur de la sécurité dans le tenant et Admins du domaine dans le domaine racine.
+    2. Installer l'agent DC sur chaque contrôleur de domaine et les redémarrer tour à tour.
+    3. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de la stratégie d'authentification, aller dans **Entra ID** > **Méthodes d'authentification** >
+       **Protection par mot de passe**, régler **Activer la protection par mot de passe sur Windows
+       Server Active Directory** sur **Oui** et **Mode** sur **Audit**, puis enregistrer.
+    4. Examiner les événements de l'agent DC (Journaux des applications et des services > Microsoft >
+       AzureADPasswordProtection > DCAgent > Admin) pendant quelques semaines, puis régler **Mode** sur
+       **Appliqué** et enregistrer.
+  rollback: |
+    Remettre **Mode** sur **Audit**. Désinstaller l'agent DC est le dernier recours.

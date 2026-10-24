@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-007
+title: Do not exempt any account from mailbox auditing
+finding:
+  title: Some accounts bypass mailbox audit logging
+  description: An account with a mailbox audit bypass can access any mailbox it has rights on without generating audit records, which makes it an ideal tool for silent mail theft.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [audit, logging, exchange, mailbox-audit]
+
+description: |
+  No user or computer account has `AuditBypassEnabled` = `True` in the mailbox audit bypass
+  associations. Access by service accounts (backup, archiving, migration tools) is logged like any
+  other access.
+rationale: |
+  Audit bypass was designed to reduce log volume from trusted service accounts, but it creates a
+  blind spot: if such an account or its credentials are compromised, mailbox access through it
+  leaves no trace. Attackers who reach administrator rights can also add a bypass to hide their own
+  activity.
+impact: |
+  Mailbox access by backup or archiving products is recorded, which increases audit volume.
+
+audit:
+  manual: |
+    1. Connect to Exchange Online PowerShell as at least a member of View-Only Organization
+       Management.
+    2. Run `Get-MailboxAuditBypassAssociation -ResultSize Unlimited | Where-Object { $_.AuditBypassEnabled } | Select-Object Name,AuditBypassEnabled`.
+    3. Fail if any result is returned.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell with the Organization Management or Audit Logs role.
+    2. For each account returned, run
+       `Set-MailboxAuditBypassAssociation -Identity <account> -AuditBypassEnabled $false`.
+    3. Alert on any later use of `Set-MailboxAuditBypassAssociation` in the unified audit log.
+  rollback: |
+    `Set-MailboxAuditBypassAssociation -Identity <account> -AuditBypassEnabled $true` (not
+    recommended).
+
+references:
+  - title: Get-MailboxAuditBypassAssociation
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-mailboxauditbypassassociation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-MailboxAuditBypassAssociation
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-mailboxauditbypassassociation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage mailbox auditing
+    url: https://learn.microsoft.com/purview/audit-mailboxes
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.1.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1562.008
+  - framework: mitre-attack
+    id: T1114.002
+related_controls:
+  - id: CB-M365-AUDIT-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

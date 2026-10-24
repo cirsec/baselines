@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-017
+title: Honor the sender's DMARC policy for inbound spoofed mail
+finding:
+  title: Exchange Online ignores the DMARC reject and quarantine policies of sending domains
+  description: Messages that fail DMARC for a domain asking receivers to reject them can still be delivered to users, often to the Junk Email folder where they get clicked.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [anti-phishing, dmarc, spoofing, exchange-online-protection]
+
+description: |
+  In every anti-phishing policy (the default policy, custom policies and the preset policies), the
+  spoof setting **Honor DMARC record policy when the message is detected as spoof** is on
+  (`HonorDmarcPolicy $true`), with:
+
+  - `p=quarantine` failures: **Quarantine the message** (`DmarcQuarantineAction Quarantine`);
+  - `p=reject` failures: **Reject the message** (`DmarcRejectAction Reject`).
+
+  Spoof intelligence stays enabled (`EnableSpoofIntelligence $true`).
+rationale: |
+  A domain owner who publishes `p=reject` states that unauthenticated mail with its domain is
+  forged. Honoring that policy stops the forgery at the door instead of moving it to Junk Email,
+  where users still find and open it. This setting is part of Exchange Online Protection and needs no
+  extra license.
+impact: |
+  None known for well-configured senders. Messages from domains with broken authentication and an
+  enforcing DMARC policy are quarantined or rejected; senders of legitimate mail can be allowed
+  through the spoof intelligence insight.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-phishing** and open each policy (**Office365 AntiPhish Default** and custom policies).
+    3. Under **Actions**, check that **Honor DMARC record policy when the message is detected as
+       spoof** is selected, with **Quarantine the message** for `p=quarantine` and **Reject the
+       message** for `p=reject`.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-AntiPhishPolicy | Format-Table Name, Enabled, EnableSpoofIntelligence, HonorDmarcPolicy, DmarcQuarantineAction, DmarcRejectAction
+       ```
+    5. Fail if a policy that applies to users has `HonorDmarcPolicy` set to `False`, or a weaker
+       action than the ones above.
+
+remediation:
+  manual: |
+    1. In the Defender portal, open each anti-phishing policy > **Actions** > **Edit actions**.
+    2. Select **Honor DMARC record policy when the message is detected as spoof**, choose
+       **Quarantine the message** and **Reject the message**, and save.
+    3. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Get-AntiPhishPolicy | Set-AntiPhishPolicy -EnableSpoofIntelligence $true -HonorDmarcPolicy $true `
+         -DmarcQuarantineAction Quarantine -DmarcRejectAction Reject
+       ```
+       (The preset policies cannot be edited and already use these values.)
+  rollback: |
+    `Set-AntiPhishPolicy -Identity <policy> -HonorDmarcPolicy $false`.
+
+references:
+  - title: Anti-phishing policies in Microsoft 365
+    url: https://learn.microsoft.com/defender-office-365/anti-phishing-policies-about
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommended settings for EOP and Microsoft Defender for Office 365 security
+    url: https://learn.microsoft.com/defender-office-365/recommended-settings-for-eop-and-office365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (check ORCA-244)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-016
+    type: related
+  - id: CB-M365-MAIL-018
+    type: related
+  - id: CB-M365-MAIL-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

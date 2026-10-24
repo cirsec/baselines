@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Respecter la stratégie DMARC de l'expéditeur pour le courrier entrant usurpé
+finding:
+  title: Exchange Online ignore les stratégies DMARC reject et quarantine des domaines expéditeurs
+  description: Les messages qui échouent à DMARC pour un domaine demandant leur rejet peuvent encore être remis aux utilisateurs, souvent dans le dossier Courrier indésirable où ils sont cliqués.
+description: |
+  Dans chaque stratégie anti-hameçonnage (stratégie par défaut, stratégies personnalisées et
+  stratégies prédéfinies), le paramètre d'usurpation **Respecter la stratégie d'enregistrement DMARC
+  lorsque le message est détecté comme usurpé** est activé (`HonorDmarcPolicy $true`), avec :
+
+  - échecs `p=quarantine` : **Mettre le message en quarantaine** (`DmarcQuarantineAction Quarantine`) ;
+  - échecs `p=reject` : **Rejeter le message** (`DmarcRejectAction Reject`).
+
+  L'intelligence contre l'usurpation reste activée (`EnableSpoofIntelligence $true`).
+rationale: |
+  Le propriétaire d'un domaine qui publie `p=reject` déclare que le courrier non authentifié portant
+  son domaine est forgé. Respecter cette stratégie arrête la contrefaçon à l'entrée au lieu de la
+  déplacer dans le Courrier indésirable, où les utilisateurs la trouvent et l'ouvrent encore. Ce
+  paramètre fait partie d'Exchange Online Protection et ne demande pas de licence supplémentaire.
+impact: |
+  Aucun connu pour les expéditeurs bien configurés. Les messages de domaines dont l'authentification
+  est cassée et dont la stratégie DMARC est appliquée sont mis en quarantaine ou rejetés ; le courrier
+  légitime de ces expéditeurs peut être autorisé via l'analyse de l'usurpation d'identité.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Anti-hameçonnage** et ouvrir chaque stratégie (**Office365 AntiPhish Default** et les
+       stratégies personnalisées).
+    3. Sous **Actions**, vérifier que **Respecter la stratégie d'enregistrement DMARC lorsque le
+       message est détecté comme usurpé** est coché, avec **Mettre le message en quarantaine** pour
+       `p=quarantine` et **Rejeter le message** pour `p=reject`.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-AntiPhishPolicy | Format-Table Name, Enabled, EnableSpoofIntelligence, HonorDmarcPolicy, DmarcQuarantineAction, DmarcRejectAction
+       ```
+    5. Échec si une stratégie qui s'applique à des utilisateurs a `HonorDmarcPolicy` à `False`, ou une
+       action plus faible que celles ci-dessus.
+remediation:
+  manual: |
+    1. Dans le portail Defender, ouvrir chaque stratégie anti-hameçonnage > **Actions** > **Modifier
+       les actions**.
+    2. Cocher **Respecter la stratégie d'enregistrement DMARC lorsque le message est détecté comme
+       usurpé**, choisir **Mettre le message en quarantaine** et **Rejeter le message**, et enregistrer.
+    3. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Get-AntiPhishPolicy | Set-AntiPhishPolicy -EnableSpoofIntelligence $true -HonorDmarcPolicy $true `
+         -DmarcQuarantineAction Quarantine -DmarcRejectAction Reject
+       ```
+       (Les stratégies prédéfinies ne sont pas modifiables et utilisent déjà ces valeurs.)
+  rollback: |
+    `Set-AntiPhishPolicy -Identity <policy> -HonorDmarcPolicy $false`.

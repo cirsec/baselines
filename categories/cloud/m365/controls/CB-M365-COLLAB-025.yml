@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-025
+title: Let only people in the organization bypass the Teams meeting lobby
+finding:
+  title: External participants are admitted to Teams meetings without passing through the lobby
+  description: Guests, federated users or anonymous participants enter meetings directly, so the organizer cannot check who joins.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, meetings, lobby, anonymous-access]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  By default only people in the organization (excluding guests), invited people, or only organizers
+  and co-organizers join meetings directly; everyone else waits in the lobby until an organizer,
+  co-organizer or presenter admits them. **Who can bypass the lobby** is **People in my org**,
+  **People who were invited** or **Only organizers and co-organizers** (`AutoAdmittedUsers` =
+  `EveryoneInCompanyExcludingGuests`, `InvitedUsers` or `OrganizerOnly`) in every meeting policy.
+rationale: |
+  The lobby is the only point where an organizer sees who is about to join before they hear and see
+  the meeting. Admitting guests, federated users or anonymous participants automatically lets anyone
+  with a forwarded link or an impersonated identity into confidential discussions unnoticed.
+impact: |
+  External participants wait to be admitted, which adds a step for meetings with partners. The policy
+  sets the default of the **Meeting options**; organizers can change it per meeting. To enforce it for
+  sensitive meetings, use a meeting template or sensitivity label (Teams Premium). The vendor default
+  (**People in my org and guests**) admits guests directly and does not meet this control.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Meeting join & lobby > Who can bypass the lobby
+  default_value: People in my org and guests (EveryoneInCompany)
+  recommended_value: People in my org, People who were invited, or Only organizers and co-organizers
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Meeting join & lobby** section, check that **Who can bypass the lobby** is **People in
+       my org**, **People who were invited** or **Only organizers and co-organizers**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AutoAdmittedUsers`.
+    5. Fail if any policy returns `Everyone`, `EveryoneInSameAndFederatedCompany` or
+       `EveryoneInCompany`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Meeting join & lobby** section, set **Who can bypass the lobby** to **People in my org**
+       and **Save**. Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -AutoAdmittedUsers EveryoneInCompanyExcludingGuests`
+       (repeat with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+
+references:
+  - title: Manage lobby options in Microsoft Teams
+    url: https://learn.microsoft.com/microsoftteams/who-can-bypass-meeting-lobby
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.1.3v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.1.4v1
+    relation: partial
+    note: SCuBA wants people in the organization admitted automatically; this control also accepts stricter values (invited people, organizers only).
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+related_controls:
+  - id: CB-M365-COLLAB-023
+    type: related
+  - id: CB-M365-COLLAB-024
+    type: related
+  - id: CB-M365-COLLAB-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Configurer une règle Intune de nettoyage des appareils inactifs
+finding:
+  title: Aucune règle Intune de nettoyage des appareils n'est configurée
+  description: Les appareils qui ne se signalent plus depuis longtemps restent dans l'inventaire et les rapports Intune, masquent le parc réel et conservent des enregistrements obsolètes.
+description: |
+  Une règle Intune de nettoyage des appareils (plateforme **Toutes les plateformes**, ou une règle
+  par plateforme utilisée) masque les appareils qui ne se sont pas signalés depuis
+  `{{ device_cleanup_days }}` jours ou moins. Les objets appareil Microsoft Entra des mêmes appareils
+  sont examinés puis désactivés et supprimés par un processus distinct de gestion des appareils
+  obsolètes.
+rationale: |
+  Un inventaire rempli d'appareils retirés, perdus ou réinstallés fausse les rapports de conformité
+  et complique le repérage des appareils à examiner. Les enregistrements obsolètes gardent aussi des
+  certificats et identités d'appareil utilisables plus longtemps que nécessaire. Une règle de
+  nettoyage limite la vue Intune aux appareils réellement gérés.
+impact: |
+  Les appareils masqués disparaissent des vues et rapports Intune ; aucune action de réinitialisation
+  ou de mise hors service n'est envoyée. Un appareil masqué qui se signale avant l'expiration de son
+  certificat de gestion réapparaît ; ensuite, il doit être réinscrit. Les appareils hors ligne
+  longtemps par nature (stock de rechange, saisonniers) demandent un seuil plus long ou un processus
+  dédié. La règle ne supprime pas les objets appareil Microsoft Entra.
+parameters:
+  device_cleanup_days: Durée d'inactivité maximale acceptée avant qu'Intune masque un appareil.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Intune (https://intune.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Appareils** > **Organiser les appareils** > **Règles de nettoyage des appareils**.
+    3. Vérifier qu'une règle existe pour **Toutes les plateformes**, ou pour chaque plateforme
+       utilisée, et que **Supprimer les appareils qui ne se sont pas signalés depuis ce nombre de
+       jours** vaut `{{ device_cleanup_days }}` ou moins. Quand les deux existent, la règle au plus
+       petit nombre de jours s'applique.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/deviceManagement/managedDeviceCleanupRules` (étendue
+       `DeviceManagementManagedDevices.Read.All`).
+    5. Échec si aucune règle n'existe, ou si le seuil effectif d'une plateforme utilisée dépasse
+       `{{ device_cleanup_days }}` jours.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Intune, aller dans **Appareils** > **Organiser les
+       appareils** > **Règles de nettoyage des appareils** > **Créer**. Rôle : administrateur Intune,
+       ou rôle personnalisé avec **Managed Device Cleanup Rules/Update** et **Managed Device Cleanup
+       Settings/Update**.
+    2. Saisir un nom, choisir **Toutes les plateformes** (ou une plateforme) et sélectionner
+       **Suivant**.
+    3. Régler **Supprimer les appareils qui ne se sont pas signalés depuis ce nombre de jours** sur
+       `{{ device_cleanup_days }}`. Utiliser **Aperçu des appareils concernés** pour contrôler la
+       liste, puis créer la règle.
+    4. Traiter à part les objets appareil Microsoft Entra : dans **Entra ID** > **Appareils** >
+       **Tous les appareils**, filtrer sur une **Activité** plus ancienne que la même période,
+       désactiver les appareils et les supprimer après un délai de grâce (conserver les secrets
+       BitLocker et LAPS encore utiles).
+  rollback: |
+    Supprimer la règle de nettoyage. Les appareils masqués réapparaissent quand ils se signalent de
+    nouveau.

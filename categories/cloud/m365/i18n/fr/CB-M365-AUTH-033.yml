@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-033
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les connexions depuis l'extérieur des pays autorisés
+finding:
+  title: Les utilisateurs peuvent se connecter depuis n'importe quel pays
+  description: Des identifiants volés peuvent être utilisés depuis n'importe quel pays, y compris ceux où l'organisation n'a ni salarié ni activité.
+description: |
+  Un emplacement nommé de type **Emplacement des pays** liste les pays où l'organisation opère
+  ({{ allowed_countries }}). Une stratégie d'accès conditionnel cible tous les utilisateurs sur
+  toutes les ressources, inclut **N'importe quel réseau ou emplacement**, exclut cet emplacement nommé
+  (et les emplacements IP approuvés), et applique **Bloquer l'accès**. Les pays inconnus ne font pas
+  partie de la liste autorisée : ils sont bloqués.
+
+  Les utilisateurs qui se déplacent dans d'autres pays relèvent d'un groupe d'exception à durée
+  limitée, géré par le support.
+rationale: |
+  L'essentiel du trafic de pulvérisation de mots de passe et de bourrage d'identifiants vient
+  d'hébergeurs et de pays hors de l'empreinte de l'organisation. Le blocage géographique élimine une
+  grande partie de ce bruit et des tentatives réelles, et rend les autres plus visibles.
+impact: |
+  Les voyageurs et le personnel à l'étranger sont bloqués s'ils ne sont pas dans le groupe
+  d'exception. La localisation est déduite de l'adresse IP publique : VPN grand public, itinérance
+  mobile et proxys cloud peuvent faire apparaître un utilisateur dans un autre pays. Exclure les
+  comptes de service qui tournent depuis des régions cloud hors liste. Les attaquants peuvent utiliser
+  des proxys situés dans les pays autorisés : cela ne remplace ni la MFA ni les stratégies de risque.
+notes: |
+  Déterminer l'emplacement par adresse IP ; les emplacements par GPS exigent Microsoft Authenticator
+  et ne fonctionnent pas avec les méthodes sans mot de passe. Les invités de tenants partenaires
+  étrangers sont aussi bloqués : limiter la stratégie aux membres, ou ajouter leurs pays, si la
+  collaboration l'exige.
+parameters:
+  allowed_countries: Codes ISO 3166-1 alpha-2 des pays depuis lesquels les connexions sont autorisées. Par défaut, l'Union européenne.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Emplacements nommés** et ouvrir
+       l'emplacement de pays ; vérifier qu'il contient {{ allowed_countries }} et que **Inclure les
+       pays/régions inconnus** n'est pas coché.
+    3. Aller dans **Accès conditionnel** > **Stratégies** et trouver une stratégie à l'**État**
+       **Activé** : **Utilisateurs** > **Tous les utilisateurs** (exclusions limitées aux comptes
+       d'accès d'urgence et au groupe d'exception voyage) ; **Ressources cibles** > **Toutes les
+       ressources** ; **Conditions** > **Réseau** > **Inclure** **N'importe quel réseau ou
+       emplacement**, **Exclure** l'emplacement des pays autorisés ; **Accorder** > **Bloquer
+       l'accès**.
+    4. Revoir les membres du groupe d'exception voyage : chaque entrée doit avoir une date de fin.
+    5. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessNamedLocation | Where-Object { $_.AdditionalProperties.countriesAndRegions } | Select-Object DisplayName, @{n='Countries';e={$_.AdditionalProperties.countriesAndRegions}}`
+    6. Échec si aucune stratégie de blocage active de ce type n'existe, ou si le groupe d'exception
+       contient des membres permanents sans justification.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Emplacements nommés** > **Emplacement des
+       pays**, le nommer (par exemple `Allowed countries`), choisir **Déterminer l'emplacement par
+       adresse IP**, cocher {{ allowed_countries }} et **Créer**.
+    3. Créer un groupe pour les exceptions de voyage, avec un processus qui retire les membres à la
+       fin du déplacement (un package d'accès avec date d'expiration convient bien).
+    4. **Stratégies** > **Nouvelle stratégie** : **Utilisateurs** > **Tous les utilisateurs**,
+       exclure les comptes d'accès d'urgence et le groupe d'exception ; **Ressources cibles** >
+       **Toutes les ressources** ; **Réseau** > **Inclure** **N'importe quel réseau ou emplacement**,
+       **Exclure** **Réseaux et emplacements sélectionnés** > les pays autorisés et les emplacements IP
+       approuvés ; **Accorder** > **Bloquer l'accès**.
+    5. Démarrer en **Rapport seul** ; examiner pendant deux semaines les connexions bloquées
+       d'utilisateurs légitimes, puis passer à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**, ou ajouter les utilisateurs concernés
+    au groupe d'exception.

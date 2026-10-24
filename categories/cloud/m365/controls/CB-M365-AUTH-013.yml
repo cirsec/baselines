@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-013
+title: Enable system-preferred multifactor authentication
+finding:
+  title: Users are not steered to their strongest MFA method
+  description: Users keep their own default method, often SMS or a phone call, even when they have registered Authenticator or a passkey.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [mfa, system-preferred, authentication-methods]
+
+description: |
+  In the Authentication methods policy settings, **System-preferred multifactor
+  authentication** is set to **Enabled** for **All users**, without exclusions. At sign-in, Entra
+  ID then asks for the most secure method the user has registered instead of the default the user
+  chose.
+
+  The tenant default is **Microsoft managed**. This control asks for **Enabled** explicitly, so
+  the behaviour does not depend on a value Microsoft can change.
+rationale: |
+  Users rarely change their default method. With phone methods still registered, they keep being
+  prompted by SMS or call even after registering Authenticator or a passkey. Choosing the
+  strongest registered method raises the actual strength of MFA without any user action.
+impact: |
+  Users are prompted with a method they may not be used to; they can still pick another one with
+  **Sign in another way**. **Enabled** applies to the second factor only; **Microsoft managed**
+  also applies it to the first factor.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Authentication methods > Settings > System-preferred multifactor authentication
+  default_value: Microsoft managed
+  recommended_value: Enabled, All users
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Settings**.
+    3. Read **System-preferred multifactor authentication**, its target and exclusions.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthenticationMethodPolicy).SystemCredentialPreferences | Format-List`
+    5. Fail if the state is not **Enabled** (`enabled`), if the target is not all users, or if a
+       group is excluded.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Settings**.
+    3. Set **System-preferred multifactor authentication** to **Enabled**, include **All users**,
+       remove exclusions and save.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy` with
+    `systemCredentialPreferences` set to `{"state": "enabled", "includeTargets": [{"targetType": "group", "id": "all_users"}], "excludeTargets": []}`.
+  rollback: |
+    Set the setting back to **Microsoft managed**.
+
+references:
+  - title: System-preferred multifactor authentication
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-system-preferred-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.3.6"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

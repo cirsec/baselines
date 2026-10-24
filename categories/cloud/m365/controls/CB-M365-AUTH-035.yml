@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-035
+title: Do not force periodic password expiration
+finding:
+  title: User passwords expire periodically
+  description: Forced rotation pushes users toward predictable passwords (Season2026!, then Season2027!) and gives no protection once a password has leaked.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [passwords, password-expiration, password-policy]
+
+description: |
+  The password expiration policy of every managed domain of the tenant is set to never expire.
+  Passwords are changed when there is a reason to: suspected compromise, a leaked-credentials
+  detection (CB-M365-AUTH-030), or the user's own choice.
+
+  Password strength is ensured by other controls: MFA for all users, the banned password lists
+  (CB-M365-AUTH-036, CB-M365-AUTH-037) and smart lockout (CB-M365-AUTH-038).
+rationale: |
+  Current guidance (NIST SP 800-63B, ANSSI, Microsoft) is against arbitrary periodic changes. Users
+  forced to rotate choose weaker passwords built on a pattern, write them down or reuse them
+  elsewhere, and an attacker who learns the old one guesses the new one. Expiration also does not
+  revoke a session or token already stolen.
+impact: |
+  None known. Expiration notifications are no longer shown by Microsoft 365 anyway. Synchronized
+  users follow the on-premises Active Directory policy unless the
+  `CloudPasswordPolicyForPasswordSyncedUsersEnabled` feature is turned on.
+notes: |
+  Periodic expiration of privileged account passwords is not required either: administrators use
+  phishing-resistant MFA (CB-M365-AUTH-004), which makes the password a minor factor. Service
+  accounts that still use passwords should be replaced by managed identities or workload identities.
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Security & privacy > Password expiration policy
+  default_value: Set passwords to never expire
+  recommended_value: Set passwords to never expire (passwordValidityPeriodInDays = 2147483647 on every managed domain)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Password expiration
+       policy**.
+    3. Check that **Set passwords to never expire (recommended)** is selected.
+    4. Alternative in PowerShell (Microsoft Graph, scope `Domain.Read.All`):
+       `Get-MgDomain | Where-Object { $_.AuthenticationType -eq 'Managed' } | Select-Object Id, PasswordValidityPeriodInDays`
+       Each managed domain must show `2147483647`.
+    5. Fail if the option is cleared, or if a managed domain has a finite validity period (domains
+       added after the policy was set keep the default until the policy is saved again).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center as at least a User Administrator.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Password expiration
+       policy**.
+    3. Select **Set passwords to never expire (recommended)** and **Save**. Saving again also
+       applies the policy to domains added since.
+    4. Per domain in PowerShell (Microsoft Graph, scope `Domain.ReadWrite.All`, Domain Name
+       Administrator):
+       `Update-MgDomain -DomainId <domain> -PasswordValidityPeriodInDays 2147483647`
+  rollback: |
+    Clear the option and enter a number of days (14 to 730).
+
+references:
+  - title: Set the password expiration policy for your organization
+    url: https://learn.microsoft.com/microsoft-365/admin/manage/set-password-expiration-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Password policies and account restrictions in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.6.1v1
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R24"
+    relation: partial
+    note: ANSSI drops expiration for unprivileged accounts only; ours applies to every account, privileged ones being covered by phishing-resistant MFA.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-036
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

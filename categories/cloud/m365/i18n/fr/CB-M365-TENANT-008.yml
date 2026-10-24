@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer des stratégies d'expiration et de nommage aux groupes Microsoft 365
+finding:
+  title: Les groupes Microsoft 365 n'expirent jamais et ne suivent aucune règle de nommage
+  description: Les groupes et équipes abandonnés gardent indéfiniment leurs membres, invités et fichiers, et les noms de groupes peuvent imiter des groupes officiels ou d'administration.
+parameters:
+  group_lifetime_days: Durée de vie d'un groupe Microsoft 365 avant que ses propriétaires doivent le renouveler.
+description: |
+  - Une stratégie d'expiration s'applique à **Tous** les groupes Microsoft 365 avec une durée de vie
+    de `{{ group_lifetime_days }}` jours ou moins. Les propriétaires sont avertis avant l'échéance
+    et renouvellent les groupes actifs ; les groupes récemment actifs sont renouvelés
+    automatiquement ; les groupes sans propriétaire avertissent une adresse supervisée.
+  - Une stratégie de nommage impose un préfixe ou un suffixe (par exemple `GRP-` ou l'attribut de
+    service) et une liste de mots bloqués (comme « admin », « PDG », « paie », « support
+    informatique »).
+rationale: |
+  Les groupes et équipes survivent à leurs projets : sans expiration, leurs invités, liens de
+  partage et fichiers restent en place sans surveillance. Une stratégie de nommage distingue
+  facilement les groupes créés par les utilisateurs des groupes officiels et empêche les noms
+  conçus pour tromper les utilisateurs dans les carnets d'adresses et les boîtes de partage.
+impact: |
+  Les propriétaires reçoivent des e-mails de renouvellement ; un groupe non renouvelé est supprimé
+  de façon réversible et restaurable pendant 30 jours. Les stratégies d'expiration et de nommage
+  demandent Microsoft Entra ID P1 pour les membres des groupes concernés. Les administrateurs ne
+  sont pas soumis à la stratégie de nommage.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Groupes** > **Expiration** : **Durée de vie du groupe (en
+       jours)** vaut `{{ group_lifetime_days }}` ou moins, **Contact e-mail pour les groupes sans
+       propriétaire** est renseigné, **Activer l'expiration pour ces groupes Microsoft 365** vaut
+       **Tous**.
+    3. Aller dans **Entra ID** > **Groupes** > **Stratégie de nommage** : **Stratégie de nommage de
+       groupe** définit un préfixe ou un suffixe et **Mots bloqués** contient une liste.
+    4. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Directory.Read.All`) :
+       `Get-MgGroupLifecyclePolicy | Select-Object GroupLifetimeInDays, ManagedGroupTypes, AlternateNotificationEmails`
+       et les valeurs `Group.Unified` `PrefixSuffixNamingRequirement` et `CustomBlockedWordsList`
+       de `Get-MgBetaDirectorySetting`.
+    5. Échec si aucune stratégie de cycle de vie ne s'applique à tous les groupes, si la durée de
+       vie dépasse `{{ group_lifetime_days }}` jours, ou si aucune règle de nommage n'est définie.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de groupes.
+    2. Aller dans **Entra ID** > **Groupes** > **Expiration**. Régler **Durée de vie du groupe** sur
+       `{{ group_lifetime_days }}` jours, renseigner l'e-mail de contact, choisir **Tous**, et
+       **Enregistrer**.
+    3. Aller dans **Entra ID** > **Groupes** > **Stratégie de nommage**. Sous **Stratégie de nommage
+       de groupe**, ajouter un préfixe ou un suffixe ; sous **Mots bloqués**, téléverser la liste ;
+       **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell :
+       `New-MgGroupLifecyclePolicy -GroupLifetimeInDays {{ group_lifetime_days }} -ManagedGroupTypes All -AlternateNotificationEmails <address>`.
+  rollback: |
+    Régler **Activer l'expiration** sur **Aucun** et effacer les règles de nommage.

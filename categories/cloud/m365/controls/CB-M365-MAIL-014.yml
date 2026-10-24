@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-014
+title: Publish an SPF record that fails unauthorized senders for every domain
+finding:
+  title: Some domains have no SPF record, or one that does not fail unauthorized senders
+  description: Receiving mail systems cannot tell that a message using the domain in its envelope sender came from an unauthorized server, which makes spoofing easier.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [dns, spf, email-authentication, spoofing, domains]
+
+description: |
+  Every accepted domain of the tenant, and every other domain the organization owns, publishes
+  exactly one SPF TXT record in DNS that:
+
+  - lists only the real sources of mail for the domain (for Microsoft 365,
+    `include:spf.protection.outlook.com`; on-premises servers and third-party senders by IP address
+    or `include:`);
+  - ends with the enforcement rule `{{ spf_qualifier }}` (never `+all` or `?all`);
+  - needs no more than 10 DNS lookups.
+
+  Domains that never send mail (parked domains) publish `v=spf1 -all` whatever the parameter value.
+  The `*.onmicrosoft.com` domain is managed by Microsoft and is out of scope.
+rationale: |
+  SPF is the first of the three email authentication checks (SPF, DKIM, DMARC) that let receivers,
+  including Exchange Online itself, reject mail forged with the organization's domains. Without an
+  enforcing SPF record, DMARC can only rely on DKIM and spoofed messages are more likely to be
+  delivered. Microsoft recommends `-all` for domains that also have DKIM and DMARC.
+impact: |
+  A missing sender in the record (marketing platform, ticketing tool, on-premises relay) makes its
+  messages fail SPF; with DMARC enforcement they may be rejected. Inventory the senders with DMARC
+  aggregate reports before tightening the record. Moving third-party senders to a subdomain keeps
+  the main domain within the 10-lookup limit.
+
+parameters:
+  - name: spf_qualifier
+    type: enum
+    description: Enforcement rule at the end of the SPF record of sending domains.
+    default: "~all"
+    profile_defaults:
+      hardened: "-all"
+    allowed: ["~all", "-all"]
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader, browse to **Settings** > **Domains** and list the domains. Add the domains the
+       organization owns outside the tenant (registrar inventory).
+    2. For each domain, query DNS (no tenant role needed):
+       ```powershell
+       Get-AcceptedDomain | ForEach-Object {
+         Resolve-DnsName -Name $_.DomainName -Type TXT -ErrorAction SilentlyContinue |
+           Where-Object { $_.Strings -like 'v=spf1*' } | Select-Object Name, Strings
+       }
+       ```
+       (`nslookup -type=TXT example.com` or `dig TXT example.com` give the same result.)
+    3. Fail if a domain has no SPF record, has more than one, ends with `+all` or `?all`, ends with
+       `~all` while the parameter requires `-all`, exceeds 10 DNS lookups, or if a parked domain does
+       not publish `v=spf1 -all`.
+
+remediation:
+  manual: |
+    1. Inventory the systems that send mail with each domain (DMARC aggregate reports help).
+    2. At the DNS hosting provider, create or update the single TXT record at the domain apex, for
+       example:
+       ```text
+       v=spf1 include:spf.protection.outlook.com -all
+       ```
+       Add `ip4:`, `ip6:` or `include:` entries for the other real senders, and use `~all` only where
+       the parameter allows it.
+    3. For parked domains, publish `v=spf1 -all` (and, if the provider supports it, a wildcard TXT
+       record with the same value for subdomains).
+    4. Check the record with a lookup counter, and watch DMARC reports for SPF failures.
+  rollback: |
+    Restore the previous TXT record value at the DNS hosting provider.
+
+references:
+  - title: Set up SPF to identify valid email sources for your Microsoft 365 domain
+    url: https://learn.microsoft.com/defender-office-365/email-authentication-spf-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: "RFC 7208: Sender Policy Framework (SPF)"
+    url: https://www.rfc-editor.org/rfc/rfc7208
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (check ORCA-235)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.8"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.2.2v3
+    relation: partial
+    note: Our baseline accepts the soft fail rule ~all; the hardened value -all fails every unauthorized sender as SCuBA expects.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-015
+    type: related
+  - id: CB-M365-MAIL-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

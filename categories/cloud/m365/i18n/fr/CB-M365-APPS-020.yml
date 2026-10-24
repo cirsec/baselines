@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-020
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la création de blueprints d'identité d'agent aux administrateurs
+finding:
+  title: Tout utilisateur peut créer des blueprints d'identité d'agent
+  description: Les utilisateurs peuvent créer les modèles à partir desquels les identités d'agents IA sont construites, hors de toute revue par les administrateurs d'identité.
+description: |
+  Dans Microsoft Entra Agent ID, un blueprint d'identité d'agent définit la création des identités
+  d'agents IA : leurs identifiants, les permissions qu'elles peuvent demander et les URI de
+  redirection utilisées au consentement. La permission par défaut **Users can register agent
+  identity blueprints** permet à tout membre d'en créer un. Elle est distincte de **Les utilisateurs
+  peuvent inscrire des applications** (CB-M365-APPS-001) : désactiver celle-ci ne bloque pas les
+  blueprints.
+
+  Régler la permission sur **Non**, pour que seuls les administrateurs et les titulaires des rôles
+  Agent ID Developer ou Agent ID Administrator créent des blueprints.
+rationale: |
+  Un blueprint créé par un simple utilisateur peut demander des permissions larges, porter des
+  secrets à longue durée de vie et générer des identités d'agents que personne à l'administration
+  des identités ne connaît. Limiter la création à quelques rôles garde les agents IA dans le même
+  processus de revue que les applications. Microsoft active la permission pour tous les utilisateurs
+  par défaut en novembre 2026.
+impact: |
+  Les développeurs qui créent des agents doivent demander le rôle Agent ID Developer ou passer par un
+  administrateur. Les blueprints existants ne sont pas supprimés par le changement.
+notes: |
+  La propriété Graph est `defaultUserRolePermissions.allowedToCreateAgentIdentityBlueprints` sur le
+  point de terminaison beta de `/policies/authorizationPolicy` ; la v1.0 ne la renvoie pas encore.
+  Pendant le déploiement, le réglage peut ne pas apparaître dans tous les tenants.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Utilisateurs > Paramètres utilisateur > Autorisations par défaut des rôles d'utilisateur
+  recommended_value: "Non"
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    3. Sous **Autorisations par défaut des rôles d'utilisateur**, lire **Users can register agent
+       identity blueprints**.
+    4. Alternative (lecture seule) :
+       `Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/beta/policies/authorizationPolicy'`
+       et lire `defaultUserRolePermissions.allowedToCreateAgentIdentityBlueprints`.
+    5. Échec si le réglage vaut **Oui** (ou `true`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur de
+       rôle privilégié.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    3. Régler **Users can register agent identity blueprints** sur **Non** et sélectionner
+       **Enregistrer**.
+    4. Attribuer le rôle **Agent ID Developer** aux personnes qui créent des agents.
+  rollback: |
+    Remettre **Users can register agent identity blueprints** sur **Oui**.

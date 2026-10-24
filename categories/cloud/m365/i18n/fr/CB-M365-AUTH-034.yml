@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-034
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder les stratégies d'accès conditionnel sans référence cassée ni exclusion non protégée
+finding:
+  title: Les stratégies d'accès conditionnel contiennent des erreurs de configuration silencieuses
+  description: Des stratégies qui pointent vers des objets supprimés, sans ressource cible, avec des exclusions non couvertes ou des groupes modifiables par n'importe quel administrateur ne protègent pas ce que leur nom annonce.
+description: |
+  L'ensemble des stratégies d'accès conditionnel est revu au moins chaque trimestre, et après chaque
+  modification, selon ces règles :
+
+  1. Aucune stratégie n'inclut ou n'exclut un utilisateur, un groupe ou un rôle supprimé (affiché
+     comme un ID d'objet inconnu).
+  2. Chaque stratégie active a au moins une ressource cible, une action utilisateur ou un contexte
+     d'authentification.
+  3. Chaque objet exclu d'une stratégie est couvert par une autre stratégie qui apporte une
+     protection équivalente (par exemple une stratégie dédiée aux comptes de service), sauf les
+     comptes d'accès d'urgence.
+  4. Les groupes utilisés pour inclure ou exclure des utilisateurs sont des groupes assignables à des
+     rôles ou sont placés dans une unité administrative de gestion restreinte, pour que seuls les
+     administrateurs privilégiés puissent modifier leurs membres.
+  5. Les stratégies gérées par Microsoft ne restent pas en **Rapport seul** : chacune est **Activée**,
+     ou **Désactivée** avec un équivalent documenté.
+  6. Les stratégies de méthodes d'authentification ne référencent pas de groupes supprimés.
+rationale: |
+  L'accès conditionnel échoue en position ouverte : une stratégie qui cible un groupe supprimé ne
+  s'applique à personne, une stratégie sans ressource ne fait rien, et une exclusion sans repli est un
+  trou permanent. Les attaquants qui obtiennent un rôle Administrateur de groupes ou Administrateur
+  d'utilisateurs s'ajoutent à un groupe d'exclusion pour échapper à la MFA. Aucune de ces erreurs ne
+  déclenche d'alerte ; seule une revue les trouve.
+impact: |
+  Déplacer les groupes d'exclusion dans une unité administrative de gestion restreinte empêche les
+  Administrateurs d'utilisateurs et de groupes de les modifier ; l'équipe accès conditionnel ou un
+  Administrateur de rôle privilégié doit le faire. La revue prend quelques heures par trimestre.
+notes: |
+  Les tests Maester MT.1035, MT.1036, MT.1038, MT.1066, MT.1067, MT.1184 et MT.1224 automatisent
+  l'essentiel de ces vérifications. Le classeur d'analyse des écarts d'accès conditionnel aide pour
+  la règle 3.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité (Lecteur général pour lire aussi les unités administratives).
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et ouvrir chaque stratégie :
+       - **Utilisateurs** et **Ressources cibles** n'affichent aucun ID d'objet non résolu (un GUID au
+         lieu d'un nom) ;
+       - **Ressources cibles** n'est pas vide ;
+       - chaque utilisateur ou groupe exclu est soit un compte d'accès d'urgence, soit inclus dans une
+         autre stratégie active avec un octroi équivalent.
+    3. Filtrer la liste sur le préfixe de nom `Microsoft-managed:` et vérifier qu'aucune n'est en
+       **Rapport seul**.
+    4. Pour chaque groupe utilisé dans une stratégie, l'ouvrir dans **Entra ID** > **Groupes** et
+       vérifier que **Des rôles Microsoft Entra peuvent être attribués au groupe** vaut **Oui**, ou
+       qu'il appartient à une unité administrative dont **Gestion restreinte** vaut **Oui** (**Entra
+       ID** > **Rôles et administrateurs** > **Unités administratives**).
+    5. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et vérifier que les
+       groupes cibles de chaque méthode existent toujours.
+    6. Alternative PowerShell (Microsoft Graph, étendues `Policy.Read.All`, `Group.Read.All`) :
+       lister les stratégies avec `Get-MgIdentityConditionalAccessPolicy`, collecter les ID de
+       `Conditions.Users.IncludeGroups` et `ExcludeGroups`, et résoudre chacun avec `Get-MgGroup
+       -GroupId <id>` ; une erreur signale un groupe supprimé. Ou exécuter Maester (lecture seule)
+       avec les tests listés dans les notes.
+    7. Échec en cas de référence cassée, de stratégie active sans cible, d'exclusion non couverte, de
+       groupe d'exclusion modifiable par des administrateurs non privilégiés, ou de stratégie gérée
+       par Microsoft laissée en **Rapport seul**.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    2. Retirer les objets supprimés des stratégies, ou supprimer les stratégies devenues sans objet.
+    3. Ajouter les ressources cibles manquantes, ou supprimer les stratégies sans cible.
+    4. Pour chaque exclusion non couverte, créer une stratégie dédiée à la population exclue (par
+       exemple comptes de service limités aux emplacements approuvés), ou retirer l'exclusion.
+    5. Créer une unité administrative avec **Unité administrative de gestion restreinte** à **Oui**
+       (Administrateur de rôle privilégié) et y déplacer les groupes d'inclusion et d'exclusion. Les
+       nouveaux groupes peuvent aussi être créés assignables à des rôles.
+    6. Examiner chaque stratégie gérée par Microsoft en mode rapport seul, exclure les comptes
+       d'accès d'urgence, puis la passer à **Activé** ou **Désactivé**.
+    7. Consigner la date de revue et la refaire chaque trimestre.
+  rollback: |
+    Retirer un groupe de l'unité administrative de gestion restreinte pour rendre leurs droits aux
+    administrateurs délégués.

@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-006
+title: Limit Power Platform tenant isolation exceptions to approved tenants
+finding:
+  title: Power Platform tenant isolation exceptions are missing, too broad or unreviewed
+  description: The tenant isolation allow list contains wildcard entries or tenants without a documented business need, which reopens cross-tenant connections.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [power-platform, tenant-isolation, cross-tenant, allowlist, partners]
+
+description: |
+  The tenant isolation exception list contains only partner tenants with a documented business
+  need, each with the narrowest direction required (**Inbound**, **Outbound** or **Both**). No entry
+  uses the `*` wildcard, which allows every tenant in a direction. The list is reviewed at least
+  once a year with the owners of the integrations. An empty list is compliant when no cross-tenant
+  integration exists.
+rationale: |
+  Tenant isolation only protects as much as its exceptions allow. A `*` entry, added to stop
+  breaking flows when isolation was turned on, cancels the protection in that direction. Stale
+  entries keep connections open to former partners. A short, reviewed list keeps cross-tenant data
+  flows deliberate and traceable.
+impact: |
+  Removing an exception breaks the apps and flows that use connections to that tenant in the
+  removed direction. Confirm with integration owners, using the cross-tenant isolation report,
+  before removing entries.
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader.
+    2. Browse to **Security** > **Identity and access** > **Tenant isolation** and review the
+       exception list (tenant ID or domain, allowed direction).
+    3. Check that no entry uses `*`, and that each tenant matches a documented, current integration
+       with the narrowest direction.
+    4. Alternative, read only (Power Platform Administrator):
+       `(Get-PowerAppTenantIsolationPolicy -TenantId <tenant ID>).properties.allowedTenants`.
+    5. Fail if a `*` entry exists, or if an entry has no documented owner and need.
+
+remediation:
+  manual: |
+    1. Run the cross-tenant isolation report to see which tenants and directions are actually used.
+    2. In **Security** > **Identity and access** > **Tenant isolation**, replace any `*` entry with
+       the specific tenants needed, narrow **Both** entries to **Inbound** or **Outbound** where
+       possible, and delete unused entries. Role: Power Platform Administrator.
+    3. PowerShell equivalent: edit `properties.allowedTenants` in the object returned by
+       `Get-PowerAppTenantIsolationPolicy` and apply it with `Set-PowerAppTenantIsolationPolicy`.
+    4. Record each remaining exception (partner, owner, direction, review date).
+  rollback: |
+    Add back the removed exception with its original direction.
+
+references:
+  - title: Restrict cross-tenant inbound and outbound access
+    url: https://learn.microsoft.com/power-platform/admin/cross-tenant-restrictions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.3.2v1
+    relation: stricter
+    note: SCuBA asks for an allow list; ours also forbids wildcard entries and requires a documented, reviewed need for each tenant.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1537
+  - framework: mitre-attack
+    id: T1199
+related_controls:
+  - id: CB-M365-POWER-005
+    type: related
+  - id: CB-M365-TENANT-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

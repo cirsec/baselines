@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-010
+title: Make Anyone links expire and grant view only
+finding:
+  title: Anyone links never expire or allow editing
+  description: Links that need no sign-in stay valid indefinitely and may let unknown people modify or upload content.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [anonymous-links, sharing-links, sharepoint, onedrive]
+
+description: |
+  Where **Anyone** links are allowed (an exception to CB-M365-COLLAB-003, for the tenant, a site or a
+  OneDrive), they are constrained:
+
+  - they expire after at most `{{ anyone_link_max_days }}` days (`RequireAnonymousLinksExpireInDays`);
+  - they only give **View** permission, for files and for folders (`FileAnonymousLinkType` and
+    `FolderAnonymousLinkType` = `View`).
+
+  If neither SharePoint nor OneDrive allows **Anyone** links, the control is met.
+rationale: |
+  An **Anyone** link is a bearer credential. An expiry date bounds how long a leaked or forgotten link
+  exposes the content. View-only stops unauthenticated people from altering documents, replacing them
+  with malicious files, or using an upload folder to plant content in the tenant.
+impact: |
+  Users must recreate links after expiry. A shorter expiry also shortens existing links when the new
+  value is lower. **File requests** and **View, edit, and upload** folder links stop working.
+
+parameters:
+  - name: anyone_link_max_days
+    type: integer
+    description: Maximum lifetime of an Anyone link.
+    unit: days
+    default: 30
+    minimum: 1
+    maximum: 730
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing**. If both sliders are below **Anyone**, the control is met.
+    3. Otherwise, under **Choose expiration and permissions options for Anyone links**, check that
+       **These links must expire within this many days** is selected with at most
+       `{{ anyone_link_max_days }}`, and that **These links can give these permissions** is **View** for
+       **Files** and **Folders**.
+    4. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object SharingCapability, OneDriveSharingCapability, RequireAnonymousLinksExpireInDays, FileAnonymousLinkType, FolderAnonymousLinkType`.
+    5. Fail if **Anyone** links are allowed and `RequireAnonymousLinksExpireInDays` is `0` or greater
+       than `{{ anyone_link_max_days }}`, or if either link type is not `View`.
+
+remediation:
+  manual: |
+    1. In the SharePoint admin center, browse to **Policies** > **Sharing** > **Choose expiration and
+       permissions options for Anyone links**.
+    2. Select **These links must expire within this many days** and enter `{{ anyone_link_max_days }}`
+       or less.
+    3. Set **Files** and **Folders** to **View**. Select **Save**. Role: SharePoint Administrator.
+    4. PowerShell equivalent:
+       `Set-SPOTenant -RequireAnonymousLinksExpireInDays {{ anyone_link_max_days }} -FileAnonymousLinkType View -FolderAnonymousLinkType View`.
+
+references:
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: External sharing overview
+    url: https://learn.microsoft.com/sharepoint/external-sharing-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.3.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.3.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-22
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-COLLAB-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

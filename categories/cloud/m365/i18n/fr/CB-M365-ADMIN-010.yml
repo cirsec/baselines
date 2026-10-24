@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir périodiquement les attributions de rôles privilégiés
+finding:
+  title: Les attributions de rôles privilégiés ne sont jamais revues
+  description: Des administrateurs gardent leurs rôles après un changement de poste ou la fin d'un projet, et personne ne vérifie que chaque attribution reste nécessaire.
+parameters:
+  role_review_frequency: Récurrence de la révision d'accès des rôles privilégiés.
+description: |
+  Une révision d'accès récurrente dans Privileged Identity Management couvre les rôles hautement
+  privilégiés (liste dans CB-M365-ADMIN-006), attributions éligibles et actives, selon la
+  fréquence `{{ role_review_frequency }}`. La révision :
+
+  - a des relecteurs qui ne se révisent pas eux-mêmes (un responsable sécurité, ou les managers des
+    titulaires) ;
+  - active les notifications par e-mail et les rappels, et exige une justification à
+    l'approbation ;
+  - dure 14 jours ou moins ;
+  - applique automatiquement les résultats à la fin.
+rationale: |
+  Les privilèges s'accumulent : les personnes changent d'équipe, les projets se terminent, les
+  prestataires partent, et les rôles restent. Une révision périodique par une autre personne que
+  le titulaire retire les attributions que personne ne sait justifier et documente celles qui
+  restent, ce que demandent les auditeurs.
+impact: |
+  Les relecteurs y passent du temps à chaque cycle. Si **Si les relecteurs ne répondent pas** retire
+  l'accès, une révision oubliée peut retirer un administrateur : le laisser sur **Aucun changement**
+  pour les rôles et relancer les révisions en retard.
+notes: |
+  Les attributions inutilisées ou orphelines entre deux révisions sont traitées par
+  CB-M365-ADMIN-011.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles Microsoft
+       Entra** > **Révisions d'accès** (ou **Gouvernance des ID** > **Révisions d'accès**).
+    3. Trouver une révision active dont la portée inclut les rôles hautement privilégiés, avec
+       **Type d'attribution de rôle** **Éligible et actif**, et vérifier : les relecteurs ne sont
+       pas les titulaires eux-mêmes ; **Fréquence** `{{ role_review_frequency }}` ou plus fréquente ;
+       **Durée** de 14 jours ou moins ; **Notifications par e-mail**, **Rappels**, **Exiger une
+       justification à l'approbation** et **Appliquer automatiquement les résultats à la
+       ressource** activés.
+    4. Ouvrir la dernière instance terminée et vérifier que des décisions ont été prises.
+    5. Alternative en lecture seule avec Microsoft Graph (étendue `AccessReview.Read.All`) :
+       `GET /identityGovernance/accessReviews/definitions` et chercher une définition dont la
+       portée interroge `/roleManagement/directory/roleAssignmentScheduleInstances` ou
+       `roleEligibilityScheduleInstances`.
+    6. Échec si aucune révision de ce type n'existe, si elle est moins fréquente que le paramètre,
+       ou si sa dernière instance n'a pas été menée à terme.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié (ou Administrateur de la gouvernance des
+       identités), aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles
+       Microsoft Entra** > **Révisions d'accès** > **Nouveau**.
+    2. La nommer, régler **Fréquence** sur `{{ role_review_frequency }}`, **Durée** sur 14 jours
+       ou moins, **Fin** sur **Jamais**.
+    3. **Portée** : **Utilisateurs et groupes** ; **Rôle** : sélectionner les rôles hautement
+       privilégiés ; **Type d'attribution** : **Éligible et actif**.
+    4. **Relecteurs** : utilisateurs sélectionnés (responsable sécurité) ou **Manager**, avec un
+       relecteur de secours.
+    5. **Paramètres à l'issue** : **Appliquer automatiquement les résultats à la ressource**
+       **Activer** ; **Si les relecteurs ne répondent pas** **Aucun changement**.
+    6. **Paramètres avancés** : activer **Exiger une justification à l'approbation**,
+       **Notifications par e-mail** et **Rappels**. Sélectionner **Démarrer**.
+  rollback: |
+    Arrêter ou supprimer la révision d'accès ; les décisions déjà appliquées ne sont pas annulées.

@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-005
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Laisser l'audit des boîtes aux lettres activé par défaut pour l'organisation
+finding:
+  title: L'audit des boîtes aux lettres est désactivé au niveau de l'organisation
+  description: Avec AuditDisabled à True, aucune boîte aux lettres n'enregistre les actions du propriétaire, des délégués ou des administrateurs, quels que soient ses propres réglages.
+description: |
+  L'audit des boîtes aux lettres activé par défaut s'applique à l'organisation : `AuditDisabled` vaut
+  `False` dans la configuration de l'organisation Exchange Online, de sorte que chaque boîte aux
+  lettres utilisateur, partagée et de ressource enregistre les actions d'audit par défaut et les
+  envoie au journal d'audit unifié.
+rationale: |
+  Les enregistrements d'audit des boîtes aux lettres sont la preuve de ce qui s'est passé dans une
+  boîte : messages déplacés ou supprimés, règles de boîte de réception créées, accès délégués,
+  messages envoyés au nom d'un autre utilisateur. Un attaquant ou un administrateur peut désactiver
+  l'audit pour toute l'organisation en une commande ; ce réglage prime sur la valeur `AuditEnabled`
+  de chaque boîte aux lettres.
+impact: |
+  Aucun connu. C'est la valeur par défaut de Microsoft.
+setting:
+  location: PowerShell Exchange Online, Get-OrganizationConfig AuditDisabled
+  recommended_value: "False"
+audit:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec au moins le rôle View-Only Organization
+       Management (ou Lecteur général).
+    2. Exécuter `Get-OrganizationConfig | Format-List AuditDisabled`.
+    3. Échec si `AuditDisabled` vaut `True`.
+remediation:
+  manual: |
+    1. Se connecter à PowerShell Exchange Online avec le rôle Organization Management (ou Audit
+       Logs).
+    2. Exécuter `Set-OrganizationConfig -AuditDisabled $false`.
+    3. Alerter sur toute modification ultérieure (opération d'audit `Set-OrganizationConfig` avec le
+       paramètre `AuditDisabled`).
+  rollback: |
+    Déconseillé. `Set-OrganizationConfig -AuditDisabled $true` arrête l'audit des boîtes aux lettres
+    pour toute l'organisation.

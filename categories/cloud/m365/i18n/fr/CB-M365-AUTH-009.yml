@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Terminer la migration vers la stratégie des méthodes d'authentification
+finding:
+  title: Les anciennes stratégies MFA et SSPR décident encore des méthodes utilisables
+  description: Tant que l'état de migration n'est pas Migration terminée, une méthode désactivée dans la stratégie des méthodes d'authentification peut rester utilisable via les anciens paramètres MFA ou SSPR.
+description: |
+  La stratégie des méthodes d'authentification est le seul endroit qui décide des méthodes que les
+  utilisateurs peuvent enregistrer et utiliser : son état **Gérer la migration** vaut **Migration
+  terminée**. Les anciens paramètres de service de la MFA par utilisateur (options de vérification)
+  et les anciennes méthodes SSPR sont alors ignorés.
+
+  Chaque méthode encore nécessaire est activée dans la stratégie des méthodes d'authentification
+  avant la bascule, et les autres contrôles de ce standard sur les méthodes (SMS, Voice call, Email
+  OTP, Software OATH tokens, Passkey (FIDO2), Temporary Access Pass) y sont réglés.
+rationale: |
+  Pendant la migration, Entra ID applique l'union des anciennes stratégies et de la nouvelle. Une
+  méthode faible désactivée dans la nouvelle stratégie, comme le SMS, reste utilisable si
+  l'ancienne stratégie MFA ou SSPR l'autorise encore. Microsoft a cessé de gérer les méthodes dans
+  les anciennes stratégies le 30 septembre 2025 ; terminer la migration lève l'ambiguïté.
+impact: |
+  Les utilisateurs perdent toute méthode qui n'était autorisée que par les anciennes stratégies.
+  Comparer les deux côtés d'abord, ou lancer le guide de migration automatisé, qui recopie les
+  anciens paramètres dans la nouvelle stratégie. Les questions de sécurité du SSPR restent dans
+  l'ancienne stratégie SSPR.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Stratégies > Gérer la migration
+  recommended_value: Migration terminée
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies**.
+    3. Lire le bandeau de migration ou sélectionner **Gérer la migration** pour voir l'état actuel.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicy).PolicyMigrationState`
+       (Graph : `GET https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy`).
+    5. Échec si l'état n'est pas **Migration terminée** (`migrationComplete`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Relever les anciens paramètres : **Entra ID** > **Utilisateurs** > **MFA par utilisateur** >
+       **paramètres du service** (options de vérification) et **Entra ID** > **Réinitialisation du
+       mot de passe** > **Méthodes d'authentification**.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et soit lancer le
+       guide de migration automatisé, soit activer à la main chaque méthode encore nécessaire, pour
+       les bons groupes.
+    4. Sélectionner **Gérer la migration** > **Migration en cours**, vérifier les connexions et les
+       réinitialisations de mot de passe quelques jours, puis sélectionner **Migration terminée** et
+       enregistrer.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy` avec
+    `"policyMigrationState": "migrationComplete"`.
+  rollback: |
+    Remettre **Gérer la migration** sur **Migration en cours** ; les anciennes stratégies
+    s'appliquent de nouveau.

@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-007
+title: Enable Windows LAPS backup to Microsoft Entra ID
+finding:
+  title: Windows LAPS is not enabled in Microsoft Entra ID
+  description: Local administrator passwords of Entra-joined Windows devices cannot be backed up to Entra ID, so they are likely shared, static or unmanaged.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [entra-id, laps, local-admin, credentials, lateral-movement]
+
+description: |
+  The device setting **Enable Microsoft Entra Local Administrator Password Solution (LAPS)** is set
+  to **Yes**, and a client-side Windows LAPS policy (Intune **Endpoint security** > **Account
+  protection** > **Local admin password solution (Windows LAPS)**, or Group Policy for hybrid
+  devices) backs up the password of the managed local administrator account to Microsoft Entra ID
+  and rotates it.
+
+  The tenant setting alone does nothing: it allows devices to store passwords in Entra ID. The
+  client policy decides which account is managed, the backup directory, password complexity,
+  length and age.
+rationale: |
+  A local administrator account with the same password on every device lets an attacker who
+  compromises one endpoint reuse the hash or password on all others (pass-the-hash, lateral
+  movement). Windows LAPS gives every device a unique random password, rotates it, and records
+  every retrieval in the Entra audit log.
+impact: |
+  None for users. Helpdesk staff retrieve the password from the device page in Entra ID or Intune
+  instead of a shared value; grant only them the right to read LAPS passwords (Cloud Device
+  Administrator, or a custom role with
+  `microsoft.directory/deviceLocalCredentials/password/read`). Requires Windows 10 or 11 (April 2023
+  update or later) or Windows Server 2019/2022; Entra registered devices are not supported. When a
+  device object is deleted, its stored password is lost.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Enable Microsoft Entra Local Administrator Password Solution (LAPS)
+  default_value: "No"
+  recommended_value: "Yes, plus a Windows LAPS client policy backing up to Microsoft Entra ID"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings** and check that **Enable
+       Microsoft Entra Local Administrator Password Solution (LAPS)** is **Yes**.
+    3. Browse to **Entra ID** > **Devices** > **Overview** > **Local administrator password
+       recovery** and check that Windows devices are listed with a recent rotation date (metadata
+       readable by Security Reader).
+    4. In the Intune admin center, browse to **Endpoint security** > **Account protection** and
+       check that a **Local admin password solution (Windows LAPS)** policy with **Backup Directory**
+       set to Microsoft Entra ID is assigned to all Windows devices.
+    5. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` and read
+       `localAdminPassword.isEnabled`; `GET https://graph.microsoft.com/v1.0/directory/deviceLocalCredentials`
+       (scope `DeviceLocalCredential.ReadBasic.All`) lists devices with a backed-up password.
+    6. Fail if the tenant setting is **No**, or if no client policy backs up passwords for the
+       Windows fleet.
+
+remediation:
+  manual: |
+    1. Browse to **Entra ID** > **Devices** > **Device settings**, set **Enable Microsoft Entra
+       Local Administrator Password Solution (LAPS)** to **Yes** and save. Role: Cloud Device
+       Administrator.
+    2. In the Intune admin center, browse to **Endpoint security** > **Account protection** >
+       **Create Policy**, platform **Windows**, profile **Local admin password solution (Windows
+       LAPS)**. Set **Backup Directory** to **Backup the password to Microsoft Entra ID only**, a
+       password age of 30 days or less, and complexity with at least 14 characters. Assign it to a
+       pilot group, then to all Windows devices. Role: Intune Administrator or Endpoint Security
+       Manager.
+    3. Graph equivalent for the tenant setting: `PUT
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` with
+       `localAdminPassword.isEnabled` set to `true`.
+    4. Protect password recovery: require phishing-resistant MFA for the roles allowed to read LAPS
+       passwords.
+  rollback: |
+    Unassign the Intune LAPS policy, then set the tenant setting back to **No**. Passwords already
+    rotated stay valid until changed: recover them before rollback.
+
+references:
+  - title: Use Windows Local Administrator Password Solution (LAPS) with Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/devices/howto-manage-local-admin-passwords
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1177
+    url: https://maester.dev/docs/tests/MT.1177
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.5"
+    relation: stricter
+    note: Also requires the client-side Windows LAPS policy that actually backs up and rotates passwords.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1550.002
+  - framework: mitre-attack
+    id: T1078.003
+related_controls:
+  - id: CB-M365-DEVICE-005
+    type: related
+  - id: CB-M365-DEVICE-006
+    type: related
+  - id: CB-M365-DEVICE-008
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-014
+title: Enable app instance property lock on multitenant applications
+finding:
+  title: Sensitive properties of the organization's applications can be changed in other tenants
+  description: Without a property lock, an administrator of any tenant where the application is installed can add credentials to its local service principal and use the application's identity there.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [applications, workload-identities, credentials, multitenant]
+
+description: |
+  Every application registration has **App instance property lock** enabled with **All
+  properties** selected (credentials used for verification, credentials used for signing tokens,
+  and `tokenEncryptionKeyId`), unless the application documents a scenario that needs one of
+  these properties on its service principals.
+rationale: |
+  Service principals of an application can receive their own credentials in every tenant where the
+  application is present. For a multitenant application published by the organization, a
+  credential added in a customer or attacker tenant lets someone authenticate as the application
+  there. The lock prevents these changes on service principals, which almost no application needs.
+  Microsoft enables the lock by default for applications created since June 2026; older
+  applications must be updated.
+impact: |
+  Applications that rely on service principal credentials (for example SAML signing certificates
+  managed on the enterprise application) must keep the matching property unlocked.
+
+setting:
+  location: Entra admin center > Entra ID > App registrations > application > Authentication > App instance property lock (Graph application.servicePrincipalLockConfiguration)
+  default_value: Enabled for applications created since June 2026, not configured before
+  recommended_value: Enabled, All properties
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **App registrations** > **All applications**, open each application
+       and check **Authentication** > **App instance property lock**.
+    3. In Microsoft Graph PowerShell (scope `Application.Read.All`), run
+       `Get-MgApplication -All -Property displayName,appId,signInAudience,servicePrincipalLockConfiguration`
+       and check `isEnabled` and `allProperties`.
+    4. Fail if a multitenant application (`signInAudience` other than `AzureADMyOrg`) has the lock
+       disabled, or if any application has it disabled without a documented reason.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Cloud Application Administrator.
+    2. Browse to **Entra ID** > **App registrations**, open the application, select
+       **Authentication** and select **Configure** under **App instance property lock**.
+    3. Select **Enable property lock** and **All properties**, then **Save**.
+    4. Graph alternative (scope `Application.ReadWrite.All`):
+       `PATCH https://graph.microsoft.com/v1.0/applications/{id}` with
+       `{"servicePrincipalLockConfiguration": {"isEnabled": true, "allProperties": true}}`.
+  rollback: |
+    Clear **Enable property lock**, or unlock only the property the application needs.
+
+references:
+  - title: How to configure app instance property lock in your applications
+    url: https://learn.microsoft.com/entra/identity-platform/howto-configure-app-instance-property-locks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure Microsoft Entra for increased security - protect tenants
+    url: https://learn.microsoft.com/entra/fundamentals/zero-trust-protect-tenants
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.001
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

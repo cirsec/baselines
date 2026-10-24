@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-017
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'affectation pour les outils d'administration Microsoft à privilèges élevés
+finding:
+  title: Tout utilisateur peut se connecter aux outils d'administration Microsoft comme Graph PowerShell, Azure CLI ou Graph Explorer
+  description: Ces applications Microsoft préconsenties permettent à tout compte compromis d'énumérer l'annuaire ou d'appeler des API d'administration sans autre demande de consentement.
+description: |
+  Les principaux de service des outils d'administration Microsoft (first-party) existent dans le
+  tenant, ont **Affectation obligatoire ?** à **Oui**, et ne sont affectés qu'aux administrateurs et
+  comptes d'automatisation qui les utilisent. Quand un outil n'est pas utilisé du tout, la connexion
+  est désactivée sur son principal de service. La liste couvre au moins :
+
+  - Microsoft Azure PowerShell (`1950a258-227b-4e31-a9cf-717495945fc2`) ;
+  - Microsoft Azure CLI et Azure Developer CLI (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) ;
+  - Microsoft Graph Command Line Tools (`14d82eec-204b-4c2f-b7e8-296a70dab67e`) ;
+  - Graph Explorer (`de8bc8b5-d9f9-48b1-a8ad-b748da725064`) ;
+  - Azure Active Directory PowerShell, ancien module (`1b730954-1685-4b74-9bfd-dac224a7b894`) ;
+  - Microsoft Teams PowerShell Cmdlets (`12128f48-ec9e-42f0-b203-ea49fb6af367`) ;
+  - Microsoft Exchange Online PowerShell (`fb78d390-0c51-40cd-8e17-fdbfab77341b`) ;
+  - Microsoft SharePoint Online Management Shell (`9bc3ab49-b65d-410a-85ad-de819febfddc`) ;
+  - Power Platform CLI (`9cee029c-6210-4654-90bb-17e6e9d36617`).
+rationale: |
+  Ces applications sont reconnues par tous les tenants et viennent avec des permissions déléguées
+  larges. Après avoir hameçonné un seul utilisateur, les attaquants s'en servent pour extraire
+  utilisateurs, groupes, applications et stratégies, première étape vers l'élévation de privilèges.
+  Les utilisateurs standard n'ont aucune raison métier de les utiliser. Une application first-party
+  reste utilisable même si son principal de service est absent du tenant : il faut donc le créer
+  avant de pouvoir imposer l'affectation.
+impact: |
+  Les administrateurs, développeurs et automatisations qui utilisent ces outils doivent être
+  affectés (de préférence via un groupe). Consulter les journaux de connexion de chaque application
+  pour trouver les utilisateurs actuels avant d'appliquer.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Applications d'entreprise** > **Toutes les applications**, régler
+       **Type d'application** sur **Applications Microsoft**, et rechercher chaque ID d'application
+       de la liste.
+    3. Pour chacune, ouvrir **Propriétés** et vérifier **Affectation obligatoire ?** = **Oui** (ou
+       **Activé pour que les utilisateurs se connectent ?** = **Non**), puis vérifier les principaux
+       affectés dans **Utilisateurs et groupes**.
+    4. En Microsoft Graph PowerShell (étendue `Application.Read.All`), exécuter
+       `Get-MgServicePrincipal -Filter "appId eq '<appId>'" -Property displayName,appRoleAssignmentRequired,accountEnabled`
+       pour chaque ID d'application.
+    5. Échec si un principal de service de la liste est absent, ou est activé avec
+       `appRoleAssignmentRequired` = `false`.
+remediation:
+  manual: |
+    1. Pour chaque outil, lister les utilisateurs actuels depuis **Applications d'entreprise** >
+       l'application > **Journaux de connexion**.
+    2. Si le principal de service est absent, le créer avec Microsoft Graph PowerShell (étendue
+       `Application.ReadWrite.All`) : `New-MgServicePrincipal -AppId <appId>`.
+    3. Dans **Utilisateurs et groupes**, affecter le groupe d'administrateurs ou de comptes
+       d'automatisation qui ont besoin de l'outil.
+    4. Dans **Propriétés**, régler **Affectation obligatoire ?** sur **Oui** (Graph :
+       `Update-MgServicePrincipal -ServicePrincipalId <id> -AppRoleAssignmentRequired:$true`), ou
+       **Activé pour que les utilisateurs se connectent ?** sur **Non** pour les outils que personne
+       n'utilise.
+    5. Rôle requis : Administrateur d'applications cloud ou Administrateur d'applications.
+  rollback: |
+    Remettre **Affectation obligatoire ?** sur **Non** pour l'application concernée.

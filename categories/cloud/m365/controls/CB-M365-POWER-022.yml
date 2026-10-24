@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-022
+title: Require user authentication for Copilot Studio agents and limit how widely they are shared
+finding:
+  title: Copilot Studio agents can be used without authentication or are open to everyone
+  description: Some agents accept anonymous users, do not require sign-in, or are shared with any user or any tenant, so their knowledge and tools are reachable by people who should not use them.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [copilot-studio, ai-agents, authentication, sharing, data-policy]
+
+applicability:
+  requires:
+    - "Microsoft Copilot Studio"
+
+description: |
+  Copilot Studio agents only serve authenticated users and are shared with named audiences:
+
+  - a Power Platform data policy covering all environments blocks the connector **Chat without
+    Microsoft Entra ID authentication in Copilot Studio**, so makers cannot publish agents with
+    **No authentication**;
+  - each agent uses **Authenticate with Microsoft**, or **Authenticate manually** with **Require
+    users to sign in** turned on;
+  - no agent is shared for use with any user (**Any**) or any tenant (**Any (multitenant)**);
+    multi-tenant support is off unless the agent is designed for partners;
+  - on managed environments, sharing limits restrict who makers can share agents with (for example
+    no **Editor** sharing, or security groups only).
+rationale: |
+  An agent answers from its knowledge sources and runs tools with stored or user credentials. An
+  unauthenticated agent published on a website or Direct Line channel exposes that knowledge and
+  those tools to anyone with the link, and its users cannot be identified in logs. Agents shared with
+  every user or every tenant reach people who were never meant to use them. Requiring sign-in and
+  scoped sharing keeps agent access under the same identity controls as other applications.
+impact: |
+  Agents built for anonymous public use (for example a public website assistant) cannot be published
+  in environments covered by the data policy; host them in a dedicated environment with a reviewed
+  exception policy. Agents that switch to authentication must be republished, and users of custom
+  channels must sign in. Sharing limits apply to new sharing operations only.
+
+audit:
+  manual: |
+    1. Sign in to the Power Platform admin center (https://admin.powerplatform.microsoft.com) as at
+       least a Global Reader and browse to **Security** > **Data and privacy** > **Data policy**.
+       Check that a policy covering all environments places **Chat without Microsoft Entra ID
+       authentication in Copilot Studio** in **Blocked**.
+    2. For each environment with agents, sign in to Copilot Studio (https://copilotstudio.microsoft.com)
+       as an environment admin or System Administrator, open each published agent and check
+       **Settings** > **Security** > **Authentication**: the option is **Authenticate with
+       Microsoft**, or **Authenticate manually** with **Require users to sign in** on.
+    3. From the agents list, open **Share** for each agent and check that it is not shared with the
+       whole organization without permission rules, and that multi-tenant support is off.
+    4. Alternative, read only: query the Dataverse `bots` table of each environment
+       (`GET https://<org>.crm.dynamics.com/api/data/v9.2/bots`) and review the authentication and
+       access control columns, or run the Maester tests MT.1113 and MT.1114
+       (`Connect-Maester -Service Dataverse,Graph`), which only read data.
+    5. Fail if the data policy is missing, or if a published agent allows anonymous use, does not
+       require sign-in with manual authentication, or is shared with any user or tenant without an
+       approved exception.
+
+remediation:
+  manual: |
+    1. In the Power Platform admin center, **Security** > **Data and privacy** > **Data policy**,
+       edit the tenant baseline policy (or create one with scope **Add all environments**) and move
+       **Chat without Microsoft Entra ID authentication in Copilot Studio** to **Blocked**. Role:
+       Power Platform Administrator.
+    2. Ask each agent owner to set **Settings** > **Security** > **Authentication** to **Authenticate
+       with Microsoft** (or **Authenticate manually** with **Require users to sign in**), then
+       republish the agent.
+    3. In the agent's **Share** dialog, remove organization-wide or open access and share with
+       security groups; turn off multi-tenant support in the authentication settings.
+    4. On managed environments, configure **Sharing limits** for agents (environment settings or
+       environment group rules).
+  rollback: |
+    Move the connector back to **Non-business** in the data policy, or exclude the environment that
+    hosts an approved anonymous agent.
+
+references:
+  - title: Configure data policies for agents
+    url: https://learn.microsoft.com/microsoft-copilot-studio/admin-data-loss-prevention
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure user authentication in Copilot Studio
+    url: https://learn.microsoft.com/microsoft-copilot-studio/configuration-end-user-authentication
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Control how agents are shared
+    url: https://learn.microsoft.com/microsoft-copilot-studio/admin-sharing-controls-limits
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1114
+    url: https://maester.dev/docs/tests/MT.1114
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1213
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-POWER-003
+    type: related
+  - id: CB-M365-POWER-023
+    type: related
+  - id: CB-M365-POWER-024
+    type: related
+  - id: CB-M365-TENANT-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-033
+title: Send user-reported messages to Microsoft and to a reporting mailbox
+finding:
+  title: Messages that users report as phishing do not reach the security team
+  description: The built-in Report button is off, or reports only go to Microsoft, so the SOC misses early warnings of a campaign.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [defender-for-office-365, user-reported-messages, phishing, soc, submissions]
+
+description: |
+  The user reported settings are configured so that:
+
+  - **Monitor reported messages in Outlook** is on and users report with the built-in **Report**
+    button in Outlook (`EnableReportToMicrosoft`, `ReportJunkToCustomizedAddress`,
+    `ReportPhishToCustomizedAddress`, `ReportNotJunkToCustomizedAddress`);
+  - reported messages are sent to **Microsoft and my reporting mailbox**, the reporting mailbox
+    being {{ report_mailbox }} (`ReportJunkAddresses`, `ReportPhishAddresses`,
+    `ReportNotJunkAddresses` and the report submission rule);
+  - **Monitor reported messages in Microsoft Teams** is on when Teams is used;
+  - users can report messages from quarantine.
+rationale: |
+  Users are often the first to spot a phishing campaign that filters missed. Sending their reports
+  to a mailbox the SOC watches lets it purge the campaign from every mailbox quickly; sending them to
+  Microsoft as well improves future filtering and, with Defender for Office 365 Plan 2, triggers
+  automated investigation.
+impact: |
+  The SOC must watch the reporting mailbox or the **User reported** tab in **Submissions**. Third-
+  party report add-ins should be removed or pointed to the same mailbox to avoid two channels.
+notes: |
+  Microsoft recommends identifying the reporting mailbox as a SecOps mailbox in the advanced
+  delivery policy, so that reported messages are not filtered again on the way.
+
+parameters:
+  - name: report_mailbox
+    type: string
+    description: Exchange Online mailbox that receives user-reported messages.
+    default: a dedicated mailbox monitored by the security operations team
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Settings** > **Email & collaboration** > **User reported settings**.
+    3. Check that **Monitor reported messages in Outlook** is selected with **Use the built-in Report
+       button in Outlook**, that **Send reported messages to** is **Microsoft and my reporting
+       mailbox** with the expected mailbox, that **Monitor reported messages in Microsoft Teams** is
+       selected, and that reporting from quarantine is allowed.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-ReportSubmissionPolicy | Format-List EnableReportToMicrosoft, ReportJunkToCustomizedAddress, ReportPhishToCustomizedAddress,
+         ReportNotJunkToCustomizedAddress, ReportJunkAddresses, ReportPhishAddresses, ReportNotJunkAddresses, ReportChatMessageEnabled,
+         ReportChatMessageToCustomizedAddressEnabled, EnableThirdPartyAddress
+       Get-ReportSubmissionRule | Format-List Name, State, SentTo
+       ```
+    5. Fail if reporting in Outlook is off, if reports do not reach both Microsoft and the reporting
+       mailbox, or if the rule is disabled.
+
+remediation:
+  manual: |
+    1. Create the reporting mailbox (a shared mailbox is enough) and give the SOC access.
+    2. In the Defender portal, **Settings** > **Email & collaboration** > **User reported settings**
+       (Security Administrator): select **Monitor reported messages in Outlook** > **Use the built-in
+       Report button in Outlook**, set **Send reported messages to** to **Microsoft and my reporting
+       mailbox**, enter the mailbox, select **Monitor reported messages in Microsoft Teams** and
+       reporting from quarantine, and save.
+    3. PowerShell equivalent:
+       ```powershell
+       Set-ReportSubmissionPolicy -Identity DefaultReportSubmissionPolicy -EnableReportToMicrosoft $true `
+         -ReportJunkToCustomizedAddress $true -ReportNotJunkToCustomizedAddress $true -ReportPhishToCustomizedAddress $true `
+         -ReportJunkAddresses reports@example.com -ReportNotJunkAddresses reports@example.com -ReportPhishAddresses reports@example.com
+       Set-ReportSubmissionRule -Identity DefaultReportSubmissionRule -SentTo reports@example.com
+       ```
+    4. Add the mailbox as a SecOps mailbox in **Email & collaboration** > **Policies & rules** >
+       **Threat policies** > **Advanced delivery**.
+
+references:
+  - title: User reported settings
+    url: https://learn.microsoft.com/defender-office-365/submissions-user-reported-messages-custom-mailbox
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-ReportSubmissionPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-reportsubmissionpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud - User reported settings
+    url: https://blueprint.asd.gov.au/configuration/defender/system/settings/email-and-collaboration/user-reported-settings/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-034
+    type: related
+  - id: CB-M365-COLLAB-032
+    type: related
+  - id: CB-M365-AUDIT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

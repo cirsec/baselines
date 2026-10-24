@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-025
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire exploser les pièces jointes avec les pièces jointes fiables réglées sur Bloquer pour tous les destinataires
+finding:
+  title: Les pièces jointes ne sont pas analysées en bac à sable, ou celles détectées sont quand même remises
+  description: Un nouveau programme malveillant qu'aucune signature ne connaît encore atteint les utilisateurs dans les pièces jointes, faute de stratégie de pièces jointes fiables qui le bloque pour chaque destinataire.
+description: |
+  Chaque destinataire est couvert par une stratégie de pièces jointes fiables (stratégie prédéfinie
+  Standard ou Stricte, ou stratégie personnalisée) avec :
+
+  - **Réponse aux programmes malveillants inconnus des pièces jointes fiables** réglée sur **Bloquer**
+    (`Enable $true`, `Action Block`) ;
+  - stratégie de quarantaine **AdminOnlyAccessPolicy** (`QuarantineTag`) ;
+  - des conditions de destinataires qui couvrent chaque domaine accepté, sans exception autre que des
+    boîtes de service documentées.
+
+  Aucune règle de flux de courrier ne fait sauter le traitement des pièces jointes fiables (règles qui
+  posent l'en-tête `X-MS-Exchange-Organization-SkipSafeAttachmentProcessing`).
+rationale: |
+  Les pièces jointes fiables ouvrent les fichiers dans un bac à sable et observent leur comportement,
+  ce qui attrape des programmes malveillants nouveaux et ciblés que l'analyse par signature manque.
+  Avec **Bloquer**, les messages détectés partent en quarantaine au lieu d'être remis ; **Surveiller**
+  ou **Désactivé** ne font que signaler. Une seule règle de contournement ou un domaine manquant dans
+  les conditions laisse un trou que les attaquants trouvent.
+impact: |
+  Les messages avec pièces jointes peuvent être retardés pendant l'analyse (en général moins de
+  quelques minutes). Les messages dont une pièce jointe est détectée vont en quarantaine réservée aux
+  administrateurs.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Pièces jointes fiables**. Vérifier que **Standard Preset Security Policy** (ou **Strict**) ou
+       une stratégie personnalisée est activée et s'applique à tous les destinataires, avec **Réponse
+       aux programmes malveillants inconnus des pièces jointes fiables** sur **Bloquer** et **Stratégie
+       de quarantaine** sur **AdminOnlyAccessPolicy**.
+    3. Dans le centre d'administration Exchange, **Flux de courrier** > **Règles**, chercher les règles
+       qui posent l'en-tête `X-MS-Exchange-Organization-SkipSafeAttachmentProcessing`.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-SafeAttachmentPolicy | Format-Table Name, Enable, Action, QuarantineTag, IsBuiltInProtection
+       Get-SafeAttachmentRule | Format-List Name, State, Priority, SentTo, SentToMemberOf, RecipientDomainIs, Except*
+       Get-TransportRule | Where-Object { $_.SetHeaderName -like '*SkipSafeAttachmentProcessing*' } | Format-Table Name, State
+       ```
+    5. Échec si des destinataires ne sont couverts que par une stratégie avec `Enable $false` ou une
+       `Action` autre que `Block` (`Monitor`, `Allow`), ou si une règle de flux de courrier fait sauter
+       les pièces jointes fiables.
+remediation:
+  manual: |
+    1. Préférer la stratégie prédéfinie : appliquer la stratégie Standard à tous les destinataires
+       (CB-M365-MAIL-019).
+    2. Pour une stratégie personnalisée, dans **Pièces jointes fiables**, sélectionner **Créer** (ou
+       modifier), régler les utilisateurs et domaines sur tous les domaines acceptés, **Réponse aux
+       programmes malveillants inconnus des pièces jointes fiables** sur **Bloquer**, **Stratégie de
+       quarantaine** sur **AdminOnlyAccessPolicy**, et enregistrer.
+    3. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-SafeAttachmentPolicy -Identity "<policy>" -Enable $true -Action Block -QuarantineTag AdminOnlyAccessPolicy
+       ```
+    4. Supprimer ou réécrire les règles de flux de courrier qui font sauter les pièces jointes fiables.
+  rollback: |
+    Remettre la stratégie personnalisée à son action précédente, ou la désactiver ; la protection
+    intégrée s'applique toujours.

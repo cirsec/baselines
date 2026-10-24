@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-031
+title: Set outbound sending limits and notify administrators of blocked senders
+finding:
+  title: Outbound spam policies use service default limits and nobody is notified when a sender is blocked
+  description: A compromised mailbox can send a large spam or phishing wave before it is stopped, and the security team may not notice the restriction.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [exchange-online-protection, outbound-spam, sending-limits, notifications, compromised-accounts]
+
+description: |
+  Every outbound spam filter policy that applies to users has:
+
+  - an external message limit of {{ external_limit_per_hour }} recipients per hour
+    (`RecipientLimitExternalPerHour`);
+  - an internal message limit of {{ internal_limit_per_hour }} recipients per hour
+    (`RecipientLimitInternalPerHour`);
+  - a daily limit of {{ daily_limit }} recipients (`RecipientLimitPerDay`);
+  - **Restrict the user from sending mail** when a limit is reached
+    (`ActionWhenThresholdReached BlockUser`), so an administrator must unblock the account;
+  - notifications on: **Notify these users and groups if a sender is blocked due to sending outbound
+    spam** (`NotifyOutboundSpam`) and **Send a copy of suspicious outbound messages**
+    (`BccSuspiciousOutboundMail`), both to {{ outbound_alert_recipients }}.
+rationale: |
+  Sending a burst of messages is a typical sign of a compromised account used for spam or internal
+  phishing. Explicit limits stop it earlier than the service defaults, `BlockUser` makes sure the
+  account is reviewed before it can send again, and notifications bring the event to the security
+  team even if alert policies are not watched.
+impact: |
+  Users who legitimately send to many recipients (newsletters, HR announcements) can hit the
+  limits; use a dedicated policy with higher limits for those mailboxes, or a bulk mail service.
+  Blocked users must be released from **Restricted entities** by an administrator.
+
+parameters:
+  - name: external_limit_per_hour
+    type: integer
+    description: Maximum external recipients per user per hour.
+    unit: recipients
+    default: 500
+    minimum: 1
+    maximum: 10000
+  - name: internal_limit_per_hour
+    type: integer
+    description: Maximum internal recipients per user per hour.
+    unit: recipients
+    default: 1000
+    minimum: 1
+    maximum: 10000
+  - name: daily_limit
+    type: integer
+    description: Maximum recipients per user per day.
+    unit: recipients
+    default: 1000
+    minimum: 1
+    maximum: 10000
+  - name: outbound_alert_recipients
+    type: string
+    description: Who receives outbound spam notifications and copies.
+    default: a monitored mailbox of the security operations team
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-spam** and open **Anti-spam outbound policy (Default)** and every custom outbound
+       policy. Check **Message limits**, **Restriction placed on users who reach the message limit**
+       and **Notifications**.
+    3. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-HostedOutboundSpamFilterPolicy | Format-List Name, RecipientLimitExternalPerHour, RecipientLimitInternalPerHour,
+         RecipientLimitPerDay, ActionWhenThresholdReached, NotifyOutboundSpam, NotifyOutboundSpamRecipients,
+         BccSuspiciousOutboundMail, BccSuspiciousOutboundAdditionalRecipients
+       ```
+    4. Fail if a limit is `0` (service default) or higher than the parameter, if the action is not
+       `BlockUser`, or if the notifications are off or have no recipient. Higher limits are acceptable
+       only in a custom policy scoped to named mass senders.
+
+remediation:
+  manual: |
+    1. In the Defender portal, open the outbound policy > **Edit protection settings** (Security
+       Administrator), set the three limits and **Restrict the user from sending mail**, select both
+       notification options with the recipients, and save.
+    2. PowerShell equivalent:
+       ```powershell
+       Set-HostedOutboundSpamFilterPolicy -Identity Default -RecipientLimitExternalPerHour 500 -RecipientLimitInternalPerHour 1000 `
+         -RecipientLimitPerDay 1000 -ActionWhenThresholdReached BlockUser `
+         -NotifyOutboundSpam $true -NotifyOutboundSpamRecipients soc@example.com `
+         -BccSuspiciousOutboundMail $true -BccSuspiciousOutboundAdditionalRecipients soc@example.com
+       ```
+  rollback: |
+    Set the limits back to `0` and `ActionWhenThresholdReached` to `BlockUserForToday`.
+
+references:
+  - title: Configure outbound spam policies in EOP
+    url: https://learn.microsoft.com/defender-office-365/outbound-spam-policies-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommended settings for EOP and Microsoft Defender for Office 365 security
+    url: https://learn.microsoft.com/defender-office-365/recommended-settings-for-eop-and-office365
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (check ORCA-103)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.6"
+    relation: equivalent
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.15"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1534
+related_controls:
+  - id: CB-M365-MAIL-001
+    type: related
+  - id: CB-M365-AUDIT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

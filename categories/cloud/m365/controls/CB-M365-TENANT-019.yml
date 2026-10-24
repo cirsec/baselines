@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-019
+title: Restrict Bookings shared pages to selected users
+finding:
+  title: Any user can create a public Bookings page
+  description: Every user can publish a Bookings page that is reachable from the Internet, collects personal data and can be abused for phishing or spam under the organization's name.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [microsoft-365, bookings, exchange-online, public-content]
+
+description: |
+  Shared Bookings pages (booking calendars) can only be created by selected users:
+
+  - either Bookings is turned off for the organization (`BookingsEnabled` = `False`);
+  - or the default Outlook on the web mailbox policy has `BookingsMailboxCreationEnabled` =
+    `False`, and only a dedicated mailbox policy assigned to approved users allows it.
+rationale: |
+  A shared Bookings page is a public web page and a mailbox. Pages created freely can expose staff
+  names and schedules, collect personal data without a GDPR assessment, or be used to send
+  convincing messages from the organization's domain. Limiting creation to people with a business
+  need keeps these pages known and reviewed.
+impact: |
+  Users outside the approved policy cannot create new shared booking pages. Existing pages keep
+  working; review and delete those that are not approved. Personal booking pages ("Bookings with
+  me") are governed separately.
+
+audit:
+  manual: |
+    1. Connect to Exchange Online PowerShell with at least a Global Reader or View-Only
+       Organization Management account.
+    2. Run `Get-OrganizationConfig | Format-List BookingsEnabled`.
+    3. If it is `True`, run
+       `Get-OwaMailboxPolicy | Format-Table Name, IsDefault, BookingsMailboxCreationEnabled`.
+    4. List the users of each policy that allows creation with
+       `Get-CASMailbox -ResultSize Unlimited | Where-Object OwaMailboxPolicy -eq '<policy>'`.
+    5. Fail if Bookings is enabled and the default policy has
+       `BookingsMailboxCreationEnabled` = `True`, or if a policy allowing creation is assigned to
+       users without approval.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell as at least an Exchange Administrator.
+    2. To turn Bookings off entirely: `Set-OrganizationConfig -BookingsEnabled $false`, or in the
+       Microsoft 365 admin center **Settings** > **Org settings** > **Services** > **Bookings**,
+       clear **Allow your organization to use Bookings**.
+    3. To restrict it: `Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default -BookingsMailboxCreationEnabled $false`,
+       then create a policy for approved users:
+       ```
+       New-OwaMailboxPolicy -Name 'Bookings creators'
+       Set-OwaMailboxPolicy -Identity 'Bookings creators' -BookingsMailboxCreationEnabled $true
+       Set-CASMailbox -Identity <user> -OwaMailboxPolicy 'Bookings creators'
+       ```
+  rollback: |
+    Set `BookingsMailboxCreationEnabled` back to `$true` on the default policy.
+
+references:
+  - title: Turn Microsoft Bookings on or off
+    url: https://learn.microsoft.com/microsoft-365/bookings/turn-bookings-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OwaMailboxPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-owamailboxpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.9"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-22
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

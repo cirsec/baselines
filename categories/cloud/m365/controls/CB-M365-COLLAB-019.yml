@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-019
+title: Block Teams communication with unmanaged Teams accounts
+finding:
+  title: Users can chat with personal Teams accounts not managed by any organization
+  description: Anyone with a free Microsoft account can exchange messages and files with users, outside any tenant accountability.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, external-access, unmanaged-accounts, phishing]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Users cannot communicate with Teams accounts that no organization manages (Teams free, personal
+  Microsoft accounts): **People in my organization can communicate with unmanaged Teams accounts** is
+  off at organization level (`AllowTeamsConsumer` = `False`) and in the global external access policy
+  (`EnableTeamsConsumerAccess` = `False`).
+rationale: |
+  Unmanaged accounts are free, anonymous and disposable, and no tenant administrator can be asked to
+  act on abuse. They are a direct channel for phishing, malware delivery and exfiltration through
+  chat, and they let insiders move data to a personal identity. Business partners have managed
+  accounts and use federation instead.
+impact: |
+  Existing chats with personal Teams accounts stop working. Organizations that work with individuals
+  (freelancers, citizens) must invite them as guests or use meetings with the lobby. Skype consumer
+  interoperability (`AllowPublicUsers`) has no effect since Skype was retired in May 2025.
+
+setting:
+  location: Teams admin center > Users > External access > Organization settings > People in my organization can communicate with unmanaged Teams accounts
+  default_value: "On"
+  recommended_value: Off (AllowTeamsConsumer = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Users** > **External access** (**External collaboration** > **External access** in
+       the newer navigation) > **Organization settings** and check that **People in my organization can
+       communicate with unmanaged Teams accounts** is **Off**.
+    3. On the **Policies** tab, open each policy and check that communication with unmanaged Teams
+       accounts is off.
+    4. With Microsoft Teams PowerShell:
+       `Get-CsTenantFederationConfiguration | Select-Object AllowTeamsConsumer` must return `False`, and
+       `Get-CsExternalAccessPolicy | Select-Object Identity, EnableTeamsConsumerAccess` must show
+       `False` for every policy assigned to users.
+    5. Fail if the organization setting is on.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Users** > **External access** (**External collaboration**
+       > **External access** in the newer navigation) > **Organization settings**, turn off **People in
+       my organization can communicate with unmanaged Teams accounts** and **Save**. Role: Teams
+       Administrator.
+    2. PowerShell equivalent: `Set-CsTenantFederationConfiguration -AllowTeamsConsumer $false`, and
+       `Set-CsExternalAccessPolicy -Identity Global -EnableTeamsConsumerAccess $false`.
+  rollback: |
+    Run
+    `Set-CsTenantFederationConfiguration -AllowTeamsConsumer $true -AllowTeamsConsumerInbound $false` to
+    allow outbound contact only (CB-M365-COLLAB-020 still met).
+
+references:
+  - title: Manage external meetings and chat with people and organizations using Microsoft identities
+    url: https://learn.microsoft.com/microsoftteams/trusted-organizations-external-meetings-chat
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTenantFederationConfiguration
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-cstenantfederationconfiguration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.2.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.2.3v2
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.3.1v1
+    relation: related
+    note: Removed from ScubaGear 2.0.0. It targeted Skype consumer users; Skype was retired in May 2025.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.003
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-COLLAB-018
+    type: related
+  - id: CB-M365-COLLAB-020
+    type: related
+    note: Blocking unmanaged accounts entirely also meets the inbound restriction.
+  - id: CB-M365-COLLAB-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

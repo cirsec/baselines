@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le partage des applications canevas avec Tout le monde
+finding:
+  title: Les concepteurs peuvent partager des applications canevas avec Tout le monde
+  description: Un concepteur peut partager une application, et les données qu'exposent ses connexions, avec tous les comptes de l'annuaire, invités compris.
+description: |
+  Le paramètre du locataire Power Platform `powerPlatform.powerApps.disableShareWithEveryone` vaut
+  `true`. Les concepteurs partagent les applications canevas avec des utilisateurs nommés ou des
+  groupes de sécurité ; seuls les administrateurs généraux, administrateurs Dynamics 365 et
+  administrateurs Power Platform peuvent partager une application avec **Tout le monde**.
+rationale: |
+  Le principal **Tout le monde** contient tous les comptes qui se sont connectés au tenant, y compris
+  les invités B2B, et son appartenance n'est ni consultable ni modifiable. Partager une application
+  avec Tout le monde expose ses écrans, et souvent les données derrière ses connexions, bien au-delà
+  du public visé. Microsoft désactive la fonction par défaut ; imposer le paramètre protège contre
+  un changement ultérieur ou une erreur.
+impact: |
+  Les concepteurs qui veulent une large diffusion doivent utiliser un groupe de sécurité (par
+  exemple un groupe dynamique des employés internes) ou s'adresser à un administrateur. Les
+  applications déjà partagées avec Tout le monde gardent ce partage : les revoir séparément.
+setting:
+  location: Paramètres du locataire Power Platform (PowerShell) > powerPlatform.powerApps.disableShareWithEveryone
+  recommended_value: "true"
+audit:
+  manual: |
+    1. Exécuter `Add-PowerAppsAccount` en tant qu'administrateur Power Platform (module
+       `Microsoft.PowerApps.Administration.PowerShell`).
+    2. Exécuter `(Get-TenantSettings).powerPlatform.powerApps.disableShareWithEveryone`.
+    3. Pour repérer les applications déjà partagées avec Tout le monde, lister les attributions de
+       rôle par application, par exemple `Get-AdminPowerApp | Get-AdminPowerAppRoleAssignment |
+       Where-Object { $_.PrincipalType -eq 'Tenant' }`.
+    4. Échec si le paramètre vaut `False`, ou si des applications partagées avec Tout le monde n'ont
+       pas d'approbation documentée.
+remediation:
+  manual: |
+    1. Exécuter `Add-PowerAppsAccount` en tant qu'administrateur Power Platform.
+    2. Exécuter :
+       `$settings = Get-TenantSettings;
+       $settings.powerPlatform.powerApps.disableShareWithEveryone = $true;
+       Set-TenantSettings $settings`.
+    3. Pour les applications déjà partagées avec Tout le monde, remplacer le partage par un groupe de
+       sécurité (propriétaire, ou administrateur avec `Remove-AdminPowerAppRoleAssignment` après ajout
+       du groupe).
+    4. Sur les environnements gérés, configurer aussi les **Limites de partage** (pas de partage avec
+       des groupes de sécurité, ou nombre maximal de lecteurs) pour les environnements qui en ont
+       besoin.
+  rollback: |
+    Remettre `disableShareWithEveryone` à `$false` avec les mêmes commandes.

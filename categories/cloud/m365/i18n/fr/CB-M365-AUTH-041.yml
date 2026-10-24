@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-041
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'inscription au SSPR à la connexion et une reconfirmation tous les {{ sspr_reconfirm_days }} jours
+finding:
+  title: Les utilisateurs ne sont pas obligés d'inscrire ni de reconfirmer leurs méthodes de réinitialisation
+  description: Les comptes non inscrits ne peuvent pas utiliser le SSPR, et des méthodes périmées (ancien numéro, ancienne adresse personnelle) peuvent être réutilisées par quelqu'un d'autre.
+description: |
+  Dans les réglages de réinitialisation de mot de passe en libre-service, **Exiger l'inscription des
+  utilisateurs lors de la connexion** vaut **Oui** et **Nombre de jours avant que les utilisateurs ne
+  soient invités à reconfirmer leurs informations d'authentification** vaut
+  {{ sspr_reconfirm_days }} (jamais 0, qui désactive la reconfirmation). Les utilisateurs sans
+  méthode de réinitialisation s'inscrivent à leur prochaine connexion, et chacun vérifie
+  périodiquement que les méthodes inscrites lui appartiennent toujours.
+rationale: |
+  Une méthode de réinitialisation qui appartient à quelqu'un d'autre (numéro recyclé, adresse d'un
+  ancien conjoint) est une voie de prise de contrôle toute prête. La reconfirmation périodique amène
+  les utilisateurs à retirer les méthodes qu'ils ne maîtrisent plus. L'inscription obligatoire ferme
+  aussi la fenêtre où un attaquant muni du mot de passe inscrirait ses propres méthodes le premier.
+impact: |
+  Les utilisateurs voient une invite d'inscription ou de reconfirmation à la connexion ; ils peuvent
+  la reporter un nombre limité de fois. L'invite n'apparaît que si le SSPR est activé pour
+  l'utilisateur (CB-M365-AUTH-039).
+notes: |
+  L'inscription doit être protégée par l'accès conditionnel (CB-M365-AUTH-019) pour qu'un attaquant
+  muni du seul mot de passe ne puisse pas inscrire de méthode. Avec l'inscription combinée, les
+  méthodes inscrites pour la MFA servent aussi au SSPR.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Réinitialisation du mot de passe > Inscription
+  recommended_value: "Exiger l'inscription des utilisateurs lors de la connexion = Oui, reconfirmation = {{ sspr_reconfirm_days }} jours"
+parameters:
+  sspr_reconfirm_days: Nombre de jours après lequel les utilisateurs doivent reconfirmer leurs méthodes de réinitialisation. 0 est interdit (il désactive la reconfirmation).
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Réinitialisation du mot de passe** > **Inscription**.
+    3. Vérifier que **Exiger l'inscription des utilisateurs lors de la connexion** vaut **Oui** et que
+       **Nombre de jours avant que les utilisateurs ne soient invités à reconfirmer leurs informations
+       d'authentification** est compris entre 1 et {{ sspr_reconfirm_days }}.
+    4. Échec si l'inscription n'est pas exigée ou si le nombre de jours vaut 0 ou dépasse
+       {{ sspr_reconfirm_days }}.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Réinitialisation du mot de passe** > **Inscription**.
+    3. Régler **Exiger l'inscription des utilisateurs lors de la connexion** sur **Oui**.
+    4. Régler **Nombre de jours avant que les utilisateurs ne soient invités à reconfirmer leurs
+       informations d'authentification** sur {{ sspr_reconfirm_days }} et **Enregistrer**.
+  rollback: |
+    Remettre les valeurs précédentes.

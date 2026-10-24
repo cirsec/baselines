@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver Exchange Web Services, ou le limiter aux applications approuvées
+finding:
+  title: Exchange Web Services est ouvert à toutes les applications
+  description: N'importe quel client ou outil, y compris l'outillage d'un attaquant muni d'identifiants ou de jetons volés, peut lire et exporter les boîtes aux lettres via EWS.
+description: |
+  Exchange Web Services (EWS) est désactivé pour l'organisation (`EwsEnabled $false`). Quand une
+  application a encore besoin d'EWS en attendant sa migration vers Microsoft Graph, EWS ne reste
+  ouvert que pour elle : `EwsApplicationAccessPolicy` vaut `EnforceAllowList` et `EwsAllowList` liste
+  son agent utilisateur, ou EWS est activé sur les seules boîtes concernées
+  (`Set-CASMailbox -EwsEnabled`).
+
+  Microsoft retire EWS d'Exchange Online : il le désactive progressivement depuis le 1er octobre 2026
+  dans les tenants où les administrateurs n'ont rien fait, et le supprime complètement le 1er avril
+  2027. Après cette date, le contrôle devient sans objet.
+rationale: |
+  EWS est une API ancienne et large qui donne un accès complet aux boîtes ; elle est très utilisée par
+  les outils d'export et de recherche dans les boîtes, y compris ceux des attaquants après la prise
+  d'un compte ou d'une application. La couper avant le retrait supprime un chemin d'exfiltration et
+  montre quelles applications en dépendent encore, tant qu'il reste du temps pour les migrer.
+impact: |
+  Les applications qui utilisent encore EWS cessent de fonctionner : anciennes versions d'Outlook
+  pour Mac, certains outils tiers de sauvegarde, d'archivage, de CRM, de planification ou de
+  migration, et des scripts maison. Les recenser avec les éditeurs et via les connexions
+  d'applications à Office 365 Exchange Online avant le changement, et planifier leur passage à
+  Microsoft Graph.
+audit:
+  manual: |
+    1. Ce paramètre n'a pas de page dans les portails. Se connecter à Exchange Online PowerShell avec
+       au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-OrganizationConfig | Format-List EwsEnabled, EwsApplicationAccessPolicy, EwsAllowList, EwsBlockList
+       Get-CASMailbox -ResultSize Unlimited -Filter "EwsEnabled -eq $true" | Format-Table PrimarySmtpAddress, EwsEnabled
+       ```
+    3. Réussite si `EwsEnabled` vaut `False`, ou si `EwsApplicationAccessPolicy` vaut
+       `EnforceAllowList` avec une `EwsAllowList` courte et documentée.
+    4. Échec si `EwsEnabled` vaut `True` ou est vide sans liste d'autorisation, ou si la liste contient
+       un caractère générique qui correspond à n'importe quel client.
+remediation:
+  manual: |
+    1. Lister les applications qui utilisent encore EWS et leurs responsables, et convenir d'une date
+       de migration.
+    2. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange.
+    3. Si aucune application n'a besoin d'EWS :
+       ```powershell
+       Set-OrganizationConfig -EwsEnabled $false
+       ```
+    4. Sinon, le limiter aux applications restantes :
+       ```powershell
+       Set-OrganizationConfig -EwsApplicationAccessPolicy EnforceAllowList -EwsAllowList "<user agent 1>","<user agent 2>"
+       ```
+       ou laisser EWS coupé pour l'organisation et l'activer sur les boîtes qui en ont besoin
+       (`Set-CASMailbox -Identity <mailbox> -EwsEnabled $true`).
+  rollback: |
+    `Set-OrganizationConfig -EwsEnabled $true` jusqu'au 1er avril 2027.

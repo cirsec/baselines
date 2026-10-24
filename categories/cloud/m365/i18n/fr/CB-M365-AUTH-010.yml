@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver la MFA par utilisateur pour tous les utilisateurs
+finding:
+  title: Des utilisateurs sont encore en MFA par utilisateur (héritée)
+  description: Les utilisateurs à l'état Activé ou Appliqué de la MFA par utilisateur reçoivent des demandes hors de l'accès conditionnel, ce qui rend le comportement MFA difficile à prévoir et peut réintroduire les mots de passe d'application.
+description: |
+  Aucun utilisateur n'a l'état MFA par utilisateur **Activé** ou **Appliqué** : tous affichent
+  **Désactivé**, et la MFA est exigée par l'accès conditionnel (CB-M365-AUTH-003) ou, sans Entra ID
+  P1, par les valeurs de sécurité par défaut (CB-M365-AUTH-002).
+
+  Les paramètres de service de la MFA par utilisateur ne sont pas utilisés non plus : les
+  **mots de passe d'application** ne sont pas autorisés, les **adresses IP approuvées** sont vides
+  et **mémoriser l'authentification multifacteur sur les appareils approuvés** est désactivé.
+rationale: |
+  La MFA par utilisateur précède l'accès conditionnel. Elle ne sait cibler ni applications, ni
+  appareils, ni risque, ignore les forces d'authentification et, à l'état Appliqué, laisse les
+  utilisateurs créer des mots de passe d'application qui contournent la MFA pour les clients
+  hérités. La mélanger à l'accès conditionnel produit des demandes que personne ne sait expliquer
+  et masque des trous.
+impact: |
+  S'assurer que l'accès conditionnel exige la MFA pour ces utilisateurs avant de les passer à
+  Désactivé, sinon ils perdent la MFA. Les mots de passe d'application existants cessent de
+  fonctionner dès que l'utilisateur n'est plus appliqué et que les mots de passe d'application sont
+  interdits.
+notes: |
+  Microsoft peut créer une stratégie d'accès conditionnel gérée par Microsoft pour les utilisateurs
+  en MFA par utilisateur (tenants qui en ont moins de 500). Elle aide à la transition mais ne
+  supprime pas l'état par utilisateur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général (la page du portail peut exiger le rôle Administrateur de la
+       stratégie d'authentification ; utiliser sinon l'appel Graph).
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Tous les utilisateurs** et sélectionner **MFA
+       par utilisateur**.
+    3. Filtrer **État** sur **Activé**, puis sur **Appliqué**.
+    4. Sélectionner **paramètres du service** et vérifier les mots de passe d'application, les
+       adresses IP approuvées et la mémorisation de la MFA.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`), par
+       utilisateur :
+       `Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/beta/users/$id/authentication/requirements"`
+       renvoie `perUserMfaState`.
+    6. Échec si un utilisateur est **Activé** ou **Appliqué**, ou si les mots de passe
+       d'application sont autorisés.
+remediation:
+  manual: |
+    1. Confirmer que la stratégie d'accès conditionnel MFA couvre les utilisateurs trouvés.
+    2. Avec au moins le rôle Administrateur de la stratégie d'authentification, aller dans **Entra
+       ID** > **Utilisateurs** > **Tous les utilisateurs** > **MFA par utilisateur**.
+    3. Sélectionner les utilisateurs **Activé** ou **Appliqué**, choisir **Désactiver la MFA** et
+       confirmer.
+    4. Dans **paramètres du service**, sélectionner **Ne pas autoriser les utilisateurs à créer des
+       mots de passe d'application**, vider les adresses IP approuvées et désactiver la mémorisation
+       de la MFA, puis enregistrer.
+    Équivalent Graph, par utilisateur : `PATCH https://graph.microsoft.com/beta/users/{id}/authentication/requirements`
+    avec `{"perUserMfaState": "disabled"}`.
+  rollback: |
+    Remettre les utilisateurs à **Activé** dans **MFA par utilisateur**.

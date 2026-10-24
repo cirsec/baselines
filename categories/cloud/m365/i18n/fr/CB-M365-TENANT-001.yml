@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la création de tenants aux administrateurs
+finding:
+  title: Tout utilisateur peut créer un nouveau tenant Microsoft Entra
+  description: Des utilisateurs peuvent créer des tenants hors de la gouvernance de l'organisation, y devenir administrateur général et y déplacer des données ou usurper l'organisation.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Utilisateurs > Paramètres utilisateur > Empêcher les utilisateurs non administrateurs de créer des locataires (Restrict non-admin users from creating tenants)
+  recommended_value: "Oui"
+description: |
+  Le paramètre utilisateur **Empêcher les utilisateurs non administrateurs de créer des
+  locataires** vaut **Oui** (`defaultUserRolePermissions.allowedToCreateTenants` = `false`). Seuls
+  les utilisateurs dotés du rôle Créateur de locataire ou d'un rôle d'administration peuvent créer
+  de nouveaux tenants.
+rationale: |
+  Un utilisateur qui crée un tenant en devient administrateur général, hors des politiques de
+  sécurité, de la journalisation et du processus de départ de l'organisation. Ces tenants fantômes
+  servent à stocker des données, à enregistrer des domaines ressemblants ou à héberger des
+  applications approuvées par erreur.
+impact: |
+  Les développeurs ou équipes qui ont besoin de tenants de test les demandent via un processus et
+  reçoivent le rôle Créateur de locataire.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur** et lire **Empêcher
+       les utilisateurs non administrateurs de créer des locataires**.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateTenants`.
+    4. Échec si le paramètre vaut **Non** (valeur `true`).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de rôle privilégié.
+    2. Aller dans **Entra ID** > **Utilisateurs** > **Paramètres utilisateur**.
+    3. Régler **Empêcher les utilisateurs non administrateurs de créer des locataires** sur **Oui**
+       et sélectionner **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) :
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateTenants = $false }`.
+  rollback: |
+    Repasser l'option sur **Non**.

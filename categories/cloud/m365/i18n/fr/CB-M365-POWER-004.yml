@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Couvrir chaque environnement Power Platform hors environnement par défaut par une stratégie de données
+finding:
+  title: Certains environnements Power Platform n'ont aucune stratégie de données
+  description: Les applications, flux et agents de ces environnements peuvent combiner n'importe quels connecteurs ; les données métier peuvent partir vers des services externes sans restriction.
+description: |
+  Chaque environnement Power Platform autre que l'environnement par défaut (production, bac à sable,
+  essai, développeur, Dataverse pour Teams) est dans l'étendue d'au moins une stratégie de données.
+  Le plus simple est une stratégie de base à l'échelle du tenant avec l'étendue **Ajouter tous les
+  environnements**, qui couvre aussi les environnements créés ensuite, complétée par des stratégies
+  propres à chaque environnement qui ouvrent les connecteurs dont chaque solution a besoin.
+rationale: |
+  Les stratégies de données ne s'appliquent qu'aux environnements de leur étendue. Un environnement
+  oublié, souvent récent ou antérieur à la gouvernance, laisse les concepteurs combiner librement
+  connecteurs professionnels et grand public. Une base à l'échelle du tenant garantit un niveau
+  minimal partout, et la stratégie la plus restrictive l'emporte quand plusieurs s'appliquent.
+impact: |
+  Les solutions des environnements qui n'avaient aucune stratégie peuvent utiliser des connecteurs
+  que la nouvelle base bloque ; elles sont suspendues jusqu'à ce que l'environnement reçoive une
+  stratégie adaptée. Inventorier d'abord l'usage des connecteurs par environnement, et convenir de
+  la classification de base avec les propriétaires des solutions.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Power Platform
+       (https://admin.powerplatform.microsoft.com) avec au moins le rôle Lecteur général.
+    2. Aller dans **Gérer** > **Environnements** et lister les environnements.
+    3. Aller dans **Sécurité** > **Données et confidentialité** > **Stratégie de données** et, à
+       l'aide de la colonne **Appliqué à**, vérifier que chaque environnement entre dans l'étendue
+       d'au moins une stratégie. Une stratégie appliquée à **Tous les environnements** les couvre
+       tous.
+    4. Alternative en lecture seule (administrateur Power Platform) : comparer
+       `Get-AdminPowerAppEnvironment` avec les étendues d'environnements renvoyées par
+       `Get-DlpPolicy`.
+    5. Échec si un environnement hors environnement par défaut n'est couvert par aucune stratégie de
+       données.
+remediation:
+  manual: |
+    1. Dans **Sécurité** > **Données et confidentialité** > **Stratégie de données**, créer (ou
+       modifier) une stratégie de base avec l'étendue **Ajouter tous les environnements**. Rôle :
+       administrateur Power Platform.
+    2. Classer les connecteurs comme dans la stratégie de l'environnement par défaut (connecteurs
+       professionnels approuvés, tous les autres connecteurs bloquables dans **Bloqué**, groupe par
+       défaut **Bloqué**, connecteurs personnalisés refusés par défaut).
+    3. Pour les environnements qui hébergent des solutions revues, ajouter des stratégies au niveau
+       de l'environnement ou du locataire limitées à ces environnements, qui placent les connecteurs
+       requis dans **Professionnel** ; la stratégie de base continue de bloquer tout le reste.
+  rollback: |
+    Retirer les environnements de l'étendue de la stratégie, ou supprimer la stratégie de base.

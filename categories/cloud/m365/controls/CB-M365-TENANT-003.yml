@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-003
+title: Restrict security group creation to administrators
+finding:
+  title: Any user can create security groups
+  description: Users can create security groups that may later be used to grant access to applications, files or policies, without any governance.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, groups, security-groups, governance]
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Users > User settings > Users can create security groups (also under Entra ID > Groups > General)
+  default_value: "Yes"
+  recommended_value: "No"
+
+description: |
+  The setting **Users can create security groups** is set to **No**
+  (`defaultUserRolePermissions.allowedToCreateSecurityGroups` = `false`). Only administrators with
+  a group management role create security groups.
+rationale: |
+  Security groups grant access to applications, SharePoint sites and Conditional Access scopes.
+  User-created groups multiply without owners or review, and a group whose name looks official can
+  be used by mistake in an access decision.
+impact: |
+  Users who need a security group ask the service desk or a Groups Administrator. Group creation
+  for teams and collaboration uses Microsoft 365 groups (CB-M365-TENANT-006).
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings** (or **Entra ID** > **Groups** >
+       **General**) and read **Users can create security groups**.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateSecurityGroups`.
+    4. Fail if the setting is **Yes** (value `true`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Set **Users can create security groups** to **No** and select **Save**.
+    4. Equivalent with Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`):
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateSecurityGroups = $false }`.
+  rollback: |
+    Set the option back to **Yes**.
+
+references:
+  - title: What are the default user permissions in Microsoft Entra ID?
+    url: https://learn.microsoft.com/entra/fundamentals/users-default-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set up self-service group management in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/users/groups-self-service-management
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.3.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+related_controls:
+  - id: CB-M365-TENANT-006
+    type: related
+  - id: CB-M365-TENANT-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

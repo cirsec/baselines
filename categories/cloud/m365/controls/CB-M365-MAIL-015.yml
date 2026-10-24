@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-015
+title: Sign outgoing mail with DKIM for every sending domain
+finding:
+  title: Some sending domains do not sign outgoing mail with DKIM
+  description: Receivers cannot verify that messages from these domains are genuine and unchanged, and DMARC loses the check that survives forwarding.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [dns, dkim, email-authentication, spoofing, domains]
+
+description: |
+  DKIM signing is enabled in Exchange Online for every custom accepted domain that sends mail, with
+  the two selector CNAME records (`selector1._domainkey` and `selector2._domainkey`) published in
+  DNS and 2048-bit keys. Third-party services that send with the organization's domains sign with
+  their own DKIM key for that domain.
+rationale: |
+  DKIM proves that a message was sent by an authorized system and was not altered on the way. It is
+  the authentication result that survives forwarding and mailing lists, where SPF breaks, so DMARC
+  depends on it to keep legitimate mail flowing once the policy is set to quarantine or reject.
+  Without a custom DKIM signature, Exchange Online signs with the `onmicrosoft.com` domain, which
+  does not align with the From domain.
+impact: |
+  None known on mail delivery. The CNAME records must exist before signing can be turned on.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** > **Email
+       authentication settings** > **DKIM**.
+    3. Check that every custom domain that sends mail shows **Sign messages for this domain with DKIM
+       signatures** turned on, with status **Valid**.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-DkimSigningConfig | Format-Table Domain, Enabled, Status, Selector1KeySize, Selector1CNAME, Selector2CNAME
+       ```
+       And check DNS: `Resolve-DnsName selector1._domainkey.example.com -Type CNAME`.
+    5. Fail if a sending domain has `Enabled` set to `False`, no signing configuration, missing
+       CNAME records, or a 1024-bit key.
+
+remediation:
+  manual: |
+    1. In the Defender portal, on the **DKIM** tab, select the domain and copy the two CNAME values
+       (or run `Get-DkimSigningConfig -Identity example.com | Format-List Selector1CNAME, Selector2CNAME`).
+    2. Publish the two CNAME records at the DNS hosting provider.
+    3. Back in the portal, turn on **Sign messages for this domain with DKIM signatures**. PowerShell
+       equivalent (Security Administrator):
+       ```powershell
+       New-DkimSigningConfig -DomainName example.com -KeySize 2048 -Enabled $true   # if no configuration exists
+       Set-DkimSigningConfig -Identity example.com -Enabled $true
+       ```
+    4. Upgrade 1024-bit keys with `Rotate-DkimSigningConfig -Identity example.com -KeySize 2048`.
+  rollback: |
+    `Set-DkimSigningConfig -Identity example.com -Enabled $false` (mail is then signed with the
+    onmicrosoft.com domain again).
+
+references:
+  - title: Set up DKIM to sign mail from your Microsoft 365 domain
+    url: https://learn.microsoft.com/defender-office-365/email-authentication-dkim-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-DkimSigningConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-dkimsigningconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (checks ORCA-108, ORCA-108-1)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.9"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.3.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-014
+    type: related
+  - id: CB-M365-MAIL-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

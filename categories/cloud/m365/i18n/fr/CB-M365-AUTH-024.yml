@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-024
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les sessions des administrateurs par la fréquence de connexion et des navigateurs non persistants
+finding:
+  title: Les sessions des administrateurs durent trop longtemps ou persistent dans le navigateur
+  description: Une session d'administrateur qui survit au redémarrage du navigateur et dure plusieurs jours laisse une longue fenêtre à quiconque vole le cookie de session ou utilise un poste laissé sans surveillance.
+description: |
+  Une stratégie d'accès conditionnel pour les rôles d'annuaire privilégiés (la même liste que
+  CB-M365-AUTH-004), sur **Toutes les ressources**, règle deux contrôles de session : **Fréquence
+  de connexion** sur **Réauthentification périodique** toutes les
+  `{{ admin_signin_frequency_hours }}` heures ou moins, et **Session de navigateur persistante**
+  sur **Jamais persistante**.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence.
+parameters:
+  admin_signin_frequency_hours: Durée maximale avant qu'un administrateur doive se reconnecter.
+rationale: |
+  Les cookies de session volés contournent la MFA jusqu'à la fin de la session. Des sessions
+  d'administrateur courtes limitent la durée d'utilisation d'un cookie volé ou d'un poste
+  déverrouillé, et une session de navigateur non persistante prend fin à la fermeture du
+  navigateur.
+impact: |
+  Les administrateurs doivent se reconnecter toutes les `{{ admin_signin_frequency_hours }}`
+  heures et après fermeture du navigateur. Avec des méthodes résistantes au hameçonnage comme
+  Windows Hello Entreprise, la demande est légère. Sur les appareils joints Entra, le jeton
+  d'actualisation principal est renouvelé toutes les quatre heures, donc une fréquence plus courte
+  peut demander moins souvent que prévu.
+notes: |
+  Le réglage de navigateur persistant exige que la stratégie cible toutes les ressources. Avec
+  Privileged Identity Management, la stratégie s'applique tant que le rôle est actif ; la durée
+  d'activation PIM est un autre levier.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où **Utilisateurs** inclut les rôles d'annuaire
+       privilégiés de CB-M365-AUTH-004 (seuls les comptes d'accès d'urgence exclus), **Ressources
+       cibles** inclut **Toutes les ressources**, et **Session** a **Fréquence de connexion** sur
+       **Réauthentification périodique** à `{{ admin_signin_frequency_hours }}` heures ou moins et
+       **Session de navigateur persistante** sur **Jamais persistante**. Les deux réglages peuvent
+       être portés par deux stratégies de même périmètre.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Users.IncludeRoles } | Select-Object DisplayName, State, @{n='SIF';e={"$($_.SessionControls.SignInFrequency.Value) $($_.SessionControls.SignInFrequency.Type)"}}, @{n='Persistent';e={$_.SessionControls.PersistentBrowser.Mode}}`
+    5. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée, si
+       un rôle manque, si la fréquence dépasse `{{ admin_signin_frequency_hours }}` heures, ou si la
+       session de navigateur peut persister.
+remediation:
+  manual: |
+    1. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**.
+    2. La nommer, par exemple `ADM - Session lifetime`.
+    3. **Utilisateurs** > **Inclure** > **Rôles d'annuaire** : les rôles privilégiés. **Exclure** :
+       les comptes d'accès d'urgence.
+    4. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    5. **Session** : cocher **Fréquence de connexion**, **Réauthentification périodique**,
+       `{{ admin_signin_frequency_hours }}` **Heures** ; cocher **Session de navigateur
+       persistante**, **Jamais persistante**.
+    6. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, puis passer à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `sessionControls.signInFrequency` (`value`, `type: hours`, `isEnabled: true`) et
+    `sessionControls.persistentBrowser` (`mode: never`, `isEnabled: true`).
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

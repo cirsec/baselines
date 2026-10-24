@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-034
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les comptes de ressource Teams Rooms aux appareils de salle gérés
+finding:
+  title: Les comptes de ressource Teams Rooms peuvent être utilisés hors des appareils de salle
+  description: Un compte de ressource, dont le mot de passe est souvent partagé avec les installateurs et rarement changé, peut se connecter aux applications Microsoft 365 depuis n'importe quel appareil et garder l'accès aux fichiers des réunions.
+description: |
+  Les comptes de ressource utilisés par Teams Rooms et les autres appareils Teams sont limités à ce
+  dont une salle a besoin :
+
+  - ils ne gardent pas l'accès aux fichiers Microsoft 365 après une réunion
+    (`RestrictResourceAccountAccess` = `True`, paramètre du mode de sécurité de base **Ne pas
+    autoriser les comptes de ressource des appareils Teams Rooms à accéder aux fichiers Microsoft
+    365**) ;
+  - ils ne peuvent se connecter que depuis des appareils Teams Rooms conformes et gérés par
+    l'organisation (accès conditionnel avec filtre d'appareil et exigence de conformité, **Autoriser
+    uniquement la connexion des appareils gérés et conformes**) ;
+  - leur connexion aux autres clients Microsoft 365 est bloquée (**Bloquer les appareils non gérés et
+    les connexions des comptes de ressource aux applications Microsoft 365**).
+rationale: |
+  Les comptes de ressource sont des comptes utilisateur sous licence, avec boîte aux lettres et
+  calendrier, souvent créés avec un mot de passe fixé par un installateur et exclus de la MFA parce
+  que l'appareil ne peut pas la demander. Si les identifiants fuient, ils ouvrent une boîte aux
+  lettres, les fichiers partagés en réunion et un point d'appui dans Teams depuis n'importe quel
+  appareil. Lier ces comptes aux appareils de salle gérés et retirer l'accès permanent aux fichiers
+  réduit cette exposition.
+impact: |
+  Les appareils de salle doivent être joints à Entra (ou les appareils Android inscrits) et conformes
+  dans Intune avant l'application des stratégies d'accès conditionnel, sinon les salles ne se
+  connectent plus. Teams Rooms Pro inclut Entra ID P1 et Intune ; la procédure Microsoft utilise aussi
+  des packages d'accès Entra ID Governance pour la fenêtre de jonction. Le contenu partagé en réunion
+  n'est plus accessible depuis la salle après la réunion. `RestrictResourceAccountAccess` peut encore
+  être en préversion dans certains tenants.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.microsoft.com) avec au moins
+       le rôle Lecteur général. Aller dans **Paramètres** > **Paramètres de l'organisation** >
+       **Sécurité et confidentialité** > **Mode de sécurité de base** et vérifier que les trois
+       paramètres **Appareils de salle** sont activés.
+    2. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Accès conditionnel**
+       > **Stratégies** (Lecteur Sécurité) et vérifier qu'une stratégie ciblant le groupe des comptes de
+       ressource exige un appareil conforme avec un filtre sur les appareils de salle, et qu'une autre
+       bloque ces comptes hors des appareils de salle. Les deux doivent être **Activées**.
+    3. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object RestrictResourceAccountAccess` doit renvoyer `True`.
+    4. Dans les journaux de connexion Entra, filtrer sur un compte de ressource et vérifier que les
+       connexions récentes ne viennent que des appareils de salle.
+    5. Échec si l'une des trois restrictions manque ou n'est pas appliquée.
+remediation:
+  manual: |
+    1. Regrouper tous les comptes de ressource Teams Rooms dans un groupe (par exemple un groupe
+       dynamique sur une convention de nommage) et vérifier que chaque appareil de salle est joint à
+       Entra et conforme dans Intune.
+    2. Suivre la procédure Microsoft pour créer les stratégies d'accès conditionnel : exiger un appareil
+       conforme et joint à Entra avec un filtre d'appareil sur les appareils de salle approuvés, et
+       bloquer les comptes de ressource partout ailleurs. Commencer en **Rapport seul**, vérifier les
+       journaux de connexion, puis passer à **Activé**. Rôle : Administrateur de l'accès conditionnel.
+    3. Exécuter `Set-SPOTenant -RestrictResourceAccountAccess $true` (Administrateur SharePoint), ou
+       activer le paramètre correspondant du mode de sécurité de base.
+    4. Activer les trois paramètres **Appareils de salle** du mode de sécurité de base une fois que le
+       rapport d'impact ne montre aucune dépendance inattendue. Rôle : Administrateur Teams.
+  rollback: |
+    Passer les stratégies d'accès conditionnel en **Rapport seul** si les salles ne peuvent plus se
+    connecter, et exécuter `Set-SPOTenant -RestrictResourceAccountAccess $false` si les salles doivent
+    retrouver l'accès aux fichiers.

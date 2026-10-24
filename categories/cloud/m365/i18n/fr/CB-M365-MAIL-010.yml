@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-010
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rejeter les messages Direct Send qui prétendent venir de l'organisation
+finding:
+  title: N'importe qui sur Internet peut envoyer du courrier non authentifié au nom d'un domaine interne via Direct Send
+  description: Les attaquants livrent du hameçonnage qui semble venir d'un collègue en envoyant anonymement vers le point de terminaison MX du tenant avec une adresse d'expéditeur interne.
+description: |
+  Exchange Online rejette Direct Send (`RejectDirectSend $true`) : les messages anonymes reçus sur le
+  point de terminaison MX du tenant dont l'expéditeur d'enveloppe (`5321.MailFrom`) appartient à un
+  domaine accepté de l'organisation sont refusés s'ils ne correspondent à aucun connecteur entrant
+  (par adresse IP ou certificat de l'expéditeur).
+
+  Les appareils et applications qui envoient légitimement avec une adresse interne (imprimantes,
+  scanners, applications métier, services tiers) passent par un connecteur entrant partenaire limité
+  à leur adresse IP ou à leur certificat, ou par une soumission authentifiée.
+rationale: |
+  Direct Send a été conçu pour les appareils multifonctions mais ne demande aucune authentification.
+  Les attaquants s'en servent pour déposer directement sur le MX du hameçonnage portant une adresse
+  d'expéditeur interne ; les messages d'apparence interne sont moins examinés par les utilisateurs et
+  par certains filtres. Rejeter Direct Send supprime ce chemin tout en gardant les expéditeurs
+  légitimes sur un connecteur explicite.
+impact: |
+  Tout appareil ou service qui repose sur Direct Send cesse de livrer dès l'activation. Avant le
+  changement, trouver ces expéditeurs dans le suivi des messages (messages entrants anonymes avec un
+  expéditeur interne) et créer un connecteur entrant partenaire pour chacun. Microsoft prévoit de
+  rendre le rejet par défaut pour les nouveaux tenants ; le contrôle pourra alors passer au profil
+  baseline.
+audit:
+  manual: |
+    1. Ce paramètre n'a pas de page dans les portails. Se connecter à Exchange Online PowerShell avec
+       au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-OrganizationConfig | Format-List RejectDirectSend
+       Get-InboundConnector | Format-Table Name, Enabled, ConnectorType, SenderIPAddresses, TlsSenderCertificateName
+       ```
+    3. Échec si `RejectDirectSend` vaut `False`.
+remediation:
+  manual: |
+    1. Identifier les appareils et services qui utilisent Direct Send : dans le centre
+       d'administration Exchange, lancer un suivi des messages entrants dont l'expéditeur est dans un
+       domaine accepté et qui ont été reçus anonymement, ou interroger les équipes responsables des
+       imprimantes, scanners et applications.
+    2. Pour chacun, créer un connecteur entrant partenaire dans **Flux de courrier** > **Connecteurs**
+       qui l'identifie par son adresse IP publique ou son certificat TLS.
+    3. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange et exécuter :
+       ```powershell
+       Set-OrganizationConfig -RejectDirectSend $true
+       ```
+    4. Surveiller le suivi des messages et les NDR quelques jours pour repérer les expéditeurs
+       oubliés.
+  rollback: |
+    `Set-OrganizationConfig -RejectDirectSend $false`.

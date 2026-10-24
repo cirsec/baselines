@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les invites d'authentification de base dans les applications Microsoft 365
+finding:
+  title: Les applications Microsoft 365 peuvent afficher des invites d'authentification de base
+  description: Les utilisateurs peuvent autoriser les applications Office à afficher des invites d'authentification de base, qui transmettent les identifiants sous une forme réutilisable et sont un vecteur d'hameçonnage courant.
+description: |
+  Le paramètre du mode de sécurité de base (*Baseline security mode*) **Block Basic authentication
+  prompts** est activé dans le centre d'administration Microsoft 365. Les applications Microsoft 365
+  refusent alors d'ouvrir les fichiers des serveurs qui ne proposent que l'authentification de base,
+  et les utilisateurs ne peuvent pas réactiver les invites dans le Centre de gestion de la
+  confidentialité.
+
+  Dans le service Office Cloud Policy, les stratégies correspondantes sont **Allow Basic
+  authentication prompts from network proxies** et **Allow specified hosts to show Basic
+  authentication prompts to Office apps**. Elles restent non configurées ou désactivées, sauf liste
+  d'hôtes explicite et revue.
+rationale: |
+  Une invite d'authentification de base demande le mot de passe dans une boîte de dialogue générique
+  que n'importe quel serveur, proxy ou lien de document contrôlé par un attaquant peut déclencher.
+  L'utilisateur ne distingue pas une invite légitime d'une fausse, et le mot de passe part vers le
+  serveur sous une forme réutilisable. Les applications Microsoft 365 bloquent ces invites par
+  défaut ; imposer le blocage par stratégie supprime la dérogation utilisateur que réclament les
+  documents d'hameçonnage.
+impact: |
+  Les fichiers hébergés sur des serveurs qui ne gèrent que l'authentification de base (anciens
+  partages WebDAV, certains serveurs documentaires tiers) ne s'ouvrent plus dans les applications
+  Microsoft 365. Lancer d'abord le rapport d'impact du mode de sécurité de base, puis migrer ces
+  serveurs vers l'authentification moderne ou les autoriser par nom d'hôte via Cloud Policy.
+notes: |
+  Les paramètres listés dans le mode de sécurité de base dépendent des licences du tenant ; ce
+  paramètre peut ne pas apparaître partout. Dans ce cas, configurer directement les deux stratégies
+  Cloud Policy ci-dessus. Ce contrôle couvre les invites du client Office ; le blocage des
+  protocoles d'authentification hérités à la connexion relève de l'accès conditionnel.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Baseline security mode**.
+    3. Vérifier que **Block Basic authentication prompts** est activé (listé comme appliqué).
+    4. Si le paramètre n'est pas listé, se connecter au service Office Cloud Policy
+       (https://config.office.com) et, sous **Personnalisation** > **Gestion des stratégies**,
+       contrôler la configuration de stratégie du tenant : **Allow Basic authentication prompts from
+       network proxies** doit être non configurée ou **Désactivée**, et **Allow specified hosts to
+       show Basic authentication prompts to Office apps** doit être non configurée ou ne lister que
+       des hôtes approuvés.
+    5. Échec si le paramètre est désactivé, ou si une configuration Cloud Policy autorise largement
+       les invites d'authentification de base.
+remediation:
+  manual: |
+    1. Dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité** >
+       **Baseline security mode**, ouvrir **Block Basic authentication prompts** et télécharger le
+       rapport d'impact pour repérer les utilisateurs et serveurs qui dépendent encore de
+       l'authentification de base.
+    2. Migrer ou autoriser ces serveurs par nom d'hôte (stratégie Cloud Policy **Allow specified
+       hosts to show Basic authentication prompts to Office apps**).
+    3. Activer le paramètre. Rôle : administrateur des applications Office.
+    4. Aucune cmdlet PowerShell n'existe pour ce paramètre ; le service Office Cloud Policy est la
+       seule alternative.
+  rollback: |
+    Désactiver le paramètre dans le mode de sécurité de base, ou remettre les deux stratégies Cloud
+    Policy à l'état non configuré.

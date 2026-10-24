@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'authentification héritée par l'accès conditionnel
+finding:
+  title: Les protocoles d'authentification hérités ne sont pas bloqués
+  description: Les clients IMAP, POP3, SMTP AUTH, Exchange ActiveSync en authentification de base ou d'autres protocoles hérités se connectent avec le seul mot de passe, la MFA ne s'applique donc jamais à eux.
+description: |
+  Une stratégie d'accès conditionnel bloque toute connexion provenant d'un client
+  d'authentification héritée, pour tous les utilisateurs et toutes les ressources. Dans l'accès
+  conditionnel, les clients hérités sont les types d'application cliente **Clients Exchange
+  ActiveSync** et **Autres clients** : IMAP, POP3, SMTP authentifié, MAPI sur HTTP, Exchange Web
+  Services et Autodiscover en authentification de base, anciens clients Office et protocoles
+  similaires incapables de porter un défi MFA.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence. Microsoft peut aussi créer une
+  stratégie gérée par Microsoft nommée **Block legacy authentication**, et le mode de sécurité de
+  base en crée une depuis le centre d'administration Microsoft 365 : l'une ou l'autre satisfait ce
+  contrôle une fois **Activée** et avec le même périmètre.
+rationale: |
+  Les protocoles hérités acceptent un nom d'utilisateur et un mot de passe, rien de plus. Les
+  campagnes de pulvérisation de mots de passe et de bourrage d'identifiants les utilisent
+  justement parce qu'un mot de passe volé ou deviné suffit, quelle que soit la stratégie MFA du
+  tenant. Les bloquer au niveau du fournisseur d'identité ferme ce contournement pour toutes les
+  charges de travail à la fois, y compris pour les protocoles qu'un service accepte encore.
+impact: |
+  Les applications, scripts, imprimantes et scanners qui envoient encore du courrier ou lisent des
+  boîtes aux lettres en authentification de base cessent de fonctionner. Avant d'appliquer, les
+  lister depuis les journaux de connexion (filtre **Application cliente** sur les valeurs
+  héritées, connexions interactives et non interactives) et les passer en authentification
+  moderne, en OAuth pour SMTP ou derrière un connecteur. Les anciens clients Office (2010 et
+  antérieurs) ne peuvent plus se connecter.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** (pas Rapport seul) où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes d'accès d'urgence ou leur groupe ;
+       - **Ressources cibles** inclut **Toutes les ressources**, sans exclusion ;
+       - **Conditions** > **Applications clientes** est configuré avec seulement **Clients Exchange
+         ActiveSync** et **Autres clients** cochés ;
+       - **Accorder** vaut **Bloquer l'accès**.
+       Une stratégie gérée par Microsoft ou par le mode de sécurité de base nommée **Block legacy
+       authentication** compte si elle remplit les mêmes critères.
+    4. Aller dans **Entra ID** > **Supervision et intégrité** > **Journaux de connexion**, ajouter
+       le filtre **Application cliente** sur les valeurs héritées et vérifier, dans les onglets
+       interactif et non interactif, que les tentatives récentes indiquent **Échec** avec la
+       stratégie listée sous **Accès conditionnel**.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.ClientAppTypes -contains 'other' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Échec si aucune stratégie de ce type n'existe, si elle est en Rapport seul ou Désactivée,
+       si elle ne couvre pas tous les utilisateurs et toutes les ressources, ou si les exclusions
+       vont au-delà des comptes d'accès d'urgence.
+remediation:
+  manual: |
+    1. Dans **Entra ID** > **Supervision et intégrité** > **Journaux de connexion**, filtrer
+       **Application cliente** sur les valeurs héritées sur 30 jours et corriger ou retirer chaque
+       client trouvé.
+    2. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**. Si une
+       stratégie gérée par Microsoft **Block legacy authentication** existe, on peut l'activer à la
+       place après avoir vérifié ses exclusions.
+    3. La nommer, par exemple `ALL - Block legacy authentication`.
+    4. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes
+       d'accès d'urgence.
+    5. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    6. **Conditions** > **Applications clientes** : régler **Configurer** sur **Oui**, ne cocher que
+       **Clients Exchange ActiveSync** et **Autres clients**.
+    7. **Accorder** : **Bloquer l'accès**.
+    8. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner les journaux de
+       connexion pendant une semaine avec le filtre de résultat **Rapport seul**.
+    9. Passer **Activer la stratégie** à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec `conditions.clientAppTypes`
+    à `exchangeActiveSync` et `other` et `grantControls.builtInControls` à `block`.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**, ou exclure un groupe dédié contenant
+    les comptes de service qui ont encore besoin de l'authentification héritée le temps de leur
+    migration.

@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les invitations d'invités aux administrateurs et aux inviteurs d'invités
+finding:
+  title: Tout utilisateur, voire les invités, peut inviter des utilisateurs externes
+  description: Chaque membre, et par défaut chaque invité, peut faire entrer des comptes externes dans le tenant sans aucune revue.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Identités externes > Paramètres de collaboration externe > Restrictions d'invitation des invités (Guest invite restrictions)
+  recommended_value: Seuls les utilisateurs disposant de rôles d'administrateur spécifiques peuvent inviter des utilisateurs invités
+description: |
+  **Restrictions d'invitation des invités** vaut **Seuls les utilisateurs disposant de rôles
+  d'administrateur spécifiques peuvent inviter des utilisateurs invités** (`allowInvitesFrom` =
+  `adminsAndGuestInviters`), ou **Personne dans l'organisation ne peut inviter d'utilisateurs
+  invités, y compris les administrateurs (le plus restrictif)** (`none`). Les invitations émanent
+  des Administrateurs d'utilisateurs et des personnes dotées du rôle Inviteur d'invités, ou d'un
+  processus gouverné comme la gestion des droits d'utilisation.
+rationale: |
+  Chaque invité est un compte dont l'organisation ne contrôle pas l'authentification. Quand tout le
+  monde peut inviter, les invités s'accumulent sans parrain, sans objet et sans revue, et un
+  attaquant muni d'un compte membre compromis peut inviter son propre compte externe pour conserver
+  un accès.
+impact: |
+  Les utilisateurs qui invitaient directement des partenaires depuis Teams, SharePoint ou Outlook ne
+  le peuvent plus : la demande passe par un inviteur d'invités, le support ou un package d'accès.
+  Avec une forte collaboration externe, attribuer le rôle Inviteur d'invités à suffisamment de
+  personnes par direction.
+notes: |
+  Le partage SharePoint et OneDrive avec de nouveaux externes crée aussi des invités via
+  l'intégration Entra B2B, et est soumis à ce paramètre.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe** et
+       lire **Restrictions d'invitation des invités**.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthorizationPolicy).AllowInvitesFrom`.
+    4. Échec si la valeur est `everyone` ou `adminsGuestInvitersAndAllMembers`.
+remediation:
+  manual: |
+    1. Attribuer le rôle Inviteur d'invités aux personnes qui invitent des partenaires pour leurs
+       équipes (**Entra ID** > **Rôles et administrateurs** > **Inviteur d'invités**).
+    2. Avec un Administrateur de fournisseur d'identité externe ou un Administrateur général, aller
+       dans **Entra ID** > **Identités externes** > **Paramètres de collaboration externe**.
+    3. Sous **Restrictions d'invitation des invités**, sélectionner **Seuls les utilisateurs
+       disposant de rôles d'administrateur spécifiques peuvent inviter des utilisateurs invités** et
+       **Enregistrer**.
+    4. Équivalent avec Microsoft Graph PowerShell (étendue `Policy.ReadWrite.Authorization`) :
+       `Update-MgPolicyAuthorizationPolicy -AllowInvitesFrom 'adminsAndGuestInviters'`.
+  rollback: |
+    Sélectionner **Les utilisateurs membres et les utilisateurs disposant de rôles d'administrateur
+    spécifiques peuvent inviter des utilisateurs invités, y compris les invités avec des
+    autorisations de membre**.

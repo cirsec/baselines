@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas contourner le filtrage du courrier indésirable pour des domaines expéditeurs dans les règles de flux
+finding:
+  title: Des règles de flux de courrier font sauter le filtrage anti-spam au courrier de domaines listés
+  description: Tout message qui prétend venir d'un domaine en liste blanche, y compris usurpé, arrive en boîte de réception sans verdict de spam ni de hameçonnage.
+description: |
+  Aucune règle de flux de courrier Exchange (règle de transport) ne règle le niveau de confiance du
+  courrier indésirable sur **Ignorer le filtrage du courrier indésirable** (`SetSCL -1`) en fonction
+  du domaine expéditeur (`SenderDomainIs`, `FromAddressContains`, `FromAddressMatchesPatterns`). Cela
+  vaut avant tout pour les domaines acceptés de l'organisation.
+
+  Une règle qui pose `SCL -1` n'est acceptable que liée à une condition que l'expéditeur ne peut pas
+  falsifier, comme le connecteur ou l'adresse IP d'un système connu (`SenderIpRanges`), et
+  documentée. Les expéditeurs légitimes filtrés à tort sont traités avec la liste d'autorisation et de
+  blocage du client, l'analyse de l'usurpation d'identité ou la stratégie de remise avancée.
+rationale: |
+  Les domaines From et d'enveloppe sont triviaux à falsifier. Une règle qui fait confiance à un
+  domaine expéditeur laisse chaque message usurpant ce domaine échapper au filtrage du spam, du
+  courrier en nombre et d'une partie du hameçonnage. Mettre en liste blanche le propre domaine de
+  l'organisation est le pire cas : un tiers peut alors envoyer à tout salarié un message qui semble
+  interne.
+impact: |
+  Les messages des partenaires auparavant listés repassent par le filtrage normal et certains
+  peuvent arriver dans le dossier Courrier indésirable, jusqu'à ce que l'expéditeur corrige SPF, DKIM
+  et DMARC ou qu'une autorisation soit créée dans la liste d'autorisation et de blocage du client.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Flux de courrier** > **Règles** et ouvrir chaque règle activée.
+    3. Chercher les règles dont l'action est **Modifier les propriétés du message** > **Définir le
+       niveau de confiance du courrier indésirable (SCL)** > **Ignorer le filtrage du courrier
+       indésirable** et dont la condition porte sur le domaine ou l'adresse de l'expéditeur.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-TransportRule | Where-Object { $_.SetSCL -eq -1 } |
+         Format-List Name, State, Priority, SenderDomainIs, FromAddressContainsWords, FromAddressMatchesPatterns, SenderIpRanges
+       ```
+    5. Échec si une règle activée pose `SCL -1` avec une condition sur le domaine ou l'adresse de
+       l'expéditeur, et toujours si le domaine listé est un domaine accepté de l'organisation
+       (`Get-AcceptedDomain`).
+remediation:
+  manual: |
+    1. Pour chaque règle en cause, noter pourquoi elle a été créée (quel partenaire, quel faux
+       positif).
+    2. La remplacer : signaler le faux positif à Microsoft depuis **Actions et soumissions** >
+       **Soumissions**, ajouter si besoin une autorisation dans **Listes d'autorisation/de blocage du
+       client**, ou, pour un système interne, limiter la règle à la plage IP ou au connecteur entrant
+       de ce système.
+    3. Dans le centre d'administration Exchange, aller dans **Flux de courrier** > **Règles**,
+       sélectionner la règle et la désactiver ; la supprimer une fois le remplacement testé.
+    4. Équivalent PowerShell (Administrateur Exchange) :
+       ```powershell
+       Disable-TransportRule -Identity "<rule name>"
+       Remove-TransportRule -Identity "<rule name>"
+       ```
+  rollback: |
+    Réactiver la règle (`Enable-TransportRule`) le temps de mettre en place le remplacement.

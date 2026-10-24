@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-029
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les participants externes de donner ou demander le contrôle des écrans partagés
+finding:
+  title: Des participants externes peuvent prendre le contrôle des écrans partagés en réunion Teams
+  description: Un invité, un utilisateur fédéré ou un participant anonyme peut demander le contrôle clavier et souris du bureau partagé d'un utilisateur.
+description: |
+  Les participants externes, les invités et les utilisateurs anonymes ne peuvent ni demander ni
+  recevoir le contrôle d'un écran ou d'une fenêtre partagés par un utilisateur de l'organisation
+  (`AllowExternalParticipantGiveRequestControl` = `False` dans chaque stratégie de réunion). Le
+  contrôle peut toujours passer entre participants internes.
+rationale: |
+  Le contrôle à distance transforme une réunion en session d'accès distant sur l'appareil de
+  l'utilisateur. Des attaquants se faisant passer pour le support informatique demandent aux victimes
+  de partager leur écran et d'accorder le contrôle, puis installent des outils ou lisent des données.
+  Garder le contrôle en interne supprime cette voie sans toucher au partage d'écran lui-même.
+impact: |
+  Les prestataires de support externes qui prenaient le contrôle des écrans via Teams ont besoin d'un
+  autre outil d'assistance à distance soumis à son propre contrôle d'accès. Désactivé est la valeur
+  par défaut.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Partage de contenu > Les participants externes peuvent donner ou demander le contrôle
+  recommended_value: Désactivé (AllowExternalParticipantGiveRequestControl = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Partage de contenu**, vérifier que **Les participants externes peuvent donner
+       ou demander le contrôle** est **Désactivé**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowExternalParticipantGiveRequestControl`.
+    5. Échec si une stratégie renvoie `True`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Partage de contenu**, régler **Les participants externes peuvent donner ou
+       demander le contrôle** sur **Désactivé** puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowExternalParticipantGiveRequestControl $false`
+       (répéter avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements
+       peuvent prendre jusqu'à 24 heures.

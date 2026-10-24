@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-016
+title: Disable or delete inactive, test and demo applications
+finding:
+  title: Unused, test or demo applications remain enabled in the tenant
+  description: Forgotten applications keep their permissions and credentials, are reviewed by nobody and are an easy place for an attacker to hide.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [applications, workload-identities, hygiene, lifecycle]
+
+description: |
+  Application registrations and service principals with no sign-in for
+  **{{ app_inactivity_days }}** days, and applications whose name or notes show a test, demo or
+  proof-of-concept purpose, are disabled and then deleted after confirmation with their owner.
+  Test applications live in a separate development tenant.
+rationale: |
+  Each enabled application is an identity with permissions and possibly credentials. Unused ones
+  bring no value and are rarely monitored, which makes them attractive for persistence: adding a
+  secret to a dormant application raises less suspicion than creating a new one. Test
+  applications are often created with broad permissions and weak settings.
+impact: |
+  An application used only once a year (annual campaign, disaster recovery) may look inactive.
+  Disable before deleting, and keep a short documented exception list. Deleted applications stay
+  restorable for 30 days.
+
+parameters:
+  - name: app_inactivity_days
+    type: integer
+    description: Number of days without sign-in after which an application is considered inactive.
+    unit: days
+    default: 90
+    minimum: 30
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Overview** > **Recommendations** and open **Remove unused
+       applications**; note each active item.
+    3. Browse to **Entra ID** > **Monitoring & health** > **Usage & insights** and review sign-in
+       activity per application and service principal.
+    4. In Microsoft Graph (scope `AuditLog.Read.All`, beta), read
+       `GET https://graph.microsoft.com/beta/reports/servicePrincipalSignInActivities` for the last
+       sign-in of each application.
+    5. Search application display names for terms such as `test`, `demo`, `poc`, `sandbox`, `temp`.
+    6. Fail if an enabled application has had no sign-in for {{ app_inactivity_days }} days, or a
+       test or demo application exists in the production tenant, without a documented exception.
+
+remediation:
+  manual: |
+    1. Contact the owner of each flagged application.
+    2. Disable sign-in first: **Enterprise apps** > the application > **Properties** > **Enabled for
+       users to sign-in?** = **No** (Graph: `Update-MgServicePrincipal -AccountEnabled:$false`).
+    3. After an observation period with no complaint, delete the application under **App
+       registrations** > the application > **Delete** (or **Enterprise apps** > **Properties** >
+       **Delete** for third-party service principals).
+    4. Role required: Cloud Application Administrator or Application Administrator.
+  rollback: |
+    Re-enable sign-in, or restore the application from **App registrations** > **Deleted
+    applications** within 30 days.
+
+references:
+  - title: Remove unused applications recommendation
+    url: https://learn.microsoft.com/entra/identity/monitoring-health/recommendation-remove-unused-apps
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Disable user sign-in for an application
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/disable-user-sign-in-portal
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Delete an enterprise application
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/delete-application-portal
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-M365-APPS-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Accorder les rôles hautement privilégiés juste à temps via Privileged Identity Management
+finding:
+  title: Des rôles hautement privilégiés sont actifs en permanence ou attribués hors de PIM
+  description: Des sessions privilégiées permanentes donnent à un attaquant qui vole un compte d'administration un contrôle immédiat, sans étape d'activation, de justification ni d'approbation.
+parameters:
+  highly_privileged_roles: Rôles intégrés qui ne doivent jamais avoir d'attribution active permanente.
+description: |
+  Les rôles de `{{ highly_privileged_roles }}` sont attribués uniquement en **éligible** dans
+  Microsoft Entra Privileged Identity Management (PIM) : les titulaires activent le rôle pour une
+  durée limitée quand ils en ont besoin. Aucune attribution active n'est permanente, et les
+  paramètres de rôle interdisent les attributions actives permanentes. Les attributions passent
+  uniquement par PIM, pas directement dans **Rôles et administrateurs** ni par un outil tiers qui
+  contourne PIM.
+
+  Les comptes d'accès d'urgence (CB-M365-ADMIN-002) sont les seuls administrateurs généraux actifs
+  en permanence.
+rationale: |
+  Avec l'accès juste à temps, un compte d'administration volé n'a aucun privilège tant que
+  l'attaquant n'a pas réussi à activer le rôle, ce qui exige la MFA, une justification et
+  éventuellement une approbation, et déclenche une alerte. Les activations sont limitées dans le
+  temps : les privilèges disparaissent une fois le travail terminé. Les attributions faites hors
+  de PIM échappent à ces paramètres et à la piste d'audit de PIM.
+impact: |
+  Les administrateurs activent leur rôle avant chaque session d'administration, ce qui ajoute une
+  minute et demande la MFA. L'automatisation qui repose sur un utilisateur titulaire d'un rôle doit
+  passer à une identité de charge de travail avec les permissions d'application adéquates. Chaque
+  utilisateur éligible a besoin d'une licence Entra ID P2 (ou ID Governance).
+notes: |
+  Les paramètres PIM sont propres à chaque rôle. Les groupes attribués à des rôles peuvent être
+  gérés avec PIM pour les groupes ; leur appartenance suit alors les mêmes règles.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Gouvernance des ID** > **Privileged Identity Management** > **Rôles Microsoft
+       Entra** > **Attributions** > **Attributions actives**. Pour chaque rôle de la liste, toute
+       attribution active dont l'**Heure de fin** est **Permanente**, hors comptes d'accès
+       d'urgence, est un constat.
+    3. Aller dans **Rôles**, ouvrir chaque rôle > **Paramètres de rôle** : sous **Attribution**,
+       **Autoriser une attribution active permanente** vaut **Non**.
+    4. Aller dans **Entra ID** > **Supervision et intégrité** > **Journaux d'audit**, filtrer sur la
+       **Catégorie** **RoleManagement** et l'**Activité** **Add member to role** : les entrées non
+       initiées par **MS-PIM** révèlent des attributions faites hors de PIM.
+    5. Alternative PowerShell en lecture seule (Microsoft Graph, étendue
+       `RoleManagement.Read.Directory`) :
+       ```
+       Get-MgRoleManagementDirectoryRoleAssignmentScheduleInstance -All -ExpandProperty RoleDefinition |
+         Where-Object { $_.AssignmentType -eq 'Assigned' -and -not $_.EndDateTime } |
+         Select-Object PrincipalId, @{n='Role';e={$_.RoleDefinition.DisplayName}}
+       ```
+    6. Échec si un rôle de la liste a une attribution active permanente autre que les comptes
+       d'urgence, si ses paramètres autorisent l'attribution active permanente, ou si des
+       attributions sont faites hors de PIM.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié, aller dans **Gouvernance des ID** > **Privileged
+       Identity Management** > **Rôles Microsoft Entra** > **Rôles**, ouvrir chaque rôle de la liste
+       > **Paramètres de rôle** > **Modifier**.
+    2. **Activation** : durée maximale de 8 heures ou moins, exiger la MFA (ou le contexte
+       d'authentification résistant au hameçonnage) et une justification.
+    3. **Attribution** : régler **Autoriser une attribution active permanente** sur **Non** et
+       **Faire expirer les attributions actives après** sur une période courte.
+    4. Dans **Attributions** > **Attributions actives**, pour chaque attribution permanente sauf
+       les comptes d'urgence, sélectionner **Mettre à jour** et la passer en **Éligible**, ou la
+       retirer et ajouter une attribution éligible.
+    5. Indiquer aux administrateurs d'activer leurs rôles depuis **Mes rôles** dans PIM, et cesser
+       les attributions directes dans **Rôles et administrateurs**.
+    6. Équivalent avec Microsoft Graph : `New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest`
+       pour créer l'attribution éligible, puis
+       `New-MgRoleManagementDirectoryRoleAssignmentScheduleRequest -Action adminRemove` pour retirer
+       l'attribution active.
+  rollback: |
+    Repasser l'attribution éligible en active dans PIM avec un Administrateur de rôle privilégié ou
+    un compte d'accès d'urgence.

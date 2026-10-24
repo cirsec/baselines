@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DATA-007
+title: Apply retention policies to Exchange, SharePoint, OneDrive, Teams and Copilot
+finding:
+  title: Microsoft 365 content can be deleted permanently with no retention policy
+  description: A user, an insider or an attacker who deletes mail, files or chats removes them for good once the recycle bins are emptied, which destroys evidence and business records.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [retention, purview, data-lifecycle, records, copilot, ransomware]
+
+description: |
+  Microsoft Purview retention policies retain content for at least **{{ retention_years }}** years
+  (or the durations set by the organization's records schedule) on these locations, for all
+  users and sites:
+
+  - Exchange mailboxes;
+  - SharePoint classic and communication sites;
+  - OneDrive accounts;
+  - Teams channel messages and Teams chats;
+  - Microsoft Copilot experiences (Copilot interactions).
+
+  The durations come from the legal and regulatory retention schedule approved by the legal team
+  and the data protection officer; the retention action is **Retain items** or **Retain and then
+  delete** according to that schedule.
+rationale: |
+  Retention protects against deletion by mistake, by a malicious insider, or by an attacker who
+  wipes mailboxes and sites after exfiltration or during ransomware. It also keeps the records
+  needed for investigations, litigation and regulatory requests, including Copilot prompts and
+  responses which are business records like any other communication.
+impact: |
+  Retained content consumes storage (Recoverable Items and Preservation Hold Library) and cannot be
+  deleted before the end of the period, including on request under GDPR unless an exception
+  process exists. Durations that are too long conflict with data minimization: align them with the
+  records schedule rather than keeping everything.
+notes: |
+  {{ retention_years }} years is a default inspired by public sector practice; set the value from
+  your legal obligations (for example accounting records, labour law, sector rules).
+
+parameters:
+  - name: retention_years
+    type: integer
+    description: Minimum retention period for Microsoft 365 content when no more specific records schedule applies.
+    unit: years
+    default: 7
+    minimum: 1
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Purview portal (https://purview.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Solutions** > **Data Lifecycle Management** > **Policies** > **Retention
+       policies**.
+    3. Check that enabled policies cover, for all users or sites, **Exchange mailboxes**,
+       **SharePoint classic and communication sites**, **OneDrive accounts**, **Teams channel
+       messages**, **Teams chats** and **Microsoft Copilot experiences**, with a retention period of
+       at least {{ retention_years }} years or the duration of the approved schedule.
+    4. Alternative in Security & Compliance PowerShell: `Get-RetentionCompliancePolicy
+       -DistributionDetail | Format-List Name,Enabled,Mode,DistributionStatus,ExchangeLocation,SharePointLocation,OneDriveLocation,TeamsChannelLocation,TeamsChatLocation`
+       and `Get-RetentionComplianceRule | Format-List Policy,RetentionDuration,RetentionComplianceAction`.
+    5. Fail if a location is not covered, a policy is disabled or in error, or the retention period
+       is shorter than required.
+
+remediation:
+  manual: |
+    1. Get the retention schedule approved by the legal team and the data protection officer.
+    2. Sign in to the Microsoft Purview portal as at least a Compliance Administrator (or Retention
+       Management role).
+    3. Browse to **Solutions** > **Data Lifecycle Management** > **Policies** > **Retention
+       policies** > **New retention policy**.
+    4. Select **Static** scope, then the locations listed in the description, all users or sites.
+    5. Set **Retain items for a specific period** to the required duration, and the action at the
+       end of the period according to the schedule.
+    6. Create separate policies where durations differ (for example Teams chats shorter than
+       mailboxes).
+    7. PowerShell alternative: `New-RetentionCompliancePolicy` with the locations, then
+       `New-RetentionComplianceRule -RetentionDuration <days> -RetentionComplianceAction Keep`.
+  rollback: |
+    Disable or delete the retention policy. Content is then subject to normal deletion; a policy
+    with Preservation Lock cannot be turned off.
+
+references:
+  - title: Learn about retention policies and retention labels
+    url: https://learn.microsoft.com/purview/retention
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Create and configure retention policies
+    url: https://learn.microsoft.com/purview/create-retention-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Learn about retention for Copilot and AI apps
+    url: https://learn.microsoft.com/purview/retention-policies-copilot
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud
+    url: https://blueprint.asd.gov.au/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1485
+  - framework: mitre-attack
+    id: T1070.008
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-026
+title: Sign out idle Microsoft 365 web sessions on unmanaged devices after {{ idle_timeout_hours }} hours
+finding:
+  title: Idle Microsoft 365 web sessions stay open indefinitely on unmanaged devices
+  description: A browser left signed in on a shared or personal computer gives the next person access to the user's mail and files.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [session, idle-timeout, unmanaged-devices, conditional-access, web-apps]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  **Idle session timeout** is turned on in the Microsoft 365 admin center with a value of
+  {{ idle_timeout_hours }} hours or less. Users inactive for that long in the supported Microsoft 365
+  web apps (Outlook on the web, OneDrive, SharePoint, Office for the web, Microsoft365.com, the
+  Microsoft 365, Defender and Purview portals) are warned, then signed out.
+
+  A Conditional Access policy limits the timeout to unmanaged devices: it targets **Office 365**
+  for all users, with the **Client apps** condition set to **Browser** and the session control
+  **Use app enforced restrictions**. Compliant and joined devices are not signed out.
+rationale: |
+  The timeout is aimed at devices the organization does not control: kiosks, home computers,
+  devices of partners. On those devices nobody locks the screen for the user, and a forgotten tab
+  keeps a valid session for days. Signing out idle sessions limits that exposure without bothering
+  users on managed workstations, which have their own screen lock.
+impact: |
+  Users on unmanaged devices are signed out of all Microsoft 365 web apps in that browser after
+  {{ idle_timeout_hours }} hours of inactivity, and lose unsaved work in forms. Desktop and mobile
+  apps are not affected. The setting is tenant-wide and cannot be scoped to groups. It does not
+  work when third-party cookies are blocked in the browser.
+notes: |
+  The timeout does not sign out users who chose **Stay signed in** at sign-in; hide that option
+  (CB-M365-AUTH-027). The Microsoft 365 setting overrides the older Outlook on the web and
+  SharePoint idle policies. Under the hood it is stored as the organization default
+  `activityBasedTimeoutPolicy` in Microsoft Graph.
+
+  A 15-minute timeout (session lock on the workstation) is a device setting, not a tenant one; it
+  is out of scope here.
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Security & privacy > Idle session timeout
+  default_value: "Off"
+  recommended_value: "On, {{ idle_timeout_hours }} hours or less, triggered only on unmanaged devices"
+
+parameters:
+  - name: idle_timeout_hours
+    type: integer
+    description: Maximum inactivity in Microsoft 365 web apps before an unmanaged-device session is signed out.
+    unit: hours
+    default: 3
+    minimum: 1
+    maximum: 24
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Idle session timeout**.
+    3. Check that the setting is turned on and the period is {{ idle_timeout_hours }} hours or less.
+    4. In the Microsoft Entra admin center (https://entra.microsoft.com), as at least a Security
+       Reader, browse to **Entra ID** > **Conditional Access** > **Policies** and find a policy with
+       **State** **On** that targets **All users**, the **Office 365** resource, the **Client apps**
+       condition **Browser**, and the session control **Use app enforced restrictions**.
+    5. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgPolicyActivityBasedTimeoutPolicy | Select-Object DisplayName, IsOrganizationDefault, Definition`
+       shows `WebSessionIdleTimeout` for `ApplicationId` `default`.
+    6. Fail if the timeout is off, longer than {{ idle_timeout_hours }} hours, or if the Conditional
+       Access policy is missing (the timeout then applies to every device, which is accepted but
+       not the target state).
+
+remediation:
+  manual: |
+    1. In the Microsoft 365 admin center, browse to **Settings** > **Org settings** > **Security &
+       privacy** > **Idle session timeout**. The first activation needs a Global Administrator;
+       later changes can be made by a Security Administrator or a Cloud Application Administrator.
+    2. Turn the setting on, choose {{ idle_timeout_hours }} hours (or a custom shorter value) and
+       select **Save**.
+    3. In the Microsoft Entra admin center, as a Conditional Access Administrator, create a policy:
+       **Users** > **All users** (exclude the emergency access accounts); **Target resources** >
+       **Select resources** > **Office 365**; **Conditions** > **Client apps** > **Browser**;
+       **Session** > **Use app enforced restrictions**.
+    4. Start in **Report-only**, then switch to **On**.
+  rollback: |
+    Clear **Turn on to set the period of inactivity** in the Idle session timeout pane and save.
+
+references:
+  - title: Idle session timeout for Microsoft 365
+    url: https://learn.microsoft.com/microsoft-365/admin/manage/idle-session-timeout-web-apps
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: activityBasedTimeoutPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/activitybasedtimeoutpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access session controls
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-session
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1539
+related_controls:
+  - id: CB-M365-AUTH-025
+    type: related
+  - id: CB-M365-AUTH-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

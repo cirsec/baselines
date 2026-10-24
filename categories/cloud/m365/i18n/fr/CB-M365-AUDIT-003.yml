@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver les journaux d'audit Microsoft 365 assez longtemps pour les enquêtes
+finding:
+  title: Les journaux d'audit sont supprimés avant la date habituelle de découverte d'une intrusion
+  description: Les intrusions sont souvent découvertes des mois après leur début ; avec la seule rétention par défaut, les journaux qui montrent l'accès initial ont disparu quand l'enquête commence.
+description: |
+  Les enregistrements d'audit Microsoft 365 (journal d'audit unifié et journaux de connexion et
+  d'audit Microsoft Entra) sont :
+
+  - consultables pendant au moins **{{ audit_search_days }}** jours, nativement ou dans le SIEM ;
+  - conservés et récupérables pendant au moins **{{ audit_retention_days }}** jours, dans le SIEM ou
+    une archive alimentée par CB-M365-AUDIT-002 ;
+  - conservés nativement dans Audit de Microsoft Purview pendant au moins
+    **{{ audit_native_retention_days }}** jours, via une stratégie de rétention des journaux d'audit
+    (Audit Premium) quand cette durée dépasse les 180 jours par défaut d'Audit Standard.
+
+  Les durées sont alignées sur les obligations légales et réglementaires qui s'appliquent à
+  l'organisation.
+rationale: |
+  Le délai médian de détection d'une intrusion se compte en semaines voire en mois. Les enquêteurs
+  ont besoin des premières connexions, règles de boîte aux lettres et consentements de l'attaquant,
+  souvent plus anciens que la rétention native. Garder une copie dans le SIEM protège aussi les
+  enregistrements d'un administrateur du tenant. Une rétention native longue (hardened) garde le
+  détail complet des événements Microsoft, comme les accès aux boîtes aux lettres, disponible dans
+  Purview sans dépendre du SIEM.
+impact: |
+  Le stockage du SIEM croît avec la rétention. Une rétention native au-delà de 180 jours exige Audit
+  Premium (E5 ou E5 Compliance) pour les utilisateurs concernés ; les enregistrements des autres
+  utilisateurs restent à 180 jours. Microsoft Entra ne conserve nativement les journaux de connexion
+  et d'audit que 30 jours avec P1 ou P2 : au-delà, la copie du SIEM est la seule source.
+parameters:
+  audit_search_days: Nombre minimal de jours pendant lesquels les enregistrements d'audit sont directement consultables.
+  audit_retention_days: Nombre minimal de jours pendant lesquels les enregistrements d'audit sont conservés et récupérables, dans le SIEM ou une archive.
+  audit_native_retention_days: Rétention native minimale dans Audit de Microsoft Purview pour les enregistrements d'audit de tous les utilisateurs.
+audit:
+  manual: |
+    1. Demander au SOC les réglages de rétention des tables Microsoft 365 et Microsoft Entra dans le
+       SIEM (rétention interactive et archive) et les comparer à {{ audit_search_days }} et
+       {{ audit_retention_days }} jours. Exécuter une requête sur la date la plus ancienne attendue
+       pour confirmer la présence des données.
+    2. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins un
+       groupe de rôles portant View-Only Audit Logs, aller dans **Solutions** > **Audit** >
+       **Stratégies de rétention d'audit**.
+    3. Si {{ audit_native_retention_days }} dépasse 180, vérifier qu'une stratégie, prioritaire parmi
+       les stratégies personnalisées, couvre tous les utilisateurs et tous les types
+       d'enregistrement (ou ceux que l'organisation liste) avec une durée d'au moins
+       {{ audit_native_retention_days }} jours.
+    4. Alternative en PowerShell Sécurité et conformité : `Get-UnifiedAuditLogRetentionPolicy |
+       Sort-Object Priority | Format-List Name,Priority,RecordTypes,UserIds,RetentionDuration` (la
+       stratégie par défaut intégrée d'Audit Premium n'est pas listée).
+    5. Vérifier qu'aucune stratégie personnalisée ne fixe une durée inférieure à
+       {{ audit_native_retention_days }} jours pour un type d'enregistrement, car les stratégies
+       personnalisées priment sur la stratégie par défaut.
+    6. Échec si l'une des trois durées n'est pas respectée.
+remediation:
+  manual: |
+    1. Régler la rétention des tables Microsoft 365 et Microsoft Entra dans le SIEM (par exemple
+       rétention interactive et rétention longue durée de Log Analytics) pour atteindre
+       {{ audit_search_days }} et {{ audit_retention_days }} jours.
+    2. Pour une rétention native au-delà de 180 jours, se connecter au portail Microsoft Purview avec
+       le rôle Organization Configuration, aller dans **Solutions** > **Audit** > **Créer une
+       stratégie de rétention d'audit**, laisser **Utilisateurs** et **Type d'enregistrement** vides
+       pour tout couvrir, choisir une durée d'au moins {{ audit_native_retention_days }} jours et une
+       priorité, puis enregistrer.
+    3. Alternative en PowerShell Sécurité et conformité :
+       `New-UnifiedAuditLogRetentionPolicy -Name "All activities - 1 year" -RetentionDuration OneYear -Priority 100`
+       (adapter `-RetentionDuration` au paramètre).
+    4. Vérifier que les utilisateurs concernés disposent d'une licence Audit Premium.
+  rollback: |
+    Supprimer la stratégie de rétention d'audit ou réduire la rétention du SIEM. Les enregistrements
+    qui dépassent la nouvelle durée sont alors purgés.

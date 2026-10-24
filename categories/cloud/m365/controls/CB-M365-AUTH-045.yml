@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-045
+title: Harden directory synchronization against cloud account takeover from Active Directory
+finding:
+  title: Directory synchronization lets on-premises objects take over cloud accounts
+  description: An attacker with rights in Active Directory can match a crafted object to an existing cloud account, including an administrator, and set its password.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [hybrid, entra-connect, soft-match, hard-match, privileged-access, krbtgt]
+
+applicability:
+  requires:
+    - "Identities synchronized from Active Directory (Microsoft Entra Connect or Cloud Sync)"
+
+description: |
+  Directory synchronization is configured so that Active Directory cannot be used to take over cloud
+  identities:
+
+  1. `BlockSoftMatchEnabled` is `true`: an on-premises object is never joined to an existing cloud
+     account on its primary SMTP address or UPN. It is turned off only for the duration of a planned
+     migration, then on again.
+  2. `BlockCloudObjectTakeoverThroughHardMatchEnabled` is `true`: a cloud-managed account cannot be
+     taken over by an on-premises object with a matching immutable ID.
+  3. The temporary bypass `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled` is `false`.
+  4. The `krbtgt_AzureAD` account (Microsoft Entra Kerberos key object) is not in the
+     synchronization scope.
+  5. The sync identity is protected: application-based authentication (Microsoft Entra Connect
+     2.5.76 or later), or, for a legacy user-based directory synchronization account, exclusion from
+     user Conditional Access policies combined with a policy that restricts it to the sync servers'
+     egress addresses. The sync servers are managed as Tier 0.
+rationale: |
+  Soft and hard matching were designed for migrations, but they let whoever controls Active
+  Directory (or the sync server) attach an object to a cloud-only account, including a Global
+  Administrator, then push a known password through password hash synchronization. Synchronizing
+  `krbtgt_AzureAD` exposes the key used to issue Kerberos tickets for cloud Kerberos trust. The sync
+  account has broad write rights on the directory and is a known pivot from on-premises to cloud.
+impact: |
+  With soft matching blocked, new hybrid joined devices can fail with an InvalidSoftMatch error, and
+  migrations that rely on SMTP or UPN matching need the block lifted temporarily. Moving to
+  application-based authentication needs a Microsoft Entra Connect upgrade and a check with
+  `Get-ADSyncEntraConnectorCredential`.
+notes: |
+  Since July 2026, Microsoft blocks hard matches on accounts that hold or are eligible for privileged
+  roles, or already have an `onPremisesObjectIdentifier`; the bypass flag in point 3 removes that
+  protection for the whole tenant. Cloud-only administrator accounts (CB-M365-ADMIN domain) remain
+  the main defense.
+
+audit:
+  manual: |
+    1. In PowerShell (Microsoft Graph, scope `OnPremDirectorySynchronization.Read.All`, role at
+       least Global Reader):
+       `Get-MgDirectoryOnPremiseSynchronization | Select-Object -ExpandProperty Features | Format-List`
+       Check `BlockSoftMatchEnabled : True`, `BlockCloudObjectTakeoverThroughHardMatchEnabled : True`
+       and, under `AdditionalProperties`, `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled : False`.
+    2. In the Microsoft Entra admin center (https://entra.microsoft.com), browse to **Entra ID** >
+       **Users**, search for `krbtgt_AzureAD` and check that no synchronized user with that name
+       exists (**On-premises sync enabled** = **No** or no result).
+    3. On each Microsoft Entra Connect server, run `Get-ADSyncEntraConnectorCredential` (read-only)
+       and check that `ConnectorIdentityType` is `Application`. Otherwise, browse to **Entra ID** >
+       **Roles & admins** > **Directory Synchronization Accounts**, note the user accounts, and check
+       in **Conditional Access** that a policy restricts them to trusted locations.
+    4. Fail if soft or hard matching is not blocked, if the bypass flag is on, if `krbtgt_AzureAD`
+       is synchronized, or if a user-based sync account is unrestricted.
+
+remediation:
+  manual: |
+    1. Block soft and hard matching (Microsoft Graph, scope
+       `OnPremDirectorySynchronization.ReadWrite.All`, Hybrid Identity Administrator):
+       `$s = Get-MgDirectoryOnPremiseSynchronization;
+       $s.Features.BlockSoftMatchEnabled = $true;
+       $s.Features.BlockCloudObjectTakeoverThroughHardMatchEnabled = $true;
+       Update-MgDirectoryOnPremiseSynchronization -OnPremisesDirectorySynchronizationId $s.Id -Features $s.Features`
+    2. If the bypass flag is on and the remediation it was opened for is finished, set
+       `allowOnPremUpdateOfOnPremisesObjectIdentifierEnabled` to `false` the same way.
+    3. Exclude `krbtgt_AzureAD` from synchronization: in the Microsoft Entra Connect wizard, filter
+       out its OU or the object, or add a sync rule that excludes it; run a delta sync and delete the
+       synchronized copy in Entra ID if one exists.
+    4. Upgrade Microsoft Entra Connect and switch the connector to application-based
+       authentication; then remove the legacy directory synchronization account or its role.
+    5. Until then, restrict the user-based sync account with a Conditional Access policy that blocks
+       it outside the sync servers' egress IP addresses.
+  rollback: |
+    Set `BlockSoftMatchEnabled` to `false` only for the duration of a planned soft-match migration,
+    and set it back to `true` afterwards.
+
+references:
+  - title: Microsoft Entra Connect Sync service features and configuration
+    url: https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-syncservice-features
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure Microsoft Entra Connect for an existing tenant
+    url: https://learn.microsoft.com/entra/identity/hybrid/connect/how-to-connect-install-existing-tenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft Entra Kerberos
+    url: https://learn.microsoft.com/entra/identity/authentication/kerberos
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1073 - Soft- and hard-matching of synchronized objects should be blocked
+    url: https://maester.dev/docs/tests/MT.1073
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1484.002
+related_controls:
+  - id: CB-M365-AUTH-034
+    type: related
+  - id: CB-M365-AUTH-044
+    type: related
+  - id: CB-M365-ADMIN-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

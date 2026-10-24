@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-004
+title: Assign least-privileged roles instead of Global Administrator
+finding:
+  title: Global Administrator is used where narrower roles would do
+  description: Administrators hold full control of the tenant for tasks that a service-specific role covers, so any of their accounts is a path to full compromise.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, least-privilege, global-admin, rbac]
+
+description: |
+  Administrative tasks are delegated with the narrowest built-in or custom role that covers them
+  (Exchange Administrator, SharePoint Administrator, User Administrator, Helpdesk Administrator,
+  Security Operator...), scoped to an administrative unit where possible. Global Administrator is
+  kept for the few tasks only it can perform.
+
+  Measurable target: Global Administrator holders are fewer than half of all principals holding a
+  privileged role (active or eligible).
+rationale: |
+  Most daily administration needs a fraction of Global Administrator's permissions. Narrow roles
+  limit what a stolen admin session can do and make the audit trail easier to read. A tenant where
+  most privileged users are Global Administrators has in practice no role separation.
+impact: |
+  Administrators may need several roles, or a custom role (Microsoft Entra ID P1) for a precise
+  set of permissions. Some admin center pages require a specific role; test each delegation with
+  the person who will use it.
+notes: |
+  The ratio is a signal, not a goal: a tenant with two Global Administrators and two other admins
+  passes, but role design still deserves a review.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Roles & admins** > **Roles & admins**, filter on **Privileged**
+       roles and note the active and eligible holders of each, expanding groups.
+    3. Count the distinct principals holding Global Administrator (G) and the distinct principals
+       holding any privileged role (P).
+    4. Read-only PowerShell alternative (Microsoft Graph, scope `RoleManagement.Read.Directory`):
+       ```
+       $priv = Get-MgRoleManagementDirectoryRoleDefinition -All | Where-Object IsPrivileged
+       $all  = Get-MgRoleManagementDirectoryRoleAssignment -All | Where-Object RoleDefinitionId -in $priv.Id
+       ```
+       Add eligible assignments with `Get-MgRoleManagementDirectoryRoleEligibilitySchedule`.
+    5. Fail if G is half of P or more, or if a Global Administrator's activity (audit logs) only
+       concerns one service.
+
+remediation:
+  manual: |
+    1. For each Global Administrator, list the tasks performed over the last 90 days in
+       **Entra ID** > **Monitoring & health** > **Audit logs** and the admin centers used.
+    2. Map those tasks to built-in roles (see the least-privileged roles by task page) or create
+       a custom role.
+    3. Assign the narrower roles, eligible through PIM where licensed, with a Privileged Role
+       Administrator.
+    4. Remove the Global Administrator assignment once the person confirms the new roles work.
+  rollback: |
+    Reassign Global Administrator temporarily through PIM while the role design is fixed.
+
+references:
+  - title: Least privileged roles by task in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/delegate-by-task
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Best practices for Microsoft Entra roles
+    url: https://learn.microsoft.com/entra/identity/role-based-access-control/best-practices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.2v1
+    relation: equivalent
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R39"
+    relation: partial
+    note: Applied to Microsoft Entra directory roles only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+related_controls:
+  - id: CB-M365-ADMIN-003
+    type: related
+  - id: CB-M365-DEVICE-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

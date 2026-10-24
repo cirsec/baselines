@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les agents IA à risque élevé par accès conditionnel
+finding:
+  title: Les agents IA signalés à risque élevé gardent l'accès aux ressources de l'organisation
+  description: Quand ID Protection détecte qu'une identité d'agent est probablement compromise, rien ne l'empêche de continuer à appeler Microsoft Graph et d'autres ressources avec ses permissions.
+description: |
+  Une stratégie d'accès conditionnel cible **Toutes les identités d'agent**, avec la condition
+  **Risque de l'agent** réglée sur **Élevé**, sur **Toutes les ressources**, et accorde **Bloquer**.
+  Une seconde stratégie identique cible les comptes utilisateur des agents (agent users) quand le
+  tenant en a.
+rationale: |
+  Les agents IA agissent de façon autonome avec des permissions déléguées ou d'application, souvent
+  sur la messagerie, les fichiers et les données métier. Un agent compromis ou détourné (injection
+  de prompt, identifiant de blueprint volé, usage anormal de jetons) peut exfiltrer des données à
+  vitesse machine. Microsoft Entra ID Protection calcule un niveau de risque pour les agents ;
+  bloquer les agents à risque élevé arrête l'activité jusqu'à ce qu'un administrateur enquête et
+  confirme ou écarte le risque.
+impact: |
+  Un agent légitime signalé à risque élevé cesse de fonctionner jusqu'à la remédiation du risque.
+  Les agents qui ne sont pas représentés comme identités d'agent dans Microsoft Entra (par exemple
+  ceux qui utilisent une inscription d'application classique) ne sont pas couverts.
+notes: |
+  Le risque de l'agent est une fonctionnalité en préversion. L'accès conditionnel pour les agents
+  exige aussi une licence Agent 365 ou Microsoft 365 E7 en plus d'Entra ID P2 ; le contrôle ne
+  s'applique pas à un tenant sans identité d'agent.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où :
+       - **Utilisateurs, agents ou identités de charge de travail** > **À quoi s'applique cette
+         stratégie ?** = **Agents**, **Inclure** = **Toutes les identités d'agent**, sans
+         exclusion ;
+       - **Conditions** > **Risque de l'agent** inclut **Élevé** ;
+       - **Ressources cibles** inclut **Toutes les ressources** ;
+       - **Accorder** = **Bloquer l'accès**.
+    4. Si des agent users existent, vérifier une stratégie équivalente qui cible les comptes
+       utilisateur des agents.
+    5. Alternative avec Graph (étendue `Policy.Read.All`) :
+       `GET https://graph.microsoft.com/beta/identity/conditionalAccess/policies` et chercher une
+       stratégie dont les conditions ciblent les identités d'agent avec un risque d'agent élevé et
+       dont le contrôle d'octroi est `block`.
+    6. Échec si aucune stratégie de ce type n'existe ou si elle est en Rapport seul ou Désactivée.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle
+       stratégie**.
+    3. La nommer, par exemple `AGT - Block high-risk agents`.
+    4. **Utilisateurs, agents ou identités de charge de travail** > **À quoi s'applique cette
+       stratégie ?** > **Agents** > **Inclure** > **Toutes les identités d'agent**.
+    5. **Ressources cibles** > **Inclure** > **Toutes les ressources**.
+    6. **Conditions** > **Risque de l'agent** > **Configurer** = **Oui**, sélectionner **Élevé**.
+    7. **Accorder** > **Bloquer l'accès**.
+    8. Régler **Activer la stratégie** sur **Rapport seul**, examiner les résultats dans les journaux
+       de connexion, puis passer à **Activé**.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

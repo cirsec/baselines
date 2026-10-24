@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-001
+title: Restrict tenant creation to administrators
+finding:
+  title: Any user can create a new Microsoft Entra tenant
+  description: Users can create tenants outside the organization's governance, where they become Global Administrator and can move data or impersonate the organization.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, user-settings, tenant-creation, shadow-it]
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Users > User settings > Restrict non-admin users from creating tenants
+  default_value: "No"
+  recommended_value: "Yes"
+
+description: |
+  The user setting **Restrict non-admin users from creating tenants** is set to **Yes**
+  (`defaultUserRolePermissions.allowedToCreateTenants` = `false`). Only users with the Tenant
+  Creator role or an administrative role can create new tenants.
+rationale: |
+  A user who creates a tenant becomes its Global Administrator, outside the organization's
+  security policies, logging and offboarding. Such shadow tenants are used to store data, to
+  register lookalike domains or to host applications trusted by mistake.
+impact: |
+  Developers or teams who need test tenants request them through a process and receive the Tenant
+  Creator role.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings** and read **Restrict non-admin users
+       from creating tenants**.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).DefaultUserRolePermissions.AllowedToCreateTenants`.
+    4. Fail if the setting is **No** (value `true`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Set **Restrict non-admin users from creating tenants** to **Yes** and select **Save**.
+    4. Equivalent with Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`):
+       `Update-MgPolicyAuthorizationPolicy -DefaultUserRolePermissions @{ AllowedToCreateTenants = $false }`.
+  rollback: |
+    Set the option back to **No**.
+
+references:
+  - title: What are the default user permissions in Microsoft Entra ID?
+    url: https://learn.microsoft.com/entra/fundamentals/users-default-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: authorizationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/authorizationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.2.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-M365-TENANT-009
+    type: related
+  - id: CB-M365-APPS-001
+    type: related
+  - id: CB-M365-APPS-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

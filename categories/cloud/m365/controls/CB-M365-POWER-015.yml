@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-015
+title: Enable sensitivity labels for Fabric and Power BI content
+finding:
+  title: Users cannot apply sensitivity labels to Fabric content
+  description: Reports, semantic models and other Fabric items carry no classification, so label-based protection does not follow data exported to Office files or PDF.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [fabric, power-bi, sensitivity-labels, purview, classification]
+
+applicability:
+  requires:
+    - "Power BI / Microsoft Fabric"
+
+description: |
+  The Fabric tenant setting **Allow users to apply sensitivity labels for content** (Information
+  protection) is **Enabled**, for the entire organization or for the groups that create and manage
+  content. Microsoft Purview sensitivity labels are already published to these users. Related
+  settings are reviewed together: label inheritance from data sources and to downstream content,
+  and **Restrict content with protected labels from being shared via link with everyone in your
+  organization**.
+rationale: |
+  Fabric holds aggregated business data that is often more sensitive than the source documents.
+  Labels make that sensitivity visible to users, feed data loss prevention and auditing, and carry
+  encryption to files exported to Excel, PowerPoint or PDF. Without the tenant setting, labels
+  published in Purview cannot be applied to Fabric items at all.
+impact: |
+  Users see a sensitivity menu on Fabric items; mandatory labeling or default labels, if configured
+  in Purview, apply to new content. Exported files may become encrypted and readable only by users
+  covered by the label. Applying labels requires a Power BI Pro or Premium Per User licence plus a
+  Purview Information Protection licence for the user.
+
+setting:
+  location: Fabric admin portal > Tenant settings > Information protection > Allow users to apply sensitivity labels for content
+  default_value: Disabled
+  recommended_value: Enabled
+
+audit:
+  manual: |
+    1. Sign in to Microsoft Fabric (https://app.fabric.microsoft.com) as a Fabric Administrator.
+    2. Open **Settings** > **Admin portal** > **Tenant settings** > **Information protection** and
+       expand **Allow users to apply sensitivity labels for content**.
+    3. Check that it is **Enabled** (entire organization, or the groups that publish content).
+    4. Alternative, read only: in `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       read the entry `EimInformationProtectionEdit`.
+    5. Fail if the setting is disabled.
+
+remediation:
+  manual: |
+    1. Make sure sensitivity labels are published in Microsoft Purview to the users who will label
+       Fabric content.
+    2. In **Tenant settings** > **Information protection** > **Allow users to apply sensitivity
+       labels for content**, select **Enabled**, choose the scope, and **Apply**. Role: Fabric
+       Administrator.
+    3. Review the inheritance settings (**Apply sensitivity labels from data sources to their data in
+       Power BI**, **Automatically apply sensitivity labels to downstream content**) and enable
+       **Restrict content with protected labels from being shared via link with everyone in your
+       organization**.
+    4. API equivalent: `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/EimInformationProtectionEdit/update`
+       with `{"enabled": true}`.
+  rollback: |
+    Set the setting back to **Disabled**. Labels already applied stay on the items.
+
+references:
+  - title: Information protection tenant settings
+    url: https://learn.microsoft.com/fabric/admin/service-admin-portal-information-protection
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power BI baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerbi.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "9.1.6"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERBI.7.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-16
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-POWER-016
+    type: related
+  - id: CB-M365-DATA-005
+    type: requires
+  - id: CB-M365-DATA-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

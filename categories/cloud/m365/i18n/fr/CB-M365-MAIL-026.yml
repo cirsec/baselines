@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-026
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Analyser les fichiers SharePoint, OneDrive et Teams avec les pièces jointes fiables et bloquer le téléchargement des fichiers infectés
+finding:
+  title: Les fichiers stockés dans SharePoint, OneDrive et Teams ne sont pas analysés par les pièces jointes fiables
+  description: Les fichiers malveillants déposés ou partagés dans les sites de collaboration ne sont pas détectés, et les utilisateurs peuvent encore télécharger un fichier une fois signalé.
+description: |
+  Deux paramètres sont activés :
+
+  - **Activer Defender pour Office 365 pour SharePoint, OneDrive et Microsoft Teams** dans les
+    paramètres globaux des pièces jointes fiables (`EnableATPForSPOTeamsODB $true`) ;
+  - SharePoint empêche les utilisateurs de télécharger les fichiers que Defender a détectés comme
+    malveillants (`DisallowInfectedFileDownload $true`).
+rationale: |
+  Le stockage collaboratif est un moyen courant de propager des programmes malveillants dans
+  l'organisation et vers les partenaires : un fichier partagé depuis un tenant de confiance ne passe
+  pas par le filtrage de la messagerie. L'analyse l'attrape, et le blocage du téléchargement empêche
+  les utilisateurs de l'ouvrir malgré tout.
+impact: |
+  Les utilisateurs ne peuvent plus télécharger, ouvrir dans l'application de bureau, copier ni
+  synchroniser les fichiers signalés comme malveillants ; ils peuvent toujours les supprimer. Les
+  administrateurs peuvent libérer les faux positifs depuis la quarantaine.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Pièces jointes fiables** > **Paramètres globaux** et vérifier que **Activer Defender pour
+       Office 365 pour SharePoint, OneDrive et Microsoft Teams** est activé.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-AtpPolicyForO365 | Format-List EnableATPForSPOTeamsODB
+       ```
+    4. Dans SharePoint Online Management Shell (`Get-SPOTenant` demande le rôle Administrateur
+       SharePoint ; il n'existe pas de rôle en lecture seule pour cette commande) :
+       ```powershell
+       Get-SPOTenant | Format-List DisallowInfectedFileDownload
+       ```
+    5. Échec si l'une des deux valeurs vaut `False`.
+remediation:
+  manual: |
+    1. Dans le portail Defender, **Pièces jointes fiables** > **Paramètres globaux**, activer
+       **Activer Defender pour Office 365 pour SharePoint, OneDrive et Microsoft Teams** et enregistrer.
+       Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       Set-AtpPolicyForO365 -EnableATPForSPOTeamsODB $true
+       ```
+    2. Dans SharePoint Online Management Shell (Administrateur SharePoint) :
+       ```powershell
+       Set-SPOTenant -DisallowInfectedFileDownload $true
+       ```
+  rollback: |
+    `Set-SPOTenant -DisallowInfectedFileDownload $false`.

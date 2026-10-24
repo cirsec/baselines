@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUDIT-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Transmettre les journaux de sécurité Microsoft 365 au SIEM ou au SOC
+finding:
+  title: Les journaux de sécurité Microsoft 365 ne sont pas collectés par le centre opérationnel de sécurité
+  description: Les connexions, changements d'annuaire et événements d'audit restent dans Microsoft 365 ; le SOC ne peut ni les corréler, ni alerter en temps réel, ni les conserver au-delà de la rétention native.
+description: |
+  Les journaux suivants sont collectés en continu, au plus près du temps réel, par le SIEM ou la
+  plateforme SOC de l'organisation (Microsoft Sentinel ou autre produit) :
+
+  - Microsoft Entra ID : journaux de connexion (interactives, non interactives, principaux de
+    service, identités managées), journaux d'audit, journaux d'approvisionnement, utilisateurs à
+    risque et détections de risque, via les **Paramètres de diagnostic** vers un espace de travail
+    Log Analytics, un hub d'événements ou une solution partenaire ;
+  - journal d'audit unifié Microsoft 365 (Exchange, SharePoint, OneDrive, Teams, Power Platform,
+    Copilot), via l'API Office 365 Management Activity ou le connecteur Microsoft 365 ;
+  - incidents, alertes et événements de repérage avancé Microsoft Defender XDR, via l'API de
+    streaming ou le connecteur Defender XDR ;
+  - journaux d'audit et opérationnels Microsoft Intune, via les **Paramètres de diagnostic**
+    d'Intune.
+
+  La chaîne de collecte est supervisée : une alerte est levée quand une source cesse d'envoyer des
+  événements, et sa couverture est revue au moins une fois par an.
+rationale: |
+  Les consoles natives conservent les journaux pour une durée limitée et ne corrèlent pas les
+  événements Microsoft 365 avec les signaux locaux, réseau et poste de travail. La collecte
+  centralisée permet au SOC de détecter une attaque qui commence par un compte hameçonné et se
+  poursuit sur le réseau, met les preuves hors de portée d'un administrateur du tenant qui voudrait
+  les altérer, et répond aux exigences de conservation de CB-M365-AUDIT-003. Superviser la chaîne
+  détecte un export désactivé, geste fréquent des attaquants.
+impact: |
+  L'ingestion Log Analytics, hub d'événements ou SIEM a un coût proportionnel au volume (les
+  connexions non interactives et les journaux d'audit sont volumineux). Les paramètres de diagnostic
+  exigent un abonnement Azure.
+notes: |
+  Les paramètres de diagnostic et les abonnements à l'API Management Activity ne sont pas exposés par
+  Microsoft Graph : la preuve est une capture ou un export de la configuration et une requête dans le
+  SIEM.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité et aller dans **Entra ID** > **Supervision et intégrité** >
+       **Paramètres de diagnostic**. Vérifier qu'un paramètre envoie au moins `AuditLogs`,
+       `SignInLogs`, `NonInteractiveUserSignInLogs`, `ServicePrincipalSignInLogs`,
+       `ManagedIdentitySignInLogs`, `ProvisioningLogs`, `RiskyUsers` et `UserRiskEvents` vers la
+       destination SIEM.
+    2. Se connecter au centre d'administration Microsoft Intune (https://intune.microsoft.com) avec
+       au moins le rôle Opérateur en lecture seule et aller dans **Rapports** > **Paramètres de
+       diagnostic** ; vérifier que `AuditLogs` et `OperationalLogs` sont envoyés.
+    3. Dans le SIEM, vérifier que les connecteurs Microsoft 365 (Office 365) et Microsoft Defender
+       XDR, ou les abonnements à l'API Management Activity et à l'API de streaming, sont actifs, et
+       exécuter une requête qui renvoie des événements de chaque source sur la dernière heure.
+    4. Demander au SOC la règle d'alerte qui détecte une source muette et la dernière revue de
+       couverture.
+    5. Échec si l'une des quatre sources n'est pas collectée, si la collecte a plusieurs heures de
+       retard, ou si aucune alerte ne détecte l'arrêt d'une source.
+remediation:
+  manual: |
+    1. Préparer la destination (espace de travail Log Analytics pour Microsoft Sentinel, hub
+       d'événements pour un SIEM tiers).
+    2. Dans le centre d'administration Microsoft Entra avec le rôle Administrateur de la sécurité,
+       aller dans **Entra ID** > **Supervision et intégrité** > **Paramètres de diagnostic** >
+       **Ajouter un paramètre de diagnostic**, sélectionner les catégories de journaux listées
+       ci-dessus et la destination, puis enregistrer.
+    3. Dans le centre d'administration Microsoft Intune avec le rôle Administrateur Intune, aller
+       dans **Rapports** > **Paramètres de diagnostic** > **Ajouter un paramètre de diagnostic**,
+       sélectionner `AuditLogs`, `OperationalLogs`, `DeviceComplianceOrg` et `Devices`, puis
+       enregistrer.
+    4. Dans le SIEM, activer les connecteurs Microsoft 365 et Microsoft Defender XDR (ou s'abonner
+       aux types de contenu de l'API Office 365 Management Activity `Audit.AzureActiveDirectory`,
+       `Audit.Exchange`, `Audit.SharePoint`, `Audit.General`, `DLP.All`, et configurer l'API de
+       streaming Defender XDR).
+    5. Créer pour chaque source une règle d'alerte qui ouvre un incident quand aucun événement
+       n'arrive pendant une durée définie.
+  rollback: |
+    Supprimer le paramètre de diagnostic ou désactiver le connecteur.

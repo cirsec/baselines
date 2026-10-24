@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-006
+title: Keep modern authentication enabled for Exchange Online
+finding:
+  title: Modern authentication is turned off for Exchange Online
+  description: Outlook falls back to basic authentication prompts, which bypass multifactor authentication and Conditional Access.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online, modern-authentication, oauth, legacy-authentication, outlook]
+
+description: |
+  Modern authentication (OAuth 2.0) is enabled for Exchange Online at organization level
+  (`OAuth2ClientProfileEnabled $true`). Outlook for Windows and Mac then sign in through Microsoft
+  Entra ID, with multifactor authentication and Conditional Access.
+
+  Modern authentication is on by default in tenants created after August 2017; the control makes
+  sure it was never turned off.
+rationale: |
+  With modern authentication off, Outlook asks for the password in a basic authentication dialog.
+  Those prompts do not support MFA, are easy to imitate and keep legacy protocols in use. Blocking
+  legacy authentication with Conditional Access only works if clients can use modern
+  authentication.
+impact: |
+  None known on supported clients. Very old Outlook versions (2010, 2013 without the registry keys)
+  cannot connect and must be upgraded.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.microsoft.com) as at least a Global
+       Reader.
+    2. Browse to **Settings** > **Org settings** > **Services** > **Modern authentication** and check
+       that **Turn on modern authentication for Outlook 2013 for Windows and later** is selected.
+    3. Or, in Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-OrganizationConfig | Format-List OAuth2ClientProfileEnabled
+       ```
+    4. Fail if `OAuth2ClientProfileEnabled` is `False`.
+
+remediation:
+  manual: |
+    1. In the Microsoft 365 admin center, browse to **Settings** > **Org settings** > **Services** >
+       **Modern authentication**, select **Turn on modern authentication for Outlook 2013 for
+       Windows and later** and save.
+    2. PowerShell equivalent (Exchange Administrator):
+       ```powershell
+       Set-OrganizationConfig -OAuth2ClientProfileEnabled $true
+       ```
+    3. Users may need to restart Outlook to pick up the change.
+
+references:
+  - title: Enable or disable modern authentication for Outlook in Exchange Online
+    url: https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/enable-or-disable-modern-authentication-in-exchange-online
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1044
+    url: https://maester.dev/docs/tests/MT.1044
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.5.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-MAIL-009
+    type: related
+  - id: CB-M365-MAIL-011
+    type: related
+  - id: CB-M365-AUTH-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

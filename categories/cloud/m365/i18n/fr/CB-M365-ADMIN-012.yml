@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-012
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas attribuer de rôles privilégiés aux utilisateurs invités
+finding:
+  title: Un utilisateur invité détient un rôle privilégié
+  description: Les privilèges du tenant dépendent d'un compte dont l'authentification et le cycle de vie sont contrôlés par une autre organisation.
+description: |
+  Aucun utilisateur invité (`userType` **Guest**, ou compte externe avec `#EXT#` dans son nom
+  d'utilisateur principal) ne détient de rôle Microsoft Entra privilégié, actif ou éligible,
+  directement ou via un groupe. Les administrateurs externes (partenaires, prestataires) reçoivent
+  un compte nominatif cloud uniquement dans le tenant (CB-M365-ADMIN-001) ou une relation GDAP
+  (CB-M365-ADMIN-017).
+rationale: |
+  Un invité s'authentifie dans son tenant d'origine ou avec un compte grand public : sa politique de
+  mots de passe, sa MFA, son appareil et son départ échappent au contrôle de l'organisation. Quand
+  le compte d'origine est compromis ou que son titulaire quitte l'entreprise partenaire, le rôle
+  privilégié reste accessible.
+impact: |
+  Les administrateurs externes ont besoin d'un compte interne avec les mêmes protections que les
+  salariés, ce qui ajoute un compte à gérer et, le cas échéant, une licence.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Rôles et administrateurs** > **Rôles et administrateurs**, ouvrir
+       chaque rôle marqué **Privilégié** > **Attributions**, et chercher les membres dont le **Type
+       d'utilisateur** est **Invité** (éligibles et actifs, en développant les groupes).
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendues
+       `RoleManagement.Read.Directory`, `User.Read.All`) :
+       ```
+       $ids = (Get-MgRoleManagementDirectoryRoleAssignment -All).PrincipalId +
+              (Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All).PrincipalId
+       $ids | Sort-Object -Unique | ForEach-Object { Get-MgUser -UserId $_ -Property UserPrincipalName,UserType -ErrorAction SilentlyContinue } |
+         Where-Object UserType -eq 'Guest'
+       ```
+    4. Échec si un invité détient un rôle privilégié.
+remediation:
+  manual: |
+    1. Avec un Administrateur de rôle privilégié, retirer le rôle de l'invité dans **Rôles et
+       administrateurs** ou dans **Privileged Identity Management** > **Attributions**.
+    2. Si la personne a toujours besoin d'un accès d'administration, créer un compte nominatif cloud
+       uniquement, enregistrer des méthodes résistantes au hameçonnage et attribuer le rôle le plus
+       restreint en éligible.
+  rollback: |
+    Réattribuer le rôle à l'invité (déconseillé).

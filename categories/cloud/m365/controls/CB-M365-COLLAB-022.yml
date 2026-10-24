@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-022
+title: Require approval before Teams apps are available to users
+finding:
+  title: Users can install Teams apps that nobody approved
+  description: Third-party and custom apps can be added to chats, teams and meetings and receive access to their content without review.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, third-party-apps, app-governance]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Teams apps are available to users only after the organization approves them:
+
+  - third-party apps and custom apps are not available by default; each approved app is made available
+    individually (to everyone or to specific users or groups);
+  - Microsoft apps that the organization has not approved are blocked;
+  - uploading custom app packages (sideloading) is off in app setup policies, except for developers in
+    a dedicated policy;
+  - users can request an app, and requests reach an administrator.
+
+  The tenant uses app-centric management (**Manage apps** with per-app availability). Tenants still on
+  app permission policies apply the same rule through the Global and custom permission policies.
+rationale: |
+  Teams apps receive tokens and resource-specific consent to read messages, files and meeting content,
+  and can push messages and links to users. An unvetted app is a supply chain and data exposure risk,
+  and malicious or compromised publishers have used app integrations to reach users. An approval step
+  lets the organization review publisher, permissions and data handling first.
+impact: |
+  Users must request apps instead of adding them, and someone must process requests. Apps already
+  installed but no longer available stop working for users. Developers need a custom setup policy to
+  test their own packages.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Teams apps** > **Manage apps** > **Actions** > **Org-wide app settings**. Check that
+       **Third-party apps** and **Custom apps** are not available by default and that user requests are
+       enabled.
+    3. In **Manage apps**, filter on third-party and custom apps with availability **Everyone** or
+       **Specific users or groups** and check each against the approved app list. Do the same for
+       Microsoft apps that should be blocked.
+    4. Browse to **Teams apps** > **Setup policies** and check that **Upload custom apps** is **Off** in
+       the Global policy and in every policy except the developer one.
+    5. With Microsoft Teams PowerShell:
+       `Get-CsTeamsAppSetupPolicy | Select-Object Identity, AllowSideLoading` and, on tenants using
+       permission policies, `Get-CsTeamsAppPermissionPolicy`.
+    6. Fail if third-party or custom apps are available by default, if an unapproved app is available,
+       or if custom app upload is on for all users.
+
+remediation:
+  manual: |
+    1. Export the current app list and usage (**Manage apps** > **Export**, Teams app usage report) and
+       have each app in use approved or retired.
+    2. In **Teams apps** > **Manage apps** > **Actions** > **Org-wide app settings**, turn off default
+       availability for **Third-party apps** and **Custom apps**, enable user requests, and **Save**.
+       Role: Teams Administrator.
+    3. For each approved app, select it and **Edit availability** to **Everyone** or **Specific users or
+       groups**. Set unapproved Microsoft apps to **No one**.
+    4. In **Teams apps** > **Setup policies** > **Global (Org-wide default)**, turn off **Upload custom
+       apps**; create a separate policy for developers. PowerShell equivalent:
+       `Set-CsTeamsAppSetupPolicy -Identity Global -AllowSideLoading $false`.
+
+references:
+  - title: Manage apps in the Microsoft Teams admin center
+    url: https://learn.microsoft.com/microsoftteams/manage-apps
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage access to apps using app-centric management
+    url: https://learn.microsoft.com/microsoftteams/app-centric-management
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsAppSetupPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsappsetuppolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.4.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.5.1v2
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.5.2v2
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.5.3v2
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-009
+title: Limit the lifetime of application certificates
+finding:
+  title: Application certificates can be registered with a lifetime of several years
+  description: A certificate credential that stays valid for years gives an attacker who copied the private key long-lasting access as the application.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, workload-identities, credentials, certificates, app-management-policy]
+
+description: |
+  The tenant-wide app management policy enforces a maximum lifetime of
+  **{{ app_cert_max_days }}** days for asymmetric key credentials (certificates) added to
+  applications and service principals.
+rationale: |
+  Certificates are the preferred application credential, but a private key exported from a
+  server or a pipeline is as useful to an attacker as a secret. A short lifetime limits the window
+  of use of a stolen key and makes rotation a routine operation rather than an emergency.
+impact: |
+  Certificates must be renewed at least every {{ app_cert_max_days }} days. Automate renewal (for
+  example through Azure Key Vault) before enforcing. Certificates issued by public CAs with a
+  longer validity cannot be uploaded until reissued.
+
+setting:
+  location: Entra admin center > Entra ID > Enterprise apps > Application policies > Restrict max certificate lifetime (Graph policies/defaultAppManagementPolicy, keyCredentials restriction asymmetricKeyLifetime)
+  default_value: Not configured
+  recommended_value: On, at most {{ app_cert_max_days }} days, applies to all applications
+parameters:
+  - name: app_cert_max_days
+    type: integer
+    description: Maximum lifetime of a new application certificate.
+    unit: days
+    default: 180
+    minimum: 1
+    maximum: 365
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies**.
+    3. Check that the certificate lifetime restriction is **On**, set to at most
+       {{ app_cert_max_days }} days, and applies to **All applications**.
+    4. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Check that
+       `isEnabled` is `true` and that `keyCredentials` for applications and service principals
+       contains `asymmetricKeyLifetime` with `state` = `enabled` and `maxLifetime` of at most
+       `P{{ app_cert_max_days }}D`.
+    5. Fail if the restriction is missing, disabled or longer than {{ app_cert_max_days }} days.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as a Security Administrator together with
+       Application Administrator or Cloud Application Administrator.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies** and open the
+       certificate lifetime restriction.
+    3. Set it to **On**, enter {{ app_cert_max_days }} days, set **Applies to** to **All
+       applications** and select **Save**.
+    4. Graph alternative (scope `Policy.ReadWrite.ApplicationConfiguration`):
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` adding
+       `{"restrictionType": "asymmetricKeyLifetime", "state": "enabled", "maxLifetime": "P{{ app_cert_max_days }}D"}`
+       to `keyCredentials` for applications and service principals, keeping existing restrictions.
+  rollback: |
+    Set the certificate lifetime restriction to **Off** or raise the maximum lifetime.
+
+references:
+  - title: Configure restrictions on how applications can be configured
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-app-management-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: tenantAppManagementPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/tenantappmanagementpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.6"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.7v1
+    relation: stricter
+    note: 180 days by default instead of 365.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+related_controls:
+  - id: CB-M365-APPS-007
+    type: related
+  - id: CB-M365-APPS-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

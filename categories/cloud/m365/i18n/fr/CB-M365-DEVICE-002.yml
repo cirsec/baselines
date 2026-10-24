@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer par défaut l'inscription Intune des appareils personnels
+finding:
+  title: Les appareils personnels peuvent s'inscrire dans Intune
+  description: Les utilisateurs peuvent inscrire leurs propres téléphones et ordinateurs, qui comptent alors comme appareils d'entreprise gérés dans les décisions d'accès.
+description: |
+  La stratégie Intune **Restriction de plateforme d'appareil** par défaut (celle de plus faible
+  priorité, nommée **Tous les utilisateurs**) bloque les appareils **Personnels** pour chaque
+  plateforme utilisée : Windows, macOS, iOS/iPadOS et profil professionnel Android Enterprise. Les
+  plateformes que l'organisation n'utilise pas sont bloquées entièrement. Les exceptions pour des
+  groupes précis passent par une stratégie de restriction de priorité plus haute, jamais par un
+  assouplissement de la stratégie par défaut.
+
+  Les appareils d'entreprise s'inscrivent toujours par les méthodes d'entreprise : Windows
+  Autopilot, Apple Automated Device Enrollment, identifiants d'appareils d'entreprise, provisionnement
+  en bloc ou compte de gestionnaire d'inscription d'appareil.
+rationale: |
+  Un appareil personnel inscrit dans Intune devient un appareil géré, éventuellement conforme, dans
+  Entra ID. Il passe alors les contrôles d'accès conditionnel prévus pour les appareils d'entreprise,
+  alors que l'organisation ne maîtrise ni son matériel, ni ses autres utilisateurs, ni son cycle de
+  vie. Bloquer l'inscription personnelle par défaut garde à « géré » le sens « détenu par
+  l'organisation » et oriente les appareils personnels vers les stratégies de protection
+  d'applications (MAM).
+impact: |
+  Les utilisateurs ne peuvent plus inscrire d'appareils personnels via le Portail d'entreprise ou le
+  parcours Windows « Ajouter un compte professionnel ». Une organisation avec un programme BYOD doit
+  créer une restriction de plateforme de priorité plus haute pour le groupe BYOD, ou basculer ces
+  utilisateurs sur des stratégies de protection d'applications sans inscription. Les appareils
+  iOS/iPadOS et macOS sont classés personnels sauf inscription par Automated Device Enrollment ou
+  enregistrement par numéro de série : enregistrer d'abord les appareils d'entreprise.
+notes: |
+  Microsoft précise que les restrictions d'inscription ne sont pas une frontière de sécurité : un
+  appareil compromis peut mentir sur sa propriété. Elles évitent les inscriptions accidentelles et se
+  combinent avec l'accès conditionnel et les stratégies de conformité. Les inscriptions sans
+  utilisateur (Autopilot en mode auto-déploiement, inscription en bloc, cogestion) utilisent
+  toujours la stratégie par défaut.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Intune (https://intune.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Appareils** > **Intégration des appareils** > **Inscription** > **Restriction de
+       plateforme d'appareil**.
+    3. Pour chaque onglet de plateforme (Windows, macOS, iOS/iPadOS, Android), ouvrir la stratégie
+       par défaut **Tous les utilisateurs** et vérifier sous **Paramètres de plateforme** que
+       **Appareils personnels** vaut **Bloquer** pour chaque plateforme autorisée.
+    4. Examiner les stratégies de restriction de priorité plus haute qui autorisent les appareils
+       personnels : chacune doit cibler un groupe nommé avec une exception BYOD approuvée.
+    5. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       "https://graph.microsoft.com/beta/deviceManagement/deviceEnrollmentConfigurations"` et lire
+       `personalDeviceEnrollmentBlocked` dans les objets de restriction de plateforme de la
+       configuration par défaut (priorité 0).
+    6. Échec si la stratégie par défaut autorise les appareils personnels sur une plateforme utilisée.
+remediation:
+  manual: |
+    1. Enregistrer par numéro de série les appareils iOS/iPadOS et macOS d'entreprise existants, ou
+       les inscrire par Automated Device Enrollment, pour qu'ils ne soient pas reclassés personnels.
+    2. Dans le centre d'administration Intune, aller dans **Appareils** > **Intégration des
+       appareils** > **Inscription** > **Restriction de plateforme d'appareil**.
+    3. Sur chaque onglet de plateforme, ouvrir la stratégie par défaut **Tous les utilisateurs**,
+       sélectionner **Propriétés** > **Paramètres de plateforme** > **Modifier**, et régler
+       **Appareils personnels** sur **Bloquer** (bloquer la plateforme elle-même si elle n'est pas
+       utilisée). Enregistrer. Rôle : administrateur Intune, ou rôle personnalisé avec l'autorisation
+       de mise à jour des **programmes d'inscription**.
+    4. Si un programme BYOD existe, créer une stratégie de restriction de priorité plus haute qui
+       autorise les appareils personnels pour le seul groupe BYOD.
+  rollback: |
+    Remettre **Appareils personnels** sur **Autoriser** dans la stratégie de restriction par défaut
+    de la plateforme concernée.

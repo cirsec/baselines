@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-023
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer le transfert d'authentification
+finding:
+  title: Le transfert d'authentification est autorisé
+  description: Les utilisateurs peuvent déplacer une session ouverte d'un ordinateur vers un appareil mobile en scannant un QR code, ce qui amène la session sur des appareils qui ne sont peut-être pas gérés.
+description: |
+  Une stratégie d'accès conditionnel pour **Tous les utilisateurs** sur **Toutes les ressources**
+  bloque le flux d'authentification **Transfert d'authentification**. Le transfert
+  d'authentification permet à un utilisateur connecté à une application de bureau, comme Outlook,
+  de se connecter à l'application mobile en scannant un QR code, sans s'authentifier de nouveau sur
+  le téléphone.
+
+  La stratégie n'exclut que les comptes d'accès d'urgence.
+rationale: |
+  Le transfert porte l'authentification du poste vers un autre appareil sans nouvelle connexion,
+  donc cet appareil ne prouve jamais par lui-même qu'il satisfait les exigences d'appareil ou de
+  MFA. Un attaquant qui accède quelques instants à un ordinateur déverrouillé peut s'en servir pour
+  obtenir une session durable sur son propre téléphone.
+impact: |
+  Les utilisateurs doivent se connecter normalement à l'application mobile. Le QR code de
+  commodité d'Outlook pour Windows et Mac ne fonctionne plus.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où **Utilisateurs** inclut **Tous les
+       utilisateurs** (seuls les comptes d'accès d'urgence exclus), **Ressources cibles** inclut
+       **Toutes les ressources**, **Conditions** > **Flux d'authentification** sélectionne
+       **Transfert d'authentification**, et **Accorder** vaut **Bloquer l'accès**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.AuthenticationFlows.TransferMethods -match 'authenticationTransfer' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    5. Échec si aucune stratégie de ce type n'existe, ou si elle est en Rapport seul ou Désactivée.
+remediation:
+  manual: |
+    1. Avec au moins le rôle Administrateur de l'accès conditionnel, aller dans **Entra ID** >
+       **Accès conditionnel** > **Stratégies** et sélectionner **Nouvelle stratégie**. Une même
+       stratégie peut bloquer le flux de code d'appareil et le transfert d'authentification.
+    2. La nommer, par exemple `ALL - Block authentication transfer`.
+    3. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    4. **Ressources cibles** > **Ressources** > **Inclure** : **Toutes les ressources**.
+    5. **Conditions** > **Flux d'authentification** : **Configurer** sur **Oui**, sélectionner
+       **Transfert d'authentification**.
+    6. **Accorder** : **Bloquer l'accès**.
+    7. Régler **Activer la stratégie** sur **Rapport seul**, examiner, puis passer à **Activé**.
+    Équivalent Graph : `New-MgIdentityConditionalAccessPolicy` avec
+    `conditions.authenticationFlows.transferMethods` à `authenticationTransfer` et
+    `grantControls.builtInControls` à `block`.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**.

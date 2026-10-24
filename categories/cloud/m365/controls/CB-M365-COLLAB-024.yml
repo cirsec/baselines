@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-024
+title: Prevent anonymous users and dial-in callers from starting Teams meetings
+finding:
+  title: Anonymous users and dial-in callers can start Teams meetings without an organizer
+  description: Anyone holding a meeting link or dial-in number can use the organization's meeting at any time, with nobody from the organization present.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, meetings, anonymous-access, lobby]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Anonymous participants and people dialing in by phone wait in the lobby until an authenticated
+  participant (someone from the organization, a guest or a trusted organization user) starts the
+  meeting (`AllowAnonymousUsersToStartMeeting` = `False` in every meeting policy).
+rationale: |
+  Leaderless meetings let unverified people meet on the organization's bridge at unscheduled times,
+  reuse old meeting links for their own purposes, and run up audio conferencing costs. Keeping them in
+  the lobby until a verified participant arrives keeps control of the meeting with its organizer.
+impact: |
+  Recurring meetings where external dial-in participants used to start without the organizer must wait
+  for an internal participant. None known otherwise; Off is the default.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Meeting join & lobby > Anonymous users and dial-in callers can start a meeting
+  default_value: "Off"
+  recommended_value: Off (AllowAnonymousUsersToStartMeeting = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Meeting join & lobby** section, check that **Anonymous users and dial-in callers can
+       start a meeting** is **Off**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowAnonymousUsersToStartMeeting`.
+    5. Fail if any policy returns `True`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Meeting join & lobby** section, set **Anonymous users and dial-in callers can start a
+       meeting** to **Off** and **Save**. Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowAnonymousUsersToStartMeeting $false` (repeat
+       with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+
+references:
+  - title: Manage lobby options in Microsoft Teams
+    url: https://learn.microsoft.com/microsoftteams/who-can-bypass-meeting-lobby
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Teams baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/teams.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.TEAMS.1.2v2
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+related_controls:
+  - id: CB-M365-COLLAB-023
+    type: related
+  - id: CB-M365-COLLAB-025
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

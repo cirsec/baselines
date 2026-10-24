@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DATA-006
+title: Extend sensitivity labels to SharePoint, groups and sites, with default and automatic labelling
+finding:
+  title: Sensitivity labels are published but not applied to containers, by default or automatically
+  description: Labels depend entirely on users remembering to apply them, SharePoint cannot process labelled files, and Teams, groups and sites carry no classification.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [sensitivity-labels, information-protection, purview, sharepoint, groups, auto-labeling]
+
+description: |
+  On top of published labels (CB-M365-DATA-005):
+
+  - sensitivity labels are enabled for Office files in SharePoint and OneDrive
+    (`EnableAIPIntegration` = `True`), so that labelled and encrypted files can be searched,
+    co-authored and scanned by DLP;
+  - labels are enabled for Microsoft 365 groups, Teams and SharePoint sites (directory setting
+    `EnableMIPLabels` = `True`), and at least one label defines privacy, external sharing and
+    guest access settings for containers;
+  - the publishing policy sets a default label for documents and emails, and requires a
+    justification to remove or lower a label;
+  - at least one auto-labelling policy (service-side, or client-side in the label) applies a label
+    to content that matches the sensitive information types of CB-M365-DATA-001, and is turned on
+    after simulation.
+rationale: |
+  Manual labelling alone leaves most content unlabelled. Default labels and automatic labelling
+  give a baseline classification without user effort, container labels carry the classification
+  to Teams and sites where data is shared, and SharePoint integration keeps encrypted files usable
+  by search, eDiscovery and DLP instead of making them opaque.
+impact: |
+  Service-side auto-labelling needs Microsoft 365 E5 or E5 Compliance (or the Information
+  Protection and Governance add-on). Container labels change the options shown to users when they
+  create a team or site. Run auto-labelling in simulation and review matches before turning it on.
+
+audit:
+  manual: |
+    1. In SharePoint Online PowerShell (as at least a SharePoint Administrator in read use, or with
+       Global Reader through the SharePoint admin center), run
+       `Get-SPOTenant | Select-Object EnableAIPIntegration` and check it is `True`.
+    2. In Microsoft Graph PowerShell (scope `Directory.Read.All`), run
+       `(Get-MgBetaDirectorySetting | Where-Object DisplayName -eq 'Group.Unified').Values` and check
+       that `EnableMIPLabels` is `True`.
+    3. In the Microsoft Purview portal (https://purview.microsoft.com) as at least a Global Reader,
+       browse to **Solutions** > **Information Protection** > **Sensitivity labels** and check that at
+       least one label has the **Groups & sites** scope configured.
+    4. Open **Publishing policies** and check that a default label is set for documents and emails
+       and that **Users must provide a justification to remove a label or lower its classification**
+       is on. PowerShell: `Get-LabelPolicy | Format-List Name,Settings`.
+    5. Browse to **Solutions** > **Information Protection** > **Auto-labeling policies** and check
+       that a policy is **On** (not in simulation). PowerShell:
+       `Get-AutoSensitivityLabelPolicy | Format-List Name,Mode,ApplySensitivityLabel`.
+    6. Fail if any of these elements is missing.
+
+remediation:
+  manual: |
+    1. In SharePoint Online PowerShell as a SharePoint Administrator: `Set-SPOTenant
+       -EnableAIPIntegration $true`.
+    2. As a Global Administrator, set `EnableMIPLabels` to `True` in the `Group.Unified` directory
+       setting (Graph PowerShell `Update-MgBetaDirectorySetting`), then synchronize labels with
+       `Execute-AzureAdLabelSync` in Security & Compliance PowerShell.
+    3. In the Microsoft Purview portal as an Information Protection Admin, edit the labels to add the
+       **Groups & sites** scope with privacy, external user access and sharing settings.
+    4. Edit the publishing policy: set a default label for documents and emails and require
+       justification for label removal.
+    5. Create an auto-labeling policy for the sensitive information types of CB-M365-DATA-001 on
+       Exchange, SharePoint and OneDrive, run it in simulation, review, then turn it on.
+  rollback: |
+    Set the auto-labelling policy back to simulation, remove the default label from the publishing
+    policy, or set `EnableAIPIntegration` to `False`.
+
+references:
+  - title: Enable sensitivity labels for Office files in SharePoint and OneDrive
+    url: https://learn.microsoft.com/purview/sensitivity-labels-sharepoint-onedrive-files
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Use sensitivity labels to protect content in Microsoft Teams, Microsoft 365 groups, and SharePoint sites
+    url: https://learn.microsoft.com/purview/sensitivity-labels-teams-groups-sites
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Apply a sensitivity label to content automatically
+    url: https://learn.microsoft.com/purview/apply-sensitivity-label-automatically
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud
+    url: https://blueprint.asd.gov.au/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-16
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: MP-3
+    relation: related
+related_controls:
+  - id: CB-M365-DATA-005
+    type: requires
+  - id: CB-M365-TENANT-007
+    type: related
+  - id: CB-M365-POWER-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

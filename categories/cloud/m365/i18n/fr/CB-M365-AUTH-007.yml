@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-007
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les codes à usage unique dans Microsoft Authenticator
+finding:
+  title: Les codes à usage unique de Microsoft Authenticator sont autorisés
+  description: Les utilisateurs peuvent saisir un code à six chiffres d'Authenticator au lieu de répondre à une notification avec correspondance de nombres, et une page d'hameçonnage peut collecter et rejouer ce code.
+description: |
+  Dans la stratégie des méthodes d'authentification, **Allow use of Microsoft Authenticator OTP**
+  est réglé sur **No**. Les utilisateurs de Microsoft Authenticator terminent alors la MFA par une
+  notification push avec correspondance de nombres ou par une passkey Authenticator, jamais par un
+  code temporel saisi.
+
+  Les jetons OATH logiciels tiers et matériels sont des méthodes distinctes de la stratégie
+  (**Software OATH tokens**, **Hardware OATH tokens**) ; les laisser désactivés sauf pour une
+  population documentée qui en a besoin.
+rationale: |
+  Un code à usage unique n'affiche aucun contexte et n'est lié à aucune page de connexion : un proxy
+  d'hameçonnage le demande et le rejoue pendant sa période de validité. Le push avec correspondance
+  de nombres montre au moins l'application, l'emplacement et un nombre issu du vrai écran de
+  connexion.
+impact: |
+  Les utilisateurs ne peuvent plus se connecter quand le téléphone n'a pas de réseau, le push en
+  ayant besoin. L'extension NPS s'appuie sur les codes pour certains scénarios VPN ; les vérifier
+  d'abord. Les utilisateurs disposant d'une passkey dans Authenticator ne sont pas concernés.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Stratégies > Microsoft Authenticator > Configurer > Allow use of Microsoft Authenticator OTP
+  recommended_value: "No"
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et sélectionner
+       **Microsoft Authenticator**.
+    3. Dans l'onglet **Configurer**, lire **Allow use of Microsoft Authenticator OTP**.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId MicrosoftAuthenticator).AdditionalProperties.isSoftwareOathEnabled`
+    5. Échec si le réglage vaut **Yes** (`isSoftwareOathEnabled` vaut `true`).
+remediation:
+  manual: |
+    1. Vérifier l'extension NPS et les autres intégrations par code, et passer leurs utilisateurs
+       au push.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Microsoft
+       Authenticator** > **Configurer**.
+    4. Régler **Allow use of Microsoft Authenticator OTP** sur **No** et sélectionner
+       **Enregistrer**.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`
+    avec `"isSoftwareOathEnabled": false` (renvoyer la configuration entière).
+  rollback: |
+    Remettre **Allow use of Microsoft Authenticator OTP** sur **Yes**.

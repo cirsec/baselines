@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-024
+title: Govern the lifecycle of Copilot Studio agents
+finding:
+  title: Copilot Studio agents run without active owners, reviews or behavioral guardrails
+  description: Some agents have disabled or deleted owners, have not been updated for a long time, use unreviewed MCP servers, send email with AI-chosen content, or use generative orchestration without instructions.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [copilot-studio, ai-agents, lifecycle, ownership, mcp, prompt-injection]
+
+applicability:
+  requires:
+    - "Microsoft Copilot Studio"
+
+description: |
+  Every published Copilot Studio agent is reviewed at least every `{{ agent_dormant_days }}` days
+  and meets these conditions:
+
+  - its owner is an enabled account; agents whose owner left are reassigned or unpublished;
+  - it was modified or explicitly re-approved within the last `{{ agent_dormant_days }}` days;
+    dormant agents are updated, unpublished or deleted;
+  - each MCP server it uses is owned by the organization or a trusted partner, reached over HTTPS
+    with authentication, and recorded as reviewed;
+  - email-sending tools, if any, use fixed or restricted recipients, not addresses or bodies chosen
+    by the model from user input;
+  - agents with generative orchestration have custom instructions that state their purpose, their
+    limits and how to handle attempts to override them.
+rationale: |
+  Agents accumulate permissions, connections and knowledge sources. Without an owner nobody fixes
+  their configuration or answers for an incident; dormant agents keep running with outdated
+  settings. MCP servers are third-party code the agent trusts: a compromised or poisoned server can
+  instruct the agent to exfiltrate data. An agent that lets the model decide the recipient of an
+  email is a ready-made exfiltration channel for prompt injection, and an agent with generative
+  orchestration and no instructions relies entirely on default model behavior.
+impact: |
+  Agent owners must answer periodic reviews and may have to republish agents with new instructions
+  or restricted tools. Unpublishing dormant or orphaned agents can break workflows that still use
+  them: notify their users first.
+
+parameters:
+  - name: agent_dormant_days
+    type: integer
+    unit: days
+    description: Longest period a published agent can go without modification or re-approval.
+    default: 180
+    minimum: 30
+
+audit:
+  manual: |
+    1. For each environment, sign in to Copilot Studio (https://copilotstudio.microsoft.com) as an
+       environment admin or System Administrator and list the published agents with their owner and
+       last modification date. Check each owner in the Microsoft Entra admin center
+       (**Entra ID** > **Users**) as a Global Reader.
+    2. Open each agent and check: **Tools** for MCP servers (compare with the list of reviewed
+       servers) and email tools (recipient fixed or restricted); **Overview** > **Instructions** when
+       generative orchestration is on.
+    3. Alternative, read only: query the Dataverse `bots` and `botcomponents` tables, or run the
+       Maester tests MT.1116, MT.1117, MT.1120, MT.1121 and MT.1122
+       (`Connect-Maester -Service Dataverse,Graph`).
+    4. Fail if an agent has a disabled or deleted owner, was not modified or re-approved for more
+       than `{{ agent_dormant_days }}` days, uses an MCP server not recorded as reviewed, sends email
+       with model-chosen recipients or content, or uses generative orchestration without
+       instructions.
+
+remediation:
+  manual: |
+    1. Reassign orphaned agents to an active owner (agent sharing as **Editor**, or the agent owner
+       field in Dataverse), or unpublish and delete them. Role: environment admin or System
+       Administrator.
+    2. Ask owners of dormant agents to update or re-approve them; unpublish the others.
+    3. Review each MCP server (owner, hosting, authentication, HTTPS); remove unreviewed ones, or
+       replace them with custom connectors covered by data policies.
+    4. Restrict email tools to fixed recipients, or remove them; block the Office 365 Outlook send
+       actions with advanced connector policies where agents must not send email.
+    5. Add custom instructions to agents with generative orchestration and republish.
+    6. Schedule the review every `{{ agent_dormant_days }}` days.
+  rollback: |
+    Republish an agent from its previous version if a change breaks a legitimate workflow.
+
+references:
+  - title: Security and governance in Copilot Studio
+    url: https://learn.microsoft.com/microsoft-copilot-studio/security-and-governance
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Extend your agent with Model Context Protocol
+    url: https://learn.microsoft.com/microsoft-copilot-studio/agent-extend-action-mcp
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1122
+    url: https://maester.dev/docs/tests/MT.1122
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+  - framework: mitre-attack
+    id: T1195
+related_controls:
+  - id: CB-M365-POWER-022
+    type: related
+  - id: CB-M365-POWER-023
+    type: related
+  - id: CB-M365-TENANT-020
+    type: related
+  - id: CB-M365-APPS-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

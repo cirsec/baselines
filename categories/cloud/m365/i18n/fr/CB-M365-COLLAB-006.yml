@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver le partage externe aux membres de groupes de sécurité approuvés
+finding:
+  title: Tout utilisateur peut partager du contenu SharePoint et OneDrive avec des personnes externes
+  description: "Le droit de partage externe n'est pas limité aux personnes dont le rôle l'exige : tout compte compromis ou imprudent peut envoyer du contenu à l'extérieur."
+description: |
+  Seuls les membres des groupes de sécurité `{{ external_sharing_groups }}` peuvent partager du
+  contenu SharePoint et OneDrive avec des invités. Dans le centre d'administration SharePoint, c'est
+  **Autoriser uniquement les utilisateurs de groupes de sécurité spécifiques à partager à
+  l'extérieur** ; les groupes sont enregistrés dans `WhoCanShareAuthenticatedGuestAllowList` (et
+  `WhoCanShareAnonymousAllowList` si les liens **Tout le monde** sont autorisés). Les autres
+  utilisateurs peuvent toujours partager en interne.
+rationale: |
+  La plupart des utilisateurs n'ont jamais besoin de partager hors de l'organisation. Réserver ce
+  droit à des groupes nommés réduit le nombre de comptes capables d'exfiltrer du contenu par partage,
+  rend le partage externe restant vérifiable par l'appartenance aux groupes et limite ce qu'un compte
+  ordinaire compromis peut exposer.
+impact: |
+  Les utilisateurs hors des groupes reçoivent une erreur en partageant avec une adresse externe et
+  doivent passer par un membre du groupe ou demander leur ajout. Prévoir le processus de demande et
+  les propriétaires des groupes. La liste n'accepte que des groupes de sécurité (pas des groupes
+  Microsoft 365). Les invités déjà ajoutés à une équipe ou à un site gardent leur accès.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Plus de paramètres de partage externe > Autoriser uniquement les utilisateurs de groupes de sécurité spécifiques à partager à l'extérieur
+  recommended_value: "Activé, limité à {{ external_sharing_groups }}"
+parameters:
+  external_sharing_groups: Groupes de sécurité (noms ou ID d'objet) dont les membres peuvent partager à l'extérieur.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage** > **Plus de paramètres de partage externe**.
+    3. Vérifier que **Autoriser uniquement les utilisateurs de groupes de sécurité spécifiques à
+       partager à l'extérieur** est coché et que **Gérer les groupes de sécurité** ne liste que
+       `{{ external_sharing_groups }}`.
+    4. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object WhoCanShareAuthenticatedGuestAllowList, WhoCanShareAnonymousAllowList`
+       puis résoudre les GUID dans Entra.
+    5. Échec si le partage externe est autorisé et que la restriction est désactivée, ou si un groupe
+       hors de la liste approuvée est présent.
+remediation:
+  manual: |
+    1. Créer (ou réutiliser) un groupe de sécurité pour les personnes autorisées à partager à
+       l'extérieur, avec un propriétaire qui approuve les ajouts. Le faire revoir par une revue d'accès
+       si possible.
+    2. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Plus de
+       paramètres de partage externe**, cocher **Autoriser uniquement les utilisateurs de groupes de
+       sécurité spécifiques à partager à l'extérieur**, puis **Gérer les groupes de sécurité**, ajouter
+       les groupes et choisir **Peut partager avec des invités authentifiés**. Sélectionner
+       **Enregistrer**. Rôle : Administrateur SharePoint.
+    3. Équivalent PowerShell :
+       `Set-SPOTenant -WhoCanShareAuthenticatedGuestAllowList "<ID d'objet du groupe>"` (ID séparés par
+       des virgules).
+  rollback: |
+    Décocher **Autoriser uniquement les utilisateurs de groupes de sécurité spécifiques à partager à
+    l'extérieur**, ou ajouter le groupe manquant.

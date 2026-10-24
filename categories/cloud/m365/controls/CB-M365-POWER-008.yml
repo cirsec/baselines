@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-POWER-008
+title: Restrict Power Pages site creation to administrators
+finding:
+  title: Any maker can create Power Pages sites
+  description: Non-administrators can create public-facing websites connected to Dataverse data, with their own access and anonymous settings.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [power-platform, power-pages, public-websites, governance]
+
+description: |
+  The Power Platform tenant setting `disablePortalsCreationByNonAdminUsers` is `true`. Only Dynamics
+  365 Administrators and Power Platform Administrators can create Power Pages sites; makers request
+  a site from the platform team, which reviews its exposure, authentication and table permissions.
+rationale: |
+  A Power Pages site is an internet-facing web application on top of Dataverse. A maker who
+  misconfigures table permissions or anonymous access can expose business records to the whole
+  internet, which has happened repeatedly in real incidents. Restricting site creation ensures each
+  public site is reviewed before it exists.
+impact: |
+  Makers who try to create a site get a permission error and must go through the platform team.
+  Existing sites are not affected; review them separately (anonymous access, table permissions,
+  site visibility).
+notes: |
+  The setting has no switch in the Power Platform admin center and is managed with PowerShell or
+  the Power Platform API.
+
+setting:
+  location: Power Platform tenant settings (PowerShell) > disablePortalsCreationByNonAdminUsers
+  default_value: "false"
+  recommended_value: "true"
+
+audit:
+  manual: |
+    1. Install the `Microsoft.PowerApps.Administration.PowerShell` module and run
+       `Add-PowerAppsAccount` as a Power Platform Administrator (no read-only role exposes tenant
+       settings to PowerShell).
+    2. Run `(Get-TenantSettings).disablePortalsCreationByNonAdminUsers`.
+    3. Fail if the value is `False` or absent.
+
+remediation:
+  manual: |
+    1. Run `Add-PowerAppsAccount` as a Power Platform Administrator.
+    2. Run `Set-TenantSettings -RequestBody @{ disablePortalsCreationByNonAdminUsers = $true }`.
+    3. Check again with `Get-TenantSettings`.
+    4. Review existing sites in the Power Pages admin pages (**Manage** > **Power Pages sites** in
+       the Power Platform admin center): visibility, anonymous access and table permissions.
+  rollback: |
+    Run `Set-TenantSettings -RequestBody @{ disablePortalsCreationByNonAdminUsers = $false }`.
+
+references:
+  - title: Control site creation in a tenant
+    url: https://learn.microsoft.com/power-pages/admin/control-site-creation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Power Platform baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/powerplatform.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.POWERPLATFORM.5.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(10)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-22
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-POWER-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

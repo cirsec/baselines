@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-043
+title: Notify all Global Administrators when an administrator resets their password
+finding:
+  title: Administrator password resets through SSPR are not reported to the other administrators
+  description: A takeover of a privileged account through the reset process goes unnoticed by the people best placed to react.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [sspr, notifications, privileged-access, account-recovery]
+
+description: |
+  In the self-service password reset settings, **Notify all admins when other admins reset their
+  password?** is **Yes**. When an administrator resets their own password with SSPR, every Global
+  Administrator receives an email at their primary address.
+rationale: |
+  A reset of an administrator password is rare and sensitive. Informing the other administrators
+  gives a second pair of eyes: an unexpected reset of a colleague's account is a strong signal of
+  takeover that can be checked within minutes.
+impact: |
+  Global Administrators receive an email for each administrator self-service reset. If Global
+  Administrators have no monitored mailbox, route the notifications to the security team with the
+  SSPR customization link or a mail flow rule.
+notes: |
+  Only Global Administrators are notified. Alerting the SOC on the corresponding audit event
+  (**Reset password (self-service)** on a privileged account) gives a more reliable signal; it is
+  covered by the audit domain.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Password reset > Notifications > Notify all admins when other admins reset their password?
+  default_value: "No"
+  recommended_value: "Yes"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Password reset** > **Notifications**.
+    3. Check that **Notify all admins when other admins reset their password?** is **Yes**.
+    4. Fail if it is **No**.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Password reset** > **Notifications**.
+    3. Set **Notify all admins when other admins reset their password?** to **Yes** and **Save**.
+  rollback: |
+    Set the option to **No**.
+
+references:
+  - title: How self-service password reset works - notifications
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-howitworks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: "Tutorial: Enable users to unlock their account or reset passwords using Microsoft Entra self-service password reset"
+    url: https://learn.microsoft.com/entra/identity/authentication/tutorial-enable-sspr
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.4.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(4)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-039
+    type: requires
+  - id: CB-M365-AUTH-042
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

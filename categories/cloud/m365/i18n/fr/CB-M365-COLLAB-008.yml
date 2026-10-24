@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Régler le type de lien de partage par défaut sur Personnes spécifiques
+finding:
+  title: Le lien de partage par défaut donne accès à plus de personnes que celles choisies par l'utilisateur
+  description: "Quand l'utilisateur clique sur Partager ou Copier le lien, le lien proposé fonctionne pour toute l'organisation ou pour quiconque le détient : le contenu circule plus loin que prévu."
+description: |
+  Le type de lien sélectionné par défaut quand un utilisateur partage un fichier ou un dossier dans
+  SharePoint ou OneDrive est **Personnes spécifiques** (`DefaultSharingLinkType` = `Direct`) : le lien
+  ne fonctionne que pour les personnes nommées. Les utilisateurs peuvent toujours choisir un type plus
+  large si les paramètres de partage le permettent.
+rationale: |
+  La plupart des utilisateurs acceptent le lien par défaut. Un défaut **Personnes de votre
+  organisation** ou **Tout le monde** expose le contenu à toute personne qui reçoit le lien transféré,
+  le rend visible par Copilot et la recherche pour chaque utilisateur interne qui l'ouvre, et ne garde
+  aucune trace du public visé. Un défaut sur des personnes nommées limite le surpartage sans bloquer
+  aucun usage.
+impact: |
+  Les utilisateurs qui veulent un lien large doivent changer le type de lien dans la boîte de partage.
+  Les sites et OneDrive qui ont leur propre lien par défaut le conservent : les revoir avec
+  `Get-SPOSite -Limit All | Select-Object Url, DefaultSharingLinkType`.
+setting:
+  location: Centre d'administration SharePoint > Stratégies > Partage > Liens vers des fichiers et des dossiers
+  recommended_value: Personnes spécifiques (DefaultSharingLinkType = Direct)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration SharePoint (https://admin.microsoft.com/sharepoint) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Stratégies** > **Partage** > **Liens vers des fichiers et des dossiers** et vérifier
+       que **Personnes spécifiques (uniquement les personnes spécifiées par l'utilisateur)** est
+       sélectionné.
+    3. Avec SharePoint Online Management Shell (Administrateur SharePoint) :
+       `Get-SPOTenant | Select-Object DefaultSharingLinkType` doit renvoyer `Direct`. Lister les sites
+       qui le remplacent avec
+       `Get-SPOSite -Limit All | Where-Object { $_.DefaultSharingLinkType -notin 'None','Direct' }`.
+    4. Échec si la valeur par défaut du tenant n'est pas `Direct`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration SharePoint, aller dans **Stratégies** > **Partage** > **Liens
+       vers des fichiers et des dossiers**, sélectionner **Personnes spécifiques (uniquement les
+       personnes spécifiées par l'utilisateur)** puis **Enregistrer**. Rôle : Administrateur SharePoint.
+    2. Équivalent PowerShell : `Set-SPOTenant -DefaultSharingLinkType Direct`.
+    3. Réinitialiser les sites qui remplacent la valeur par défaut avec
+       `Set-SPOSite -Identity <URL> -DefaultSharingLinkType None` (héritage) ou `Direct`.

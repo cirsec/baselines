@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-023
+title: Quarantine malware for admins only and notify admins of internal senders
+finding:
+  title: Nobody is told when an internal mailbox sends malware
+  description: An internal account that sends infected attachments is often compromised, yet the security team only learns about it if it searches the reports.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [exchange-online-protection, anti-malware, quarantine, notifications]
+
+description: |
+  In every anti-malware policy that applies to users:
+
+  - messages with malware are quarantined with the quarantine policy **AdminOnlyAccessPolicy**
+    (`QuarantineTag AdminOnlyAccessPolicy`): only administrators can release them;
+  - **Notify an admin about undelivered messages from internal senders** is on
+    (`EnableInternalSenderAdminNotifications $true`) and sends to {{ malware_admin_address }}
+    (`InternalSenderAdminAddress`).
+rationale: |
+  Malware sent from inside usually means a compromised account or device, and the security team
+  needs to act quickly. Admin-only quarantine prevents users from releasing an infected message
+  themselves.
+impact: |
+  The notification mailbox receives a message for each internal malware detection; route it to the
+  SOC queue. The preset policies use admin-only quarantine but do not send notifications: the
+  notification needs a custom policy or the default policy.
+notes: |
+  ORCA check ORCA-110 reads the same property but expects it to be off, based on the old
+  notification to the sender. The admin notification sends nothing to the sender, so this control
+  keeps it on, as the CIS benchmark does.
+
+parameters:
+  - name: malware_admin_address
+    type: string
+    description: Address that receives admin notifications for malware sent by internal users.
+    default: a monitored mailbox of the security operations team
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-malware** and open each policy.
+    3. Check that **Quarantine policy** is **AdminOnlyAccessPolicy** and that **Notify an admin about
+       undelivered messages from internal senders** is selected with the expected address.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-MalwareFilterPolicy | Format-Table Name, QuarantineTag, EnableInternalSenderAdminNotifications, InternalSenderAdminAddress
+       ```
+    5. Fail if a policy that applies to users uses a quarantine policy that lets users release
+       malware, or if no policy covering users sends internal sender notifications.
+
+remediation:
+  manual: |
+    1. In the Defender portal, open the policy > **Edit protection settings**, set **Quarantine
+       policy** to **AdminOnlyAccessPolicy**, select **Notify an admin about undelivered messages
+       from internal senders**, enter the address and save.
+    2. PowerShell equivalent (Security Administrator):
+       ```powershell
+       Set-MalwareFilterPolicy -Identity Default -QuarantineTag AdminOnlyAccessPolicy `
+         -EnableInternalSenderAdminNotifications $true -InternalSenderAdminAddress soc@example.com
+       ```
+  rollback: |
+    `Set-MalwareFilterPolicy -Identity Default -EnableInternalSenderAdminNotifications $false`.
+
+references:
+  - title: Configure anti-malware policies in EOP
+    url: https://learn.microsoft.com/defender-office-365/anti-malware-policies-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Quarantine policies
+    url: https://learn.microsoft.com/defender-office-365/quarantine-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.1.3v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-6
+    relation: related
+related_controls:
+  - id: CB-M365-MAIL-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

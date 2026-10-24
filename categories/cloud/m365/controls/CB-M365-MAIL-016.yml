@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-016
+title: Publish an enforcing DMARC policy with reporting for every domain
+finding:
+  title: Some domains have no DMARC policy, or one that does not quarantine or reject spoofed mail
+  description: Messages that forge the organization's domains in the visible From address can still reach recipients, and nobody receives reports about the forgery.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [dns, dmarc, email-authentication, spoofing, domains]
+
+description: |
+  Every domain the organization owns publishes a DMARC TXT record at `_dmarc.<domain>` with:
+
+  - `p={{ dmarc_policy }}` for domains that send mail, and `p=reject` for domains that never send
+    mail (parked domains);
+  - no `pct` tag, or `pct=100`;
+  - a subdomain policy (`sp`) that is absent or not weaker than `p`;
+  - aggregate reports (`rua`) sent to {{ dmarc_report_address }}.
+
+  SPF (CB-M365-MAIL-014) and DKIM (CB-M365-MAIL-015) must pass and align for legitimate senders
+  before the policy is enforced.
+rationale: |
+  DMARC is the only standard that protects the From address users actually see. With `p=none`,
+  receivers only report forgeries; with `quarantine` or `reject` they stop them, which protects
+  employees, customers and partners from phishing that uses the organization's name. Reports show
+  forgery attempts and forgotten legitimate senders.
+impact: |
+  Legitimate senders that fail SPF and DKIM alignment (a forgotten marketing tool, a partner that
+  sends on the organization's behalf) see their messages quarantined or rejected. Start with
+  `p=none`, read the reports for a few weeks, fix the senders, then move to `quarantine` and
+  `reject`. A third-party DMARC report service makes the reports usable.
+
+parameters:
+  - name: dmarc_policy
+    type: enum
+    description: DMARC policy required for domains that send mail.
+    default: quarantine
+    profile_defaults:
+      hardened: reject
+    allowed: [quarantine, reject]
+  - name: dmarc_report_address
+    type: string
+    description: Mailbox or report service that receives DMARC aggregate reports.
+    default: a mailbox or DMARC report service monitored by the organization
+
+audit:
+  manual: |
+    1. List the domains as in CB-M365-MAIL-014 (Microsoft 365 admin center > **Settings** >
+       **Domains**, plus registrar inventory).
+    2. For each domain, query DNS (no tenant role needed):
+       ```powershell
+       Get-AcceptedDomain | ForEach-Object {
+         Resolve-DnsName -Name "_dmarc.$($_.DomainName)" -Type TXT -ErrorAction SilentlyContinue | Select-Object Name, Strings
+       }
+       ```
+    3. Fail if a domain has no DMARC record, if a sending domain's policy is weaker than
+       `{{ dmarc_policy }}`, if a parked domain is not `p=reject`, if `pct` is below 100, if `sp` is
+       weaker than the required policy, or if there is no `rua` address.
+
+remediation:
+  manual: |
+    1. Publish a monitoring record first, for example
+       `v=DMARC1; p=none; rua=mailto:dmarc@example.com`, and analyze the aggregate reports.
+    2. Fix SPF and DKIM for every legitimate sender found in the reports.
+    3. At the DNS hosting provider, update the TXT record at `_dmarc.<domain>`:
+       ```text
+       v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com
+       ```
+       then `p=reject` where the parameter requires it.
+    4. For parked domains, publish `v=DMARC1; p=reject` directly.
+  rollback: |
+    Lower the policy to `p=none` while a delivery problem is investigated.
+
+references:
+  - title: Set up DMARC to validate the From address domain for cloud senders
+    url: https://learn.microsoft.com/defender-office-365/email-authentication-dmarc-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: "RFC 7489: Domain-based Message Authentication, Reporting, and Conformance (DMARC)"
+    url: https://www.rfc-editor.org/rfc/rfc7489
+    publisher: IETF
+    kind: rfc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.10"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.4.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.4.2v1
+    relation: looser
+    note: Our baseline accepts p=quarantine; the hardened value p=reject matches SCuBA.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.4.4v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-014
+    type: related
+  - id: CB-M365-MAIL-015
+    type: related
+  - id: CB-M365-MAIL-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

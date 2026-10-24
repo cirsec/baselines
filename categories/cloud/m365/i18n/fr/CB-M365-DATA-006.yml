@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Étendre les étiquettes de confidentialité à SharePoint, aux groupes et aux sites, avec étiquetage par défaut et automatique
+finding:
+  title: Les étiquettes de confidentialité sont publiées mais ni appliquées aux conteneurs, ni par défaut, ni automatiquement
+  description: Les étiquettes reposent entièrement sur la mémoire des utilisateurs, SharePoint ne sait pas traiter les fichiers étiquetés, et Teams, groupes et sites ne portent aucune classification.
+description: |
+  En plus des étiquettes publiées (CB-M365-DATA-005) :
+
+  - les étiquettes de confidentialité sont activées pour les fichiers Office dans SharePoint et
+    OneDrive (`EnableAIPIntegration` = `True`), afin que les fichiers étiquetés et chiffrés puissent
+    être recherchés, coédités et analysés par la DLP ;
+  - les étiquettes sont activées pour les groupes Microsoft 365, Teams et les sites SharePoint
+    (paramètre d'annuaire `EnableMIPLabels` = `True`), et au moins une étiquette définit
+    confidentialité, partage externe et accès invité pour les conteneurs ;
+  - la stratégie de publication définit une étiquette par défaut pour les documents et e-mails, et
+    exige une justification pour retirer ou abaisser une étiquette ;
+  - au moins une stratégie d'étiquetage automatique (côté service, ou côté client dans l'étiquette)
+    applique une étiquette au contenu qui correspond aux types d'informations sensibles de
+    CB-M365-DATA-001, et est activée après simulation.
+rationale: |
+  L'étiquetage manuel seul laisse la plupart des contenus sans étiquette. Les étiquettes par défaut
+  et l'étiquetage automatique donnent une classification de base sans effort utilisateur, les
+  étiquettes de conteneur portent la classification jusqu'aux équipes et sites où les données sont
+  partagées, et l'intégration SharePoint garde les fichiers chiffrés exploitables par la recherche,
+  l'eDiscovery et la DLP au lieu de les rendre opaques.
+impact: |
+  L'étiquetage automatique côté service demande Microsoft 365 E5 ou E5 Compliance (ou le module
+  Information Protection and Governance). Les étiquettes de conteneur changent les options proposées
+  aux utilisateurs à la création d'une équipe ou d'un site. Exécuter l'étiquetage automatique en
+  simulation et examiner les correspondances avant de l'activer.
+audit:
+  manual: |
+    1. En PowerShell SharePoint Online (avec au moins le rôle Administrateur SharePoint utilisé en
+       lecture, ou Lecteur général via le centre d'administration SharePoint), exécuter
+       `Get-SPOTenant | Select-Object EnableAIPIntegration` et vérifier la valeur `True`.
+    2. En Microsoft Graph PowerShell (étendue `Directory.Read.All`), exécuter
+       `(Get-MgBetaDirectorySetting | Where-Object DisplayName -eq 'Group.Unified').Values` et
+       vérifier que `EnableMIPLabels` vaut `True`.
+    3. Dans le portail Microsoft Purview (https://purview.microsoft.com) avec au moins le rôle Lecteur
+       général, aller dans **Solutions** > **Protection des informations** > **Étiquettes de
+       confidentialité** et vérifier qu'au moins une étiquette a l'étendue **Groupes et sites**
+       configurée.
+    4. Ouvrir **Stratégies de publication** et vérifier qu'une étiquette par défaut est définie pour
+       les documents et e-mails et que **Les utilisateurs doivent fournir une justification pour
+       supprimer une étiquette ou abaisser sa classification** est activé. PowerShell :
+       `Get-LabelPolicy | Format-List Name,Settings`.
+    5. Aller dans **Solutions** > **Protection des informations** > **Stratégies d'étiquetage
+       automatique** et vérifier qu'une stratégie est **Activée** (pas en simulation). PowerShell :
+       `Get-AutoSensitivityLabelPolicy | Format-List Name,Mode,ApplySensitivityLabel`.
+    6. Échec si l'un de ces éléments manque.
+remediation:
+  manual: |
+    1. En PowerShell SharePoint Online avec le rôle Administrateur SharePoint : `Set-SPOTenant
+       -EnableAIPIntegration $true`.
+    2. En tant qu'Administrateur général, passer `EnableMIPLabels` à `True` dans le paramètre
+       d'annuaire `Group.Unified` (Graph PowerShell `Update-MgBetaDirectorySetting`), puis
+       synchroniser les étiquettes avec `Execute-AzureAdLabelSync` en PowerShell Sécurité et
+       conformité.
+    3. Dans le portail Microsoft Purview avec le rôle Administrateur Information Protection, modifier
+       les étiquettes pour ajouter l'étendue **Groupes et sites** avec les réglages de
+       confidentialité, d'accès des utilisateurs externes et de partage.
+    4. Modifier la stratégie de publication : définir une étiquette par défaut pour les documents et
+       e-mails et exiger une justification pour le retrait d'étiquette.
+    5. Créer une stratégie d'étiquetage automatique pour les types d'informations sensibles de
+       CB-M365-DATA-001 sur Exchange, SharePoint et OneDrive, l'exécuter en simulation, examiner,
+       puis l'activer.
+  rollback: |
+    Remettre la stratégie d'étiquetage automatique en simulation, retirer l'étiquette par défaut de la
+    stratégie de publication, ou passer `EnableAIPIntegration` à `False`.

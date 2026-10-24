@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver la réinitialisation de mot de passe en libre-service pour les administrateurs
+finding:
+  title: Les administrateurs peuvent réinitialiser eux-mêmes leur mot de passe en libre-service
+  description: Un attaquant qui contrôle le numéro de téléphone ou la boîte de récupération d'un administrateur peut réinitialiser son mot de passe sans qu'aucun autre administrateur n'intervienne.
+setting:
+  location: "Microsoft Graph : /policies/authorizationPolicy, propriété allowedToUseSSPR"
+  recommended_value: "false"
+description: |
+  La stratégie d'autorisation du tenant règle `allowedToUseSSPR` sur `false` : les comptes qui
+  détiennent un rôle d'administration ne peuvent pas utiliser la réinitialisation de mot de passe
+  en libre-service. Leur mot de passe (s'ils en utilisent encore un) est réinitialisé par un autre
+  administrateur doté du rôle Administrateur d'authentification privilégié.
+rationale: |
+  La stratégie SSPR des administrateurs est gérée par Microsoft et accepte toujours deux méthodes
+  parmi téléphone mobile, e-mail et application, qui peuvent être détournées par échange de carte
+  SIM ou via une boîte personnelle compromise. La désactiver supprime ce chemin de récupération
+  pour les comptes les plus précieux. Les administrateurs qui se connectent avec des passkeys n'ont
+  de toute façon pas besoin de réinitialiser un mot de passe.
+impact: |
+  Un administrateur qui oublie son mot de passe doit s'adresser à un autre administrateur, ce qui
+  suppose une procédure documentée et un effectif disponible. Les comptes d'accès d'urgence ne sont
+  pas concernés car ils utilisent des clés de sécurité.
+notes: |
+  Le paramètre n'a pas d'interrupteur dans le portail. Il peut mettre jusqu'à 60 minutes à
+  s'appliquer.
+audit:
+  manual: |
+    1. Se connecter à Microsoft Graph PowerShell avec un compte Lecteur général (étendue
+       `Policy.Read.All`).
+    2. Exécuter `(Get-MgPolicyAuthorizationPolicy).AllowedToUseSspr`, ou appeler
+       `GET https://graph.microsoft.com/v1.0/policies/authorizationPolicy` et lire
+       `allowedToUseSSPR`.
+    3. Échec si la valeur est `true`.
+remediation:
+  manual: |
+    1. S'assurer qu'une procédure de réinitialisation de mot de passe existe pour les
+       administrateurs (Administrateur d'authentification privilégié, vérification d'identité du
+       demandeur).
+    2. Se connecter à Microsoft Graph PowerShell avec au moins le rôle Administrateur de rôle
+       privilégié (étendue `Policy.ReadWrite.Authorization`).
+    3. Exécuter `Update-MgPolicyAuthorizationPolicy -AllowedToUseSspr:$false`, ou appeler
+       `PATCH https://graph.microsoft.com/v1.0/policies/authorizationPolicy` avec
+       `{"allowedToUseSSPR": false}`.
+  rollback: |
+    Exécuter `Update-MgPolicyAuthorizationPolicy -AllowedToUseSspr:$true`.

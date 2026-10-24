@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-008
+title: Prevent users from reading the BitLocker recovery keys of their own devices
+finding:
+  title: Users can read the BitLocker recovery keys of devices they own
+  description: A user, or an attacker with the user's session, can retrieve the recovery key and unlock the encrypted disk of the user's devices without involving the helpdesk.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, bitlocker, encryption, helpdesk, least-privilege]
+
+description: |
+  The device setting **Restrict users from recovering the BitLocker key(s) for their owned
+  devices** is set to **Yes**. Only roles with the BitLocker read permission (Cloud Device
+  Administrator, Helpdesk Administrator, Intune Administrator, Security Administrator, Security
+  Reader) can display recovery keys, and every display is logged.
+rationale: |
+  The BitLocker recovery key bypasses the TPM and PIN protectors. If a device owner can read it in
+  self-service, an attacker who phishes the user's session, or a user who wants to bypass device
+  controls (for example to boot another OS or remove the TPM binding), gets it without any human
+  check. Going through the helpdesk adds identity verification and a trace of who asked for which
+  key.
+impact: |
+  Users who hit the BitLocker recovery screen can no longer get their key from the My Account or
+  Company Portal pages and must call the helpdesk. Plan the helpdesk procedure (identity check,
+  key retrieval from Entra ID or Intune) before enabling the setting, especially for travelling
+  users.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Restrict users from recovering the BitLocker key(s) for their owned devices
+  default_value: "No"
+  recommended_value: "Yes"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**.
+    3. Check that **Restrict users from recovering the BitLocker key(s) for their owned devices** is
+       **Yes**.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/v1.0/policies/authorizationPolicy` (scope `Policy.Read.All`) and
+       read `defaultUserRolePermissions.allowedToReadBitlockerKeysForOwnedDevice`.
+    5. Fail if the setting is **No** (`allowedToReadBitlockerKeysForOwnedDevice` is `true`).
+
+remediation:
+  manual: |
+    1. Document the helpdesk procedure for BitLocker recovery.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**. Role: Privileged Role
+       Administrator.
+    3. Set **Restrict users from recovering the BitLocker key(s) for their owned devices** to
+       **Yes** and save.
+    4. Graph equivalent: `PATCH https://graph.microsoft.com/v1.0/policies/authorizationPolicy` with
+       body `{"defaultUserRolePermissions": {"allowedToReadBitlockerKeysForOwnedDevice": false}}`.
+  rollback: |
+    Set the setting back to **No**.
+
+references:
+  - title: Manage devices in Microsoft Entra ID - Configure device settings
+    url: https://learn.microsoft.com/entra/identity/devices/manage-device-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Default user permissions in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/fundamentals/users-default-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.6"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-DEVICE-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

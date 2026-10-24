@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une stratégie DLP aux données sensibles dans Exchange, SharePoint et OneDrive
+finding:
+  title: Des données sensibles peuvent être partagées hors de l'organisation depuis la messagerie, SharePoint et OneDrive sans contrôle
+  description: Aucune stratégie de protection contre la perte de données appliquée ne détecte les numéros bancaires, d'identité ou de carte de paiement, qui quittent donc le tenant par e-mail ou lien de partage sans blocage ni avertissement.
+description: |
+  Une stratégie de protection contre la perte de données (DLP) Microsoft Purview est activée (pas en
+  simulation) sur les emplacements **Courrier Exchange**, **Sites SharePoint** et **Comptes
+  OneDrive**, pour tous les utilisateurs et sites. Ses règles détectent au moins les types
+  d'informations sensibles de **{{ dlp_sensitive_info_types }}** et :
+
+  - bloquent le partage du contenu concerné avec des personnes extérieures à l'organisation ;
+  - affichent un conseil de stratégie et envoient une notification par e-mail à l'utilisateur ;
+  - envoient un rapport d'incident ou une alerte à l'équipe qui traite les événements DLP.
+
+  Les conversations Teams sont couvertes par CB-M365-DATA-002 et les appareils par
+  CB-M365-DATA-003.
+rationale: |
+  La plupart des fuites de données dans Microsoft 365 sont un e-mail ou un lien de partage envoyé à
+  la mauvaise personne, par erreur ou volontairement. Une stratégie DLP arrête les catégories les plus
+  dommageables (coordonnées bancaires, identifiants nationaux, numéros de carte) avant leur sortie,
+  et la notification enseigne la règle à l'utilisateur au moment où elle s'applique. Le RGPD exige
+  des mesures techniques appropriées pour les données personnelles ; les numéros de carte de
+  paiement relèvent de PCI DSS.
+impact: |
+  Les faux positifs bloquent certains échanges légitimes (par exemple l'IBAN d'un fournisseur envoyé
+  à un expert-comptable externe). Exécuter la stratégie en simulation avec notifications pendant deux
+  à quatre semaines, ajuster le nombre d'occurrences et les niveaux de confiance, et autoriser le
+  contournement avec justification là où le métier l'accepte.
+notes: |
+  La liste des types d'informations sensibles remplace les identifiants américains utilisés par
+  d'autres référentiels (SSN, ITIN) par des identifiants français et européens ; ajouter les types
+  propres au secteur (numéro d'assurance maladie, numéro fiscal). Microsoft 365 E3 couvre la DLP
+  pour Exchange, SharePoint et OneDrive ; Teams et les appareils demandent E5 Compliance.
+parameters:
+  dlp_sensitive_info_types: Types d'informations sensibles que la stratégie DLP doit détecter et bloquer en cas de partage externe (noms tels qu'affichés dans Microsoft Purview).
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins le
+       rôle Lecteur général (ou membre d'un groupe de rôles avec View-Only DLP Compliance
+       Management).
+    2. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies**.
+    3. Ouvrir chaque stratégie et vérifier :
+       - l'**État** (mode de la stratégie) est **Activé**, pas **En simulation** ni **Désactivé** ;
+       - les **Emplacements** incluent **Courrier Exchange**, **Sites SharePoint** et **Comptes
+         OneDrive**, pour tous les utilisateurs, groupes et sites ;
+       - une règle avec la condition **Le contenu contient** > **Types d'informations sensibles**
+         liste chaque type de {{ dlp_sensitive_info_types }}, avec la condition **Le contenu est
+         partagé à partir de Microsoft 365** > **avec des personnes extérieures à mon
+         organisation** ;
+       - l'action **Restreindre l'accès ou chiffrer le contenu** bloque les destinataires ou accès
+         externes ;
+       - les **Notifications utilisateur** et **Conseils de stratégie** sont activés, et les
+         **Rapports d'incident** ou alertes partent vers une adresse supervisée.
+    4. Alternative en PowerShell Sécurité et conformité : `Get-DlpCompliancePolicy | Format-List
+       Name,Mode,ExchangeLocation,SharePointLocation,OneDriveLocation` et `Get-DlpComplianceRule |
+       Format-List Name,ParentPolicyName,Disabled,ContentContainsSensitiveInformation,AccessScope,BlockAccess,BlockAccessScope,NotifyUser,GenerateIncidentReport`.
+    5. Échec si aucune stratégie avec `Mode` = `Enable` ne couvre les trois emplacements, si un type
+       listé manque, si le partage externe est seulement audité et non bloqué, ou si les
+       utilisateurs ne sont pas notifiés.
+remediation:
+  manual: |
+    1. Se connecter au portail Microsoft Purview avec au moins le rôle Administrateur de conformité
+       (ou le rôle DLP Compliance Management).
+    2. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies** >
+       **Créer une stratégie**.
+    3. Choisir le modèle **Applications d'entreprise et appareils** ou **Personnalisé**, nommer la
+       stratégie, par exemple `DLP - Sensitive data external sharing`.
+    4. Sélectionner les emplacements **Courrier Exchange**, **Sites SharePoint** et **Comptes
+       OneDrive**, tous les utilisateurs et sites.
+    5. Créer une règle : **Le contenu contient** > **Types d'informations sensibles** avec les types
+       de {{ dlp_sensitive_info_types }} ; **Le contenu est partagé à partir de Microsoft 365** >
+       **avec des personnes extérieures à mon organisation** ; action **Restreindre l'accès ou
+       chiffrer le contenu** > **Bloquer uniquement les personnes extérieures à votre
+       organisation** ; activer **Notifications utilisateur**, **Conseils de stratégie** et
+       **Rapports d'incident**.
+    6. Enregistrer en **Exécuter la stratégie en mode simulation** avec **Afficher les conseils de
+       stratégie en mode simulation**, examiner les correspondances dans l'**Explorateur
+       d'activités** pendant deux à quatre semaines, puis passer la stratégie à **Activer la
+       stratégie immédiatement**.
+    7. Alternative PowerShell : `New-DlpCompliancePolicy -ExchangeLocation All -SharePointLocation
+       All -OneDriveLocation All -Mode TestWithNotifications`, `New-DlpComplianceRule` avec
+       `-ContentContainsSensitiveInformation`, `-AccessScope NotInOrganization`, `-BlockAccess
+       $true`, `-NotifyUser`, puis `Set-DlpCompliancePolicy -Mode Enable`.
+  rollback: |
+    Remettre la stratégie en mode simulation (`Set-DlpCompliancePolicy -Mode
+    TestWithNotifications`) ou la désactiver.

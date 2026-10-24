@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre le partage de calendriers et de contacts avec les domaines externes
+finding:
+  title: Les utilisateurs peuvent partager le détail de leur calendrier ou leurs contacts avec n'importe quel domaine externe
+  description: Objets, lieux et participants des réunions ainsi que des listes de contacts peuvent être publiés à tous, ce qui aide les attaquants à cartographier l'organisation et à caler leur hameçonnage.
+description: |
+  Les stratégies de partage d'Exchange Online contrôlent ce que les utilisateurs peuvent partager de
+  leur calendrier et de leurs contacts avec des personnes extérieures. Valeur requise :
+  **{{ external_calendar_sharing }}**.
+
+  - `free_busy_only` : aucune stratégie de partage n'accorde le détail du calendrier ou les contacts à
+    tous les domaines ou aux utilisateurs anonymes. Les entrées `*` ou `Anonymous` sont limitées aux
+    disponibilités (`CalendarSharingFreeBusySimple`) ; `CalendarSharingFreeBusyDetail`,
+    `CalendarSharingFreeBusyReviewer` et `ContactsSharing` ne sont permis que pour des domaines
+    partenaires nommés.
+  - `disabled` : chaque stratégie de partage utilisée est désactivée, les utilisateurs ne peuvent plus
+    partager leur calendrier avec des personnes externes.
+rationale: |
+  Un calendrier partagé avec tous les détails révèle qui rencontre qui, quand les dirigeants
+  voyagent et quels projets sont en cours : de la matière pour du hameçonnage ciblé et de la fraude.
+  Les dossiers de contacts partagés divulguent noms et adresses. Les disponibilités suffisent pour
+  planifier avec des partenaires ; le reste doit être limité à des domaines connus.
+impact: |
+  Baseline : les utilisateurs peuvent toujours partager leurs disponibilités avec tous et le détail
+  avec les domaines partenaires listés. Hardened : le partage externe de calendrier s'arrête, y
+  compris les disponibilités, et les partages externes existants cessent de fonctionner ; les
+  relations d'organisation configurées par les administrateurs ne sont pas touchées.
+parameters:
+  external_calendar_sharing: Ce que les utilisateurs peuvent partager de leur calendrier et de leurs contacts avec des personnes externes.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Organisation** > **Partage** > **Partage individuel** et ouvrir chaque stratégie de
+       partage, en commençant par **Default Sharing Policy**.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-SharingPolicy | Format-List Name, Default, Enabled, Domains
+       Get-EXOMailbox -ResultSize Unlimited -Properties SharingPolicy | Group-Object SharingPolicy | Select-Object Name, Count
+       ```
+    4. Avec `free_busy_only` : échec si une stratégie activée a une entrée `*` ou `Anonymous` avec
+       `CalendarSharingFreeBusyDetail`, `CalendarSharingFreeBusyReviewer` ou `ContactsSharing`.
+    5. Avec `disabled` : échec si une stratégie utilisée par au moins une boîte a `Enabled` à `True`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Exchange, aller dans **Organisation** > **Partage** > **Partage
+       individuel** et modifier **Default Sharing Policy** (Administrateur Exchange).
+    2. Avec `free_busy_only` : passer les règles **Tous les domaines** et **Anonyme** à **Informations
+       de disponibilité du calendrier avec l'heure uniquement**, retirer le partage des contacts pour
+       elles, et ajouter des domaines partenaires nommés si le détail doit être partagé. Équivalent
+       PowerShell :
+       ```powershell
+       Set-SharingPolicy -Identity "Default Sharing Policy" -Domains "*:CalendarSharingFreeBusySimple"
+       ```
+    3. Avec `disabled` : décocher la case **Activé** de la stratégie, ou exécuter
+       `Set-SharingPolicy -Identity "Default Sharing Policy" -Enabled $false`. Répéter pour chaque
+       stratégie attribuée à des boîtes.
+  rollback: |
+    Restaurer la valeur `Domains` précédente ou remettre `Enabled` à `$true` sur la stratégie.

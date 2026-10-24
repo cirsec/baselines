@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DATA-001
+title: Enforce a DLP policy for sensitive data in Exchange, SharePoint and OneDrive
+finding:
+  title: Sensitive data can be shared outside the organization from mail, SharePoint and OneDrive without control
+  description: No enforced data loss prevention policy detects bank, identity or payment card numbers, so they leave the tenant by email or sharing link without blocking or warning.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [dlp, purview, data-protection, exchange, sharepoint, onedrive, gdpr]
+
+description: |
+  A Microsoft Purview data loss prevention (DLP) policy is turned on (not in simulation) on the
+  **Exchange email**, **SharePoint sites** and **OneDrive accounts** locations, scoped to all users
+  and sites. Its rules detect at least the sensitive information types in
+  **{{ dlp_sensitive_info_types }}** and:
+
+  - block sharing of matching content with people outside the organization;
+  - show a policy tip and send an email notification to the user;
+  - send an incident report or alert to the team that handles DLP events.
+
+  Teams chats are covered by CB-M365-DATA-002 and devices by CB-M365-DATA-003.
+rationale: |
+  Most data leaks in Microsoft 365 are an email or a sharing link sent to the wrong person, by
+  mistake or on purpose. A DLP policy stops the most damaging categories (bank details, national
+  identifiers, card numbers) before they leave, and the notification teaches users the rule at the
+  moment it applies. GDPR requires appropriate technical measures for personal data; payment card
+  numbers fall under PCI DSS.
+impact: |
+  False positives block some legitimate exchanges (for example a supplier's IBAN sent to an
+  external accountant). Run the policy in simulation with notifications for two to four weeks,
+  tune instance counts and confidence levels, and allow users to override with a justification
+  where the business accepts it.
+notes: |
+  The list of sensitive information types replaces US identifiers used in other baselines (SSN,
+  ITIN) with French and European ones; add the types that match your sector (health insurance
+  number, tax number). Microsoft 365 E3 covers DLP for Exchange, SharePoint and OneDrive; Teams and
+  endpoints need E5 Compliance.
+
+parameters:
+  - name: dlp_sensitive_info_types
+    type: list
+    description: Sensitive information types that the DLP policy must detect and block when shared externally (names as shown in Microsoft Purview).
+    default:
+      - Credit card number
+      - International banking account number (IBAN)
+      - France social security number (INSEE)
+      - France national id card (CNI)
+      - France passport number
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Purview portal (https://purview.microsoft.com) as at least a Global
+       Reader (or a member of a role group with View-Only DLP Compliance Management).
+    2. Browse to **Solutions** > **Data Loss Prevention** > **Policies**.
+    3. Open each policy and check:
+       - **Status** (policy mode) is **On**, not **In simulation** or **Off**;
+       - **Locations** include **Exchange email**, **SharePoint sites** and **OneDrive accounts**,
+         scoped to all users, groups and sites;
+       - a rule with the condition **Content contains** > **Sensitive info types** lists every type
+         in {{ dlp_sensitive_info_types }}, with the condition **Content is shared from Microsoft
+         365** > **with people outside my organization**;
+       - the action **Restrict access or encrypt the content** blocks external recipients or
+         external access;
+       - **User notifications** and **Policy tips** are on, and **Incident reports** or alerts go
+         to a monitored address.
+    4. Alternative in Security & Compliance PowerShell: `Get-DlpCompliancePolicy | Format-List
+       Name,Mode,ExchangeLocation,SharePointLocation,OneDriveLocation` and `Get-DlpComplianceRule |
+       Format-List Name,ParentPolicyName,Disabled,ContentContainsSensitiveInformation,AccessScope,BlockAccess,BlockAccessScope,NotifyUser,GenerateIncidentReport`.
+    5. Fail if no policy with `Mode` = `Enable` covers the three locations, if a listed type is
+       missing, or if the external sharing is only audited and not blocked, or if users are not
+       notified.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Purview portal as at least a Compliance Administrator (or DLP
+       Compliance Management role).
+    2. Browse to **Solutions** > **Data Loss Prevention** > **Policies** > **Create policy**.
+    3. Choose **Enterprise applications & devices** or the **Custom** template, name the policy, for
+       example `DLP - Sensitive data external sharing`.
+    4. Select the **Exchange email**, **SharePoint sites** and **OneDrive accounts** locations, all
+       users and sites.
+    5. Create a rule: **Content contains** > **Sensitive info types** with the types in
+       {{ dlp_sensitive_info_types }}; **Content is shared from Microsoft 365** > **with people
+       outside my organization**; action **Restrict access or encrypt the content** > **Block only
+       people outside your organization**; turn on **User notifications**, **Policy tips** and
+       **Incident reports**.
+    6. Save in **Run the policy in simulation mode** with **Show policy tips while in simulation
+       mode**, review the matches in **Activity explorer** for two to four weeks, then set the
+       policy to **Turn the policy on immediately**.
+    7. PowerShell alternative: `New-DlpCompliancePolicy -ExchangeLocation All -SharePointLocation
+       All -OneDriveLocation All -Mode TestWithNotifications`, `New-DlpComplianceRule` with
+       `-ContentContainsSensitiveInformation`, `-AccessScope NotInOrganization`, `-BlockAccess
+       $true`, `-NotifyUser`, then `Set-DlpCompliancePolicy -Mode Enable`.
+  rollback: |
+    Set the policy back to simulation mode (`Set-DlpCompliancePolicy -Mode TestWithNotifications`)
+    or turn it off.
+
+references:
+  - title: Learn about data loss prevention
+    url: https://learn.microsoft.com/purview/dlp-learn-about-dlp
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Create and deploy data loss prevention policies
+    url: https://learn.microsoft.com/purview/dlp-create-deploy-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Sensitive information type entity definitions
+    url: https://learn.microsoft.com/purview/sit-sensitive-information-type-entity-definitions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-DlpCompliancePolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-dlpcompliancepolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Security Suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "3.2.1"
+    relation: stricter
+    note: Also requires blocking of external sharing and user notification for a defined list of sensitive types.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.3.1v1
+    relation: partial
+    note: French and EU identifiers replace US SSN and ITIN; the list is a parameter.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.3.2v1
+    relation: partial
+    note: Covers Exchange, SharePoint and OneDrive; Teams and devices are in CB-M365-DATA-002 and CB-M365-DATA-003.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.3.3v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.3.4v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(10)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+  - framework: mitre-attack
+    id: T1048
+related_controls:
+  - id: CB-M365-DATA-002
+    type: related
+  - id: CB-M365-DATA-003
+    type: related
+  - id: CB-M365-DATA-004
+    type: related
+  - id: CB-M365-COLLAB-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

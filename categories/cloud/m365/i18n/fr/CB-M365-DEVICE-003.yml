@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre qui peut joindre des appareils à Microsoft Entra ID
+finding:
+  title: Tout utilisateur peut joindre des appareils à Microsoft Entra ID
+  description: N'importe quel utilisateur, ou un attaquant qui détient les identifiants de n'importe quel utilisateur, peut joindre au tenant une machine Windows, macOS ou Linux de son choix.
+description: |
+  Le paramètre d'appareil **Les utilisateurs peuvent joindre des appareils à Microsoft Entra**
+  (*Users may join devices to Microsoft Entra*) vaut **Sélectionné**, avec un groupe d'utilisateurs
+  chargés du provisionnement (équipe informatique, comptes d'inscription), ou **Aucun** quand tous
+  les appareils d'entreprise sont joints par des parcours sans utilisateur.
+
+  Le paramètre couvre la jonction Microsoft Entra pilotée par l'utilisateur sur Windows 10 ou
+  ultérieur, macOS et Linux. Il ne s'applique ni à la jonction hybride Microsoft Entra, ni aux
+  machines virtuelles Azure jointes à la création, ni au mode auto-déploiement de Windows Autopilot,
+  qui s'exécutent sans contexte utilisateur.
+rationale: |
+  Un appareil joint à Entra obtient un Primary Refresh Token et une identité d'appareil auxquels
+  l'accès conditionnel, Intune et d'autres services font confiance. Un attaquant muni d'un mot de
+  passe volé peut joindre une machine qu'il contrôle pour persister dans le tenant, satisfaire des
+  conditions basées sur l'appareil ou récolter des jetons. Réserver la jonction au personnel de
+  provisionnement supprime ce chemin pour les comptes ordinaires.
+impact: |
+  Les utilisateurs hors du groupe sélectionné ne peuvent plus joindre eux-mêmes de nouveaux
+  appareils : la configuration initiale pilotée par l'utilisateur échoue pour eux. Windows Autopilot
+  en mode piloté par l'utilisateur et l'inscription automatique Intune s'exécutent sous l'identité
+  de l'utilisateur final : soit ajouter ces utilisateurs au groupe autorisé, soit passer à Autopilot
+  en auto-déploiement ou pré-provisionné. Les appareils déjà joints ne sont pas affectés.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Les utilisateurs peuvent joindre des appareils à Microsoft Entra
+  recommended_value: Sélectionné (groupe de provisionnement) ou Aucun
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**.
+    3. Vérifier que **Les utilisateurs peuvent joindre des appareils à Microsoft Entra** vaut
+       **Sélectionné** avec un groupe de provisionnement nommé, ou **Aucun**.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` (étendue
+       `Policy.Read.DeviceConfiguration`) et lire `azureADJoin.allowedToJoin` : le `@odata.type`
+       doit être `#microsoft.graph.enumeratedDeviceRegistrationMembership` ou
+       `#microsoft.graph.noDeviceRegistrationMembership`.
+    5. Échec si le paramètre vaut **Tous** (`allDeviceRegistrationMembership`).
+remediation:
+  manual: |
+    1. Créer un groupe de sécurité contenant les comptes autorisés à joindre des appareils
+       (techniciens, comptes d'inscription, ou utilisateurs ciblés par les profils Autopilot pilotés
+       par l'utilisateur).
+    2. Dans le centre d'administration Microsoft Entra, aller dans **Entra ID** > **Appareils** >
+       **Paramètres de l'appareil**. Rôle : administrateur d'appareils cloud.
+    3. Régler **Les utilisateurs peuvent joindre des appareils à Microsoft Entra** sur
+       **Sélectionné**, choisir le groupe et enregistrer.
+    4. Équivalent Graph : `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       avec l'objet complet de la stratégie, `azureADJoin.allowedToJoin` réglé sur une
+       `enumeratedDeviceRegistrationMembership` listant l'ID du groupe.
+  rollback: |
+    Remettre **Les utilisateurs peuvent joindre des appareils à Microsoft Entra** sur **Tous**.

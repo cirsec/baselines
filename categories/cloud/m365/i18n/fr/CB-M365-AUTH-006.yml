@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-006
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Afficher le nom de l'application et l'emplacement dans les notifications Microsoft Authenticator
+finding:
+  title: Les notifications push d'Authenticator n'affichent pas le contexte de connexion
+  description: Les utilisateurs approuvent les demandes MFA sans voir quelle application les déclenche ni d'où vient la connexion, donc une demande lancée par un attaquant ressemble à toutes les autres.
+description: |
+  Dans la stratégie des méthodes d'authentification, Microsoft Authenticator est configuré pour que
+  les notifications push et sans mot de passe affichent le nom de l'application demandeuse et
+  l'emplacement géographique de la connexion, pour tous les utilisateurs activés pour
+  Authenticator. La correspondance de nombres, que Microsoft impose désormais sur toutes les
+  notifications push d'Authenticator, complète la demande.
+
+  **Show application name in push and passwordless notifications** et **Show geographic location
+  in push and passwordless notifications** sont tous deux réglés sur **Enabled** (pas sur
+  **Microsoft managed**, dont la valeur actuelle est désactivée) et ciblent **Tous les
+  utilisateurs** sans exclusion.
+rationale: |
+  Les attaques par fatigue MFA envoient des demandes répétées jusqu'à ce que l'utilisateur en
+  approuve une. La correspondance de nombres oblige l'utilisateur à regarder l'écran de connexion,
+  et le nom de l'application et l'emplacement lui donnent une raison de refuser : une connexion
+  depuis un autre pays vers une application inconnue se repère facilement.
+impact: |
+  Aucun connu. L'emplacement vient de l'adresse IP et peut être approximatif, surtout derrière un
+  VPN ou un réseau mobile ; prévenir les utilisateurs pour qu'ils ne signalent pas chaque écart. Le
+  contexte n'est pas affiché pour l'extension NPS et l'adaptateur AD FS.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Stratégies > Microsoft Authenticator > Configurer
+  recommended_value: Nom de l'application et emplacement géographique tous deux sur Enabled pour Tous les utilisateurs
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** et sélectionner
+       **Microsoft Authenticator**.
+    3. Dans l'onglet **Configurer**, vérifier **Show application name in push and passwordless
+       notifications** et **Show geographic location in push and passwordless notifications**.
+       **Require number matching for push notifications** affiche **Enabled** et n'est pas
+       modifiable : Microsoft l'impose.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId MicrosoftAuthenticator).AdditionalProperties.featureSettings`
+       (Graph : `GET https://graph.microsoft.com/v1.0/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`).
+       Regarder `displayAppInformationRequiredState` et `displayLocationInformationRequiredState`.
+    5. Échec si Microsoft Authenticator est activé et que l'un des réglages est **Disabled** ou
+       **Microsoft managed** (`default`), n'inclut pas tous les utilisateurs ou exclut un groupe.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **Microsoft
+       Authenticator**.
+    3. Dans l'onglet **Configurer**, régler **Status** sur **Enabled** pour **Show application name
+       in push and passwordless notifications**, cibler **Tous les utilisateurs** et retirer toute
+       exclusion.
+    4. Faire de même pour **Show geographic location in push and passwordless notifications**.
+    5. Sélectionner **Enregistrer**.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/MicrosoftAuthenticator`
+    avec les deux entrées de `featureSettings` à `"state": "enabled"` et `includeTarget` à
+    `all_users` (faire d'abord un GET de la configuration et la renvoyer en entier).
+  rollback: |
+    Remettre le réglage sur **Microsoft managed**.

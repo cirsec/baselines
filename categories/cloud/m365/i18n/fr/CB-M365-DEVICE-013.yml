@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'ouverture de fichiers par HTTP, FTP et FrontPage RPC dans les applications Microsoft 365
+finding:
+  title: Les applications Microsoft 365 peuvent ouvrir des fichiers par des protocoles non sécurisés
+  description: Les utilisateurs peuvent ouvrir des documents en HTTP ou FTP en clair, ou se rabattre sur le protocole FrontPage RPC, ce qui expose contenu et identifiants à l'interception et aux attaques sur protocoles hérités.
+description: |
+  Deux paramètres du mode de sécurité de base (*Baseline security mode*) sont activés dans le centre
+  d'administration Microsoft 365 :
+
+  - **Block files from opening with insecure protocols** : les applications Microsoft 365 refusent
+    d'ouvrir des fichiers depuis des emplacements HTTP ou FTP (stratégie Cloud Policy **Block
+    Insecure Protocols**) ;
+  - **Block files from opening with FPRPC protocol** : les applications ne se rabattent jamais sur
+    FrontPage Server Extensions RPC et utilisent HTTPS à la place (stratégie Cloud Policy
+    **Restrict Apps from FPRPC Fallback**).
+
+  Dans les deux cas, les utilisateurs ne peuvent plus contourner le comportement dans le Centre de
+  gestion de la confidentialité.
+rationale: |
+  HTTP et FTP transportent le contenu des documents, et parfois les identifiants, en clair :
+  n'importe qui sur le chemin réseau peut les lire, les modifier ou injecter un document malveillant.
+  FrontPage RPC est un protocole d'édition vieux de plusieurs décennies, avec un historique de
+  failles exploitables. Les applications Microsoft 365 bloquent déjà FPRPC par défaut ; imposer les
+  deux paramètres supprime la dérogation utilisateur et les derniers chemins en clair.
+impact: |
+  Les documents publiés sur des serveurs HTTP ou FTP en clair ne s'ouvrent plus depuis Office ; les
+  déplacer vers HTTPS, SharePoint ou OneDrive. Les anciens serveurs intranet qui ne gèrent que les
+  extensions FrontPage ne fonctionnent plus pour l'ouverture de fichiers. Lancer d'abord les rapports
+  d'impact du mode de sécurité de base.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Baseline security mode**.
+    3. Vérifier que **Block files from opening with insecure protocols** et **Block files from
+       opening with FPRPC protocol** sont tous deux activés.
+    4. Dans le service Office Cloud Policy (https://config.office.com), **Personnalisation** >
+       **Gestion des stratégies**, vérifier qu'aucune configuration de stratégie de priorité plus
+       haute que celle du tenant ne règle **Block Insecure Protocols** ou **Restrict Apps from FPRPC
+       Fallback** sur **Désactivé**.
+    5. Échec si l'un des paramètres est désactivé ou contourné pour un groupe d'utilisateurs.
+remediation:
+  manual: |
+    1. Dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité** >
+       **Baseline security mode**, ouvrir chaque paramètre et télécharger son rapport d'impact ;
+       déplacer les documents listés vers des emplacements HTTPS.
+    2. Activer **Block files from opening with insecure protocols** et **Block files from opening
+       with FPRPC protocol**. Rôle : administrateur des applications Office.
+    3. Alternative : dans le service Office Cloud Policy, régler **Block Insecure Protocols** et
+       **Restrict Apps from FPRPC Fallback** sur **Activé** dans une configuration de stratégie
+       ciblant tous les utilisateurs. Aucune cmdlet PowerShell n'existe.
+  rollback: |
+    Désactiver les paramètres dans le mode de sécurité de base, ou remettre les stratégies Cloud
+    Policy à l'état non configuré.

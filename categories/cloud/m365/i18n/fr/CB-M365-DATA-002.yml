@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-002
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une stratégie DLP aux données sensibles dans les conversations et canaux Teams
+finding:
+  title: Des données sensibles peuvent être publiées dans les conversations et canaux Teams sans contrôle
+  description: Aucune stratégie DLP appliquée ne couvre Teams ; des numéros bancaires, d'identité ou de carte peuvent donc être envoyés à des participants externes ou invités dans un message.
+description: |
+  Une stratégie DLP Microsoft Purview est activée pour l'emplacement **Messages de conversation et de
+  canal Teams**, pour tous les utilisateurs. Elle détecte au moins les types d'informations sensibles
+  de CB-M365-DATA-001, bloque les messages qui en contiennent quand des utilisateurs externes ou des
+  invités participent à la conversation, et affiche un conseil de stratégie à l'expéditeur.
+rationale: |
+  Teams est désormais un canal principal d'échange avec les partenaires, via l'accès externe et les
+  invités. Une stratégie DLP limitée à Exchange et SharePoint laisse ce canal ouvert : le même IBAN ou
+  numéro de carte d'identité bloqué dans un e-mail peut être collé dans une conversation.
+impact: |
+  Les messages concernés sont masqués aux participants externes et l'expéditeur voit un avis. Ajuster
+  d'abord les règles en simulation pour éviter de bloquer des conversations internes.
+notes: |
+  Microsoft crée une stratégie DLP Teams par défaut dans certains tenants ; elle peut satisfaire ce
+  contrôle si elle est activée et couvre les types d'informations sensibles exigés.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins le
+       rôle Lecteur général.
+    2. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies**.
+    3. Trouver une stratégie dont les **Emplacements** incluent **Messages de conversation et de
+       canal Teams** pour tous les utilisateurs, à l'**État** **Activé**, avec une règle qui détecte
+       les types d'informations sensibles de CB-M365-DATA-001, l'action **Restreindre l'accès ou
+       chiffrer le contenu** pour les personnes extérieures à l'organisation, et les conseils de
+       stratégie activés.
+    4. Alternative en PowerShell Sécurité et conformité : `Get-DlpCompliancePolicy | Where-Object
+       { $_.TeamsLocation } | Format-List Name,Mode,TeamsLocation,TeamsLocationException`.
+    5. Échec si aucune stratégie avec `Mode` = `Enable` ne couvre Teams pour tous les utilisateurs.
+remediation:
+  manual: |
+    1. Se connecter au portail Microsoft Purview avec au moins le rôle Administrateur de conformité.
+    2. Modifier la stratégie de CB-M365-DATA-001 pour ajouter l'emplacement **Messages de
+       conversation et de canal Teams**, ou créer une stratégie dédiée avec les mêmes règles.
+    3. Régler l'action pour bloquer l'accès externe et activer les conseils de stratégie.
+    4. Exécuter en simulation avec conseils de stratégie, examiner l'**Explorateur d'activités**,
+       puis activer la stratégie.
+    5. Alternative PowerShell : `Set-DlpCompliancePolicy -Identity <stratégie> -AddTeamsLocation All`,
+       puis `Set-DlpCompliancePolicy -Identity <stratégie> -Mode Enable`.
+  rollback: |
+    Retirer l'emplacement Teams ou remettre la stratégie en simulation.

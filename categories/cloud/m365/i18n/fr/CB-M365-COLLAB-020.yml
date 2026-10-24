@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-020
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les comptes Teams non gérés d'engager des conversations avec les utilisateurs
+finding:
+  title: Les comptes Teams non gérés peuvent trouver les utilisateurs et leur écrire
+  description: Un attaquant muni d'un compte gratuit peut rechercher les utilisateurs par adresse e-mail et ouvrir une conversation en se faisant passer pour le support, technique d'hameçonnage Teams courante.
+description: |
+  Les personnes qui utilisent des comptes Teams non gérés par une organisation ne peuvent ni découvrir
+  les utilisateurs ni engager de conversation avec eux : **Les utilisateurs externes disposant de
+  comptes Teams non gérés par une organisation peuvent contacter les utilisateurs de mon
+  organisation** est décoché (`AllowTeamsConsumerInbound` = `False`, et `EnableTeamsConsumerInbound` =
+  `False` dans les stratégies d'accès externe). Quand la communication avec les comptes non gérés est
+  entièrement coupée (CB-M365-COLLAB-019), ce contrôle est respecté.
+rationale: |
+  Le contact entrant depuis des comptes non gérés est le point d'entrée de nombreuses campagnes
+  d'hameçonnage Teams : l'attaquant cherche l'adresse de la victime, envoie une demande de
+  conversation avec un nom d'affichage évoquant le support et pousse un lien, un fichier ou une
+  session d'assistance à distance. Bloquer la découverte entrante supprime ce canal tout en laissant
+  les utilisateurs initier le contact si l'organisation en a besoin.
+impact: |
+  Les utilisateurs Teams non gérés ne peuvent ni rechercher les utilisateurs par adresse e-mail ni
+  engager de conversation ; les utilisateurs de l'organisation peuvent toujours le faire si
+  CB-M365-COLLAB-019 est assoupli. Aucun autre impact connu.
+setting:
+  location: Centre d'administration Teams > Utilisateurs > Accès externe > Paramètres de l'organisation > Les utilisateurs externes disposant de comptes Teams non gérés par une organisation peuvent contacter les utilisateurs de mon organisation
+  recommended_value: Décoché (AllowTeamsConsumerInbound = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Utilisateurs** > **Accès externe** (**Collaboration externe** > **Accès externe**
+       dans la nouvelle navigation) > **Paramètres de l'organisation**. Soit **Les personnes de mon
+       organisation peuvent communiquer avec des comptes Teams non gérés** est **Désactivé**, soit **Les
+       utilisateurs externes disposant de comptes Teams non gérés par une organisation peuvent contacter
+       les utilisateurs de mon organisation** est décoché.
+    3. Avec Microsoft Teams PowerShell :
+       `Get-CsTenantFederationConfiguration | Select-Object AllowTeamsConsumer, AllowTeamsConsumerInbound`
+       et
+       `Get-CsExternalAccessPolicy | Select-Object Identity, EnableTeamsConsumerAccess, EnableTeamsConsumerInbound`.
+    4. Échec si `AllowTeamsConsumer` et `AllowTeamsConsumerInbound` valent tous deux `True`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Utilisateurs** > **Accès externe**
+       (**Collaboration externe** > **Accès externe** dans la nouvelle navigation) > **Paramètres de
+       l'organisation**, décocher **Les utilisateurs externes disposant de comptes Teams non gérés par
+       une organisation peuvent contacter les utilisateurs de mon organisation** (ou couper la
+       communication avec les comptes non gérés) puis **Enregistrer**. Rôle : Administrateur Teams.
+    2. Équivalent PowerShell : `Set-CsTenantFederationConfiguration -AllowTeamsConsumerInbound $false`,
+       et `Set-CsExternalAccessPolicy -Identity Global -EnableTeamsConsumerInbound $false`.

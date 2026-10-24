@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-025
+title: Require users to sign in again at least every {{ user_signin_frequency_days }} days
+finding:
+  title: User sessions can stay valid for up to 90 days without a new sign-in
+  description: A stolen refresh token or session cookie keeps working for weeks, because nothing forces the user to authenticate again.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [conditional-access, session, sign-in-frequency, token-theft]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy applies the **Sign-in frequency** session control to all users on all
+  resources, with a periodic reauthentication of at most {{ user_signin_frequency_days }} days.
+  Without such a policy, Microsoft Entra ID uses a rolling 90-day window: a session is renewed as
+  long as it is used, and the user is not asked to authenticate again.
+
+  Administrators get a shorter frequency from CB-M365-AUTH-024; this control covers everyone else.
+  It excludes only the emergency access accounts.
+rationale: |
+  Token theft (infostealer malware, adversary-in-the-middle phishing, a lost unlocked device) gives
+  an attacker a session that survives a password change only until the next forced sign-in. A
+  periodic reauthentication caps how long a stolen refresh token or browser session stays useful,
+  and makes the user prove again that they hold the password and the MFA method.
+impact: |
+  Users are prompted to sign in and complete MFA once every {{ user_signin_frequency_days }} days
+  on each device and application. On Microsoft Entra joined or hybrid joined Windows devices with
+  Windows Hello for Business the prompt is usually silent. Shorter values cause MFA fatigue and
+  help-desk calls.
+notes: |
+  Sign-in frequency applies to interactive sign-ins and to refresh tokens. It does not apply to
+  service principals or managed identities. If several policies set a frequency, the shortest one
+  wins.
+
+parameters:
+  - name: user_signin_frequency_days
+    type: integer
+    description: Maximum number of days between two interactive sign-ins for regular users.
+    unit: days
+    default: 7
+    minimum: 1
+    maximum: 90
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the emergency
+         access accounts or their group;
+       - **Target resources** includes **All resources**, without exclusions;
+       - **Session** > **Sign-in frequency** is enabled, **Periodic reauthentication**, with a value
+         of {{ user_signin_frequency_days }} days or less (or the equivalent in hours).
+    4. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.SessionControls.SignInFrequency.IsEnabled } | Select-Object DisplayName, State, @{n='Frequency';e={$_.SessionControls.SignInFrequency.Value, $_.SessionControls.SignInFrequency.Type}}`
+    5. Fail if no enabled policy covers all users and all resources with a frequency of
+       {{ user_signin_frequency_days }} days or less.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `ALL - Sign-in frequency`.
+    4. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    5. **Target resources** > **Resources** > **Include**: **All resources**.
+    6. **Session** > **Sign-in frequency** > **Periodic reauthentication**: enter
+       {{ user_signin_frequency_days }} and select **Days**.
+    7. Set **Enable policy** to **Report-only**, save, and check the sign-in logs for a few days.
+    8. Switch **Enable policy** to **On**.
+
+    The same policy can be created with `New-MgIdentityConditionalAccessPolicy` and a
+    `sessionControls.signInFrequency` block (`value`, `type: days`, `isEnabled: true`).
+  rollback: |
+    Set the policy to **Report-only** or **Off**.
+
+references:
+  - title: Configure adaptive session lifetime policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/howto-conditional-access-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Conditional Access adaptive session lifetime
+    url: https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.13"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R12"
+    relation: related
+    note: ANSSI asks to limit the lifetime of authenticated sessions in general; ours sets a tenant-wide maximum for regular users.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1539
+  - framework: mitre-attack
+    id: T1550.001
+related_controls:
+  - id: CB-M365-AUTH-026
+    type: related
+  - id: CB-M365-AUTH-027
+    type: related
+  - id: CB-M365-AUTH-028
+    type: related
+  - id: CB-M365-AUTH-024
+    type: related
+  - id: CB-M365-AUTH-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

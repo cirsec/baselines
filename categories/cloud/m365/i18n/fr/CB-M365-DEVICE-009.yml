@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-009
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger la MFA pour inscrire ou joindre des appareils via l'accès conditionnel
+finding:
+  title: Des appareils peuvent être inscrits ou joints sans authentification multifacteur
+  description: Un mot de passe volé suffit pour inscrire ou joindre un appareil et obtenir une identité d'appareil et un Primary Refresh Token dans le tenant.
+description: |
+  Une stratégie d'accès conditionnel cible l'action utilisateur **Inscrire ou joindre des
+  appareils**, pour tous les utilisateurs sauf les comptes d'accès d'urgence, et n'accorde l'accès
+  qu'avec la force d'authentification intégrée **Authentification multifacteur** (ou plus forte).
+
+  L'ancien paramètre d'appareil **Require Multifactor Authentication to register or join devices
+  with Microsoft Entra** (exiger la MFA pour inscrire ou joindre des appareils) vaut **Non**, comme
+  l'exige Microsoft : lorsque ce bouton vaut **Oui**, les stratégies d'accès conditionnel qui
+  utilisent l'action **Inscrire ou joindre des appareils** ne sont pas appliquées correctement.
+rationale: |
+  Inscrire un appareil est une étape classique de persistance après une pulvérisation de mots de
+  passe ou un hameçonnage : l'attaquant obtient un objet appareil et un Primary Refresh Token qui
+  survivent à une réinitialisation du mot de passe et peuvent satisfaire des conditions d'accès
+  basées sur l'appareil. Exiger la MFA à ce moment, via l'accès conditionnel, bloque cette étape
+  pour un attaquant qui n'a que le mot de passe, et laisse l'organisation choisir la force
+  d'authentification et les exclusions plutôt que le tout-ou-rien du paramètre d'appareil.
+impact: |
+  Les utilisateurs doivent passer la MFA quand ils inscrivent un mobile, ajoutent un compte
+  professionnel sous Windows ou joignent un ordinateur. Les utilisateurs sans méthode MFA
+  enregistrée ne peuvent plus inscrire d'appareil avant d'en enregistrer une. Les parcours Autopilot
+  en auto-déploiement et pré-provisionnement n'impliquent pas d'utilisateur et ne sont pas affectés.
+notes: |
+  L'action utilisateur **Inscrire ou joindre des appareils** ne prend en charge que les contrôles
+  **Exiger l'authentification multifacteur** et **Exiger la force d'authentification** ; les
+  conditions basées sur l'appareil sont inutilisables dans cette stratégie. Les méthodes
+  d'authentification externes ne sont pas compatibles avec les forces d'authentification : utiliser
+  alors **Exiger l'authentification multifacteur**.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** et trouver une stratégie à
+       l'état **Activé** où :
+       - **Utilisateurs** > **Inclure** vaut **Tous les utilisateurs**, et **Exclure** ne contient
+         que les comptes d'accès d'urgence ;
+       - **Ressources cibles** vaut **Actions utilisateur** > **Inscrire ou joindre des
+         appareils** ;
+       - **Accorder** vaut **Exiger la force d'authentification** (**Authentification
+         multifacteur** ou plus forte) ou **Exiger l'authentification multifacteur**.
+    3. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil** et vérifier que
+       **Require Multifactor Authentication to register or join devices with Microsoft Entra** vaut
+       **Non**.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies` (étendue
+       `Policy.Read.All`) et chercher `conditions.applications.includeUserActions` contenant
+       `urn:user:registerdevice` ; lire `multiFactorAuthConfiguration` dans
+       `GET https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` (doit valoir
+       `notRequired`).
+    5. Échec si aucune stratégie active n'existe, ou si le paramètre d'appareil vaut **Oui** (les deux
+       entrent en conflit).
+remediation:
+  manual: |
+    1. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** > **Nouvelle stratégie**.
+       Rôle : administrateur de l'accès conditionnel.
+    2. La nommer, par exemple `DEV - Require MFA to register or join devices`.
+    3. **Utilisateurs** > **Inclure** : **Tous les utilisateurs**. **Exclure** : les comptes d'accès
+       d'urgence.
+    4. **Ressources cibles** > **Actions utilisateur** > **Inscrire ou joindre des appareils**.
+    5. **Accorder** > **Accorder l'accès** > **Exiger la force d'authentification** >
+       **Authentification multifacteur**.
+    6. Régler **Activer la stratégie** sur **Rapport seul**, enregistrer, et examiner quelques jours
+       les journaux de connexion pour les événements d'inscription d'appareils.
+    7. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**, régler **Require
+       Multifactor Authentication to register or join devices with Microsoft Entra** sur **Non**
+       (rôle : administrateur d'appareils cloud), puis passer la stratégie à **Activé**.
+  rollback: |
+    Passer la stratégie d'accès conditionnel en **Rapport seul** ou **Désactivé**. Ne pas remettre le
+    paramètre d'appareil sur **Oui** tant qu'une stratégie cible l'action utilisateur.

@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-029
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger la protection des jetons pour l'accès des applications de bureau à Exchange Online, SharePoint Online et Teams
+finding:
+  title: Les sessions de connexion des applications de bureau ne sont pas liées à l'appareil
+  description: Un jeton d'actualisation volé sur un poste peut être rejoué depuis la machine de l'attaquant pour lire la messagerie et les fichiers.
+description: |
+  Une stratégie d'accès conditionnel applique le contrôle de session **Exiger la protection des
+  jetons pour les sessions de connexion** aux applications natives (de bureau) qui accèdent à
+  **Office 365 Exchange Online**, **Office 365 SharePoint Online** et **Microsoft Teams Services**, sur
+  les appareils Windows. Avec ce contrôle, seules les sessions liées cryptographiquement à l'appareil
+  (via le Primary Refresh Token) sont acceptées : un jeton copié sur une autre machine est refusé.
+
+  La stratégie est limitée par la condition **Plateformes d'appareils** (Windows, et macOS ou iOS
+  lorsque le plug-in Enterprise SSO est déployé) et par la condition **Applications clientes**
+  réglée uniquement sur **Applications mobiles et clients de bureau**.
+rationale: |
+  Les maliciels voleurs d'informations et les kits adversary-in-the-middle volent les jetons
+  d'actualisation et les cookies de session, puis les rejouent depuis l'infrastructure de
+  l'attaquant. La MFA ne sert plus une fois le jeton émis. La protection des jetons lie la session à
+  une clé détenue par l'appareil, et le jeton volé est inutilisable ailleurs.
+impact: |
+  Seuls les clients pris en charge sur des appareils Windows 10+ joints à Microsoft Entra, joints
+  hybrides ou inscrits (et les appareils Apple gérés par MDM avec le plug-in SSO) peuvent accéder aux
+  ressources ciblées. Les anciennes versions d'Office, les clients tiers et les appareils non inscrits
+  sont bloqués. Ne pas cibler le groupe d'applications **Office 365**, et ne pas inclure
+  **Navigateur** dans les applications clientes, sinon Teams sur le web et les autres applications
+  MSAL.js cessent de fonctionner. Déployer d'abord sur des groupes pilotes.
+notes: |
+  La prise en charge des navigateurs est limitée (préversion, Azure Resource Manager seulement). Comme
+  la stratégie ne couvre que certaines plateformes, la combiner avec une stratégie qui bloque les
+  plateformes d'appareil inconnues ou non prises en charge (CB-M365-AUTH-021), pour qu'un attaquant ne
+  puisse pas simplement présenter une autre plateforme.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur Sécurité.
+    2. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies**.
+    3. Trouver une stratégie à l'**État** **Activé** où :
+       - **Utilisateurs** inclut tous les utilisateurs, ou des groupes couvrant tous les utilisateurs
+         d'appareils pris en charge ;
+       - **Ressources cibles** inclut **Office 365 Exchange Online**, **Office 365 SharePoint Online**
+         et **Microsoft Teams Services** ;
+       - **Conditions** > **Plateformes d'appareils** inclut **Windows** ;
+       - **Conditions** > **Applications clientes** ne sélectionne que **Applications mobiles et
+         clients de bureau** ;
+       - **Session** > **Exiger la protection des jetons pour les sessions de connexion** est
+         sélectionné.
+    4. Aller dans **Entra ID** > **Supervision et intégrité** > **Journaux de connexion**, ouvrir une
+       connexion Outlook récente depuis Windows et vérifier que la stratégie indique **Réussite**.
+    5. Alternative PowerShell (Microsoft Graph, étendue `Policy.Read.All`) : exporter les stratégies
+       avec `Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10` et rechercher le
+       contrôle de session de protection des jetons dans `sessionControls`.
+    6. Échec si aucune stratégie active n'exige la protection des jetons, ou si elle ne couvre qu'un
+       groupe pilote.
+remediation:
+  manual: |
+    1. Vérifier l'état des appareils : les postes Windows doivent être joints à Microsoft Entra,
+       joints hybrides ou inscrits, avec des Microsoft 365 Apps à jour.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de l'accès conditionnel.
+    3. Aller dans **Entra ID** > **Accès conditionnel** > **Stratégies** > **Nouvelle stratégie**.
+    4. **Utilisateurs** : d'abord un groupe pilote ; exclure les comptes d'accès d'urgence.
+    5. **Ressources cibles** > **Sélectionner des ressources** : **Office 365 Exchange Online**,
+       **Office 365 SharePoint Online**, **Microsoft Teams Services** (et Azure Virtual Desktop,
+       Windows 365, Windows Cloud Login si Windows App est utilisé).
+    6. **Conditions** > **Plateformes d'appareils** > **Windows** ; **Applications clientes** >
+       uniquement **Applications mobiles et clients de bureau**.
+    7. **Session** > **Exiger la protection des jetons pour les sessions de connexion**.
+    8. Régler **Activer la stratégie** sur **Rapport seul** ; examiner les connexions interactives et
+       non interactives à la recherche de clients incompatibles, puis passer à **Activé** et élargir
+       le périmètre par étapes.
+  rollback: |
+    Passer la stratégie en **Rapport seul** ou **Désactivé**, ou retirer les utilisateurs concernés de
+    son périmètre.

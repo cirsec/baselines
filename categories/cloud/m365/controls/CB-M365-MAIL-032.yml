@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-032
+title: Keep the connection filter IP allow list empty and the safe list off
+finding:
+  title: The connection filter lets mail from listed IP addresses or Microsoft's safe list skip spam filtering
+  description: Messages from these sources bypass spam filtering and part of spoof detection, whatever they contain.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online-protection, connection-filter, allow-list, spoofing]
+
+description: |
+  The default connection filter policy has:
+
+  - an empty **Always allow messages from the following IP addresses or address range** list
+    (`IPAllowList`);
+  - **Turn on safe list** cleared (`EnableSafeList $false`).
+
+  Mail from trusted systems is handled with an inbound connector (CB-M365-MAIL-036), Enhanced
+  Filtering (CB-M365-MAIL-018) or the advanced delivery policy, not by skipping filtering.
+rationale: |
+  Allowed IP addresses skip spam filtering, and shared hosting or cloud ranges added for one
+  partner let any customer of that provider in. The safe list is a third-party list of senders
+  Microsoft does not control for the tenant. Both create blind spots that attackers using the same
+  infrastructure can exploit.
+impact: |
+  Messages from formerly allowed IP addresses go through normal filtering and some may be marked as
+  spam until the sender fixes its authentication or a narrower exception is set up.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-spam** > **Connection filter policy (Default)**.
+    3. Check that **Always allow messages from the following IP addresses or address range** is empty
+       and **Turn on safe list** is cleared.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-HostedConnectionFilterPolicy | Format-List Name, IPAllowList, EnableSafeList
+       ```
+    5. Fail if `IPAllowList` holds any entry or `EnableSafeList` is `True`.
+
+remediation:
+  manual: |
+    1. For each allowed IP address, find out which sender it serves and set up a proper path
+       (connector, Enhanced Filtering, Tenant Allow/Block List entry for the sender).
+    2. In the Defender portal, edit **Connection filter policy (Default)** (Security Administrator),
+       remove the IP addresses, clear **Turn on safe list** and save.
+    3. PowerShell equivalent:
+       ```powershell
+       Set-HostedConnectionFilterPolicy -Identity Default -IPAllowList $null -EnableSafeList $false
+       ```
+  rollback: |
+    Re-add the IP address (`-IPAllowList @{Add="192.0.2.10"}`) while the proper path is set up.
+
+references:
+  - title: Configure connection filtering
+    url: https://learn.microsoft.com/defender-office-365/connection-filter-policies-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-HostedConnectionFilterPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-hostedconnectionfilterpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft 365 security suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (check ORCA-114)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community project)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.12"
+    relation: equivalent
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "2.1.13"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.8.1v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.8.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-MAIL-002
+    type: related
+  - id: CB-M365-MAIL-030
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

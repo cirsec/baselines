@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-002
+title: Enable security defaults on tenants without Microsoft Entra ID P1
+finding:
+  title: Security defaults are disabled and no Conditional Access is available
+  description: Without Entra ID P1 the tenant cannot use Conditional Access, so with security defaults off nothing requires MFA or blocks legacy authentication.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [security-defaults, mfa, legacy-authentication, entra-id-free]
+
+applicability:
+  conditions: |
+    Only for tenants without Microsoft Entra ID P1.
+
+description: |
+  On a tenant without Microsoft Entra ID P1 (Entra ID Free, or Microsoft 365 plans that do not
+  include P1), **Security defaults** are enabled. They require every user to register for MFA,
+  require MFA for administrators at each sign-in and for other users when Microsoft considers it
+  necessary, block legacy authentication protocols and device code flow, and protect access to the
+  Azure management endpoints.
+
+  Security defaults cannot be tuned and cannot coexist with Conditional Access. Tenants with P1
+  use the Conditional Access controls of this standard instead (CB-M365-AUTH-001,
+  CB-M365-AUTH-003, CB-M365-AUTH-004).
+rationale: |
+  Conditional Access is a P1 feature. On a tenant without it, security defaults are the only
+  mechanism that enforces MFA and blocks legacy protocols for everyone. Disabling them leaves
+  accounts protected by a password alone, the first target of password spray.
+impact: |
+  Every user must register Microsoft Authenticator (or another allowed method) at next sign-in,
+  with no grace period. Clients and devices that use legacy authentication or device code flow
+  stop working. No exclusion is possible: a service account that cannot do MFA must move to a
+  workload identity or the tenant must buy P1.
+setting:
+  location: Microsoft Entra admin center > Entra ID > Overview > Properties > Manage security defaults
+  default_value: Enabled on tenants created after October 2019, unless disabled
+  recommended_value: Enabled
+
+audit:
+  manual: |
+    1. Check the licenses: in the Microsoft 365 admin center (https://admin.cloud.microsoft) as a
+       Global Reader, browse to **Billing** > **Licenses** and confirm that no subscription
+       includes Microsoft Entra ID P1 or P2. If one does, this control does not apply.
+    2. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    3. Browse to **Entra ID** > **Overview** > **Properties** and select **Manage security
+       defaults**.
+    4. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgPolicyIdentitySecurityDefaultEnforcementPolicy | Select-Object IsEnabled`
+       (Graph: `GET https://graph.microsoft.com/v1.0/policies/identitySecurityDefaultsEnforcementPolicy`).
+    5. Fail if **Security defaults** is **Disabled** (`isEnabled` is `false`) on a tenant without
+       P1.
+
+remediation:
+  manual: |
+    1. Make sure no administrator relies on legacy authentication or device code flow, and warn
+       users that they will be asked to register Microsoft Authenticator.
+    2. Sign in to the Microsoft Entra admin center as at least a Conditional Access
+       Administrator.
+    3. Browse to **Entra ID** > **Overview** > **Properties** and select **Manage security
+       defaults**.
+    4. Set **Security defaults** to **Enabled** and select **Save**.
+    5. Optionally revoke existing sessions (`Revoke-MgUserSignInSession`) so that every user
+       registers MFA at next sign-in.
+    Graph equivalent: `Update-MgPolicyIdentitySecurityDefaultEnforcementPolicy -IsEnabled:$true`
+    (`PATCH /policies/identitySecurityDefaultsEnforcementPolicy` with `{"isEnabled": true}`).
+  rollback: |
+    Set **Security defaults** to **Disabled**. Only do this after buying P1 and enabling the
+    equivalent Conditional Access policies.
+
+references:
+  - title: Security defaults in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/fundamentals/security-defaults
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUTH-001
+    type: related
+  - id: CB-M365-AUTH-003
+    type: related
+    note: Tenants with P1 replace security defaults with Conditional Access; both cannot be on at once.
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

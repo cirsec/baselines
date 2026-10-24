@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les utilisateurs d'installer des compléments Outlook
+finding:
+  title: Les utilisateurs peuvent installer des compléments Outlook qui lisent et envoient leur courrier
+  description: Un utilisateur piégé qui installe un complément malveillant ou trop privilégié donne à un tiers l'accès au contenu de sa boîte aux lettres.
+description: |
+  Les stratégies d'attribution de rôle appliquées aux boîtes aux lettres n'accordent pas les rôles
+  utilisateur permettant d'installer des compléments : **My Custom Apps**, **My Marketplace Apps** et
+  **My ReadWriteMailbox Apps**. Les compléments dont l'organisation a besoin sont déployés par un
+  administrateur depuis **Applications intégrées** dans le centre d'administration Microsoft 365.
+rationale: |
+  Les compléments Outlook s'exécutent avec les permissions de l'utilisateur sur sa boîte ; un
+  complément avec la permission ReadWriteMailbox peut lire, modifier et envoyer n'importe quel
+  message. Les compléments du Store sont publiés par des tiers et un complément personnalisé peut
+  être chargé depuis l'URL d'un manifeste envoyée par un attaquant. Le déploiement centralisé garde la
+  liste des compléments courte, revue et connue.
+impact: |
+  Les utilisateurs ne peuvent plus ajouter eux-mêmes de compléments, y compris des compléments
+  courants (outils de réunion, connecteurs CRM). Demander aux métiers lesquels ils utilisent avant le
+  changement et déployer centralement ceux qui sont approuvés. Les compléments déjà installés par les
+  utilisateurs continuent de fonctionner jusqu'à leur suppression.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Exchange (https://admin.exchange.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Rôles** > **Rôles d'utilisateur**. Pour chaque stratégie d'attribution de rôle (en
+       commençant par **Default Role Assignment Policy**), ouvrir **Gérer les autorisations** et
+       vérifier que **My Custom Apps**, **My Marketplace Apps** et **My ReadWriteMailbox Apps** sont
+       décochés.
+    3. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-RoleAssignmentPolicy | Select-Object Name, IsDefault,
+         @{n='AppRoles';e={($_.AssignedRoles | Where-Object { $_ -like 'My*Apps' }) -join ', '}}
+       Get-EXOMailbox -ResultSize Unlimited -Properties RoleAssignmentPolicy |
+         Group-Object RoleAssignmentPolicy | Select-Object Name, Count
+       ```
+    4. Échec si une stratégie d'attribution de rôle utilisée par au moins une boîte détient encore
+       l'un des trois rôles.
+remediation:
+  manual: |
+    1. Recenser les compléments utilisés (**Centre d'administration Microsoft 365** > **Paramètres** >
+       **Applications intégrées**) et déployer ceux qui sont approuvés aux utilisateurs ou groupes
+       concernés.
+    2. Dans le centre d'administration Exchange, aller dans **Rôles** > **Rôles d'utilisateur**, ouvrir
+       chaque stratégie d'attribution de rôle utilisée > **Gérer les autorisations**, décocher **My
+       Custom Apps**, **My Marketplace Apps** et **My ReadWriteMailbox Apps**, et enregistrer.
+    3. Équivalent PowerShell (Administrateur Exchange), pour chaque stratégie :
+       ```powershell
+       Get-ManagementRoleAssignment -RoleAssignee "Default Role Assignment Policy" |
+         Where-Object { $_.Role -in 'My Custom Apps','My Marketplace Apps','My ReadWriteMailbox Apps' } |
+         Remove-ManagementRoleAssignment -Confirm:$false
+       ```
+  rollback: |
+    Réajouter le rôle à la stratégie :
+    `New-ManagementRoleAssignment -Policy "Default Role Assignment Policy" -Role "My Marketplace Apps"`.

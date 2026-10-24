@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-008
+title: Turn on key Microsoft 365 alert policies and route them to a monitored destination
+finding:
+  title: Key security alert policies are off or send their alerts to nobody
+  description: Suspicious forwarding, compromised sending, connector abuse or malicious URL clicks raise alerts that no one receives, so the response starts late or never.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [alerting, defender, monitoring, exchange, incident-response]
+
+description: |
+  In the Microsoft Defender portal, at least the alert policies in **{{ alert_policies }}** are
+  turned on. Their alerts reach the security team through a monitored mailbox or distribution list
+  in the email notification settings, or through the SIEM connector for Microsoft Defender XDR
+  incidents (CB-M365-AUDIT-002).
+rationale: |
+  These built-in policies detect common signs of a mailbox or tenant compromise: an account sending
+  spam or phishing, a new or changed connector used to relay mail, mass forwarding of messages, a
+  user clicking a malicious link. They cost nothing to keep on, but they are only useful if someone
+  sees the alert.
+impact: |
+  Alerts add load to the security team. Tune notification thresholds and route them into the normal
+  incident queue rather than personal mailboxes.
+
+parameters:
+  - name: alert_policies
+    type: list
+    description: Built-in alert policies that must be on and routed to the security team (names as shown in the Defender portal).
+    default:
+      - Suspicious email sending patterns detected
+      - Suspicious connector activity
+      - Suspicious email forwarding activity
+      - Messages have been delayed
+      - Tenant restricted from sending unprovisioned email
+      - Tenant restricted from sending email
+      - A potentially malicious URL click was detected
+      - User restricted from sending email
+      - Elevation of Exchange admin privilege
+      - Creation of forwarding/redirect rule
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) with the View-Only
+       Manage Alerts role (or Security Reader).
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Alert policy**.
+    3. For each policy in {{ alert_policies }}, check that **Status** is **On** and open it to check
+       **Email recipients** (a monitored mailbox or list), unless the alerts are consumed in the
+       SIEM.
+    4. If the SIEM is used, check with the SOC that Defender XDR alerts from these policies appear
+       there.
+    5. Alternative in Security & Compliance PowerShell:
+       `Get-ProtectionAlert | Where-Object Name -in @(<list>) | Format-List Name,Disabled,NotificationEnabled,NotifyUser,Severity`.
+    6. Fail if a listed policy is off, or if its alerts reach neither a monitored address nor the
+       SIEM.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Defender portal with the Manage Alerts role (or Organization
+       Configuration).
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Alert policy**.
+    3. Turn on each listed policy, and under **Edit policy** > **Set your recipients** add the
+       security team's monitored mailbox.
+    4. Alternative in Security & Compliance PowerShell:
+       `Set-ProtectionAlert -Identity "<policy>" -Disabled $false -NotificationEnabled $true -NotifyUser soc@example.com`.
+    5. Connect Microsoft Defender XDR to the SIEM (CB-M365-AUDIT-002).
+  rollback: |
+    Turn the policy off or remove the recipient.
+
+references:
+  - title: Alert policies in the Microsoft Defender portal
+    url: https://learn.microsoft.com/defender-xdr/alert-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-ProtectionAlert
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-protectionalert
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Security Suite baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/securitysuite.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ORCA - Office 365 Recommended Configuration Analyzer (ORCA242)
+    url: https://github.com/cammurray/orca
+    publisher: Microsoft (community)
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.4.1v1
+    relation: stricter
+    note: Default list includes the SCuBA alerts plus Exchange admin elevation, forwarding rule creation and restricted user.
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.4.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.003
+  - framework: mitre-attack
+    id: T1562.006
+related_controls:
+  - id: CB-M365-AUDIT-002
+    type: related
+  - id: CB-M365-MAIL-031
+    type: related
+  - id: CB-M365-MAIL-033
+    type: related
+  - id: CB-M365-MAIL-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

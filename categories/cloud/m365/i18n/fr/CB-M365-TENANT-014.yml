@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-TENANT-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer par défaut l'accès B2B inter-locataires et autoriser les partenaires nommés
+finding:
+  title: Les paramètres par défaut d'accès inter-locataires autorisent tout tenant Microsoft Entra
+  description: Les utilisateurs peuvent collaborer avec n'importe quelle organisation Microsoft Entra, y être invités ou l'inviter, y compris des tenants créés par des attaquants.
+parameters:
+  partner_tenants: Identifiants de tenant ou domaines principaux des organisations partenaires disposant de leurs propres paramètres d'accès inter-locataires.
+description: |
+  Les **Paramètres par défaut** de l'accès inter-locataires bloquent la collaboration B2B et la
+  connexion directe B2B, en entrée et en sortie, pour tous les utilisateurs et toutes les
+  applications. Chaque organisation partenaire de `{{ partner_tenants }}` a une entrée dans
+  **Paramètres organisationnels** qui n'autorise que la collaboration B2B ou la connexion directe
+  dont elle a besoin, pour des utilisateurs, groupes et applications précis quand c'est possible.
+
+  Les **Paramètres d'approbation** (MFA, appareil conforme, appareil joint hybride) ne sont
+  approuvés que pour les partenaires dont les politiques ont été évaluées, jamais dans les
+  paramètres par défaut.
+rationale: |
+  Par défaut, Microsoft Entra autorise la collaboration B2B avec tous les tenants dans les deux
+  sens. Tout utilisateur peut être invité dans n'importe quelle organisation et partager avec elle,
+  y compris des tenants jetables utilisés pour l'hameçonnage et l'exfiltration. Bloquer par défaut
+  et lister les partenaires fait de la collaboration externe une décision explicite et revue.
+impact: |
+  La collaboration avec une nouvelle organisation Microsoft Entra échoue tant qu'elle n'est pas
+  ajoutée comme partenaire. Les invités entrants de tenants non listés ne peuvent plus utiliser
+  leurs invitations ni se connecter. Les utilisateurs sans tenant Entra (comptes grand public, code
+  à usage unique par e-mail) ne sont pas concernés par ces paramètres mais par la liste de domaines
+  autorisés (CB-M365-TENANT-012). La conversation externe Teams relève des paramètres d'accès
+  externe de Teams, pas de ces paramètres.
+notes: |
+  Les paramètres par défaut de connexion directe B2B bloquent déjà tout ; ce contrôle les maintient
+  ainsi.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général (Lecteur Sécurité convient aussi).
+    2. Aller dans **Entra ID** > **Identités externes** > **Paramètres d'accès inter-locataires** >
+       **Paramètres par défaut**.
+    3. **Paramètres d'accès entrant** et **Paramètres d'accès sortant** : la collaboration B2B et la
+       connexion directe B2B affichent **Tout bloqué** pour les utilisateurs et les applications.
+       Les **Paramètres d'approbation** ne sont pas cochés.
+    4. **Paramètres organisationnels** : chaque entrée appartient à `{{ partner_tenants }}`.
+    5. Alternative PowerShell en lecture seule (Microsoft Graph, étendue `Policy.Read.All`) :
+       ```
+       $d = Get-MgPolicyCrossTenantAccessPolicyDefault
+       $d.B2bCollaborationInbound.UsersAndGroups.AccessType, $d.B2bCollaborationOutbound.UsersAndGroups.AccessType
+       Get-MgPolicyCrossTenantAccessPolicyPartner | Select-Object TenantId
+       ```
+    6. Échec si une direction par défaut autorise l'accès, si des paramètres d'approbation par
+       défaut sont activés, ou si une entrée partenaire n'est pas dans le paramètre.
+remediation:
+  manual: |
+    1. Avant de modifier les valeurs par défaut, ajouter chaque partenaire de `{{ partner_tenants }}`
+       dans **Paramètres organisationnels** > **Ajouter une organisation**, et autoriser les accès
+       entrants et sortants dont il a besoin.
+    2. Examiner l'activité de connexion inter-locataires (**Supervision et intégrité** >
+       **Classeurs** > **Cross-tenant access activity**) pour repérer les partenaires manquants.
+    3. Avec un Administrateur de la sécurité, aller dans **Entra ID** > **Identités externes** >
+       **Paramètres d'accès inter-locataires** > **Paramètres par défaut**.
+    4. **Modifier les valeurs par défaut entrantes** et **Modifier les valeurs par défaut
+       sortantes** : sur **Collaboration B2B** et **Connexion directe B2B**, régler **État de
+       l'accès** sur **Bloquer l'accès** pour les utilisateurs et les applications ; sur
+       **Paramètres d'approbation**, tout décocher. **Enregistrer**.
+    5. Équivalent avec Microsoft Graph : `PATCH /policies/crossTenantAccessPolicy/default` avec
+       `accessType: blocked` sur `b2bCollaborationInbound`, `b2bCollaborationOutbound`,
+       `b2bDirectConnectInbound` et `b2bDirectConnectOutbound`.
+  rollback: |
+    Sélectionner **Rétablir les valeurs par défaut** dans les paramètres par défaut, ou repasser
+    l'état de l'accès sur **Autoriser l'accès**.

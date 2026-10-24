@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Marquer dans Outlook les messages d'expéditeurs externes
+finding:
+  title: Outlook ne signale pas les messages venant de l'extérieur de l'organisation
+  description: Les utilisateurs ne voient pas d'un coup d'œil qu'un message se faisant passer pour un collègue ou un responsable vient en réalité de l'extérieur.
+description: |
+  L'identification native des expéditeurs externes d'Exchange Online est activée
+  (`Set-ExternalInOutlook -Enabled $true`). Outlook sur le web, le nouvel Outlook, Outlook pour Mac et
+  Outlook mobile affichent une balise **Externe** à côté de l'expéditeur et dans la liste des
+  messages pour le courrier venant de l'extérieur.
+
+  La liste d'autorisation de cette fonction (`AllowList`) ne contient que des domaines ou adresses
+  appartenant à l'organisation mais envoyés depuis un autre tenant (filiales, ancien domaine).
+rationale: |
+  La compromission de messagerie et la fraude au président reposent sur un message qui a l'air
+  interne. Une balise Externe visible donne aux utilisateurs un repère simple : un « responsable » qui
+  écrit depuis l'extérieur est suspect. La balise native est préférée à une bannière dans l'objet ou
+  le corps ajoutée par une règle de flux : elle ne modifie pas le message, ne s'empile pas dans les
+  réponses et ne casse pas les signatures DKIM des messages transférés.
+impact: |
+  Les utilisateurs voient une nouvelle balise ; l'annoncer avec une courte explication. Outlook
+  classique pour Windows n'affiche la balise que dans les versions récentes. Si une règle de flux
+  ajoute déjà une bannière « [EXTERNE] », la supprimer pour éviter le double marquage.
+audit:
+  manual: |
+    1. Ce paramètre n'a pas de page dans les portails. Se connecter à Exchange Online PowerShell avec
+       au moins le rôle Lecteur général.
+    2. Exécuter (lecture seule) :
+       ```powershell
+       Get-ExternalInOutlook | Format-List Identity, Enabled, AllowList
+       ```
+    3. Vérifier que `Enabled` vaut `True` et que `AllowList` ne contient que des domaines ou adresses
+       de l'organisation.
+    4. Échec si `Enabled` vaut `False`, ou si `AllowList` contient des domaines tiers.
+remediation:
+  manual: |
+    1. Se connecter à Exchange Online PowerShell avec le rôle Administrateur Exchange.
+    2. Exécuter :
+       ```powershell
+       Set-ExternalInOutlook -Enabled $true
+       ```
+    3. Si besoin, ajouter les domaines internes hébergés dans un autre tenant :
+       `Set-ExternalInOutlook -AllowList @{Add="subsidiary.example"}`.
+    4. Compter jusqu'à 48 heures avant que la balise apparaisse dans tous les clients.
+  rollback: |
+    `Set-ExternalInOutlook -Enabled $false`.

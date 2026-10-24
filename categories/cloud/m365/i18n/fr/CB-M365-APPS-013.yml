@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Retirer les URI de redirection non sûres des applications
+finding:
+  title: Des applications acceptent des URI de redirection qu'un attaquant pourrait contrôler
+  description: Les URI de redirection avec caractère générique, en HTTP simple ou abandonnées permettent à un attaquant de recevoir les codes d'autorisation et jetons émis pour une application légitime.
+description: |
+  Les URI de redirection (URL de réponse) des inscriptions d'applications sont limitées à des
+  adresses que l'organisation contrôle :
+
+  - aucun caractère générique (`*`) dans une URI ;
+  - `https` uniquement, sauf `http://localhost` pour les clients natifs et de développement ;
+  - aucune URI sur un domaine que l'organisation ne possède plus ou qui n'est pas enregistré (par
+    exemple un domaine expiré, un hôte `azurewebsites.net` ou `cloudapp.net` supprimé, un
+    raccourcisseur d'URL tiers) ;
+  - aucune URI restée des tests (`https://jwt.ms`, `https://oauth.pstmn.io`, hôtes `ngrok`
+    personnels) sur des applications de production.
+rationale: |
+  Microsoft Entra envoie les codes d'autorisation et, pour les flux implicites, les jetons à l'URI de
+  redirection. Si cette URI pointe vers un hôte qu'un attaquant peut enregistrer ou intercepter,
+  l'attaquant reçoit le code de la victime pour une application de confiance et peut l'échanger. Les
+  noms d'hôtes cloud orphelins sont récupérés par des attaquants précisément dans ce but.
+impact: |
+  Retirer une URI encore utilisée par un client casse la connexion de ce client. Confirmer d'abord
+  avec le propriétaire de l'application.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Inscriptions d'applications** > **Toutes les applications**, ouvrir
+       chaque application et examiner **Authentification** > **Configurations de plateforme** (Web,
+       Application monopage, Applications mobiles et de bureau).
+    3. En Microsoft Graph PowerShell (étendue `Application.Read.All`), lister les URI avec
+       `Get-MgApplication -All -Property displayName,appId,web,spa,publicClient | Select-Object displayName,@{n='uris';e={$_.Web.RedirectUris + $_.Spa.RedirectUris + $_.PublicClient.RedirectUris}}`.
+    4. Résoudre chaque nom d'hôte : vérifier qu'il s'agit d'un domaine de l'organisation et que le nom
+       DNS pointe encore vers une ressource qu'elle contrôle.
+    5. Échec si une URI contient un caractère générique, utilise `http` vers un autre hôte que
+       `localhost`, pointe vers un hôte non enregistré ou contrôlé par un tiers, ou est une URI de
+       test sur une application de production.
+remediation:
+  manual: |
+    1. Avec le propriétaire de l'application, lister les URI de redirection réellement utilisées par
+       les clients.
+    2. Aller dans **Inscriptions d'applications** > l'application > **Authentification** et
+       supprimer les URI non sûres, ou les remplacer par des URI `https` exactes sur des domaines
+       contrôlés.
+    3. Alternative Graph : `Update-MgApplication -ApplicationId <id> -Web @{ RedirectUris = @('<uri>') }`.
+    4. Supprimer les enregistrements DNS orphelins qui pointaient vers des ressources cloud
+       supprimées.
+    5. Rôle requis : Administrateur d'applications cloud, ou propriétaire de l'application.
+  rollback: |
+    Ajouter de nouveau l'URI retirée dans **Authentification** une fois son hôte confirmé sous
+    contrôle.

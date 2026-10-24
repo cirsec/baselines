@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-026
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder les appelants téléphoniques dans la salle d'attente des réunions Teams
+finding:
+  title: Les personnes qui appellent par téléphone rejoignent les réunions Teams sans passer par la salle d'attente
+  description: Un appelant qui dispose du numéro et de l'ID de conférence entre directement dans la réunion, identifié seulement par un numéro de téléphone usurpable.
+description: |
+  Les personnes qui rejoignent une réunion par téléphone attendent dans la salle d'attente qu'un
+  organisateur, coorganisateur ou présentateur les admette (`AllowPSTNUsersToBypassLobby` = `False`
+  dans chaque stratégie de réunion).
+rationale: |
+  Les participants par téléphone ne sont pas authentifiés : leur numéro peut être usurpé et les ID de
+  conférence fuient par les invitations transférées. Les garder en salle d'attente laisse
+  l'organisateur décider avant qu'ils n'entendent la réunion.
+impact: |
+  Les organisateurs doivent admettre les participants par téléphone. Le paramètre est une valeur par
+  défaut que les organisateurs peuvent changer dans les **Options de réunion**. Désactivé est la
+  valeur par défaut.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Participation à la réunion et salle d'attente > Les personnes qui appellent peuvent contourner la salle d'attente
+  recommended_value: Désactivé (AllowPSTNUsersToBypassLobby = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Participation à la réunion et salle d'attente**, vérifier que **Les personnes
+       qui appellent peuvent contourner la salle d'attente** est **Désactivé**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowPSTNUsersToBypassLobby`.
+    5. Échec si une stratégie renvoie `True`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Participation à la réunion et salle d'attente**, régler **Les personnes qui
+       appellent peuvent contourner la salle d'attente** sur **Désactivé** puis **Enregistrer**. Rôle :
+       Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowPSTNUsersToBypassLobby $false` (répéter avec
+       `-Identity <stratégie>` pour les stratégies personnalisées). Les changements peuvent prendre
+       jusqu'à 24 heures.

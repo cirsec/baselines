@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-012
+title: Restrict who can read, disable or shorten Microsoft 365 audit logs
+finding:
+  title: Too many accounts can read audit logs or change their recording and retention
+  description: Audit logs reveal what every user did and are the evidence of an intrusion; broad read access exposes personal data, and broad write access lets an attacker erase their tracks.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [audit, logging, least-privilege, purview, rbac]
+
+description: |
+  Access to Microsoft 365 audit data and settings is limited to named people with an operational
+  need, reviewed at least every six months:
+
+  - **Write**: the roles that can turn the unified audit log or mailbox auditing off, create or
+    delete audit retention policies, or change diagnostic settings (Audit Logs role, Organization
+    Configuration role, Organization Management and Compliance Administrator role groups, Security
+    Administrator for Entra diagnostic settings) are held only by the administrators who manage
+    logging, preferably eligible through PIM;
+  - **Read**: the View-Only Audit Logs and Audit Logs roles, Security Reader and Reports Reader are
+    held only by the security, SOC and investigation teams;
+  - the SIEM copy of the logs (CB-M365-AUDIT-002) has its own access control that tenant
+    administrators cannot change alone.
+rationale: |
+  An attacker with administrator rights commonly tries to disable logging or shorten retention
+  before acting. Limiting write access, and keeping an independent copy, preserves the evidence.
+  Audit logs also contain personal data (who read which mail, who opened which file); the GDPR
+  principle of data minimization applies to their readers as much as to their content.
+impact: |
+  Administrators who used audit search for troubleshooting must request access or go through the
+  security team.
+
+audit:
+  manual: |
+    1. In the Microsoft Purview portal (https://purview.microsoft.com) as at least a Global Reader,
+       browse to **Settings** > **Roles and scopes** > **Role groups** and list the members of role
+       groups that contain **Audit Logs**, **View-Only Audit Logs** or **Organization
+       Configuration**.
+    2. In Exchange Online PowerShell (View-Only Organization Management), list who holds the Audit
+       Logs role: `Get-ManagementRoleAssignment -Role "Audit Logs" -GetEffectiveUsers | Select-Object EffectiveUserName,RoleAssigneeName`
+       and the same for `View-Only Audit Logs`; list members of Organization Management with
+       `Get-RoleGroupMember "Organization Management"`.
+    3. In the Microsoft Entra admin center, browse to **Entra ID** > **Roles & admins** and list the
+       members of Global Administrator, Security Administrator, Compliance Administrator, Security
+       Reader and Reports Reader.
+    4. Compare with the list of people approved for logging administration and investigation.
+    5. Fail if accounts outside the approved list hold these roles, or if no review has taken place
+       in the last six months.
+
+remediation:
+  manual: |
+    1. Define and approve the list of people who administer logging and those who investigate.
+    2. Remove other members from the Purview and Exchange role groups (**Settings** > **Roles and
+       scopes** > **Role groups**, or `Remove-RoleGroupMember`) and from the Entra roles.
+    3. Where possible, create a dedicated role group with only **View-Only Audit Logs** for
+       investigators, and move write roles to PIM-eligible assignments.
+    4. Alert on changes to audit settings (`Set-AdminAuditLogConfig`, `Set-OrganizationConfig
+       -AuditDisabled`, `New/Set/Remove-UnifiedAuditLogRetentionPolicy`, diagnostic setting changes)
+       in the SIEM.
+    5. Role required: Organization Management (Exchange, Purview role groups) and Privileged Role
+       Administrator (Entra roles).
+  rollback: |
+    Add the removed member back to the role group.
+
+references:
+  - title: Permissions in the Microsoft Purview portal
+    url: https://learn.microsoft.com/purview/purview-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Search the audit log
+    url: https://learn.microsoft.com/purview/audit-search
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-ManagementRoleAssignment
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-managementroleassignment
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommandations de sécurité pour l'architecture d'un système de journalisation
+    url: https://messervices.cyber.gouv.fr/documents-guides/anssi-guide-recommandations_securite_architecture_systeme_journalisation.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-logging
+    framework_version: "1.0"
+    id: "R26"
+    relation: partial
+    note: In Microsoft 365, write access means the ability to disable recording or change retention; logs cannot be edited directly.
+  - framework: anssi-logging
+    framework_version: "1.0"
+    id: "R27"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(4)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1562.008
+related_controls:
+  - id: CB-M365-AUDIT-001
+    type: related
+  - id: CB-M365-AUDIT-003
+    type: related
+  - id: CB-M365-ADMIN-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

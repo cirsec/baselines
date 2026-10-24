@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-001
+title: Turn on the unified audit log
+finding:
+  title: User and administrator activity in Microsoft 365 is not recorded in the unified audit log
+  description: Without audit log ingestion, mailbox access, file sharing, admin changes and many security events leave no searchable trace, and an intrusion cannot be investigated.
+status: active
+profiles: [baseline]
+risk:
+  severity: critical
+assessment: manual
+tags: [audit, logging, unified-audit-log, purview, incident-response]
+
+description: |
+  Unified audit log ingestion is on for the organization (`UnifiedAuditLogIngestionEnabled` =
+  `True`). User and administrator activities from Exchange Online, SharePoint, OneDrive, Teams,
+  Microsoft Entra ID, Power Platform, Copilot and the other Microsoft 365 services are recorded and
+  searchable in Microsoft Purview **Audit**.
+rationale: |
+  The unified audit log is the main source of evidence for Microsoft 365 incidents: mailbox rules
+  created by an attacker, files downloaded, permissions granted, admin roles changed. It is on by
+  default in most tenants but can be turned off by an administrator, sometimes by an attacker to
+  hide activity. Every other logging control (export to the SIEM, alerting, retention) depends on
+  it.
+impact: |
+  None known. Turning it on can take up to 60 minutes to apply.
+notes: |
+  Run the check in Exchange Online PowerShell: in Security & Compliance PowerShell the same cmdlet
+  always returns `False` for this property.
+
+setting:
+  location: Microsoft Purview portal > Solutions > Audit (Exchange Online Get-AdminAuditLogConfig UnifiedAuditLogIngestionEnabled)
+  default_value: "True (most tenants)"
+  recommended_value: "True"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Purview portal (https://purview.microsoft.com) as at least a member
+       of a role group with the View-Only Audit Logs or Audit Logs role.
+    2. Browse to **Solutions** > **Audit**. If a banner offers **Start recording user and admin
+       activity**, the log is off.
+    3. Run a search for the last 24 hours and check that results are returned.
+    4. Alternative in Exchange Online PowerShell (View-Only Organization Management is enough):
+       `Get-AdminAuditLogConfig | Format-List UnifiedAuditLogIngestionEnabled`.
+    5. Fail if `UnifiedAuditLogIngestionEnabled` is `False` or the Audit page offers to start
+       recording.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Purview portal with the Audit Logs role (for example Organization
+       Management or Compliance Administrator).
+    2. Browse to **Solutions** > **Audit** and select **Start recording user and admin activity**.
+    3. Alternative in Exchange Online PowerShell (Audit Logs role):
+       `Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true`.
+    4. Restrict who can turn it off (CB-M365-AUDIT-012) and alert on the change (audit operation
+       `Set-AdminAuditLogConfig`).
+  rollback: |
+    Not recommended. `Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $false` stops
+    recording.
+
+references:
+  - title: Turn auditing on or off
+    url: https://learn.microsoft.com/purview/audit-log-enable-disable
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Get-AdminAuditLogConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/get-adminauditlogconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Recommandations de sécurité pour l'architecture d'un système de journalisation
+    url: https://messervices.cyber.gouv.fr/documents-guides/anssi-guide-recommandations_securite_architecture_systeme_journalisation.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "3.1.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SECURITYSUITE.5.1v1
+    relation: equivalent
+  - framework: anssi-logging
+    framework_version: "1.0"
+    id: "R2"
+    relation: partial
+    note: Applies the recommendation to Microsoft 365 services only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1562.008
+related_controls:
+  - id: CB-M365-AUDIT-002
+    type: related
+  - id: CB-M365-AUDIT-003
+    type: related
+  - id: CB-M365-AUDIT-004
+    type: related
+  - id: CB-M365-AUDIT-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

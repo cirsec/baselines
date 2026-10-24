@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DATA-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une stratégie DLP à Microsoft 365 Copilot
+finding:
+  title: Microsoft 365 Copilot peut traiter et résumer le contenu le plus sensible sans restriction
+  description: Sans stratégie DLP Copilot, les invites contenant des identifiants personnels sont traitées et envoyées à la recherche web, et les fichiers étiquetés hautement confidentiels apparaissent dans les résumés IA pour quiconque peut les ouvrir.
+description: |
+  Une stratégie DLP Microsoft Purview sur l'emplacement **Microsoft 365 Copilot et Copilot Chat**
+  est activée pour tous les utilisateurs, avec au moins deux règles :
+
+  - **Le contenu contient** > **Étiquettes de confidentialité** avec les étiquettes les plus hautes
+    de l'organisation (par exemple *Hautement confidentiel*, *Personnel*) et l'action **Empêcher
+    Copilot de traiter le contenu** ;
+  - **Le contenu contient** > **Types d'informations sensibles** avec les types de
+    CB-M365-DATA-001 et l'action **Empêcher Copilot de traiter le contenu** > **Effectuer des
+    recherches web** (et **Traitement des invites** là où le métier l'accepte).
+rationale: |
+  Copilot agit avec les permissions de l'utilisateur : les problèmes de surpartage deviennent
+  immédiatement visibles via les résumés et la recherche. Exclure du traitement Copilot le contenu
+  étiqueté le plus sensible limite cette exposition, et bloquer l'ancrage web pour les invites qui
+  contiennent des identifiants personnels évite leur envoi à un moteur de recherche externe.
+impact: |
+  Les utilisateurs ne peuvent pas obtenir de réponses Copilot fondées sur les éléments étiquetés
+  exclus (ils restent visibles dans les citations). La règle sur les étiquettes suppose une
+  taxonomie d'étiquettes en place (CB-M365-DATA-005). Les modifications de stratégie peuvent prendre
+  jusqu'à quatre heures pour s'appliquer.
+notes: |
+  L'emplacement Copilot n'existe que dans le modèle **Personnalisé** et ne peut pas être combiné avec
+  d'autres emplacements dans la même stratégie. Bloquer les e-mails externes comme source d'ancrage
+  de Copilot (préversion) est un complément utile contre l'injection de prompt.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Purview (https://purview.microsoft.com) avec au moins le
+       rôle Lecteur général.
+    2. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies**.
+    3. Trouver une stratégie avec l'emplacement **Microsoft 365 Copilot et Copilot Chat** pour tous
+       les utilisateurs, à l'**État** **Activé**, et vérifier ses règles par rapport à la
+       description.
+    4. Alternative en PowerShell Sécurité et conformité : `Get-DlpCompliancePolicy | Format-List
+       Name,Mode,Locations` et `Get-DlpComplianceRule -Policy <stratégie> | Format-List
+       Name,ContentContainsSensitiveInformation,AdvancedRule,RestrictAccess` (l'emplacement Copilot
+       apparaît comme un emplacement `Applications` de type Copilot).
+    5. Échec si aucune stratégie appliquée ne cible l'emplacement Copilot, ou si elle n'a ni règle
+       sur les étiquettes ni règle sur les types d'informations sensibles.
+remediation:
+  manual: |
+    1. Se connecter au portail Microsoft Purview avec le rôle Purview Data Security AI Admin,
+       Administrateur de conformité ou Administrateur des données de conformité.
+    2. Aller dans **Solutions** > **Protection contre la perte de données** > **Stratégies** >
+       **Créer une stratégie** > **Personnalisé** > **Stratégie personnalisée**.
+    3. Sur **Emplacements**, activer uniquement **Microsoft 365 Copilot et Copilot Chat**, pour tous
+       les utilisateurs.
+    4. Ajouter une règle **Le contenu contient** > **Étiquettes de confidentialité** (étiquettes les
+       plus hautes) avec **Empêcher Copilot de traiter le contenu**.
+    5. Ajouter une seconde règle **Le contenu contient** > **Types d'informations sensibles** (types
+       de CB-M365-DATA-001) avec **Empêcher Copilot de traiter le contenu** > **Effectuer des
+       recherches web**, et éventuellement **Traitement des invites**.
+    6. Activer les conseils de stratégie avec un lien vers la page interne de traitement des
+       données, exécuter en simulation, puis activer la stratégie.
+  rollback: |
+    Passer la stratégie en simulation ou la désactiver.

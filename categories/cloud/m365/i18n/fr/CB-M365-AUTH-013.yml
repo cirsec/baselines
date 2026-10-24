@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-013
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer l'authentification multifacteur préférée par le système
+finding:
+  title: Les utilisateurs ne sont pas orientés vers leur méthode MFA la plus forte
+  description: Les utilisateurs gardent leur méthode par défaut, souvent le SMS ou un appel, même après avoir enregistré Authenticator ou une passkey.
+description: |
+  Dans les paramètres de la stratégie des méthodes d'authentification, **Authentification
+  multifacteur préférée par le système** est réglée sur **Activé** pour **Tous les utilisateurs**,
+  sans exclusion. À la connexion, Entra ID demande alors la méthode la plus sûre enregistrée par
+  l'utilisateur au lieu de la méthode par défaut qu'il a choisie.
+
+  La valeur par défaut du tenant est **Géré par Microsoft**. Ce contrôle demande **Activé**
+  explicitement, pour que le comportement ne dépende pas d'une valeur que Microsoft peut changer.
+rationale: |
+  Les utilisateurs changent rarement leur méthode par défaut. Avec des méthodes téléphoniques
+  encore enregistrées, ils continuent de recevoir des SMS ou des appels même après avoir enregistré
+  Authenticator ou une passkey. Choisir la méthode enregistrée la plus forte relève la robustesse
+  réelle de la MFA sans action de l'utilisateur.
+impact: |
+  Les utilisateurs voient une méthode dont ils n'ont peut-être pas l'habitude ; ils peuvent
+  toujours en choisir une autre avec **Se connecter d'une autre manière**. **Activé** s'applique au
+  second facteur seulement ; **Géré par Microsoft** l'applique aussi au premier facteur.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Méthodes d'authentification > Paramètres > Authentification multifacteur préférée par le système
+  recommended_value: Activé, Tous les utilisateurs
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Paramètres**.
+    3. Lire **Authentification multifacteur préférée par le système**, sa cible et ses exclusions.
+    4. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `(Get-MgPolicyAuthenticationMethodPolicy).SystemCredentialPreferences | Format-List`
+    5. Échec si l'état n'est pas **Activé** (`enabled`), si la cible n'est pas tous les
+       utilisateurs, ou si un groupe est exclu.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Paramètres**.
+    3. Régler **Authentification multifacteur préférée par le système** sur **Activé**, inclure
+       **Tous les utilisateurs**, retirer les exclusions et enregistrer.
+    Équivalent Graph : `PATCH /policies/authenticationMethodsPolicy` avec
+    `systemCredentialPreferences` à `{"state": "enabled", "includeTargets": [{"targetType": "group", "id": "all_users"}], "excludeTargets": []}`.
+  rollback: |
+    Remettre le réglage sur **Géré par Microsoft**.

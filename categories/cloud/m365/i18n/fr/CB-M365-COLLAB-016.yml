@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-016
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que les stockages cloud tiers approuvés dans Teams
+finding:
+  title: Teams permet de connecter des stockages cloud tiers non approuvés
+  description: Les utilisateurs peuvent rattacher des stockages Dropbox, Box, Google Drive, Citrix ShareFile ou Egnyte aux équipes, ce qui sort les fichiers de la rétention, de la DLP et de l'audit Microsoft 365.
+description: |
+  Dans la configuration du client Teams, seuls les fournisseurs de stockage tiers de
+  `{{ approved_cloud_storage }}` sont activés (`AllowDropBox`, `AllowBox`, `AllowGoogleDrive`,
+  `AllowShareFile`, `AllowEgnyte`). Avec la liste vide par défaut, les cinq sont désactivés et les
+  fichiers de Teams ne résident que dans SharePoint et OneDrive.
+rationale: |
+  Les fichiers stockés chez un tiers via Teams échappent aux étiquettes de confidentialité, à la DLP,
+  à la rétention, à eDiscovery et au journal d'audit Microsoft 365, et leur partage suit les règles de
+  l'autre fournisseur. Limiter les fournisseurs à ceux approuvés garde le contenu des équipes sous la
+  gouvernance des données de l'organisation.
+impact: |
+  Les équipes qui avaient ajouté un fournisseur désactivé comme onglet n'y accèdent plus depuis Teams
+  ; les fichiers restent chez le tiers. Les déplacer vers SharePoint avant le changement.
+setting:
+  location: Centre d'administration Teams > Équipes > Paramètres Teams > Fichiers
+  recommended_value: "Seuls {{ approved_cloud_storage }} activés"
+parameters:
+  approved_cloud_storage: "Fournisseurs de stockage tiers autorisés dans Teams (parmi : DropBox, Box, GoogleDrive, ShareFile, Egnyte)."
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Équipes** > **Paramètres Teams** > **Fichiers** et vérifier que seuls les
+       fournisseurs de `{{ approved_cloud_storage }}` sont **Activés**.
+    3. Avec Microsoft Teams PowerShell (`Connect-MicrosoftTeams`, le rôle Lecteur général suffit) :
+       `Get-CsTeamsClientConfiguration -Identity Global | Select-Object AllowDropBox, AllowBox, AllowGoogleDrive, AllowShareFile, AllowEgnyte`.
+    4. Échec si un fournisseur hors de `{{ approved_cloud_storage }}` vaut `True`.
+remediation:
+  manual: |
+    1. Identifier les équipes qui utilisent des onglets de stockage tiers et convenir d'une migration
+       vers SharePoint.
+    2. Dans le centre d'administration Teams, aller dans **Équipes** > **Paramètres Teams** >
+       **Fichiers**, désactiver chaque fournisseur non approuvé puis **Enregistrer**. Rôle :
+       Administrateur Teams.
+    3. Équivalent PowerShell :
+       `Set-CsTeamsClientConfiguration -Identity Global -AllowDropBox $false -AllowBox $false -AllowGoogleDrive $false -AllowShareFile $false -AllowEgnyte $false`
+       (garder `$true` pour les fournisseurs approuvés).

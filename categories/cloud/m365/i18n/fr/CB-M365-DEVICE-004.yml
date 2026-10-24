@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-004
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le nombre d'appareils que chaque utilisateur peut joindre ou inscrire
+finding:
+  title: Les utilisateurs peuvent joindre ou inscrire un grand nombre d'appareils
+  description: "Le quota d'appareils par utilisateur dépasse la limite de l'organisation : un seul compte peut ajouter de nombreuses identités d'appareil au tenant."
+description: |
+  Le paramètre d'appareil **Nombre maximal d'appareils par utilisateur** (*Maximum number of devices
+  per user*) vaut `{{ max_devices_per_user }}` ou moins. Le quota compte les appareils joints à
+  Microsoft Entra et inscrits dans Microsoft Entra dont l'utilisateur est propriétaire. Il ne
+  s'applique pas aux appareils joints en hybride.
+rationale: |
+  Chaque identité d'appareil peut porter un Primary Refresh Token et satisfaire des conditions
+  d'accès conditionnel basées sur l'appareil. Un quota bas limite le nombre d'objets appareil qu'un
+  compte compromis peut créer, pour persister ou saturer l'annuaire, et garde lisibles les
+  inventaires par utilisateur. Microsoft fixe la valeur par défaut à 50, bien au-delà du besoin d'un
+  utilisateur normal.
+impact: |
+  Un utilisateur qui atteint la limite ne peut plus inscrire ni joindre d'appareil avant d'en
+  supprimer un ancien. Le personnel qui manipule beaucoup d'appareils (techniciens, comptes de test)
+  doit utiliser un compte de gestionnaire d'inscription d'appareil ou le provisionnement en bloc
+  plutôt que son propre compte. À combiner avec le nettoyage des appareils obsolètes pour que les
+  appareils retirés n'occupent pas le quota.
+notes: |
+  Intune a sa propre limite d'appareils à l'inscription (Appareils > Intégration des appareils >
+  Inscription > Restriction de limite d'appareils, de 1 à 15). Elle ne remplace pas ce quota Entra,
+  qui s'applique même sans Intune.
+parameters:
+  max_devices_per_user: Valeur maximale acceptée pour le quota Entra d'appareils par utilisateur.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Appareils > Paramètres de l'appareil > Nombre maximal d'appareils par utilisateur
+  recommended_value: "{{ max_devices_per_user }} ou moins"
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**.
+    3. Lire **Nombre maximal d'appareils par utilisateur**.
+    4. Alternative en lecture seule : `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` et lire
+       `userDeviceQuota`.
+    5. Échec si la valeur dépasse `{{ max_devices_per_user }}` ou vaut **Illimité**.
+remediation:
+  manual: |
+    1. Repérer les utilisateurs au-dessus de la cible : dans **Entra ID** > **Appareils** > **Tous
+       les appareils**, filtrer par propriétaire, ou exporter la liste avec **Télécharger les
+       appareils** et compter les appareils par propriétaire. Supprimer d'abord les appareils
+       obsolètes.
+    2. Aller dans **Entra ID** > **Appareils** > **Paramètres de l'appareil**. Rôle : administrateur
+       d'appareils cloud.
+    3. Régler **Nombre maximal d'appareils par utilisateur** sur `{{ max_devices_per_user }}` (ou
+       moins) et enregistrer.
+    4. Équivalent Graph : `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       avec l'objet complet de la stratégie et `userDeviceQuota` réglé sur la valeur cible.
+  rollback: |
+    Remonter **Nombre maximal d'appareils par utilisateur** à la valeur précédente.

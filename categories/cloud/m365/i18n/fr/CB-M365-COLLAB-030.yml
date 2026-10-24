@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-COLLAB-030
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer la conversation dans les réunions externes organisées par des organisations non approuvées
+finding:
+  title: Les utilisateurs peuvent converser dans des réunions organisées par des organisations non approuvées par le tenant
+  description: Dans une réunion créée par une organisation inconnue, les utilisateurs peuvent recevoir liens et fichiers dans la conversation et y publier du contenu interne.
+description: |
+  Les utilisateurs de l'organisation ne peuvent ni lire ni écrire de messages dans les réunions Teams
+  organisées par des organisations non approuvées dans l'accès externe
+  (`AllowExternalNonTrustedMeetingChat` = `False` dans chaque stratégie de réunion). Ils peuvent
+  toujours rejoindre ces réunions avec audio, vidéo et partage d'écran.
+rationale: |
+  Une réunion organisée par un tenant non approuvé est un prétexte facile d'hameçonnage : l'attaquant
+  invite la victime puis dépose liens ou fichiers dans la conversation de réunion, hors des
+  protections de conversation de l'organisation. La même conversation permet de coller du contenu
+  interne vers une partie inconnue. Bloquer la conversation dans ces réunions réduit les deux.
+impact: |
+  Les utilisateurs qui assistent aux réunions de clients ou fournisseurs absents de la liste approuvée
+  ne peuvent pas utiliser la conversation. Ajouter les partenaires fréquents à l'accès externe
+  (CB-M365-COLLAB-018) pour la rétablir.
+setting:
+  location: Centre d'administration Teams > Réunions > Stratégies de réunion > Engagement en réunion > Conversation de réunion externe
+  recommended_value: Désactivé (AllowExternalNonTrustedMeetingChat = False)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Teams (https://admin.teams.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Réunions** > **Stratégies de réunion** et ouvrir la stratégie **Global (par défaut à
+       l'échelle de l'organisation)**, puis chaque stratégie personnalisée attribuée.
+    3. Dans la section **Engagement en réunion**, vérifier que **Conversation de réunion externe** est
+       **Désactivé**.
+    4. Avec Microsoft Teams PowerShell (le rôle Lecteur général suffit) :
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowExternalNonTrustedMeetingChat`.
+    5. Échec si une stratégie renvoie `True`.
+remediation:
+  manual: |
+    1. Dans le centre d'administration Teams, aller dans **Réunions** > **Stratégies de réunion** et
+       ouvrir la stratégie **Global (par défaut à l'échelle de l'organisation)**.
+    2. Dans la section **Engagement en réunion**, régler **Conversation de réunion externe** sur
+       **Désactivé** puis **Enregistrer**. Rôle : Administrateur Teams.
+    3. Répéter pour chaque stratégie personnalisée, sauf exception documentée pour ses utilisateurs.
+    4. Équivalent PowerShell :
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowExternalNonTrustedMeetingChat $false` (répéter
+       avec `-Identity <stratégie>` pour les stratégies personnalisées). Les changements peuvent prendre
+       jusqu'à 24 heures.

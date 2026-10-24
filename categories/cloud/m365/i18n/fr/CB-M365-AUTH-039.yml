@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-039
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer la réinitialisation de mot de passe en libre-service pour tous les utilisateurs
+finding:
+  title: La réinitialisation de mot de passe en libre-service est désactivée ou limitée à un groupe
+  description: Les utilisateurs qui oublient leur mot de passe ou sont verrouillés dépendent du support, dont les vérifications d'identité par téléphone sont une cible courante d'ingénierie sociale.
+description: |
+  La réinitialisation de mot de passe en libre-service (SSPR) est activée avec la portée **Tous**.
+  Chaque utilisateur peut réinitialiser un mot de passe oublié ou déverrouiller son compte après avoir
+  prouvé son identité avec les méthodes d'authentification qu'il a inscrites, sans appeler le
+  support.
+
+  Les administrateurs utilisent toujours la stratégie de réinitialisation administrateur distincte
+  (deux méthodes, fixée par Microsoft), quelle que soit cette portée.
+rationale: |
+  Une procédure de récupération qui repose sur une personne vérifiant une identité au téléphone est
+  ce que les attaquants exploitent pour prendre le contrôle de comptes (ingénierie sociale du
+  support). Une réinitialisation en libre-service fondée sur des méthodes inscrites est à la fois plus
+  rapide pour les utilisateurs et plus difficile à manipuler. Elle permet aussi aux utilisateurs de
+  lever eux-mêmes un verrouillage intelligent (CB-M365-AUTH-038).
+impact: |
+  Les utilisateurs doivent inscrire des méthodes de réinitialisation (CB-M365-AUTH-041). Pour les
+  utilisateurs synchronisés, la réinitialisation n'agit en local que si la réécriture du mot de passe
+  est activée dans Microsoft Entra Connect ou Cloud Sync. Les procédures du support changent : il ne
+  réinitialise plus de mot de passe sur un simple appel.
+notes: |
+  Aucune API Microsoft Graph ne permet de lire la portée SSPR : la vérification se fait dans le
+  portail. Le SSPR pour les utilisateurs cloud exige au moins une offre Microsoft 365 Business ou
+  Microsoft Entra ID P1 ; la réécriture pour les utilisateurs hybrides exige P1.
+setting:
+  location: Centre d'administration Microsoft Entra > Entra ID > Réinitialisation du mot de passe > Propriétés > Réinitialisation du mot de passe en libre-service activée
+  recommended_value: Tous
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Réinitialisation du mot de passe** > **Propriétés**.
+    3. Vérifier que **Réinitialisation du mot de passe en libre-service activée** vaut **Tous**.
+    4. Pour les tenants hybrides, aller dans **Réinitialisation du mot de passe** > **Intégration
+       locale** et vérifier que la réécriture du mot de passe est activée.
+    5. Échec si le réglage vaut **Aucun** ou **Sélectionné**.
+remediation:
+  manual: |
+    1. Vérifier que les méthodes d'authentification et les réglages d'inscription sont prêts
+       (CB-M365-AUTH-040, CB-M365-AUTH-041) et, pour les utilisateurs hybrides, que la réécriture du
+       mot de passe est activée dans le client de synchronisation.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Réinitialisation du mot de passe** > **Propriétés**.
+    4. Faire un pilote avec **Sélectionné** et un groupe de test si le SSPR n'a jamais été utilisé,
+       puis régler **Réinitialisation du mot de passe en libre-service activée** sur **Tous** et
+       **Enregistrer**.
+    5. Mettre à jour la procédure du support et informer les utilisateurs (https://aka.ms/sspr pour
+       réinitialiser, https://aka.ms/mysecurityinfo pour s'inscrire).
+  rollback: |
+    Remettre la portée sur **Sélectionné** avec un groupe, ou sur **Aucun**.

@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-017
+title: Require assignment for high-privilege Microsoft administration tools
+finding:
+  title: Any user can sign in to Microsoft administration tools such as Graph PowerShell, Azure CLI or Graph Explorer
+  description: These pre-consented Microsoft applications let any compromised account enumerate the directory or call administration APIs with no further consent prompt.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, first-party, administration-tools, assignment, reconnaissance]
+
+description: |
+  The service principals of Microsoft first-party administration tools exist in the tenant, have
+  **Assignment required?** set to **Yes**, and are assigned only to the administrators and
+  automation accounts that use them. When a tool is not used at all, sign-in is disabled on its
+  service principal. The list covers at least:
+
+  - Microsoft Azure PowerShell (`1950a258-227b-4e31-a9cf-717495945fc2`);
+  - Microsoft Azure CLI and Azure Developer CLI (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`);
+  - Microsoft Graph Command Line Tools (`14d82eec-204b-4c2f-b7e8-296a70dab67e`);
+  - Graph Explorer (`de8bc8b5-d9f9-48b1-a8ad-b748da725064`);
+  - Azure Active Directory PowerShell, legacy (`1b730954-1685-4b74-9bfd-dac224a7b894`);
+  - Microsoft Teams PowerShell Cmdlets (`12128f48-ec9e-42f0-b203-ea49fb6af367`);
+  - Microsoft Exchange Online PowerShell (`fb78d390-0c51-40cd-8e17-fdbfab77341b`);
+  - Microsoft SharePoint Online Management Shell (`9bc3ab49-b65d-410a-85ad-de819febfddc`);
+  - Power Platform CLI (`9cee029c-6210-4654-90bb-17e6e9d36617`).
+rationale: |
+  These applications are trusted by every tenant and come with broad delegated permissions. After
+  phishing a single user, attackers use them to dump users, groups, applications and policies, the
+  first step toward privilege escalation. Standard users have no business reason to use them.
+  A first-party application can be used even when its service principal is absent from the tenant,
+  so the service principal must be created before assignment can be enforced.
+impact: |
+  Administrators, developers and automation that use these tools must be assigned (preferably
+  through a group). Check the sign-in logs of each application to find current users before
+  enforcing.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **All applications**, set **Application type**
+       to **Microsoft Applications**, and search each application ID from the list.
+    3. For each one, open **Properties** and check **Assignment required?** = **Yes** (or **Enabled
+       for users to sign-in?** = **No**), then check **Users and groups** for the assigned
+       principals.
+    4. In Microsoft Graph PowerShell (scope `Application.Read.All`), run
+       `Get-MgServicePrincipal -Filter "appId eq '<appId>'" -Property displayName,appRoleAssignmentRequired,accountEnabled`
+       for each application ID.
+    5. Fail if a listed service principal is missing, or is enabled with
+       `appRoleAssignmentRequired` = `false`.
+
+remediation:
+  manual: |
+    1. For each tool, list current users from **Enterprise apps** > the application > **Sign-in
+       logs**.
+    2. If the service principal is missing, create it with Microsoft Graph PowerShell (scope
+       `Application.ReadWrite.All`): `New-MgServicePrincipal -AppId <appId>`.
+    3. Under **Users and groups**, assign the group of administrators or automation accounts that
+       need the tool.
+    4. Under **Properties**, set **Assignment required?** to **Yes** (Graph:
+       `Update-MgServicePrincipal -ServicePrincipalId <id> -AppRoleAssignmentRequired:$true`), or
+       set **Enabled for users to sign-in?** to **No** for tools nobody uses.
+    5. Role required: Cloud Application Administrator or Application Administrator.
+  rollback: |
+    Set **Assignment required?** back to **No** on the affected application.
+
+references:
+  - title: Assign users and groups to an enterprise application
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/assign-user-or-group-access-portal
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1186 - Require explicit assignment of high-privilege first-party Entra apps
+    url: https://maester.dev/docs/tests/MT.1186/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1087.004
+  - framework: mitre-attack
+    id: T1059.009
+  - framework: mitre-attack
+    id: T1526
+related_controls:
+  - id: CB-M365-APPS-015
+    type: related
+  - id: CB-M365-AUTH-046
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

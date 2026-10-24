@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-015
+title: Block ActiveX, OLE Graph and OrgChart objects, and DDE server launches in Microsoft 365 apps
+finding:
+  title: Microsoft 365 apps allow legacy active content that runs code from documents
+  description: Users can re-enable ActiveX controls, documents can load OLE Graph or OrgChart objects, or Excel can launch DDE servers, all known ways to run code from a crafted file.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [microsoft-365-apps, baseline-security-mode, cloud-policy, activex, dde, ole]
+
+description: |
+  Three Baseline Security Mode settings are turned on in the Microsoft 365 admin center:
+
+  - **Block ActiveX controls in the Microsoft 365 apps**: ActiveX is locked to **Disable all
+    controls without notification** (Cloud Policy policy **Disable All ActiveX**);
+  - **Block OLE Graph and OrgChart objects**: apps do not load these legacy embedded objects (Cloud
+    Policy policies **Block OLE Graph** and **Block OrgChart**);
+  - **Block Dynamic Data Exchange (DDE) server launch in Excel**: Excel does not start DDE servers
+    (Cloud Policy policy **Don't allow Dynamic Data Exchange (DDE) server launch in Excel**).
+rationale: |
+  These three features let a document start code without macros. ActiveX controls and OLE objects
+  have a long record of exploited vulnerabilities, and DDE formulas were widely used in phishing
+  campaigns to run commands as soon as a spreadsheet opened. Microsoft 365 apps already disable
+  ActiveX by default, but users can turn it back on in the Trust Center when a document asks them
+  to. Enforcing the three settings removes these code execution paths and the user override.
+impact: |
+  Documents with ActiveX controls (old forms, some line-of-business templates) lose those controls.
+  Files embedding Microsoft Graph charts or OrgChart objects show them as static images or not at
+  all. Excel workbooks that pull live data from other applications through DDE stop updating;
+  Excel-to-Excel DDE links between open workbooks keep working. Use the impact reports, and a
+  higher-priority Cloud Policy configuration for a documented group of users if a dependency cannot
+  be removed.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Baseline security
+       mode**.
+    3. Check that **Block ActiveX controls in the Microsoft 365 apps**, **Block OLE Graph and
+       OrgChart objects** and **Block Dynamic Data Exchange (DDE) server launch in Excel** are all
+       turned on.
+    4. In the Office Cloud Policy service (https://config.office.com), **Customization** > **Policy
+       Management**, review higher-priority policy configurations that set **Disable All ActiveX**,
+       **Block OLE Graph**, **Block OrgChart** or the DDE policy to another value: each must target a
+       documented group.
+    5. Fail if any of the three settings is off, or if an exception applies to all users.
+
+remediation:
+  manual: |
+    1. In **Settings** > **Org settings** > **Security & privacy** > **Baseline security mode**,
+       download the impact report of each setting (the ActiveX report lists users opening files
+       with ActiveX controls).
+    2. Replace the dependent documents, or prepare a scoped Cloud Policy exception.
+    3. Turn on the three settings. Role: Office Apps Administrator.
+    4. Alternative: set the Cloud Policy policies listed above to **Enabled** in a policy
+       configuration targeting all users. No PowerShell cmdlet exists.
+  rollback: |
+    Turn the settings off in Baseline security mode, or set the Cloud Policy policies back to not
+    configured.
+
+references:
+  - title: Block ActiveX controls in Microsoft 365 apps
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-active-x-controls
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Block OLE Graph and OrgChart objects
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-ole-graph-org-chart-objects
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Block Dynamic Data Exchange (DDE) server launches in Excel
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-dynamic-data-exchange-server-launches-excel
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1559.002
+  - framework: mitre-attack
+    id: T1203
+  - framework: mitre-attack
+    id: T1566.001
+related_controls:
+  - id: CB-M365-DEVICE-014
+    type: related
+  - id: CB-M365-DEVICE-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

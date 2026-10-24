@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-008
+title: Set the default sharing link type to specific people
+finding:
+  title: The default sharing link grants access to more people than the user picks
+  description: When users click Share or Copy link, the proposed link works for anyone in the organization or anyone with the link, so content spreads further than intended.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [sharing-links, sharepoint, onedrive, oversharing]
+
+description: |
+  The link type selected by default when a user shares a file or folder in SharePoint or OneDrive is
+  **Specific people** (`DefaultSharingLinkType` = `Direct`): the link only works for the people the
+  user names. Users can still pick a broader link type if the sharing settings allow it.
+rationale: |
+  Most users accept the default link. A default of **People in your organization** or **Anyone**
+  exposes content to everyone who receives a forwarded link, makes it visible to Copilot and search
+  for every internal user who opens it, and leaves no record of the intended audience. Defaulting to
+  named people limits oversharing without blocking any use case.
+impact: |
+  Users who want a broad link must change the link type in the sharing dialog. Sites and OneDrive
+  accounts with their own default link setting keep it: review them with
+  `Get-SPOSite -Limit All | Select-Object Url, DefaultSharingLinkType`.
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > File and folder links
+  default_value: Only people in your organization (Internal), or Anyone if allowed
+  recommended_value: Specific people (DefaultSharingLinkType = Direct)
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing** > **File and folder links** and check that **Specific people
+       (only the people the user specifies)** is selected.
+    3. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object DefaultSharingLinkType` must return `Direct`. List site overrides
+       with
+       `Get-SPOSite -Limit All | Where-Object { $_.DefaultSharingLinkType -notin 'None','Direct' }`.
+    4. Fail if the tenant default is not `Direct`.
+
+remediation:
+  manual: |
+    1. In the SharePoint admin center, browse to **Policies** > **Sharing** > **File and folder links**,
+       select **Specific people (only the people the user specifies)** and **Save**. Role: SharePoint
+       Administrator.
+    2. PowerShell equivalent: `Set-SPOTenant -DefaultSharingLinkType Direct`.
+    3. Reset sites that override the default with
+       `Set-SPOSite -Identity <URL> -DefaultSharingLinkType None` (inherit) or `Direct`.
+
+references:
+  - title: Change the default link type for sharing
+    url: https://learn.microsoft.com/sharepoint/change-default-sharing-link
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.7"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.2.1v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+related_controls:
+  - id: CB-M365-COLLAB-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-031
+title: Require MFA for risky sign-ins and block sign-ins at the highest risk levels
+finding:
+  title: Risky sign-ins detected by ID Protection are not challenged or blocked
+  description: A sign-in that looks like password spray, token replay or an anonymizing proxy goes through like any other.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [conditional-access, id-protection, sign-in-risk, mfa]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+description: |
+  Two Conditional Access policies act on the **Sign-in risk** condition, for all users on all
+  resources, excluding only the emergency access accounts:
+
+  1. Sign-in risk **Medium** and **High**: grant access with **Require authentication strength**
+     (at least the built-in **Multifactor authentication** strength) and the session control
+     **Sign-in frequency - Every time**, so the user must complete a new MFA for that sign-in.
+  2. Sign-in risk in {{ signin_risk_block_levels }}: **Block access**.
+
+  The baseline profile blocks high-risk sign-ins; the hardened profile blocks medium and high.
+rationale: |
+  Sign-in risk is computed in real time for each authentication: unfamiliar properties, atypical
+  travel, anonymous IP addresses, password spray patterns, known attacker infrastructure. Asking for
+  MFA stops an attacker who only has the password. Blocking the riskiest sign-ins also stops an
+  attacker who relays or fatigues the MFA prompt.
+impact: |
+  Users on a medium-risk sign-in see an extra MFA prompt. Users who are not registered for MFA are
+  blocked on risky sign-ins (error AADSTS53004), because registration is refused during a risky
+  session. Blocking medium risk (hardened) produces more false positives, for example on travel or
+  new VPN egress points; have a quick unblock procedure.
+notes: |
+  Microsoft deploys a Microsoft-managed policy "Multifactor authentication and reauthentication for
+  risky sign-ins" for high risk. It meets part 1 for high risk only; it does not block. Review it
+  as described in CB-M365-AUTH-030.
+
+parameters:
+  - name: signin_risk_block_levels
+    type: list
+    description: Sign-in risk levels that are blocked outright (values low, medium, high).
+    default: [high]
+    profile_defaults:
+      hardened: [medium, high]
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** **On**, **All users** (emergency access excluded), **All
+       resources**, **Conditions** > **Sign-in risk** with **Medium** and **High**, **Grant**
+       requiring MFA or an authentication strength, and **Session** > **Sign-in frequency** **Every
+       time**.
+    4. Find a policy with **State** **On**, same users and resources, **Sign-in risk** including
+       every level in {{ signin_risk_block_levels }}, and **Grant** **Block access**.
+    5. Alternative in PowerShell (Microsoft Graph, scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.SignInRiskLevels } | Select-Object DisplayName, State, @{n='Risk';e={$_.Conditions.SignInRiskLevels}}, @{n='Grant';e={$_.GrantControls.BuiltInControls}}`
+    6. Fail if medium-risk sign-ins are not challenged, or if a level of
+       {{ signin_risk_block_levels }} is not blocked.
+
+remediation:
+  manual: |
+    1. Make sure users are registered for MFA (CB-M365-AUTH-018).
+    2. Sign in to the Microsoft Entra admin center as at least a Conditional Access Administrator.
+    3. Create the MFA policy: **New policy**, **Users** > **All users** (exclude the emergency
+       access accounts), **Target resources** > **All resources**, **Conditions** > **Sign-in risk**
+       > **Configure** **Yes**, select **High** and **Medium**; **Grant** > **Require authentication
+       strength** > **Multifactor authentication**; **Session** > **Sign-in frequency** > **Every
+       time**.
+    4. Create the block policy: same assignments, **Sign-in risk** set to
+       {{ signin_risk_block_levels }}, **Grant** > **Block access**.
+    5. Start both in **Report-only**, review the affected sign-ins, then switch to **On**.
+  rollback: |
+    Set the policies to **Report-only** or **Off**. Unblock a user by confirming the sign-in as safe
+    in **ID Protection** > **Risky sign-ins**.
+
+references:
+  - title: Sign-in risk-based multifactor authentication
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-sign-in
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed Conditional Access policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.7"
+    relation: equivalent
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.8"
+    relation: partial
+    note: CIS blocks medium and high sign-in risk; ours blocks medium only in the hardened profile (parameter signin_risk_block_levels).
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.2.3v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-M365-AUTH-030
+    type: related
+  - id: CB-M365-AUTH-018
+    type: requires
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-APPS-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

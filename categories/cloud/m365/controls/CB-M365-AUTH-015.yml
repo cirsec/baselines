@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-015
+title: Enable passkeys and enforce attestation for administrators
+finding:
+  title: Passkeys are not available, or administrators can register unattested passkeys
+  description: Without the Passkey (FIDO2) method enabled, nobody can register the phishing-resistant method that the administrator policy requires, and without attestation any software authenticator can pass as a security key.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [passkeys, fido2, phishing-resistant, attestation, authentication-methods]
+
+description: |
+  In the Authentication methods policy, the **Passkey (FIDO2)** method is enabled for **All
+  users** with **Allow self-service set up** set to **Yes**. Every passkey profile that applies to
+  administrators (the groups or role-holders covered by CB-M365-AUTH-004) has **Enforce
+  attestation** set to **Yes** and allows **Device-bound** passkeys only: FIDO2 security keys,
+  passkeys in Microsoft Authenticator, Windows passkeys.
+
+  Profiles for other users may also allow synced passkeys (Apple, Google, third-party
+  credential managers), which cannot be attested but remain phishing-resistant.
+rationale: |
+  The phishing-resistant MFA policy for administrators can only be met if a phishing-resistant
+  method can be registered. Attestation proves at registration that the authenticator is a
+  genuine model from a known vendor, and is the only way to know that an administrator's passkey
+  is device-bound and not copied to a personal cloud account.
+impact: |
+  Administrators must register a device-bound passkey: a security key, a passkey in Microsoft
+  Authenticator or Windows Hello. Passkeys registered before attestation was enforced keep
+  working; ask administrators to re-register them. Enabling passkey profiles is a one-way
+  change. Since September 2026, Microsoft automatically enables passkeys for SMS and voice users
+  with a profile that allows all passkey types; review that profile.
+notes: |
+  Users must have completed MFA in the last five minutes to register a passkey. A Temporary
+  Access Pass (CB-M365-AUTH-017) covers the first registration.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** and select **Passkey
+       (FIDO2)**.
+    3. On **Enable and target**, check that the method is enabled for **All users** (or for every
+       group that holds users) and note which passkey profile applies to the administrators.
+    4. On **Configure**, check that **Allow self-service set up** is **Yes**, and that each
+       profile applied to administrators has **Enforce attestation** set to **Yes** and
+       **Passkey types** limited to **Device-bound**.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Fido2 | Select-Object State -ExpandProperty AdditionalProperties`
+       (passkey profiles are exposed on the beta endpoint of the same resource).
+    6. Fail if the method is disabled, if self-service set up is off, or if administrators can
+       register a passkey without attestation.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Authentication methods** > **Policies** > **Passkey (FIDO2)**
+       and opt in to passkey profiles from the banner if not done.
+    3. On **Configure**, set **Allow self-service set up** to **Yes**. Select **Add passkey
+       profile**, name it for example `Admins - device-bound attested`, set **Enforce
+       attestation** to **Yes** and **Passkey types** to **Device-bound**, and save.
+    4. On **Enable and target**, add the administrators group with that profile, and **All
+       users** with the default profile. Save.
+    5. Ask administrators to register a passkey at https://mysignins.microsoft.com/security-info.
+    Graph equivalent: `PATCH /policies/authenticationMethodsPolicy/authenticationMethodConfigurations/Fido2`
+    with `"state": "enabled"`, `"isSelfServiceRegistrationAllowed": true` and
+    `"isAttestationEnforced": true` (or the passkey profile settings on beta).
+  rollback: |
+    Set **Enforce attestation** back to **No** on the administrators profile. Do not disable the
+    method: administrators would lose their phishing-resistant method.
+
+references:
+  - title: How to enable passkeys (FIDO2) in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/how-to-authentication-passkeys-fido2
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Passkeys (FIDO2) authentication method in Microsoft Entra ID
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-authentication-passkeys-fido2
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R2"
+    relation: partial
+    note: Makes a strong method available to everyone and attested for administrators; using it is required by CB-M365-AUTH-004 and CB-M365-AUTH-005.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(6)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1556.006
+related_controls:
+  - id: CB-M365-AUTH-004
+    type: related
+  - id: CB-M365-AUTH-005
+    type: related
+  - id: CB-M365-AUTH-016
+    type: related
+  - id: CB-M365-AUTH-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

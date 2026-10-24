@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-018
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer l'authentification ResourceKey dans Power BI
+finding:
+  title: Power BI accepte l'authentification ResourceKey pour les jeux de données de streaming et push
+  description: Quiconque détient l'URL avec la clé de ressource d'un jeu de données peut y envoyer des données sans jeton Microsoft Entra.
+description: |
+  Le paramètre du locataire Fabric **Block ResourceKey Authentication** (bloquer l'authentification
+  par clé de ressource), dans les paramètres du développeur, est **Activé**. Les jeux de données de
+  streaming et push n'acceptent alors des données par l'API qu'avec une authentification Microsoft
+  Entra. Le paramètre s'applique à toute l'organisation.
+rationale: |
+  Une clé de ressource est un secret statique placé dans une URL. Elle se copie facilement dans des
+  scripts, des objets connectés ou des messages, n'expire jamais d'elle-même et son usage n'est lié à
+  aucune identité. Qui l'obtient peut injecter des données fausses ou malveillantes dans des tableaux
+  de bord sur lesquels des personnes s'appuient. Exiger l'authentification Entra supprime ces
+  écritures anonymes.
+impact: |
+  Les intégrations qui envoient des données vers des jeux de streaming ou push avec une clé de
+  ressource (souvent des objets connectés ou des flux Power Automate utilisant l'URL à clé) cessent
+  de fonctionner. Les migrer vers des appels d'API authentifiés avec un principal de service ou une
+  identité utilisateur avant d'activer le blocage.
+setting:
+  location: Portail d'administration Fabric > Paramètres du locataire > Paramètres du développeur > Block ResourceKey Authentication
+  recommended_value: Activé
+audit:
+  manual: |
+    1. Se connecter à Microsoft Fabric (https://app.fabric.microsoft.com) en tant qu'administrateur
+       Fabric.
+    2. Ouvrir **Paramètres** > **Portail d'administration** > **Paramètres du locataire** >
+       **Paramètres du développeur** et développer **Block ResourceKey Authentication**.
+    3. Vérifier qu'il est **Activé**.
+    4. Alternative en lecture seule : dans `GET https://api.fabric.microsoft.com/v1/admin/tenantsettings`,
+       lire l'entrée `BlockResourceKeyAuthentication` (`enabled` doit valoir `true`).
+    5. Échec si le blocage est désactivé.
+remediation:
+  manual: |
+    1. Repérer les jeux de données de streaming et push alimentés par clé de ressource et migrer leurs
+       sources vers des appels d'API authentifiés.
+    2. Dans **Paramètres du locataire** > **Paramètres du développeur** > **Block ResourceKey
+       Authentication**, sélectionner **Activé** puis **Appliquer**. Rôle : administrateur Fabric.
+    3. Équivalent API : `POST
+       https://api.fabric.microsoft.com/v1/admin/tenantsettings/BlockResourceKeyAuthentication/update`
+       avec `{"enabled": true}`.
+  rollback: |
+    Remettre le paramètre sur **Désactivé**.

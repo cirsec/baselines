@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-035
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas imposer d'expiration périodique des mots de passe
+finding:
+  title: Les mots de passe des utilisateurs expirent périodiquement
+  description: Le renouvellement forcé pousse vers des mots de passe prévisibles (Saison2026!, puis Saison2027!) et ne protège plus rien une fois le mot de passe divulgué.
+description: |
+  La stratégie d'expiration des mots de passe de chaque domaine géré du tenant est réglée sur « jamais ».
+  Les mots de passe sont changés quand il y a une raison : compromission suspectée, détection
+  d'identifiants divulgués (CB-M365-AUTH-030), ou choix de l'utilisateur.
+
+  La robustesse des mots de passe est assurée par d'autres contrôles : MFA pour tous, listes de mots
+  de passe interdits (CB-M365-AUTH-036, CB-M365-AUTH-037) et verrouillage intelligent
+  (CB-M365-AUTH-038).
+rationale: |
+  Les recommandations actuelles (NIST SP 800-63B, ANSSI, Microsoft) déconseillent les changements
+  périodiques arbitraires. Les utilisateurs contraints choisissent des mots de passe plus faibles
+  construits sur un motif, les notent ou les réutilisent ailleurs, et un attaquant qui connaît
+  l'ancien devine le nouveau. L'expiration ne révoque pas non plus une session ou un jeton déjà volé.
+impact: |
+  Aucun connu. Microsoft 365 n'affiche de toute façon plus de notification d'expiration. Les
+  utilisateurs synchronisés suivent la stratégie de l'Active Directory local, sauf si la fonction
+  `CloudPasswordPolicyForPasswordSyncedUsersEnabled` est activée.
+notes: |
+  L'expiration périodique des mots de passe des comptes à privilèges n'est pas exigée non plus : les
+  administrateurs utilisent une MFA résistante au hameçonnage (CB-M365-AUTH-004), qui fait du mot de
+  passe un facteur secondaire. Les comptes de service qui utilisent encore un mot de passe sont à
+  remplacer par des identités managées ou des identités de charge de travail.
+setting:
+  location: Centre d'administration Microsoft 365 > Paramètres > Paramètres de l'organisation > Sécurité et confidentialité > Stratégie d'expiration des mots de passe
+  recommended_value: Les mots de passe n'expirent jamais (passwordValidityPeriodInDays = 2147483647 sur chaque domaine géré)
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Stratégie d'expiration des mots de passe**.
+    3. Vérifier que **Définir les mots de passe pour qu'ils n'expirent jamais (recommandé)** est coché.
+    4. Alternative PowerShell (Microsoft Graph, étendue `Domain.Read.All`) :
+       `Get-MgDomain | Where-Object { $_.AuthenticationType -eq 'Managed' } | Select-Object Id, PasswordValidityPeriodInDays`
+       Chaque domaine géré doit afficher `2147483647`.
+    5. Échec si l'option est décochée, ou si un domaine géré a une durée de validité finie (les
+       domaines ajoutés après le réglage gardent la valeur par défaut tant que la stratégie n'est pas
+       réenregistrée).
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 avec au moins le rôle Administrateur
+       d'utilisateurs.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Stratégie d'expiration des mots de passe**.
+    3. Cocher **Définir les mots de passe pour qu'ils n'expirent jamais (recommandé)** et
+       **Enregistrer**. Réenregistrer applique aussi la stratégie aux domaines ajoutés depuis.
+    4. Par domaine en PowerShell (Microsoft Graph, étendue `Domain.ReadWrite.All`, Administrateur de
+       noms de domaine) :
+       `Update-MgDomain -DomainId <domaine> -PasswordValidityPeriodInDays 2147483647`
+  rollback: |
+    Décocher l'option et saisir un nombre de jours (14 à 730).

@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUDIT-010
+title: Notify administrators when high-risk users are detected
+finding:
+  title: Nobody is notified when Microsoft Entra ID Protection flags a user as high risk
+  description: A likely compromised account can stay active for days because the risk detection sits in a report nobody watches.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [identity-protection, alerting, risky-users, monitoring, entra-id]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+description: |
+  The Microsoft Entra ID Protection **Users at risk detected** email alert is configured with the
+  risk level **High** (or lower) and recipients that include the security team's monitored
+  mailbox, not only the role holders added by default. The **Weekly digest** email is on with the
+  same recipients.
+rationale: |
+  Risk-based Conditional Access (CB-M365-AUTH-030) blocks or remediates a risky user, but the
+  security team still needs to investigate what the attacker did before the block and whether
+  other accounts are involved. By default the alert goes only to active Global Administrators,
+  Security Administrators and Security Readers with a mailbox; with PIM, they often receive
+  nothing.
+impact: |
+  None known. Recipients need permission to view the linked ID Protection reports.
+notes: |
+  Users at risk can also be forwarded to the SIEM through the `RiskyUsers` and `UserRiskEvents`
+  diagnostic categories (CB-M365-AUDIT-002), which is the preferred channel when a SOC exists.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **ID Protection** > **Dashboard** > **Users at risk detected alerts**.
+    3. Check that the alert is set to **High** (or a lower level) and that the recipient list includes
+       a monitored security mailbox or distribution list.
+    4. Browse to **ID Protection** > **Dashboard** > **Weekly digest** and check it is on with the
+       same recipients.
+    5. Fail if the alert has no monitored recipient other than individual role holders, or if the
+       weekly digest is off.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Security Administrator.
+    2. Browse to **ID Protection** > **Dashboard** > **Users at risk detected alerts**, set the risk
+       level to **High** (or **Medium**), add the security team's mailbox under **Add custom email
+       here**, and save.
+    3. Browse to **Weekly digest**, turn it on, add the same mailbox, and save.
+  rollback: |
+    Remove the custom recipient or turn the weekly digest off.
+
+references:
+  - title: Configure Microsoft Entra ID Protection notifications
+    url: https://learn.microsoft.com/entra/id-protection/howto-identity-protection-configure-notifications
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.2.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-AUDIT-002
+    type: related
+  - id: CB-M365-AUTH-030
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

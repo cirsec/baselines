@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-001
+title: Block automatic forwarding of mail to external recipients
+finding:
+  title: Mailbox rules can forward company mail to external addresses
+  description: An attacker who takes over a mailbox, or a departing employee, can set a rule that silently copies every incoming message to an outside address.
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exchange-online, mail-flow, forwarding, exfiltration, outbound-spam]
+
+description: |
+  Exchange Online stops automatic forwarding of messages to recipients outside the organization,
+  whatever the mechanism: Inbox rules, the mailbox forwarding setting (`ForwardingSmtpAddress`) and
+  Outlook on the web forwarding. Two layers are set:
+
+  - every outbound spam filter policy, starting with the default one, has **Automatic forwarding
+    rules** set to **Off - Forwarding is disabled** (`AutoForwardingMode Off`);
+  - the default remote domain (`*`) has **Allow automatic forwarding** turned off
+    (`AutoForwardEnabled $false`).
+
+  Approved business cases (a partner mailbox, a ticketing service) are handled with a dedicated
+  outbound spam policy scoped to the named senders, or a remote domain for the named destination
+  domain, never by reopening forwarding for everyone.
+rationale: |
+  Forwarding rules are one of the first things an attacker sets after compromising a mailbox:
+  the rule keeps feeding them mail after the password is reset, and it is used to watch invoice
+  threads before a business email compromise fraud. Leaked data through forwarding is also a common
+  insider risk. The `Automatic` default lets Microsoft decide and its behavior can change; an
+  explicit `Off` makes the rule visible and auditable.
+impact: |
+  Users who forward their work mail to a personal address lose that ability and the forwarded
+  messages bounce with an NDR (5.7.520). Inventory existing external forwarding before the change
+  (see the audit) and create scoped exceptions for the legitimate cases. Forwarding inside the
+  organization, delegates and mail flow rules set by administrators keep working.
+notes: |
+  The outbound spam policy controls forwarding that the user sets (Inbox rules, mailbox forwarding).
+  Forwarding set by an administrator on the mailbox (`ForwardingAddress` to a mail contact) and
+  mail flow rules that redirect messages are not blocked by it: review them as part of the audit.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Email & collaboration** > **Policies & rules** > **Threat policies** >
+       **Anti-spam**. Open every outbound policy (**Anti-spam outbound policy (Default)** and any
+       custom one) and check that **Automatic forwarding rules** is **Off - Forwarding is disabled**.
+       A custom policy with **On** is acceptable only if it is scoped to named, approved senders.
+    3. Sign in to the Exchange admin center (https://admin.exchange.microsoft.com) as at least a
+       Global Reader. Browse to **Mail flow** > **Remote domains**, open **Default** and check that
+       **Allow automatic forwarding** is cleared.
+    4. In Exchange Online PowerShell (read-only):
+       ```powershell
+       Get-HostedOutboundSpamFilterPolicy | Format-Table Name, AutoForwardingMode
+       Get-RemoteDomain | Format-Table Name, DomainName, AutoForwardEnabled
+       Get-Mailbox -ResultSize Unlimited -Filter "ForwardingSmtpAddress -ne $null -or ForwardingAddress -ne $null" |
+         Format-Table UserPrincipalName, ForwardingSmtpAddress, ForwardingAddress
+       ```
+    5. Fail if any outbound policy that applies to all users has `AutoForwardingMode` set to
+       `Automatic` or `On`, if the `*` remote domain has `AutoForwardEnabled` set to `True`, or if
+       a mailbox forwards to an external address that is not a documented exception.
+
+remediation:
+  manual: |
+    1. List the mailboxes that forward externally (audit step 4) and agree on the exceptions with
+       their owners.
+    2. In the Defender portal, browse to **Email & collaboration** > **Policies & rules** >
+       **Threat policies** > **Anti-spam**, open **Anti-spam outbound policy (Default)** >
+       **Edit protection settings** and set **Automatic forwarding rules** to **Off - Forwarding is
+       disabled**. Do the same in every custom outbound policy that is not a scoped exception.
+    3. For each approved exception, create a custom outbound policy that applies only to those
+       senders with **Automatic forwarding rules** set to **On - Forwarding is enabled**.
+    4. In the Exchange admin center, browse to **Mail flow** > **Remote domains** > **Default** >
+       **Edit reply types** and clear **Allow automatic forwarding**.
+    5. PowerShell equivalent (Security Administrator for the policy, Exchange Administrator for the
+       remote domain):
+       ```powershell
+       Set-HostedOutboundSpamFilterPolicy -Identity Default -AutoForwardingMode Off
+       Set-RemoteDomain -Identity Default -AutoForwardEnabled $false
+       ```
+    6. Remove the `ForwardingSmtpAddress` of mailboxes that are not exceptions
+       (`Set-Mailbox -Identity <user> -ForwardingSmtpAddress $null`).
+  rollback: |
+    Set `AutoForwardingMode` back to `Automatic` on the default outbound policy, or add the sender
+    to a scoped exception policy.
+
+references:
+  - title: Control automatic external email forwarding in Microsoft 365
+    url: https://learn.microsoft.com/defender-office-365/outbound-spam-policies-external-email-forwarding
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Remote domains in Exchange Online
+    url: https://learn.microsoft.com/exchange/mail-flow-best-practices/remote-domains/remote-domains
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-HostedOutboundSpamFilterPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-hostedoutboundspamfilterpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Exchange Online baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/exo.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+  - title: ASD Blueprint for Secure Cloud - Remote domains
+    url: https://blueprint.asd.gov.au/configuration/exchange-online/mail-flow/remote-domains/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.2.1"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.EXO.1.1v2
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1114.003
+related_controls:
+  - id: CB-M365-MAIL-031
+    type: related
+  - id: CB-M365-AUDIT-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

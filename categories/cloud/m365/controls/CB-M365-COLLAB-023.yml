@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-023
+title: Prevent anonymous participants from joining Teams meetings
+finding:
+  title: Anonymous participants can join Teams meetings
+  description: People who are not signed in, or who come from untrusted organizations, can join meetings with any display name.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, meetings, anonymous-access]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Meetings organized by users of the organization do not admit anonymous participants
+  (`AllowAnonymousUsersToJoinMeeting` = `False` in the Global meeting policy and in every custom
+  policy). Anonymous participants include people who are not signed in and users of organizations that
+  are not trusted in external access. Guests, users from trusted organizations and dial-in callers can
+  still join.
+rationale: |
+  Anonymous participants choose their own display name, so they can impersonate a colleague or a
+  partner, and nothing ties their presence to an identity in the audit trail. In sensitive
+  environments, requiring an authenticated identity for every participant removes meeting
+  eavesdropping and impersonation through forwarded or guessed meeting links.
+impact: |
+  People without a Microsoft 365 work account in a trusted organization, a guest account or a phone
+  line cannot join meetings: customers, candidates and the public need a guest invitation or a
+  dedicated policy for the organizers who meet them. Webinars and town halls with public attendance
+  need a separate policy. The organization-wide **Anonymous users can join a meeting** setting in
+  **Meetings** > **Meeting settings** is being retired; use the meeting policy.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Meeting join & lobby > Anonymous users can join a meeting
+  default_value: "On"
+  recommended_value: Off (AllowAnonymousUsersToJoinMeeting = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Meeting join & lobby** section, check that **Anonymous users can join a meeting** is
+       **Off**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowAnonymousUsersToJoinMeeting`.
+    5. Fail if the Global policy or a custom policy assigned to users other than a documented exception
+       allows anonymous join.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Meeting join & lobby** section, set **Anonymous users can join a meeting** to **Off**
+       and **Save**. Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowAnonymousUsersToJoinMeeting $false` (repeat with
+       `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+    5. Create a custom policy with anonymous join on for the organizers who must meet the public, and
+       assign it to them.
+
+references:
+  - title: Manage anonymous participant access to Teams meetings
+    url: https://learn.microsoft.com/microsoftteams/anonymous-users-in-meetings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Teams settings and policies reference
+    url: https://learn.microsoft.com/microsoftteams/settings-policies-reference
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-8
+    relation: related
+related_controls:
+  - id: CB-M365-COLLAB-024
+    type: related
+  - id: CB-M365-COLLAB-025
+    type: related
+  - id: CB-M365-COLLAB-027
+    type: related
+    note: When anonymous join is blocked, the chat restriction only matters for policy exceptions.
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

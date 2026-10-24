@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-011
+title: Restrict guest invitations to administrators and Guest Inviters
+finding:
+  title: Any user, or even guests, can invite external users
+  description: Every member, and by default every guest, can bring external accounts into the tenant without any review.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, guests, invitations, external-identities]
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > External Identities > External collaboration settings > Guest invite restrictions
+  default_value: Anyone in the organization can invite guest users including guests and non-admins (most inclusive)
+  recommended_value: Only users assigned to specific admin roles can invite guest users
+
+description: |
+  **Guest invite restrictions** is set to **Only users assigned to specific admin roles can invite
+  guest users** (`allowInvitesFrom` = `adminsAndGuestInviters`), or to **No one in the
+  organization can invite guest users including admins (most restrictive)** (`none`). Invitations
+  come from User Administrators and from people given the Guest Inviter role, or from a governed
+  process such as entitlement management.
+rationale: |
+  Each guest is an account whose authentication the organization does not control. When anyone
+  can invite, guests accumulate without a sponsor, a purpose or a review, and an attacker with a
+  compromised member account can invite their own external account to keep access.
+impact: |
+  Users who invite partners directly from Teams, SharePoint or Outlook can no longer do so: the
+  request goes through a Guest Inviter, the service desk or an access package. With strong external
+  collaboration, assign the Guest Inviter role to enough people per department.
+notes: |
+  SharePoint and OneDrive sharing with new external people also creates guests through Entra B2B
+  integration, and is subject to this setting.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **External Identities** > **External collaboration settings** and
+       read **Guest invite restrictions**.
+    3. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       `(Get-MgPolicyAuthorizationPolicy).AllowInvitesFrom`.
+    4. Fail if the value is `everyone` or `adminsGuestInvitersAndAllMembers`.
+
+remediation:
+  manual: |
+    1. Assign the Guest Inviter role to the people who invite partners on behalf of their teams
+       (**Entra ID** > **Roles & admins** > **Guest Inviter**).
+    2. With an External Identity Provider Administrator or Global Administrator, browse to
+       **Entra ID** > **External Identities** > **External collaboration settings**.
+    3. Under **Guest invite restrictions**, select **Only users assigned to specific admin roles
+       can invite guest users** and **Save**.
+    4. Equivalent with Microsoft Graph PowerShell (scope `Policy.ReadWrite.Authorization`):
+       `Update-MgPolicyAuthorizationPolicy -AllowInvitesFrom 'adminsAndGuestInviters'`.
+  rollback: |
+    Select **Member users and users assigned to specific admin roles can invite guest users
+    including guests with member permissions**.
+
+references:
+  - title: Configure external collaboration settings
+    url: https://learn.microsoft.com/entra/external-id/external-collaboration-settings-configure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.6.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.8.2v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1136.003
+related_controls:
+  - id: CB-M365-TENANT-009
+    type: related
+  - id: CB-M365-TENANT-010
+    type: related
+  - id: CB-M365-TENANT-012
+    type: related
+  - id: CB-M365-COLLAB-002
+    type: related
+  - id: CB-M365-COLLAB-003
+    type: related
+  - id: CB-M365-POWER-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

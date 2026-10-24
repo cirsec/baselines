@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer ActiveX, les objets OLE Graph et OrgChart et les lancements de serveurs DDE dans les applications Microsoft 365
+finding:
+  title: Les applications Microsoft 365 autorisent du contenu actif hérité qui exécute du code depuis des documents
+  description: Les utilisateurs peuvent réactiver les contrôles ActiveX, les documents peuvent charger des objets OLE Graph ou OrgChart, ou Excel peut lancer des serveurs DDE, autant de moyens connus d'exécuter du code depuis un fichier piégé.
+description: |
+  Trois paramètres du mode de sécurité de base (*Baseline security mode*) sont activés dans le
+  centre d'administration Microsoft 365 :
+
+  - **Block ActiveX controls in the Microsoft 365 apps** : ActiveX est verrouillé sur **Désactiver
+    tous les contrôles sans notification** (stratégie Cloud Policy **Disable All ActiveX**) ;
+  - **Block OLE Graph and OrgChart objects** : les applications ne chargent pas ces objets
+    incorporés hérités (stratégies Cloud Policy **Block OLE Graph** et **Block OrgChart**) ;
+  - **Block Dynamic Data Exchange (DDE) server launch in Excel** : Excel ne démarre pas de serveurs
+    DDE (stratégie Cloud Policy **Don't allow Dynamic Data Exchange (DDE) server launch in
+    Excel**).
+rationale: |
+  Ces trois fonctions permettent à un document de lancer du code sans macro. Les contrôles ActiveX
+  et les objets OLE ont un long historique de vulnérabilités exploitées, et les formules DDE ont été
+  largement utilisées dans des campagnes d'hameçonnage pour exécuter des commandes dès l'ouverture
+  d'un classeur. Les applications Microsoft 365 désactivent déjà ActiveX par défaut, mais
+  l'utilisateur peut le réactiver dans le Centre de gestion de la confidentialité quand un document
+  le lui demande. Imposer les trois paramètres supprime ces chemins d'exécution et la dérogation
+  utilisateur.
+impact: |
+  Les documents qui contiennent des contrôles ActiveX (anciens formulaires, certains modèles
+  métier) perdent ces contrôles. Les fichiers qui incorporent des graphiques Microsoft Graph ou des
+  objets OrgChart les affichent en image statique ou plus du tout. Les classeurs Excel qui tirent des
+  données en direct d'autres applications par DDE ne se mettent plus à jour ; les liens DDE
+  Excel-vers-Excel entre classeurs ouverts continuent de fonctionner. Utiliser les rapports d'impact,
+  et une configuration Cloud Policy de priorité plus haute pour un groupe documenté si une
+  dépendance ne peut pas être supprimée.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft 365 (https://admin.cloud.microsoft) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité**
+       > **Baseline security mode**.
+    3. Vérifier que **Block ActiveX controls in the Microsoft 365 apps**, **Block OLE Graph and
+       OrgChart objects** et **Block Dynamic Data Exchange (DDE) server launch in Excel** sont tous
+       activés.
+    4. Dans le service Office Cloud Policy (https://config.office.com), **Personnalisation** >
+       **Gestion des stratégies**, examiner les configurations de stratégie de priorité plus haute qui
+       règlent autrement **Disable All ActiveX**, **Block OLE Graph**, **Block OrgChart** ou la
+       stratégie DDE : chacune doit cibler un groupe documenté.
+    5. Échec si l'un des trois paramètres est désactivé, ou si une exception s'applique à tous les
+       utilisateurs.
+remediation:
+  manual: |
+    1. Dans **Paramètres** > **Paramètres de l'organisation** > **Sécurité et confidentialité** >
+       **Baseline security mode**, télécharger le rapport d'impact de chaque paramètre (le rapport
+       ActiveX liste les utilisateurs qui ouvrent des fichiers contenant des contrôles ActiveX).
+    2. Remplacer les documents dépendants, ou préparer une exception Cloud Policy ciblée.
+    3. Activer les trois paramètres. Rôle : administrateur des applications Office.
+    4. Alternative : régler sur **Activé** les stratégies Cloud Policy listées ci-dessus dans une
+       configuration de stratégie ciblant tous les utilisateurs. Aucune cmdlet PowerShell n'existe.
+  rollback: |
+    Désactiver les paramètres dans le mode de sécurité de base, ou remettre les stratégies Cloud
+    Policy à l'état non configuré.

@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-008
+title: Allow only system-generated client secrets
+finding:
+  title: Applications can use client secrets chosen by a person
+  description: Custom secrets can be short, reused or guessable, and are often set to a value already used elsewhere.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [applications, workload-identities, credentials, client-secrets, app-management-policy]
+
+description: |
+  The tenant-wide app management policy blocks custom password credentials
+  (`customPasswordAddition`) on applications and service principals. When a secret is still
+  allowed through an exception to CB-M365-APPS-006, Microsoft Entra generates its value.
+rationale: |
+  Through Microsoft Graph, a client can supply its own secret value instead of letting Microsoft
+  Entra generate a random one. Human-chosen values are weaker and tend to be reused across
+  applications and environments, so one leak opens several doors.
+impact: |
+  Scripts or products that set their own secret value through Graph (for example during automated
+  provisioning) fail and must read the generated value from the API response instead.
+notes: |
+  Redundant while **Block password addition** (CB-M365-APPS-006) applies to all applications,
+  but it still protects applications that have an exception.
+
+setting:
+  location: Entra admin center > Entra ID > Enterprise apps > Application policies > Block custom passwords (Graph policies/defaultAppManagementPolicy, passwordCredentials restriction customPasswordAddition)
+  default_value: Not configured
+  recommended_value: On, applies to all applications
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies**.
+    3. Check that the custom password restriction is **On** for **All applications**.
+    4. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy`. Check that
+       `isEnabled` is `true` and that `passwordCredentials` for applications and service principals
+       contains `customPasswordAddition` with `state` = `enabled`.
+    5. Also check custom policies assigned as exceptions
+       (`GET https://graph.microsoft.com/v1.0/policies/appManagementPolicies`): they must not
+       disable `customPasswordAddition`.
+    6. Fail if the restriction is missing or disabled in the default policy or in an exception
+       policy.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as a Security Administrator together with
+       Application Administrator or Cloud Application Administrator.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Application policies** and open the custom
+       password restriction.
+    3. Set it to **On**, **Applies to** = **All applications**, and select **Save**.
+    4. Graph alternative (scope `Policy.ReadWrite.ApplicationConfiguration`):
+       `PATCH https://graph.microsoft.com/v1.0/policies/defaultAppManagementPolicy` adding
+       `{"restrictionType": "customPasswordAddition", "state": "enabled"}` to `passwordCredentials`
+       for applications and service principals, keeping existing restrictions.
+  rollback: |
+    Set the custom password restriction to **Off**.
+
+references:
+  - title: Configure restrictions on how applications can be configured
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-app-management-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+related_controls:
+  - id: CB-M365-APPS-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

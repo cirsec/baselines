@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-003
+title: Require MFA for all users on all resources
+finding:
+  title: Some users can sign in to some resources with a password alone
+  description: Without a Conditional Access policy requiring MFA for every user and every resource, a stolen or guessed password is enough to open a session.
+status: active
+profiles: [baseline]
+risk:
+  severity: critical
+assessment: manual
+tags: [mfa, conditional-access, authentication-strength]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy requires multifactor authentication for **All users** on **All
+  resources**, with the built-in **Multifactor authentication** authentication strength (or the
+  **Require multifactor authentication** grant). It applies from every location, including
+  trusted networks.
+
+  The policy excludes only the emergency access accounts and, on hybrid tenants, the
+  **Directory Synchronization Accounts** role. Guests stay included: they satisfy the
+  requirement in their home tenant when the cross-tenant access settings trust its MFA, otherwise
+  in this tenant.
+
+  Administrators need a stronger method: see CB-M365-AUTH-004. A Microsoft-managed policy
+  **Multifactor authentication for all users** satisfies this control once it is **On** and keeps
+  the same scope.
+rationale: |
+  Passwords are phished, reused, sprayed and bought. MFA stops most account takeovers that start
+  with a password. A policy limited to some applications or excluding trusted networks leaves gaps
+  that attackers find quickly, for example the Azure management endpoints or a VPN egress IP.
+impact: |
+  Every user must register an MFA method before enforcement (see CB-M365-AUTH-018). Service
+  accounts that sign in interactively break: replace them with workload identities (managed
+  identities or service principals), which Conditional Access for users does not target. Shared
+  and kiosk devices need a method usable by several people, such as security keys.
+notes: |
+  Excluding trusted locations is a frequent shortcut; this control does not allow it. Use
+  sign-in frequency and persistent browser settings to limit how often users are prompted
+  instead.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies**.
+    3. Find a policy with **State** set to **On** (not Report-only) where:
+       - **Users** > **Include** is **All users**;
+       - **Users** > **Exclude** contains only the emergency access accounts and, if
+         synchronization is used, the **Directory Synchronization Accounts** role;
+       - **Target resources** includes **All resources**, without exclusions;
+       - **Network** is not configured, or does not exclude any location;
+       - **Grant** is **Require authentication strength** (Multifactor authentication or
+         stronger) or **Require multifactor authentication**.
+    4. Use **What If** (or the sign-in logs) for a standard user on Office 365 to confirm the
+       policy applies.
+    5. Read-only alternative with Microsoft Graph PowerShell (scope `Policy.Read.All`):
+       `Get-MgIdentityConditionalAccessPolicy | Where-Object { $_.Conditions.Users.IncludeUsers -contains 'All' } | Select-Object DisplayName, State, @{n='Grant';e={$_.GrantControls.BuiltInControls}}, @{n='Strength';e={$_.GrantControls.AuthenticationStrength.Id}}`
+    6. Fail if no such policy exists, if it is Report-only or Off, or if it excludes users,
+       groups, applications or locations beyond those listed above.
+
+remediation:
+  manual: |
+    1. Check registration first: **Entra ID** > **Authentication methods** > **User registration
+       details**, filter on **Not capable**, and get those users registered.
+    2. As at least a Conditional Access Administrator, browse to **Entra ID** >
+       **Conditional Access** > **Policies** and select **New policy**.
+    3. Name it, for example `ALL - Require MFA`.
+    4. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts and, on
+       hybrid tenants, the **Directory Synchronization Accounts** role.
+    5. **Target resources** > **Resources** > **Include**: **All resources**.
+    6. **Grant** > **Grant access** > **Require authentication strength** > **Multifactor
+       authentication**.
+    7. Set **Enable policy** to **Report-only**, save, and review the sign-in logs for a few days.
+    8. Switch **Enable policy** to **On**.
+    Graph equivalent: `New-MgIdentityConditionalAccessPolicy` with `conditions.users.includeUsers`
+    set to `All`, `conditions.applications.includeApplications` set to `All` and
+    `grantControls.authenticationStrength.id` set to `00000000-0000-0000-0000-000000000002`
+    (built-in Multifactor authentication strength).
+  rollback: |
+    Set the policy to **Report-only**. Sign in with an emergency access account if needed.
+
+references:
+  - title: Require MFA for all users with Conditional Access
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-mfa-strength
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft-managed policies
+    url: https://learn.microsoft.com/entra/identity/conditional-access/managed-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft Entra ID baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.2.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.3.2v2
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R1"
+    relation: related
+    note: ANSSI recommends MFA in general; this control applies it to every Microsoft 365 user and resource.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1110.003
+  - framework: mitre-attack
+    id: T1566
+related_controls:
+  - id: CB-M365-AUTH-001
+    type: related
+  - id: CB-M365-AUTH-002
+    type: related
+  - id: CB-M365-AUTH-004
+    type: related
+  - id: CB-M365-AUTH-005
+    type: related
+  - id: CB-M365-AUTH-010
+    type: related
+  - id: CB-M365-AUTH-018
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+  - id: CB-M365-AUTH-025
+    type: related
+  - id: CB-M365-AUTH-034
+    type: related
+  - id: CB-M365-DEVICE-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

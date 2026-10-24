@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-MAIL-007
+title: Turn on MailTips, including external recipient warnings
+finding:
+  title: Outlook does not warn users before they send to external or large audiences
+  description: Users get no hint when a reply goes outside the organization or to a very large group, which leads to accidental disclosure.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [exchange-online, outlook, mailtips, data-leakage, user-awareness]
+
+description: |
+  MailTips are enabled for the organization with these settings:
+
+  - `MailTipsAllTipsEnabled`: `$true`;
+  - `MailTipsExternalRecipientsTipsEnabled`: `$true` (warning when a recipient is outside the
+    organization);
+  - `MailTipsGroupMetricsEnabled`: `$true` (group size known to Outlook);
+  - `MailTipsLargeAudienceThreshold`: at most {{ large_audience_threshold }} recipients.
+rationale: |
+  MailTips show a banner while the user writes the message, before it is sent. The external
+  recipient tip catches the classic mistake of auto-completing a personal or partner address, and
+  the large audience tip catches replies to a whole distribution list. Both are cheap ways to reduce
+  accidental data leaks.
+impact: |
+  Users see more banners when writing to external or large audiences. No message is blocked.
+
+parameters:
+  - name: large_audience_threshold
+    type: integer
+    description: Number of recipients above which Outlook shows the large audience MailTip.
+    unit: recipients
+    default: 25
+    minimum: 1
+    maximum: 1000
+
+audit:
+  manual: |
+    1. These settings are not shown in the admin centers. Connect to Exchange Online PowerShell as
+       at least a Global Reader.
+    2. Run (read-only):
+       ```powershell
+       Get-OrganizationConfig | Format-List MailTips*
+       ```
+    3. Fail if `MailTipsAllTipsEnabled`, `MailTipsExternalRecipientsTipsEnabled` or
+       `MailTipsGroupMetricsEnabled` is `False`, or if `MailTipsLargeAudienceThreshold` is greater
+       than {{ large_audience_threshold }}.
+
+remediation:
+  manual: |
+    1. Connect to Exchange Online PowerShell as an Exchange Administrator.
+    2. Run:
+       ```powershell
+       Set-OrganizationConfig -MailTipsAllTipsEnabled $true -MailTipsExternalRecipientsTipsEnabled $true `
+         -MailTipsGroupMetricsEnabled $true -MailTipsLargeAudienceThreshold 25
+       ```
+       Replace `25` with the chosen threshold.
+  rollback: |
+    `Set-OrganizationConfig -MailTipsExternalRecipientsTipsEnabled $false`.
+
+references:
+  - title: MailTips in Exchange Online
+    url: https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/mailtips/mailtips
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-OrganizationConfig
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-organizationconfig
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester MT.1039
+    url: https://maester.dev/docs/tests/MT.1039
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "6.5.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+related_controls:
+  - id: CB-M365-MAIL-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

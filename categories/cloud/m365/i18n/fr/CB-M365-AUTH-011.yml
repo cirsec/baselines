@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-AUTH-011
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver le SMS et l'appel vocal comme méthodes d'authentification
+finding:
+  title: Le SMS ou l'appel vocal peut servir à s'authentifier
+  description: Les codes et appels envoyés à un numéro de téléphone peuvent être interceptés par échange de carte SIM, portage de numéro ou page d'hameçonnage, et ne protègent pas contre le relais.
+description: |
+  Dans la stratégie des méthodes d'authentification, les méthodes **SMS** et **Voice call** sont
+  désactivées, ou activées seulement pour un groupe d'exception documenté (par exemple des
+  utilisateurs en attente d'une méthode résistante au hameçonnage) avec une date de retrait. Le
+  réglage s'applique quel que soit le fournisseur de téléphonie qui achemine les messages :
+  Microsoft jusqu'à son retrait, puis un fournisseur tiers du Microsoft Security Store.
+
+  Les codes à usage unique par e-mail sont traités à part dans CB-M365-AUTH-012.
+rationale: |
+  Les méthodes téléphoniques dépendent de l'opérateur mobile : l'échange de carte SIM et le portage
+  de numéro remettent les codes à l'attaquant, et le code ou l'appel peut être relayé par une page
+  d'hameçonnage comme n'importe quel autre. La connexion par SMS permet aussi au numéro de
+  téléphone de remplacer le mot de passe. Microsoft lui-même ne considère plus ces méthodes comme
+  sûres et retire ses propres SMS et appels en 2027.
+impact: |
+  Les utilisateurs dont la seule méthode est un numéro de téléphone perdent la MFA et le SSPR. Les
+  identifier d'abord (**Détails de l'inscription des utilisateurs**, méthode **SMS** ou **Voice
+  call**) et les passer à Microsoft Authenticator ou à une passkey. Les utilisateurs sans
+  smartphone ont besoin d'une clé de sécurité ou d'un jeton OATH matériel.
+notes: |
+  À partir du 1er février 2027, Microsoft cesse d'acheminer SMS et appels pour l'authentification
+  (1er juillet 2027 pour les administrateurs généraux et les utilisateurs externes) ; les
+  utilisateurs qui n'ont que ces méthodes sont forcés d'enregistrer une passkey. Le contrôle reste
+  pertinent pour les tenants qui configurent un fournisseur de téléphonie tiers.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies**.
+    3. Vérifier que **SMS** et **Voice call** affichent **Activé** = **Non**, ou ne ciblent qu'un
+       groupe d'exception documenté.
+    4. Vérifier que la migration est terminée (CB-M365-AUTH-009) ; sinon contrôler aussi les options
+       de vérification dans **MFA par utilisateur** > **paramètres du service**.
+    5. Alternative en lecture seule avec Microsoft Graph PowerShell (étendue `Policy.Read.All`) :
+       `'Sms','Voice' | ForEach-Object { Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId $_ | Select-Object Id, State }`
+    6. Échec si l'une des méthodes est activée pour tous les utilisateurs ou pour un groupe non
+       documenté.
+remediation:
+  manual: |
+    1. Lister les utilisateurs qui dépendent encore du SMS ou de la voix et leur faire enregistrer
+       une autre méthode.
+    2. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle
+       Administrateur de la stratégie d'authentification.
+    3. Aller dans **Entra ID** > **Méthodes d'authentification** > **Stratégies** > **SMS**,
+       désactiver **Activer** (ou réduire la cible au groupe d'exception) et enregistrer.
+    4. Faire de même pour **Voice call**.
+    Équivalent Graph : `Update-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Sms -BodyParameter @{ '@odata.type' = '#microsoft.graph.smsAuthenticationMethodConfiguration'; state = 'disabled' }`
+    et de même avec `Voice` et `#microsoft.graph.voiceAuthenticationMethodConfiguration`.
+  rollback: |
+    Réactiver la méthode pour un groupe limité seulement.

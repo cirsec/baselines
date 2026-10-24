@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-007
+title: Require approval to activate the Global Administrator role
+finding:
+  title: Global Administrator can be activated without approval
+  description: A user eligible for Global Administrator can grant themselves the role in PIM with no second person involved, including an attacker holding that account.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, pim, approval, four-eyes]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+description: |
+  In Privileged Identity Management, the role settings of **Global Administrator** set **Require approval to
+  activate** to **Yes**, with at least two approvers. Approvers are named administrators who are
+  not the only eligible users of the role, so nobody approves their own activation.
+rationale: |
+  Global Administrator controls every service and every role. Requiring a second person to
+  approve each activation stops an attacker who has taken over an eligible account from becoming
+  Global Administrator on their own, and makes every activation a deliberate, visible event.
+impact: |
+  Activations wait for an approver: plan approvers in several time zones or on-call rotations, so
+  that urgent work is not blocked. The emergency access accounts are permanently active and do not
+  depend on approval. Approvers receive an email and approve in **My Access** or PIM.
+notes: |
+  PIM does not let users approve their own requests, but if the only approvers are also the only
+  eligible users, two of them can approve each other: keep a separate approver.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **ID Governance** > **Privileged Identity Management** > **Microsoft Entra
+       roles** > **Roles** > **Global Administrator** > **Role settings**.
+    3. Under **Activation**, check that **Require approval to activate** is **Yes** and that the
+       approver list has at least two users or a group with at least two members.
+    4. Read-only alternative with Microsoft Graph (scope `RoleManagementPolicy.Read.Directory`):
+       `GET /policies/roleManagementPolicyAssignments?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq '62e90394-69f5-4237-9190-012177145e10'&$expand=policy($expand=rules)`,
+       then read the rule `Approval_EndUser_Assignment`: `setting.isApprovalRequired` is
+       `true` and `approvalStages[0].primaryApprovers` is not empty.
+    5. Fail if approval is not required or if fewer than two approvers are configured.
+
+remediation:
+  manual: |
+    1. With a Privileged Role Administrator, browse to **ID Governance** > **Privileged Identity
+       Management** > **Microsoft Entra roles** > **Roles** > **Global Administrator** > **Role settings** >
+       **Edit**.
+    2. On the **Activation** tab, check **Require approval to activate** and select at least two
+       approvers (users or a group).
+    3. Select **Update**. Tell eligible users and approvers about the new step.
+    4. Equivalent with Microsoft Graph: `PATCH /policies/roleManagementPolicies/{policyId}/rules/Approval_EndUser_Assignment`
+       with `isApprovalRequired: true` and the approvers in `approvalStages`.
+  rollback: |
+    Uncheck **Require approval to activate** in the role settings.
+
+references:
+  - title: Configure Microsoft Entra role settings in Privileged Identity Management
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-change-default-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Approve or deny requests for Microsoft Entra roles in PIM
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-approval-workflow
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.3.4"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.6v1
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-ADMIN-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

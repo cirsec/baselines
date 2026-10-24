@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-011
+title: Review high-risk API permissions granted to applications
+finding:
+  title: Applications hold high-risk permissions that are unreviewed or unused
+  description: An application with permissions such as RoleManagement.ReadWrite.Directory or Mail.ReadWrite for the whole tenant is a direct path to Global Administrator or to every mailbox if its credential leaks.
+status: active
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [applications, workload-identities, permissions, least-privilege, oauth]
+
+description: |
+  Application permissions (app roles) and tenant-wide delegated grants on high-risk APIs are
+  reviewed at least every 90 days. High-risk permissions include at least:
+
+  - permissions that lead to tenant control: `RoleManagement.ReadWrite.Directory`,
+    `AppRoleAssignment.ReadWrite.All`, `Application.ReadWrite.All`,
+    `Directory.ReadWrite.All`, `Policy.ReadWrite.*`, `UserAuthenticationMethod.ReadWrite.All`,
+    `Group.ReadWrite.All`, `ServicePrincipalEndpoint.ReadWrite.All`;
+  - permissions that read or change all mailboxes, files or chats: `Mail.*`, `Files.*`,
+    `Sites.*`, `Chat.*`, `full_access_as_app`, `EWS.AccessAsUser.All`.
+
+  Each such permission has an owner and a justification, is still used, and is scoped where the
+  service allows it (for example Exchange RBAC for Applications, `Sites.Selected`).
+rationale: |
+  An application permission works without a user and without Conditional Access for users: whoever
+  holds the credential acts on the whole tenant. Permissions that allow granting roles or other
+  permissions give a direct or indirect path to Global Administrator, and were the escalation path
+  in several public cloud intrusions. Unused privileged permissions add risk without value.
+impact: |
+  Removing a permission that is still used breaks the integration. Check service principal
+  sign-ins and the application's API activity before revoking.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **All applications**, filter on **Application
+       type** = **Enterprise applications**, open each application and check **Permissions** (admin
+       consent tab) for the permissions above.
+    3. In Microsoft Graph PowerShell (scopes `Application.Read.All`, `Directory.Read.All`), list
+       application permissions per service principal with
+       `Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId <id>` and tenant-wide delegated
+       grants with `Get-MgOauth2PermissionGrant -All | Where-Object ConsentType -eq 'AllPrincipals'`.
+    4. If Microsoft Defender for Cloud Apps app governance is licensed, use **Microsoft Defender
+       portal** > **Cloud apps** > **App governance** > **Applications** to filter on high-privilege
+       and unused permissions.
+    5. Fail if a high-risk permission has no documented owner and justification, has not been used
+       for 90 days, or is granted tenant-wide where a scoped alternative exists.
+
+remediation:
+  manual: |
+    1. For each finding, contact the application owner and confirm the need.
+    2. Remove unneeded permissions: **Enterprise apps** > the application > **Permissions** >
+       **Review permissions**, or in Graph PowerShell `Remove-MgServicePrincipalAppRoleAssignment`
+       and `Remove-MgOauth2PermissionGrant`. Role required: Privileged Role Administrator (Cloud
+       Application Administrator cannot revoke Microsoft Graph app roles).
+    3. Replace broad permissions with scoped ones: `Sites.Selected`, Exchange Online RBAC for
+       Applications, administrative units.
+    4. Record owner, justification and review date for the permissions that remain.
+  rollback: |
+    Grant the removed permission again with admin consent if an integration breaks.
+
+references:
+  - title: Review permissions granted to enterprise applications
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/manage-application-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage app governance in Microsoft Defender for Cloud Apps
+    url: https://learn.microsoft.com/defender-cloud-apps/app-governance-manage-app-governance
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test catalogue (MT.1050, MT.1051, MT.1079)
+    url: https://maester.dev/docs/tests/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(7)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1114.002
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+  - id: CB-M365-APPS-012
+    type: related
+  - id: CB-M365-AUDIT-011
+    type: related
+  - id: CB-M365-MAIL-037
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

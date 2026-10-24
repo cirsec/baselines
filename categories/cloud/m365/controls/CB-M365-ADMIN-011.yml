@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-011
+title: Remove unused and orphaned privileged role assignments
+finding:
+  title: Privileged roles are held by disabled, inactive or non-using accounts
+  description: Dormant privileged accounts are easy targets, because nobody notices when they are used again.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, pim, hygiene, inactive-accounts]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+parameters:
+  - name: stale_days
+    type: integer
+    description: Number of days without sign-in or without role activation after which a privileged assignment is considered unused.
+    unit: days
+    default: 90
+    minimum: 30
+
+description: |
+  No privileged role (active or eligible) is held by:
+
+  - a disabled account, or a deleted account still present as an orphaned assignment;
+  - an account that has not signed in for `{{ stale_days }}` days;
+  - an eligible user who has not activated the role for `{{ stale_days }}` days, or an active
+    holder who has not used it in that period (PIM alert **Administrators aren't using their
+    privileged roles**).
+
+  The emergency access accounts (CB-M365-ADMIN-002) are excluded from the inactivity criteria.
+rationale: |
+  Unused privileges add attack surface for no benefit. A dormant admin account is rarely watched,
+  its owner would not notice a takeover, and its methods may be outdated. Removing such assignments
+  between periodic reviews keeps the privileged population close to the real need.
+impact: |
+  Occasional administrators (yearly tasks, backup staff) lose their eligibility and must ask for
+  it again. Document such cases as exceptions rather than lowering the threshold for everyone.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **ID Governance** > **Privileged Identity Management** > **Microsoft Entra
+       roles** > **Alerts** and open **Administrators aren't using their privileged roles** (set
+       its threshold to `{{ stale_days }}` days in **Setting** if needed).
+    3. In **Assignments**, list eligible and active holders; for each, open the user and check
+       **Account enabled** and the last sign-in date (**Sign-in logs** or the user overview).
+    4. Read-only PowerShell alternative (Microsoft Graph, scopes `RoleManagement.Read.Directory`,
+       `AuditLog.Read.All`):
+       ```
+       Get-MgUser -UserId <id> -Property AccountEnabled,SignInActivity |
+         Select-Object AccountEnabled, @{n='LastSignIn';e={$_.SignInActivity.LastSignInDateTime}}
+       ```
+       and `GET /roleManagement/directory/roleAssignmentScheduleRequests` to find the last
+       activation per principal.
+    5. Fail if a privileged assignment belongs to a disabled account, to an account without a
+       sign-in for `{{ stale_days }}` days, or to a user who has not used the role in that
+       period, outside documented exceptions.
+
+remediation:
+  manual: |
+    1. With a Privileged Role Administrator, browse to **ID Governance** > **Privileged Identity
+       Management** > **Microsoft Entra roles** > **Assignments**.
+    2. For each finding, confirm with the owner's manager, then select **Remove** on the
+       assignment.
+    3. Disable the admin account if it holds no other role.
+    4. Equivalent with Microsoft Graph:
+       `New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -Action adminRemove` (eligible)
+       or `New-MgRoleManagementDirectoryRoleAssignmentScheduleRequest -Action adminRemove`
+       (active).
+  rollback: |
+    Reassign the role as eligible in PIM.
+
+references:
+  - title: Configure security alerts for Microsoft Entra roles in PIM
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-configure-security-alerts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: How to manage inactive user accounts
+    url: https://learn.microsoft.com/entra/identity/monitoring-health/howto-manage-inactive-user-accounts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-ADMIN-010
+    type: related
+  - id: CB-M365-AUTH-047
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

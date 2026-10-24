@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-014
+title: Block cross-tenant B2B access by default and allow named partners
+finding:
+  title: Cross-tenant access defaults allow every Microsoft Entra tenant
+  description: Users can collaborate with, and be invited from or into, any Microsoft Entra organization, including tenants created by attackers.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, cross-tenant-access, b2b, external-identities, allow-list]
+
+parameters:
+  - name: partner_tenants
+    type: list
+    description: Tenant IDs or primary domains of partner organizations with their own cross-tenant access settings.
+    default: []
+
+description: |
+  The **Default settings** of cross-tenant access block B2B collaboration and B2B direct connect,
+  inbound and outbound, for all users and applications. Each partner organization of
+  `{{ partner_tenants }}` has an **Organizational settings** entry that allows only the B2B
+  collaboration or direct connect it needs, for specific users, groups and applications where
+  possible.
+
+  **Trust settings** (MFA, compliant device, hybrid joined device) are trusted only for partners
+  whose policies have been assessed, never in the default settings.
+rationale: |
+  By default Microsoft Entra allows B2B collaboration with every tenant in both directions. Any
+  user can be invited into, and share with, any organization, including throwaway tenants used for
+  phishing and exfiltration. Blocking by default and listing partners turns external collaboration
+  into an explicit, reviewed decision.
+impact: |
+  Collaboration with a new Microsoft Entra organization fails until it is added as a partner.
+  Inbound guests from non-listed tenants can no longer redeem invitations or sign in. Users without
+  an Entra tenant (consumer accounts, email one-time passcode) are not affected by these settings
+  but by the domain allow list (CB-M365-TENANT-012). Teams external chat uses Teams external access
+  settings, not these settings.
+notes: |
+  The default B2B direct connect settings already block everything; this control keeps them that
+  way.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader (Security Reader also works).
+    2. Browse to **Entra ID** > **External Identities** > **Cross-tenant access settings** >
+       **Default settings**.
+    3. **Inbound access settings** and **Outbound access settings**: B2B collaboration and B2B
+       direct connect show **All blocked** for users and applications. **Trust settings** are not
+       checked.
+    4. **Organizational settings**: each entry belongs to `{{ partner_tenants }}`.
+    5. Read-only PowerShell alternative (Microsoft Graph, scope `Policy.Read.All`):
+       ```
+       $d = Get-MgPolicyCrossTenantAccessPolicyDefault
+       $d.B2bCollaborationInbound.UsersAndGroups.AccessType, $d.B2bCollaborationOutbound.UsersAndGroups.AccessType
+       Get-MgPolicyCrossTenantAccessPolicyPartner | Select-Object TenantId
+       ```
+    6. Fail if a default direction allows access, if default trust settings are enabled, or if a
+       partner entry is not in the parameter.
+
+remediation:
+  manual: |
+    1. Before changing defaults, add each partner of `{{ partner_tenants }}` in **Organizational
+       settings** > **Add organization**, and allow the inbound and outbound access they need.
+    2. Review the cross-tenant sign-in activity (**Monitoring & health** > **Workbooks** >
+       **Cross-tenant access activity**) to find missing partners.
+    3. With a Security Administrator, browse to **Entra ID** > **External Identities** >
+       **Cross-tenant access settings** > **Default settings**.
+    4. **Edit inbound defaults** and **Edit outbound defaults**: on **B2B collaboration** and
+       **B2B direct connect**, set **Access status** to **Block access** for users and
+       applications; on **Trust settings**, uncheck all options. **Save**.
+    5. Equivalent with Microsoft Graph: `PATCH /policies/crossTenantAccessPolicy/default` with
+       `accessType: blocked` on `b2bCollaborationInbound`, `b2bCollaborationOutbound`,
+       `b2bDirectConnectInbound` and `b2bDirectConnectOutbound`.
+  rollback: |
+    Select **Reset to default** in the default settings, or set the access status back to
+    **Allow access**.
+
+references:
+  - title: Cross-tenant access overview
+    url: https://learn.microsoft.com/entra/external-id/cross-tenant-access-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure cross-tenant access settings for B2B collaboration
+    url: https://learn.microsoft.com/entra/external-id/cross-tenant-access-settings-b2b-collaboration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: ASD's Blueprint for Secure Cloud, cross-tenant access settings
+    url: https://blueprint.asd.gov.au/configuration/entra-id/external-identities/cross-tenant-access-settings/
+    publisher: Australian Signals Directorate
+    kind: guide
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-20
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-M365-TENANT-012
+    type: related
+  - id: CB-M365-COLLAB-018
+    type: related
+  - id: CB-M365-POWER-006
+    type: related
+  - id: CB-M365-POWER-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

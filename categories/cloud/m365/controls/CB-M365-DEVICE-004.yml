@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-004
+title: Limit the number of devices each user can join or register
+finding:
+  title: Users can join or register a large number of devices
+  description: The per-user device quota is above the organization's limit, so a single account can add many device identities to the tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [entra-id, device-registration, device-join, quota]
+
+description: |
+  The device setting **Maximum number of devices per user** is set to `{{ max_devices_per_user }}`
+  or less. The quota counts Microsoft Entra joined and Microsoft Entra registered devices owned by
+  each user. It does not apply to Microsoft Entra hybrid joined devices.
+rationale: |
+  Each device identity can hold a Primary Refresh Token and satisfy device-based Conditional
+  Access conditions. A low quota limits how many device objects a compromised account can create,
+  for persistence or to flood the directory, and keeps per-user inventories readable. Microsoft
+  sets the default to 50, which is far above what a normal user needs.
+impact: |
+  Users who reach the limit cannot register or join another device until an old device is removed.
+  Staff who handle many devices (technicians, test accounts) should use a device enrollment manager
+  account or bulk provisioning instead of their own account. Combine with the cleanup of stale
+  devices so that retired devices do not use up the quota.
+notes: |
+  Intune has a separate enrollment device limit (Devices > Device onboarding > Enrollment > Device
+  limit restriction, 1 to 15). It does not replace this Entra quota, which applies even without
+  Intune.
+
+parameters:
+  - name: max_devices_per_user
+    type: integer
+    description: Highest accepted value of the Entra per-user device quota.
+    default: 10
+    minimum: 1
+    maximum: 100
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Maximum number of devices per user
+  default_value: "50"
+  recommended_value: "{{ max_devices_per_user }} or less"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**.
+    3. Read **Maximum number of devices per user**.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` and read
+       `userDeviceQuota`.
+    5. Fail if the value is greater than `{{ max_devices_per_user }}` or is **Unlimited**.
+
+remediation:
+  manual: |
+    1. Find users above the target: in **Entra ID** > **Devices** > **All devices**, filter by
+       owner, or export the list with **Download devices** and count devices per owner. Remove
+       stale devices first.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**. Role: Cloud Device
+       Administrator.
+    3. Set **Maximum number of devices per user** to `{{ max_devices_per_user }}` (or lower) and
+       save.
+    4. Graph equivalent: `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       with the full policy object and `userDeviceQuota` set to the target value.
+  rollback: |
+    Raise **Maximum number of devices per user** back to the previous value.
+
+references:
+  - title: Manage devices in Microsoft Entra ID - Configure device settings
+    url: https://learn.microsoft.com/entra/identity/devices/manage-device-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-19
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.005
+related_controls:
+  - id: CB-M365-DEVICE-003
+    type: related
+  - id: CB-M365-DEVICE-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

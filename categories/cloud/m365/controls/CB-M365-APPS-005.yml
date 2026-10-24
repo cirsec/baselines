@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-005
+title: Enable the admin consent request workflow
+finding:
+  title: Users have no supervised way to request access to an application
+  description: Without the admin consent workflow, blocked users cannot ask for an application through a reviewed process and look for workarounds, or the tenant loosens user consent to avoid tickets.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [applications, consent, admin-consent, entra-id]
+
+description: |
+  The admin consent workflow is on. Users who cannot consent to an application send a request
+  with a justification. Named reviewers (a group or roles, never a single person) receive an email
+  for each request and an expiration reminder, and requests expire after
+  **{{ admin_consent_request_expiry_days }}** days at most.
+rationale: |
+  Restricting user consent (CB-M365-APPS-002) only holds if users have a legitimate path to ask
+  for an application. The workflow records who asked, why, and who approved, and puts a security
+  review before any grant of tenant data. Short expiration keeps stale requests from being
+  approved months later without context.
+impact: |
+  Reviewers must handle requests in a reasonable time. Only Global Administrators (or Privileged
+  Role Administrators for delegated permissions) can approve requests for Microsoft Graph
+  application permissions; other reviewers can still review, deny or block.
+
+parameters:
+  - name: admin_consent_request_expiry_days
+    type: integer
+    description: Maximum number of days before an unanswered admin consent request expires.
+    unit: days
+    default: 30
+    minimum: 1
+    maximum: 30
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** > **Admin consent
+       settings**.
+    3. Check that:
+       - **Users can request admin consent to apps they are unable to consent to** is **Yes**;
+       - **Who can review admin consent requests** lists at least one group or role with active
+         members (or several named users);
+       - **Selected users will receive email notifications for requests** is **Yes**;
+       - **Selected users will receive request expiration reminders** is **Yes**;
+       - **Consent request expires after (days)** is at most {{ admin_consent_request_expiry_days }}.
+    4. Alternative with Graph (scope `Policy.Read.All`):
+       `GET https://graph.microsoft.com/v1.0/policies/adminConsentRequestPolicy`, or
+       `Get-MgPolicyAdminConsentRequestPolicy`; check `isEnabled`, `reviewers`, `notifyReviewers`,
+       `remindersEnabled` and `requestDurationInDays`.
+    5. Fail if the workflow is off, has no reviewer, has notifications or reminders off, or keeps
+       requests longer than {{ admin_consent_request_expiry_days }} days.
+
+remediation:
+  manual: |
+    1. Create or pick a group of reviewers from the team that manages applications and security.
+    2. Sign in to the Microsoft Entra admin center as a Global Administrator (or update the policy
+       through Graph as a Privileged Role Administrator).
+    3. Browse to **Entra ID** > **Enterprise apps** > **Consent and permissions** > **Admin consent
+       settings**.
+    4. Set **Users can request admin consent to apps they are unable to consent to** to **Yes**,
+       add the reviewers, turn on email notifications and expiration reminders, and set
+       **Consent request expires after (days)** to {{ admin_consent_request_expiry_days }} or less.
+    5. Select **Save**. The workflow can take up to an hour to become active.
+    6. Graph alternative (scope `Policy.ReadWrite.ConsentRequest`):
+       `PUT https://graph.microsoft.com/v1.0/policies/adminConsentRequestPolicy` with `isEnabled`,
+       `notifyReviewers`, `remindersEnabled`, `requestDurationInDays` and `reviewers`.
+  rollback: |
+    Set **Users can request admin consent to apps they are unable to consent to** to **No**.
+
+references:
+  - title: Configure the admin consent workflow
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/configure-admin-consent-workflow
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Review admin consent requests
+    url: https://learn.microsoft.com/entra/identity/enterprise-apps/review-admin-consent-requests
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: adminConsentRequestPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/adminconsentrequestpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.5.2"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.5.3v1
+    relation: stricter
+    note: Also requires reviewer notifications, reminders and a maximum request lifetime.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+related_controls:
+  - id: CB-M365-APPS-002
+    type: related
+  - id: CB-M365-APPS-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

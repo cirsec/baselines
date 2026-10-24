@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-POWER-008
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver aux administrateurs la création de sites Power Pages
+finding:
+  title: Tout concepteur peut créer des sites Power Pages
+  description: Des non-administrateurs peuvent créer des sites web publics reliés aux données Dataverse, avec leurs propres réglages d'accès et d'accès anonyme.
+description: |
+  Le paramètre du locataire Power Platform `disablePortalsCreationByNonAdminUsers` vaut `true`. Seuls
+  les administrateurs Dynamics 365 et administrateurs Power Platform peuvent créer des sites Power
+  Pages ; les concepteurs demandent un site à l'équipe plateforme, qui en revoit l'exposition,
+  l'authentification et les autorisations de tables.
+rationale: |
+  Un site Power Pages est une application web exposée à internet au-dessus de Dataverse. Un
+  concepteur qui configure mal les autorisations de tables ou l'accès anonyme peut exposer des
+  enregistrements métier à tout internet, ce qui s'est produit à plusieurs reprises lors d'incidents
+  réels. Restreindre la création garantit que chaque site public est revu avant d'exister.
+impact: |
+  Les concepteurs qui tentent de créer un site reçoivent une erreur d'autorisation et doivent passer
+  par l'équipe plateforme. Les sites existants ne sont pas affectés ; les revoir séparément (accès
+  anonyme, autorisations de tables, visibilité du site).
+notes: |
+  Le paramètre n'a pas de bouton dans le centre d'administration Power Platform et se gère par
+  PowerShell ou par l'API Power Platform.
+setting:
+  location: Paramètres du locataire Power Platform (PowerShell) > disablePortalsCreationByNonAdminUsers
+  recommended_value: "true"
+audit:
+  manual: |
+    1. Installer le module `Microsoft.PowerApps.Administration.PowerShell` et exécuter
+       `Add-PowerAppsAccount` en tant qu'administrateur Power Platform (aucun rôle en lecture seule
+       n'expose les paramètres du locataire à PowerShell).
+    2. Exécuter `(Get-TenantSettings).disablePortalsCreationByNonAdminUsers`.
+    3. Échec si la valeur vaut `False` ou est absente.
+remediation:
+  manual: |
+    1. Exécuter `Add-PowerAppsAccount` en tant qu'administrateur Power Platform.
+    2. Exécuter `Set-TenantSettings -RequestBody @{ disablePortalsCreationByNonAdminUsers = $true }`.
+    3. Vérifier de nouveau avec `Get-TenantSettings`.
+    4. Revoir les sites existants dans les pages d'administration Power Pages (**Gérer** > **Sites
+       Power Pages** dans le centre d'administration Power Platform) : visibilité, accès anonyme et
+       autorisations de tables.
+  rollback: |
+    Exécuter `Set-TenantSettings -RequestBody @{ disablePortalsCreationByNonAdminUsers = $false }`.

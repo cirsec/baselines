@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-TENANT-016
+title: Enable internal phishing protection in Microsoft Forms
+finding:
+  title: Microsoft Forms does not scan forms for phishing
+  description: A compromised or malicious internal account can publish a form that collects passwords or personal data under the organization's trusted domain.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [microsoft-365, forms, phishing, credential-harvesting]
+
+setting:
+  location: Microsoft 365 admin center > Settings > Org settings > Services > Microsoft Forms > Add internal phishing protection
+  default_value: Checked
+  recommended_value: Checked
+
+description: |
+  The Microsoft Forms option **Add internal phishing protection** is checked
+  (`isInOrgFormsPhishingScanEnabled` = `true`). Forms are scanned for questions that ask for
+  passwords or other sensitive information; suspicious forms and their creators are blocked and
+  reported to administrators.
+rationale: |
+  Forms hosted on forms.office.com carry Microsoft branding and look legitimate. Attackers use
+  them, from compromised internal accounts, to harvest credentials from colleagues. The scan stops
+  the most common credential-collection forms before they spread.
+impact: |
+  A legitimate form that asks for credentials may be blocked; administrators review and unblock it
+  in the Forms admin experience.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Services** > **Microsoft Forms**, section
+       **Phishing protection**.
+    3. Read-only alternative with Microsoft Graph (beta, scope `OrgSettings-Forms.Read.All`):
+       `GET https://graph.microsoft.com/beta/admin/forms` and read
+       `settings.isInOrgFormsPhishingScanEnabled`.
+    4. Fail if **Add internal phishing protection** is cleared (`false`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center as at least a Global Administrator.
+    2. Browse to **Settings** > **Org settings** > **Services** > **Microsoft Forms**.
+    3. Check **Add internal phishing protection** and **Save**.
+    4. Equivalent with Microsoft Graph (beta, scope `OrgSettings-Forms.ReadWrite.All`):
+       `PATCH https://graph.microsoft.com/beta/admin/forms` with
+       `{"settings": {"isInOrgFormsPhishingScanEnabled": true}}`.
+  rollback: |
+    Clear the option.
+
+references:
+  - title: formsSettings resource type
+    url: https://learn.microsoft.com/graph/api/resources/formssettings?view=graph-rest-beta
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Review and unblock forms or users detected and blocked for potential phishing
+    url: https://learn.microsoft.com/microsoft-forms/review-unblock-forms-users-detected-blocked-potential-phishing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "1.3.5"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.002
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-033
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Envoyer les messages signalés par les utilisateurs à Microsoft et à une boîte de signalement
+finding:
+  title: Les messages que les utilisateurs signalent comme hameçonnage n'arrivent pas à l'équipe sécurité
+  description: Le bouton Signaler intégré est désactivé, ou les signalements ne partent que chez Microsoft, donc le SOC manque les premiers signes d'une campagne.
+description: |
+  Les paramètres signalés par l'utilisateur sont configurés de sorte que :
+
+  - **Surveiller les messages signalés dans Outlook** est activé et les utilisateurs signalent avec le
+    bouton **Signaler** intégré d'Outlook (`EnableReportToMicrosoft`, `ReportJunkToCustomizedAddress`,
+    `ReportPhishToCustomizedAddress`, `ReportNotJunkToCustomizedAddress`) ;
+  - les messages signalés sont envoyés à **Microsoft et ma boîte aux lettres de rapport**, la boîte
+    de signalement étant {{ report_mailbox }} (`ReportJunkAddresses`, `ReportPhishAddresses`,
+    `ReportNotJunkAddresses` et la règle de soumission de rapport) ;
+  - **Surveiller les messages signalés dans Microsoft Teams** est activé quand Teams est utilisé ;
+  - les utilisateurs peuvent signaler des messages depuis la quarantaine.
+rationale: |
+  Les utilisateurs sont souvent les premiers à repérer une campagne de hameçonnage que les filtres ont
+  manquée. Envoyer leurs signalements dans une boîte surveillée par le SOC lui permet de purger
+  rapidement la campagne de toutes les boîtes ; les envoyer aussi à Microsoft améliore le filtrage
+  futur et, avec Defender pour Office 365 Plan 2, déclenche une investigation automatisée.
+impact: |
+  Le SOC doit surveiller la boîte de signalement ou l'onglet **Signalé par l'utilisateur** de
+  **Soumissions**. Les compléments de signalement tiers doivent être retirés ou pointer vers la même
+  boîte pour éviter deux canaux.
+notes: |
+  Microsoft recommande de déclarer la boîte de signalement comme boîte SecOps dans la stratégie de
+  remise avancée, pour que les messages signalés ne soient pas filtrés à nouveau en chemin.
+parameters:
+  report_mailbox: Boîte aux lettres Exchange Online qui reçoit les messages signalés par les utilisateurs.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **Paramètres** > **E-mail et collaboration** > **Paramètres signalés par
+       l'utilisateur**.
+    3. Vérifier que **Surveiller les messages signalés dans Outlook** est coché avec **Utiliser le
+       bouton Signaler intégré dans Outlook**, que **Envoyer les messages signalés à** vaut **Microsoft
+       et ma boîte aux lettres de rapport** avec la boîte attendue, que **Surveiller les messages
+       signalés dans Microsoft Teams** est coché, et que le signalement depuis la quarantaine est
+       autorisé.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-ReportSubmissionPolicy | Format-List EnableReportToMicrosoft, ReportJunkToCustomizedAddress, ReportPhishToCustomizedAddress,
+         ReportNotJunkToCustomizedAddress, ReportJunkAddresses, ReportPhishAddresses, ReportNotJunkAddresses, ReportChatMessageEnabled,
+         ReportChatMessageToCustomizedAddressEnabled, EnableThirdPartyAddress
+       Get-ReportSubmissionRule | Format-List Name, State, SentTo
+       ```
+    5. Échec si le signalement dans Outlook est désactivé, si les signalements n'arrivent pas à la fois
+       chez Microsoft et dans la boîte de signalement, ou si la règle est désactivée.
+remediation:
+  manual: |
+    1. Créer la boîte de signalement (une boîte partagée suffit) et donner l'accès au SOC.
+    2. Dans le portail Defender, **Paramètres** > **E-mail et collaboration** > **Paramètres signalés
+       par l'utilisateur** (Administrateur de la sécurité) : cocher **Surveiller les messages signalés
+       dans Outlook** > **Utiliser le bouton Signaler intégré dans Outlook**, régler **Envoyer les
+       messages signalés à** sur **Microsoft et ma boîte aux lettres de rapport**, saisir la boîte,
+       cocher **Surveiller les messages signalés dans Microsoft Teams** et le signalement depuis la
+       quarantaine, et enregistrer.
+    3. Équivalent PowerShell :
+       ```powershell
+       Set-ReportSubmissionPolicy -Identity DefaultReportSubmissionPolicy -EnableReportToMicrosoft $true `
+         -ReportJunkToCustomizedAddress $true -ReportNotJunkToCustomizedAddress $true -ReportPhishToCustomizedAddress $true `
+         -ReportJunkAddresses reports@example.com -ReportNotJunkAddresses reports@example.com -ReportPhishAddresses reports@example.com
+       Set-ReportSubmissionRule -Identity DefaultReportSubmissionRule -SentTo reports@example.com
+       ```
+    4. Ajouter la boîte comme boîte SecOps dans **E-mail et collaboration** > **Stratégies et règles**
+       > **Stratégies de menace** > **Remise avancée**.

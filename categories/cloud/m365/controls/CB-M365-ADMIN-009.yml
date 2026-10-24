@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-ADMIN-009
+title: Alert on assignment and activation of highly privileged roles
+finding:
+  title: Privileged role assignments and activations go unnoticed
+  description: An attacker who assigns or activates a highly privileged role raises no alert, so the security team learns about it only during a later investigation.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, pim, alerting, monitoring]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P2"
+
+parameters:
+  - name: pim_alert_recipients
+    type: list
+    description: Monitored mailboxes (SOC, security team shared mailbox) that receive PIM notifications. Must contain at least one address.
+    default: []
+
+description: |
+  For every highly privileged role (list in CB-M365-ADMIN-006), the Privileged Identity Management
+  notification settings send an email to `{{ pim_alert_recipients }}`, in addition to the default
+  recipients, when:
+
+  - a member is assigned as **eligible** to the role;
+  - a member is assigned as **active** to the role;
+  - an eligible member **activates** the role (mandatory for Global Administrator).
+
+  The recipients are monitored mailboxes, or the alerts reach the SIEM by another path (audit log
+  export, CB-M365-AUDIT-002).
+rationale: |
+  New privileged assignments and activations are rare and meaningful events: an unexpected one is
+  often the first visible step of a tenant takeover. The default PIM notifications go to the
+  administrators themselves, who may be the compromised party; a monitored security mailbox gives
+  an independent view.
+impact: |
+  The security mailbox receives an email per assignment and activation; volume depends on the
+  number of administrators. Route it to a ticketing or SIEM rule rather than reading it by hand.
+notes: |
+  The built-in PIM security alerts (for example roles assigned outside PIM) complement these
+  notifications and can be reviewed in **Privileged Identity Management** > **Alerts**.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **ID Governance** > **Privileged Identity Management** > **Microsoft Entra
+       roles** > **Roles**, open each highly privileged role > **Role settings** >
+       **Notification**.
+    3. Check that **Send notifications when members are assigned as eligible to this role**,
+       **Send notifications when members are assigned as active to this role** and **Send
+       notifications when eligible members activate this role**, row **Role assignment alert**,
+       list the addresses of `{{ pim_alert_recipients }}` under **Additional recipients**.
+    4. Read-only alternative with Microsoft Graph (scope `RoleManagementPolicy.Read.Directory`):
+       expand the role's policy rules as in CB-M365-ADMIN-007 and read
+       `Notification_Admin_Admin_Eligibility`, `Notification_Admin_Admin_Assignment` and
+       `Notification_Admin_EndUser_Assignment`: `notificationRecipients` contains the addresses.
+    5. Fail if the parameter is empty, or if one of the three notifications of a highly
+       privileged role does not reach a monitored address.
+
+remediation:
+  manual: |
+    1. With a Privileged Role Administrator, browse to **ID Governance** > **Privileged Identity
+       Management** > **Microsoft Entra roles** > **Roles**, open each highly privileged role >
+       **Role settings** > **Edit** > **Notification**.
+    2. For the three sections (eligible assignment, active assignment, activation), on the
+       **Role assignment alert** row, add the monitored addresses under **Additional
+       recipients**. Keep **Default recipients** checked.
+    3. Select **Update**. Activate a role with a test account and check that the email arrives.
+    4. Equivalent with Microsoft Graph:
+       `PATCH /policies/roleManagementPolicies/{policyId}/rules/Notification_Admin_EndUser_Assignment`
+       (and the two other rules) with the addresses in `notificationRecipients`.
+  rollback: |
+    Remove the additional recipients from the notification settings.
+
+references:
+  - title: Email notifications in Privileged Identity Management
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-email-notifications
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure Microsoft Entra role settings in Privileged Identity Management
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-change-default-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Configure security alerts for Microsoft Entra roles in PIM
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-configure-security-alerts
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.7v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.8v1
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.AAD.7.9v1
+    relation: equivalent
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R31"
+    relation: partial
+    note: Covers alerting on role assignment and activation; collection of admin logs is in the AUDIT domain.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(4)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-ADMIN-006
+    type: related
+  - id: CB-M365-AUDIT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

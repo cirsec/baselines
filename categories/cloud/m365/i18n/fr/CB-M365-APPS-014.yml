@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-APPS-014
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer le verrouillage des propriétés d'instance d'application sur les applications multitenant
+finding:
+  title: Les propriétés sensibles des applications de l'organisation peuvent être modifiées dans d'autres tenants
+  description: Sans verrouillage des propriétés, un administrateur de tout tenant où l'application est installée peut ajouter des identifiants à son principal de service local et utiliser l'identité de l'application dans ce tenant.
+description: |
+  Chaque inscription d'application a le **Verrouillage des propriétés d'instance d'application**
+  activé avec **Toutes les propriétés** sélectionnées (identifiants utilisés pour la vérification,
+  identifiants utilisés pour la signature des jetons, et `tokenEncryptionKeyId`), sauf si
+  l'application documente un scénario qui exige l'une de ces propriétés sur ses principaux de
+  service.
+rationale: |
+  Les principaux de service d'une application peuvent recevoir leurs propres identifiants dans
+  chaque tenant où l'application est présente. Pour une application multitenant publiée par
+  l'organisation, un identifiant ajouté dans un tenant client ou attaquant permet de s'y authentifier
+  en tant que l'application. Le verrouillage empêche ces modifications sur les principaux de
+  service, dont presque aucune application n'a besoin. Microsoft active le verrouillage par défaut
+  pour les applications créées depuis juin 2026 ; les plus anciennes doivent être mises à jour.
+impact: |
+  Les applications qui s'appuient sur des identifiants de principal de service (par exemple les
+  certificats de signature SAML gérés sur l'application d'entreprise) doivent garder la propriété
+  correspondante déverrouillée.
+setting:
+  location: Centre d'administration Entra > Entra ID > Inscriptions d'applications > application > Authentification > Verrouillage des propriétés d'instance d'application (Graph application.servicePrincipalLockConfiguration)
+  recommended_value: Activé, toutes les propriétés
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Inscriptions d'applications** > **Toutes les applications**, ouvrir
+       chaque application et vérifier **Authentification** > **Verrouillage des propriétés
+       d'instance d'application**.
+    3. En Microsoft Graph PowerShell (étendue `Application.Read.All`), exécuter
+       `Get-MgApplication -All -Property displayName,appId,signInAudience,servicePrincipalLockConfiguration`
+       et vérifier `isEnabled` et `allProperties`.
+    4. Échec si une application multitenant (`signInAudience` autre que `AzureADMyOrg`) a le
+       verrouillage désactivé, ou si une application l'a désactivé sans raison documentée.
+remediation:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra avec au moins le rôle Administrateur
+       d'applications cloud.
+    2. Aller dans **Entra ID** > **Inscriptions d'applications**, ouvrir l'application, sélectionner
+       **Authentification** puis **Configurer** sous **Verrouillage des propriétés d'instance
+       d'application**.
+    3. Cocher **Activer le verrouillage des propriétés** et **Toutes les propriétés**, puis
+       **Enregistrer**.
+    4. Alternative Graph (étendue `Application.ReadWrite.All`) :
+       `PATCH https://graph.microsoft.com/v1.0/applications/{id}` avec
+       `{"servicePrincipalLockConfiguration": {"isEnabled": true, "allProperties": true}}`.
+  rollback: |
+    Décocher **Activer le verrouillage des propriétés**, ou ne déverrouiller que la propriété dont
+    l'application a besoin.

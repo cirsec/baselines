@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Utiliser des comptes dédiés, nominatifs et cloud uniquement pour les rôles d'administration
+finding:
+  title: Des rôles privilégiés sont détenus par des comptes synchronisés, partagés ou du quotidien
+  description: La compromission de l'annuaire local, d'un mot de passe partagé ou de la boîte aux lettres d'un utilisateur donne à l'attaquant le rôle privilégié avec le compte.
+description: |
+  Tout compte qui détient un rôle Microsoft Entra privilégié (actif ou éligible, directement ou via
+  un groupe) est :
+
+  - **cloud uniquement** : créé dans Microsoft Entra ID, non synchronisé depuis Active Directory et
+    non fédéré avec un autre fournisseur d'identité (`onPremisesSyncEnabled` vide ou `false`) ;
+  - **dédié** : utilisé uniquement pour l'administration, distinct du compte quotidien de la
+    personne qui lit ses e-mails, navigue et travaille sur des documents ;
+  - **nominatif** : attribué à une personne identifiée, jamais partagé entre plusieurs
+    administrateurs.
+
+  Les comptes d'accès d'urgence (CB-M365-ADMIN-002) sont la seule exception non nominative.
+rationale: |
+  Un compte synchronisé hérite de la confiance d'Active Directory : quiconque contrôle un
+  contrôleur de domaine ou le serveur Entra Connect peut réinitialiser son mot de passe ou en
+  prendre le contrôle, et rebondir du réseau local vers tout le tenant. Un compte fédéré dépend de
+  la sécurité du fournisseur d'identité externe. Un compte du quotidien est exposé toute la journée
+  à l'hameçonnage, aux pièces jointes malveillantes et aux exploits de navigateur ; séparer le
+  compte d'administration tient ces menaces à l'écart des privilèges. Les comptes nominatifs
+  rendent chaque action privilégiée imputable à une personne.
+impact: |
+  Chaque administrateur gère un second compte et un second jeu de méthodes d'authentification. Les
+  scripts ou services d'assistance qui reposent sur des comptes d'administration synchronisés
+  doivent passer aux comptes cloud uniquement. Les administrateurs dont le rôle local exigeait le
+  même compte gardent un compte distinct dans Active Directory.
+notes: |
+  Une convention de nommage (par exemple un préfixe `adm-`) aide les relecteurs, mais seul le
+  registre des titulaires de comptes prouve qu'un compte est nominatif et dédié. L'empreinte de
+  licence des comptes d'administration est traitée par CB-M365-ADMIN-005.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Rôles et administrateurs** > **Rôles et administrateurs**. Pour
+       chaque rôle marqué **Privilégié**, ouvrir **Attributions** et lister les membres actifs et
+       éligibles ; développer les groupes.
+    3. Pour chaque compte, ouvrir l'utilisateur et vérifier **Propriétés** > **Local** >
+       **Synchronisation locale activée** : la valeur doit être **Non** (ou vide).
+    4. Vérifier dans le registre des administrateurs que chaque compte appartient à une personne et
+       n'est pas son compte quotidien (pas d'usage de boîte aux lettres, pas d'activité Teams, voir
+       CB-M365-ADMIN-005).
+    5. Alternative PowerShell en lecture seule (Microsoft Graph, étendues
+       `RoleManagement.Read.Directory`, `User.Read.All`) :
+       ```
+       Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal |
+         ForEach-Object { Get-MgUser -UserId $_.PrincipalId -Property UserPrincipalName,OnPremisesSyncEnabled -ErrorAction SilentlyContinue } |
+         Where-Object OnPremisesSyncEnabled | Select-Object UserPrincipalName
+       ```
+       Recommencer avec `Get-MgRoleManagementDirectoryRoleEligibilitySchedule` pour les
+       attributions éligibles.
+    6. Échec si un titulaire de rôle privilégié est synchronisé depuis le local, partagé, ou s'il
+       s'agit du compte quotidien de son titulaire.
+remediation:
+  manual: |
+    1. Pour chaque administrateur en écart, créer un compte cloud uniquement (nom d'utilisateur
+       principal sur un domaine géré ou sur `*.onmicrosoft.com`) avec au moins le rôle
+       Administrateur d'utilisateurs (Administrateur d'authentification privilégié est nécessaire
+       pour réinitialiser les méthodes d'autres administrateurs).
+    2. Faire enregistrer par le titulaire des méthodes résistantes au hameçonnage sur le nouveau
+       compte (CB-M365-AUTH-004).
+    3. Attribuer les rôles au nouveau compte, de préférence en éligible via Privileged Identity
+       Management (CB-M365-ADMIN-006), avec au moins le rôle Administrateur de rôle privilégié.
+    4. Retirer les rôles du compte synchronisé, partagé ou quotidien.
+    5. Remplacer tout compte d'administration partagé par des comptes nominatifs, puis le
+       désactiver et le supprimer.
+  rollback: |
+    Réattribuer les rôles à l'ancien compte depuis **Rôles et administrateurs** avec un
+    Administrateur de rôle privilégié ou un compte d'accès d'urgence.

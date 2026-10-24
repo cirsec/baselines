@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-003
+title: Restrict SharePoint external sharing to authenticated guests
+finding:
+  title: SharePoint allows sharing links that anyone can open without signing in
+  description: "A forwarded or leaked \"Anyone\" link exposes the content to whoever holds it, with no identity and no way to know who opened it."
+status: active
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [external-sharing, anonymous-links, sharepoint, guest-access]
+
+description: |
+  The organization-level external sharing level for SharePoint is at most
+  `{{ sharepoint_sharing_level }}`: **Anyone** links are not available, so every external recipient
+  authenticates as a guest.
+
+  Levels, from most to least permissive: **Anyone** (`ExternalUserAndGuestSharing`), **New and
+  existing guests** (`ExternalUserSharingOnly`), **Existing guests**
+  (`ExistingExternalUserSharingOnly`), **Only people in your organization** (`Disabled`). The baseline
+  allows new and existing guests; the hardened profile only allows guests already in the directory, so
+  inviting a new external person goes through the guest invitation process.
+
+  Each site can be set more restrictive than the organization level, never more permissive.
+rationale: |
+  An **Anyone** link is a bearer token: whoever has the URL gets the content, including after the link
+  is forwarded, posted in a ticket or indexed by a mail gateway. No identity is recorded, so the
+  access cannot be audited, revoked per person or covered by Conditional Access. Requiring guests to
+  authenticate keeps every external access tied to a directory object. Limiting sharing to existing
+  guests adds a gate: someone decides who becomes a guest before anything is shared.
+impact: |
+  Users can no longer create **Anyone** links; existing ones stop working when the level is lowered.
+  **File requests** (anonymous upload) need **Anyone** on OneDrive and stop working. External
+  recipients must sign in or use a one-time passcode. With **Existing guests**, users cannot share
+  with a new external address until the person is invited as a guest, which needs a guest invitation
+  process (CB-M365-TENANT-011).
+
+setting:
+  location: SharePoint admin center > Policies > Sharing > External sharing > SharePoint
+  default_value: Anyone (ExternalUserAndGuestSharing)
+  recommended_value: "{{ sharepoint_sharing_level }} or more restrictive"
+parameters:
+  - name: sharepoint_sharing_level
+    type: enum
+    description: Most permissive SharePoint external sharing level allowed (SharingCapability value).
+    default: ExternalUserSharingOnly
+    profile_defaults:
+      hardened: "ExistingExternalUserSharingOnly"
+    allowed: ["ExternalUserSharingOnly", "ExistingExternalUserSharingOnly", "Disabled"]
+
+audit:
+  manual: |
+    1. Sign in to the SharePoint admin center (https://admin.microsoft.com/sharepoint) as at least a
+       Global Reader.
+    2. Browse to **Policies** > **Sharing**. Under **External sharing**, read the SharePoint slider.
+    3. Read-only alternative: as a Global Reader, call Microsoft Graph
+       `GET https://graph.microsoft.com/v1.0/admin/sharepoint/settings` (permission
+       `SharePointTenantSettings.Read.All`, or `Get-MgAdminSharepointSetting`) and read
+       `sharingCapability`. With the SharePoint Online Management Shell (SharePoint Administrator):
+       `Get-SPOTenant | Select-Object SharingCapability`.
+    4. Optionally list sites set to a more permissive level than expected:
+       `Get-SPOSite -Limit All | Where-Object SharingCapability -eq 'ExternalUserAndGuestSharing'`.
+    5. Fail if the level is more permissive than `{{ sharepoint_sharing_level }}` (order:
+       `ExternalUserAndGuestSharing` > `ExternalUserSharingOnly` > `ExistingExternalUserSharingOnly` >
+       `Disabled`).
+
+remediation:
+  manual: |
+    1. Find current **Anyone** links before cutting them: the sharing reports of each site, or the audit
+       log (**Purview** > **Audit**, activity `AnonymousLinkCreated`). Tell the owners which links will
+       stop working.
+    2. In the SharePoint admin center, browse to **Policies** > **Sharing** and move the SharePoint
+       slider to the level matching `{{ sharepoint_sharing_level }}` (**New and existing guests**,
+       **Existing guests** or **Only people in your organization**). The OneDrive slider follows if it
+       was more permissive. Select **Save**. Role: SharePoint Administrator.
+    3. PowerShell equivalent: `Set-SPOTenant -SharingCapability {{ sharepoint_sharing_level }}`. Graph
+       equivalent: `PATCH /admin/sharepoint/settings` with `sharingCapability`.
+  rollback: |
+    Move the slider back to the previous level. Links that were disabled by the change work again if
+    they have not expired.
+
+references:
+  - title: Manage sharing settings for SharePoint and OneDrive in Microsoft 365
+    url: https://learn.microsoft.com/sharepoint/turn-external-sharing-on-or-off
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: External sharing overview
+    url: https://learn.microsoft.com/sharepoint/external-sharing-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-SPOTenant (SharePoint Online Management Shell)
+    url: https://learn.microsoft.com/powershell/module/microsoft.online.sharepoint.powershell/set-spotenant
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: CISA SCuBA Microsoft SharePoint Online and OneDrive baseline
+    url: https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/sharepoint.md
+    publisher: CISA
+    kind: standard
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "7.2.3"
+    relation: equivalent
+  - framework: cisa-scuba-m365
+    framework_version: "2.0.0"
+    id: MS.SHAREPOINT.1.1v1
+    relation: looser
+    note: SCuBA requires existing guests or organization only; that is our hardened value, the baseline also allows new guests.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-22
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1530
+  - framework: mitre-attack
+    id: T1567.002
+related_controls:
+  - id: CB-M365-COLLAB-002
+    type: related
+  - id: CB-M365-COLLAB-004
+    type: related
+    note: The OneDrive level can never be more permissive than the SharePoint level.
+  - id: CB-M365-COLLAB-005
+    type: related
+  - id: CB-M365-COLLAB-006
+    type: related
+  - id: CB-M365-COLLAB-007
+    type: related
+  - id: CB-M365-COLLAB-010
+    type: related
+    note: Applies only where Anyone links remain allowed.
+  - id: CB-M365-COLLAB-011
+    type: related
+  - id: CB-M365-COLLAB-015
+    type: related
+    note: Anyone links are not covered by unmanaged device restrictions.
+  - id: CB-M365-TENANT-011
+    type: related
+  - id: CB-M365-DATA-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

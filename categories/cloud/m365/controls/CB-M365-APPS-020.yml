@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-020
+title: Restrict creation of agent identity blueprints to administrators
+finding:
+  title: Any user can create agent identity blueprints
+  description: Users can create the templates that AI agent identities are built from, outside any review by identity administrators.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [ai-agents, agent-id, default-user-permissions]
+
+description: |
+  In Microsoft Entra Agent ID, an agent identity blueprint defines how AI agent identities are
+  created: their credentials, the permissions they can request and the redirect URIs used during
+  consent. The default user role permission **Users can register agent identity blueprints** lets
+  every member user create one. It is separate from **Users can register applications**
+  (CB-M365-APPS-001): turning that one off does not block blueprints.
+
+  Set the permission to **No**, so that only administrators and holders of the Agent ID
+  Developer or Agent ID Administrator roles create blueprints.
+rationale: |
+  A blueprint created by an ordinary user can request broad permissions, carry long-lived
+  secrets and spawn agent identities that nobody in identity administration knows about. Limiting
+  creation to a small set of roles keeps AI agents inside the same review process as
+  applications. Microsoft enables the permission for all users by default in November 2026.
+impact: |
+  Developers who build agents must request the Agent ID Developer role or go through an
+  administrator. Existing blueprints are not removed by the change.
+notes: |
+  The Graph property is `defaultUserRolePermissions.allowedToCreateAgentIdentityBlueprints` on the
+  beta endpoint of `/policies/authorizationPolicy`; v1.0 does not return it yet. During the
+  rollout, the toggle may not appear in every tenant.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Users > User settings > Default user role permissions
+  default_value: "Yes"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Under **Default user role permissions**, read **Users can register agent identity
+       blueprints**.
+    4. Alternative (read-only):
+       `Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/beta/policies/authorizationPolicy'`
+       and read `defaultUserRolePermissions.allowedToCreateAgentIdentityBlueprints`.
+    5. Fail if the setting is **Yes** (or `true`).
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least a Privileged Role Administrator.
+    2. Browse to **Entra ID** > **Users** > **User settings**.
+    3. Set **Users can register agent identity blueprints** to **No** and select **Save**.
+    4. Grant the **Agent ID Developer** role to the people who build agents.
+  rollback: |
+    Set **Users can register agent identity blueprints** back to **Yes**.
+
+references:
+  - title: Agent identity blueprints in Microsoft Entra Agent ID
+    url: https://learn.microsoft.com/entra/agent-id/agent-blueprint
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Microsoft Plans to Allow Users to Create Agent Blueprints
+    url: https://office365itpros.com/2026/10/15/agent-blueprint-option/
+    publisher: Office 365 for IT Pros
+    kind: other
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+related_controls:
+  - id: CB-M365-APPS-001
+    type: related
+  - id: CB-M365-TENANT-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

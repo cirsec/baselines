@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-030
+title: Block chat in external meetings hosted by untrusted organizations
+finding:
+  title: Users can chat in meetings hosted by organizations the tenant does not trust
+  description: In a meeting set up by an unknown organization, users can receive links and files in the meeting chat and post internal content to it.
+status: active
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [teams, meetings, external-access, chat]
+
+applicability:
+  requires:
+    - Microsoft Teams
+
+description: |
+  Users of the organization cannot read or write chat messages in Teams meetings hosted by
+  organizations that are not trusted in external access (`AllowExternalNonTrustedMeetingChat` =
+  `False` in every meeting policy). They can still join those meetings with audio, video and screen
+  sharing.
+rationale: |
+  A meeting hosted by an untrusted tenant is an easy pretext for phishing: the attacker invites the
+  victim, then drops links or files in the meeting chat, outside the organization's chat protections.
+  The same chat is a channel to paste internal content to an unknown party. Blocking chat in those
+  meetings narrows both.
+impact: |
+  Users attending meetings of customers or suppliers that are not in the trusted list cannot use the
+  meeting chat. Add frequent partners to external access (CB-M365-COLLAB-018) to restore it.
+
+setting:
+  location: Teams admin center > Meetings > Meeting policies > Meeting engagement > External meeting chat
+  default_value: "On"
+  recommended_value: Off (AllowExternalNonTrustedMeetingChat = False)
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Meetings** > **Meeting policies** and open the **Global (Org-wide default)** policy,
+       then every custom policy assigned to users.
+    3. In the **Meeting engagement** section, check that **External meeting chat** is **Off**.
+    4. With Microsoft Teams PowerShell (Global Reader is enough):
+       `Get-CsTeamsMeetingPolicy | Select-Object Identity, AllowExternalNonTrustedMeetingChat`.
+    5. Fail if any policy returns `True`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Meetings** > **Meeting policies** and open the **Global
+       (Org-wide default)** policy.
+    2. In the **Meeting engagement** section, set **External meeting chat** to **Off** and **Save**.
+       Role: Teams Administrator.
+    3. Repeat for each custom policy, unless a documented exception applies to its users.
+    4. PowerShell equivalent:
+       `Set-CsTeamsMeetingPolicy -Identity Global -AllowExternalNonTrustedMeetingChat $false` (repeat
+       with `-Identity <policy>` for custom policies). Changes can take up to 24 hours to apply.
+
+references:
+  - title: Set-CsTeamsMeetingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmeetingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Teams settings and policies reference
+    url: https://learn.microsoft.com/microsoftteams/settings-policies-reference
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.5.8"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.002
+related_controls:
+  - id: CB-M365-COLLAB-018
+    type: related
+  - id: CB-M365-COLLAB-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

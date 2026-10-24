@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-APPS-019
+title: Govern AI agent identities (ownership, sponsors, credentials and privileges)
+finding:
+  title: AI agent identities lack accountable owners or hold excessive privileges and credentials
+  description: Orphaned, dormant or over-privileged agent identities and blueprints give an attacker autonomous access to tenant data that nobody reviews.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [ai-agents, agent-id, workload-identities, governance, least-privilege]
+
+description: |
+  Agent identities, agent identity blueprints, blueprint principals and agent users in Microsoft
+  Entra Agent ID are reviewed at least every 90 days against these rules:
+
+  - every agent identity has an existing, enabled blueprint principal, every blueprint principal
+    has an existing blueprint, and every agent user has an existing parent agent identity;
+  - every agent identity, blueprint and blueprint principal has at least one enabled owner and a
+    sponsor;
+  - enabled agent identities with no sign-in for **{{ agent_inactivity_days }}** days are disabled;
+  - blueprints have no expired or long-lived client secrets (CB-M365-APPS-006,
+    CB-M365-APPS-007 apply), and no wildcard or plain `http` redirect URI (CB-M365-APPS-013);
+  - no agent identity, blueprint principal or agent user holds a privileged directory role or
+    membership in a role-assignable group, and foreign (multitenant) agents hold no directory role
+    at all;
+  - agent identities hold no high-risk Microsoft Graph permission (CB-M365-APPS-011 list);
+  - blueprints do not use the `allAllowed` inheritance pattern for delegated scopes or app roles,
+    and blueprint principals require assignment for the app roles they expose.
+rationale: |
+  Agents multiply quickly and are often created by business users through Copilot Studio or third
+  parties. Without an accountable human (sponsor) and regular review, agents keep permissions
+  after their project ends, inherit everything their blueprint allows, and become an unattended
+  path to data. A privileged agent is as dangerous as a privileged service principal, and harder
+  to spot.
+impact: |
+  Sponsors must be named and must answer reviews. Disabling a dormant agent stops automations that
+  run rarely; confirm with the sponsor first.
+notes: |
+  Microsoft Entra Agent ID features are partly in preview. Copilot Studio agent hygiene in Power
+  Platform is covered in the POWER domain.
+
+parameters:
+  - name: agent_inactivity_days
+    type: integer
+    description: Number of days without sign-in after which an enabled agent identity is disabled.
+    unit: days
+    default: 180
+    minimum: 30
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Agent ID** > **All agent identities** (and the blueprint and agent
+       user views) and review for each object: blueprint link, owners, sponsors, last sign-in,
+       credentials, assigned roles and granted permissions.
+    3. Browse to **Entra ID** > **Roles & admins** and filter assignments on agent identities and
+       agent users.
+    4. In Microsoft Graph (beta, scopes `Application.Read.All`, `Directory.Read.All`,
+       `AuditLog.Read.All`), list agent identities and blueprints, their owners and sponsors,
+       credentials, app role assignments and role assignments.
+    5. The Maester tests MT.1200 to MT.1213 and MT.1223 automate these checks and can be run in read
+       mode as a reference.
+    6. Fail if any rule of the description is broken without a documented exception.
+
+remediation:
+  manual: |
+    1. Assign a sponsor and at least one owner to every agent identity and blueprint (My Account
+       portal for sponsors and owners, or the admin center as Agent ID Administrator).
+    2. Delete orphaned agent identities, blueprint principals and agent users whose parent no
+       longer exists.
+    3. Disable agent identities inactive for {{ agent_inactivity_days }} days after confirming with
+       their sponsor.
+    4. Remove privileged directory roles and role-assignable group memberships from agents; remove
+       high-risk Graph permissions or replace them with scoped ones.
+    5. On blueprints, remove secrets in favour of federated credentials or certificates, fix redirect
+       URIs, replace `allAllowed` inheritance with an explicit list, and require assignment on
+       exposed app roles.
+    6. Roles required: Agent ID Administrator; Privileged Role Administrator to remove role
+       assignments and Graph app roles.
+  rollback: |
+    Re-enable a disabled agent or restore a removed permission after review.
+
+references:
+  - title: Agent identity governance overview
+    url: https://learn.microsoft.com/entra/id-governance/agent-id-governance-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: What is Microsoft Entra Agent ID
+    url: https://learn.microsoft.com/entra/agent-id/identity-platform/what-is-agent-id
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test catalogue (MT.1200 to MT.1213, MT.1223)
+    url: https://maester.dev/docs/tests/
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-APPS-018
+    type: related
+  - id: CB-M365-APPS-013
+    type: related
+  - id: CB-M365-TENANT-020
+    type: related
+  - id: CB-M365-POWER-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-COLLAB-032
+title: Let users report suspicious Teams messages to the security team
+finding:
+  title: Users cannot report suspicious Teams messages
+  description: Phishing and malicious content received in Teams chats and channels reaches users with no reporting path to the security team or to Microsoft.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [teams, user-reporting, phishing, defender-for-office-365]
+
+applicability:
+  requires:
+    - Microsoft Teams
+    - Microsoft Defender for Office 365 Plan 1
+
+description: |
+  Users can report Teams messages (and, where available, calls and meetings) as a security concern,
+  and the reports reach the organization:
+
+  - in the Teams admin center, **Report a security concern** is on in the Global messaging policy and
+    in every custom messaging policy (`AllowSecurityEndUserReporting` = `True`);
+  - in the Microsoft Defender portal, **Monitor reported items in Microsoft Teams** is on, and the
+    reported items go to Microsoft, to the reporting mailbox of the security team, or both
+    (`ReportChatMessageEnabled` or `ReportChatMessageToCustomizedAddressEnabled` = `True`).
+rationale: |
+  Teams is now a common phishing channel, and users are often the first to see a malicious chat.
+  Without a report button, those signals are lost or arrive as tickets without the message. Reports in
+  the Defender **Submissions** page give the SOC the message and its sender, raise an alert, and feed
+  Microsoft's filtering.
+impact: |
+  Reported messages and up to fifteen surrounding messages may be sent to Microsoft for analysis when
+  Microsoft is a destination; choose **My reporting mailbox only** if that is not acceptable. Someone
+  must triage reports. Not available in GCC, GCC High and DoD.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Teams admin center (https://admin.teams.microsoft.com) as at least a
+       Global Reader. Browse to **Messaging** > **Messaging policies** and open the Global policy and
+       each custom policy: **Report a security concern** must be **On**.
+    2. Sign in to the Microsoft Defender portal (https://security.microsoft.com) as at least a Security
+       Reader. Browse to **Settings** > **Email & collaboration** > **Teams user reported settings**:
+       **Monitor reported items in Microsoft Teams** must be on, with a destination under **Send the
+       reported items to**.
+    3. Read-only PowerShell:
+       `Get-CsTeamsMessagingPolicy | Select-Object Identity, AllowSecurityEndUserReporting` (Teams
+       PowerShell), and
+       `Get-ReportSubmissionPolicy | Format-List ReportChatMessageEnabled, ReportChatMessageToCustomizedAddressEnabled, ReportChatMessageAddresses`
+       (Exchange Online PowerShell, View-Only Organization Management or Global Reader).
+    4. Fail if reporting is off in a messaging policy assigned to users, or if both
+       `ReportChatMessageEnabled` and `ReportChatMessageToCustomizedAddressEnabled` are `False`.
+
+remediation:
+  manual: |
+    1. In the Teams admin center, browse to **Messaging** > **Messaging policies**, open the Global
+       policy, turn on **Report a security concern** and **Save**; repeat for custom policies. Role:
+       Teams Administrator. PowerShell equivalent:
+       `Set-CsTeamsMessagingPolicy -Identity Global -AllowSecurityEndUserReporting $true`.
+    2. In the Defender portal, browse to **Settings** > **Email & collaboration** > **Teams user
+       reported settings**, turn on **Monitor reported items in Microsoft Teams**, choose the
+       destination (the same reporting mailbox as email reports, CB-M365-MAIL-033) and **Save**. Role:
+       Security Administrator. PowerShell equivalent:
+       `Set-ReportSubmissionPolicy -Identity DefaultReportSubmissionPolicy -ReportChatMessageEnabled $true -ReportChatMessageToCustomizedAddressEnabled $true -ReportChatMessageAddresses soc@example.com`.
+    3. Check that the SOC triages the **User reported** tab of **Submissions**.
+
+references:
+  - title: User reported settings in Teams
+    url: https://learn.microsoft.com/defender-office-365/submissions-teams
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-CsTeamsMessagingPolicy
+    url: https://learn.microsoft.com/powershell/module/microsoftteams/set-csteamsmessagingpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Set-ReportSubmissionPolicy
+    url: https://learn.microsoft.com/powershell/module/exchangepowershell/set-reportsubmissionpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "8.6.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-8
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1566.003
+related_controls:
+  - id: CB-M365-COLLAB-033
+    type: related
+  - id: CB-M365-MAIL-033
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

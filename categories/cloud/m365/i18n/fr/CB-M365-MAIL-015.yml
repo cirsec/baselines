@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-MAIL-015
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Signer le courrier sortant avec DKIM pour chaque domaine d'envoi
+finding:
+  title: Certains domaines d'envoi ne signent pas le courrier sortant avec DKIM
+  description: Les destinataires ne peuvent pas vérifier que les messages de ces domaines sont authentiques et intacts, et DMARC perd le contrôle qui survit au transfert.
+description: |
+  La signature DKIM est activée dans Exchange Online pour chaque domaine accepté personnalisé qui
+  envoie du courrier, avec les deux enregistrements CNAME de sélecteur (`selector1._domainkey` et
+  `selector2._domainkey`) publiés dans le DNS et des clés de 2048 bits. Les services tiers qui envoient
+  avec les domaines de l'organisation signent avec leur propre clé DKIM pour ce domaine.
+rationale: |
+  DKIM prouve qu'un message a été envoyé par un système autorisé et n'a pas été modifié en chemin.
+  C'est le résultat d'authentification qui survit aux transferts et aux listes de diffusion, là où SPF
+  casse ; DMARC en dépend donc pour laisser passer le courrier légitime une fois la stratégie en
+  quarantine ou reject. Sans signature DKIM personnalisée, Exchange Online signe avec le domaine
+  `onmicrosoft.com`, qui n'est pas aligné avec le domaine From.
+impact: |
+  Aucun connu sur la remise du courrier. Les enregistrements CNAME doivent exister avant de pouvoir
+  activer la signature.
+audit:
+  manual: |
+    1. Se connecter au portail Microsoft Defender (https://security.microsoft.com) avec au moins le
+       rôle Lecteur Sécurité.
+    2. Aller dans **E-mail et collaboration** > **Stratégies et règles** > **Stratégies de menace** >
+       **Paramètres d'authentification des e-mails** > **DKIM**.
+    3. Vérifier que chaque domaine personnalisé qui envoie du courrier a **Signer les messages pour ce
+       domaine avec des signatures DKIM** activé, avec l'état **Valide**.
+    4. Dans Exchange Online PowerShell (lecture seule) :
+       ```powershell
+       Get-DkimSigningConfig | Format-Table Domain, Enabled, Status, Selector1KeySize, Selector1CNAME, Selector2CNAME
+       ```
+       Et vérifier le DNS : `Resolve-DnsName selector1._domainkey.example.com -Type CNAME`.
+    5. Échec si un domaine d'envoi a `Enabled` à `False`, pas de configuration de signature, des CNAME
+       manquants ou une clé de 1024 bits.
+remediation:
+  manual: |
+    1. Dans le portail Defender, onglet **DKIM**, sélectionner le domaine et copier les deux valeurs
+       CNAME (ou exécuter `Get-DkimSigningConfig -Identity example.com | Format-List Selector1CNAME, Selector2CNAME`).
+    2. Publier les deux enregistrements CNAME chez l'hébergeur DNS.
+    3. De retour dans le portail, activer **Signer les messages pour ce domaine avec des signatures
+       DKIM**. Équivalent PowerShell (Administrateur de la sécurité) :
+       ```powershell
+       New-DkimSigningConfig -DomainName example.com -KeySize 2048 -Enabled $true   # if no configuration exists
+       Set-DkimSigningConfig -Identity example.com -Enabled $true
+       ```
+    4. Passer les clés de 1024 bits à 2048 avec `Rotate-DkimSigningConfig -Identity example.com -KeySize 2048`.
+  rollback: |
+    `Set-DkimSigningConfig -Identity example.com -Enabled $false` (le courrier est alors à nouveau signé
+    avec le domaine onmicrosoft.com).

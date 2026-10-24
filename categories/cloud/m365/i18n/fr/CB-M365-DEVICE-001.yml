@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-DEVICE-001
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Marquer comme non conformes les appareils sans stratégie de conformité
+finding:
+  title: Intune considère comme conformes les appareils sans stratégie de conformité
+  description: Tout appareil inscrit qu'aucune stratégie de conformité ne cible passe le contrôle d'accès conditionnel « exiger un appareil conforme » sans avoir été évalué.
+description: |
+  Le paramètre Intune global **Marquer les appareils sans stratégie de conformité affectée comme**
+  vaut **Non conforme**. Un appareil doit alors recevoir au moins une stratégie de conformité et la
+  respecter avant qu'Intune le déclare conforme à Microsoft Entra ID.
+rationale: |
+  Les stratégies d'accès conditionnel qui exigent un appareil conforme reposent sur l'état remonté
+  par Intune. Avec la valeur par défaut (**Conforme**), un appareil qui échappe à toutes les
+  affectations de stratégies de conformité, par exemple une nouvelle plateforme ou un utilisateur
+  absent du groupe ciblé, est déclaré conforme sans aucune vérification du chiffrement, de la
+  version du système ou du jailbreak. La sécurité par défaut ferme cette brèche.
+impact: |
+  Les appareils inscrits qu'aucune stratégie de conformité ne cible deviennent non conformes et
+  perdent l'accès aux ressources protégées par une stratégie « exiger un appareil conforme ». Avant
+  le changement, affecter une stratégie de conformité à chaque plateforme utilisée (au moins une par
+  plateforme, ciblant tous les utilisateurs ou tous les appareils) et consulter le rapport
+  **Appareils sans stratégie de conformité**.
+setting:
+  location: Centre d'administration Intune > Sécurité du point de terminaison > Conformité de l'appareil > Paramètres de stratégie de conformité > Marquer les appareils sans stratégie de conformité affectée comme
+  recommended_value: Non conforme
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Intune (https://intune.microsoft.com) avec
+       au moins le rôle Lecteur général.
+    2. Aller dans **Sécurité du point de terminaison** > **Conformité de l'appareil** > **Paramètres
+       de stratégie de conformité**.
+    3. Vérifier que **Marquer les appareils sans stratégie de conformité affectée comme** vaut **Non
+       conforme**.
+    4. Alternative en lecture seule : avec Microsoft Graph PowerShell
+       (`Connect-MgGraph -Scopes DeviceManagementConfiguration.Read.All`), exécuter
+       `Invoke-MgGraphRequest -Method GET -Uri https://graph.microsoft.com/v1.0/deviceManagement/settings`
+       et lire `secureByDefault`.
+    5. Échec si le paramètre vaut **Conforme** (`secureByDefault` à `false`).
+remediation:
+  manual: |
+    1. Dans le centre d'administration Intune, aller dans **Appareils** > **Surveiller** >
+       **Appareils sans stratégie de conformité** et affecter une stratégie de conformité à chaque
+       plateforme qui apparaît.
+    2. Aller dans **Sécurité du point de terminaison** > **Conformité de l'appareil** > **Paramètres
+       de stratégie de conformité**.
+    3. Régler **Marquer les appareils sans stratégie de conformité affectée comme** sur **Non
+       conforme** et sélectionner **Enregistrer**. Rôle : administrateur Intune, ou rôle Intune
+       personnalisé avec l'autorisation de mise à jour des **stratégies de conformité des
+       appareils**.
+    4. Équivalent Graph : `PATCH https://graph.microsoft.com/v1.0/deviceManagement` avec le corps
+       `{"settings": {"secureByDefault": true}}`.
+  rollback: |
+    Remettre **Marquer les appareils sans stratégie de conformité affectée comme** sur **Conforme**.

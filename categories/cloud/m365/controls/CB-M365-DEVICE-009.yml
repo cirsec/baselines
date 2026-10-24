@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-009
+title: Require MFA to register or join devices through Conditional Access
+finding:
+  title: Devices can be registered or joined without multifactor authentication
+  description: A stolen password is enough to register or join a device and obtain a device identity and Primary Refresh Token in the tenant.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, conditional-access, mfa, device-registration, device-join]
+
+applicability:
+  requires:
+    - "Microsoft Entra ID P1"
+
+description: |
+  A Conditional Access policy targets the user action **Register or join devices**, for all users
+  except the emergency access accounts, and grants access only with the built-in **Multifactor
+  authentication** authentication strength (or a stronger one).
+
+  The legacy device setting **Require Multifactor Authentication to register or join devices with
+  Microsoft Entra** is set to **No**, as Microsoft requires: when that toggle is **Yes**, Conditional
+  Access policies using the **Register or join devices** user action are not enforced properly.
+rationale: |
+  Registering a device is a classic persistence step after a password spray or phishing: the
+  attacker obtains a device object and a Primary Refresh Token that survive a password reset and
+  can satisfy device-based Conditional Access conditions. Requiring MFA at that moment, through
+  Conditional Access, blocks the step for password-only attackers and lets the organization choose
+  the authentication strength and exclusions instead of the all-or-nothing device setting.
+impact: |
+  Users must complete MFA when they register a mobile device, add a work account on Windows or join
+  a computer. Users without a registered MFA method cannot register devices until they enroll one.
+  Autopilot self-deploying and pre-provisioning flows do not involve a user and are not affected.
+notes: |
+  The **Register or join devices** user action supports only the grant controls **Require
+  multifactor authentication** and **Require authentication strength**; device-based conditions
+  cannot be used in this policy. External authentication methods are not compatible with
+  authentication strengths: use **Require multifactor authentication** in that case.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Security Reader.
+    2. Browse to **Entra ID** > **Conditional Access** > **Policies** and find a policy in state
+       **On** where:
+       - **Users** > **Include** is **All users**, and **Exclude** contains only the emergency
+         access accounts;
+       - **Target resources** is **User actions** > **Register or join devices**;
+       - **Grant** is **Require authentication strength** (**Multifactor authentication** or
+         stronger) or **Require multifactor authentication**.
+    3. Browse to **Entra ID** > **Devices** > **Device settings** and check that **Require
+       Multifactor Authentication to register or join devices with Microsoft Entra** is **No**.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies` (scope
+       `Policy.Read.All`) and look for `conditions.applications.includeUserActions` containing
+       `urn:user:registerdevice`; read `multiFactorAuthConfiguration` in
+       `GET https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` (must be
+       `notRequired`).
+    5. Fail if no enabled policy exists, or if the device setting is **Yes** (the two conflict).
+
+remediation:
+  manual: |
+    1. Browse to **Entra ID** > **Conditional Access** > **Policies** > **New policy**. Role:
+       Conditional Access Administrator.
+    2. Name it, for example `DEV - Require MFA to register or join devices`.
+    3. **Users** > **Include**: **All users**. **Exclude**: the emergency access accounts.
+    4. **Target resources** > **User actions** > **Register or join devices**.
+    5. **Grant** > **Grant access** > **Require authentication strength** > **Multifactor
+       authentication**.
+    6. Set **Enable policy** to **Report-only**, save, and review the sign-in logs for device
+       registration events for a few days.
+    7. Browse to **Entra ID** > **Devices** > **Device settings**, set **Require Multifactor
+       Authentication to register or join devices with Microsoft Entra** to **No** (role: Cloud
+       Device Administrator), then switch the policy to **On**.
+  rollback: |
+    Set the Conditional Access policy to **Report-only** or **Off**. Do not switch the device
+    setting back to **Yes** while any policy targets the user action.
+
+references:
+  - title: Require multifactor authentication for device registration
+    url: https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-registration
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Manage devices in Microsoft Entra ID - Configure device settings
+    url: https://learn.microsoft.com/entra/identity/devices/manage-device-identities
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Maester test MT.1061
+    url: https://maester.dev/docs/tests/MT.1061
+    publisher: Maester
+    kind: tool
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098.005
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-M365-DEVICE-003
+    type: related
+  - id: CB-M365-AUTH-003
+    type: related
+  - id: CB-M365-ADMIN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

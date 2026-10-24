@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-M365-ADMIN-003
+locale: fr
+source_updated: 2026-10-24
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Maintenir entre deux et quatre administrateurs généraux
+finding:
+  title: Le nombre d'administrateurs généraux sort de la plage autorisée
+  description: Trop d'administrateurs généraux multiplient les comptes capables de prendre le contrôle du tenant ; un seul constitue un point de défaillance unique.
+parameters:
+  ga_min: Nombre minimal d'administrateurs généraux.
+  ga_max: Nombre maximal d'administrateurs généraux. À relever uniquement pour les très grands tenants, avec une justification écrite.
+description: |
+  Le tenant compte au moins `{{ ga_min }}` et au plus `{{ ga_max }}` principaux détenant le rôle
+  Administrateur général. Le décompte inclut les attributions actives et éligibles (Privileged
+  Identity Management), les membres des groupes attribués au rôle et les comptes d'accès d'urgence
+  (CB-M365-ADMIN-002).
+rationale: |
+  Administrateur général est le seul rôle qui contrôle entièrement tous les services et tous les
+  autres rôles. Chaque titulaire supplémentaire est un compte de plus qu'un attaquant peut hameçonner
+  ou compromettre pour prendre le tenant. En garder au moins deux évite de perdre le contrôle du
+  tenant quand un compte est indisponible. Les tâches courantes utilisent des rôles plus restreints
+  (CB-M365-ADMIN-004).
+impact: |
+  Dans les grands tenants, le plafond impose de revoir qui a réellement besoin du rôle et de passer
+  à des rôles plus fins. Avec les deux comptes d'accès d'urgence comptés, il ne reste que deux
+  administrateurs nominatifs sous le plafond par défaut : les rendre éligibles via PIM plutôt
+  qu'actifs.
+notes: |
+  Les principaux de service qui détiennent Administrateur général comptent aussi, et constituent
+  à eux seuls un constat grave.
+audit:
+  manual: |
+    1. Se connecter au centre d'administration Microsoft Entra (https://entra.microsoft.com) avec au
+       moins le rôle Lecteur général.
+    2. Aller dans **Entra ID** > **Rôles et administrateurs** > **Rôles et administrateurs** >
+       **Administrateur général** > **Attributions**. Compter les **Attributions éligibles** et les
+       **Attributions actives** ; pour chaque groupe, l'ouvrir et compter ses membres.
+    3. Alternative PowerShell en lecture seule (Microsoft Graph, étendue
+       `RoleManagement.Read.Directory`) :
+       ```
+       $ga = '62e90394-69f5-4237-9190-012177145e10'
+       $active   = Get-MgRoleManagementDirectoryRoleAssignment -All -Filter "roleDefinitionId eq '$ga'"
+       $eligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All -Filter "roleDefinitionId eq '$ga'"
+       ($active.PrincipalId + $eligible.PrincipalId | Sort-Object -Unique).Count
+       ```
+       Développer les groupes avec `Get-MgGroupTransitiveMember`.
+    4. Échec si le nombre de principaux distincts est inférieur à `{{ ga_min }}` ou supérieur à
+       `{{ ga_max }}`.
+remediation:
+  manual: |
+    1. S'il y en a trop peu : attribuer le rôle à un second administrateur nominatif cloud
+       uniquement (CB-M365-ADMIN-001), de préférence en éligible dans PIM, avec un Administrateur de
+       rôle privilégié.
+    2. S'il y en a trop : pour chaque titulaire, identifier les tâches réellement effectuées
+       (journaux d'audit, usage des rôles dans PIM) et attribuer les rôles plus restreints
+       correspondants (Administrateur Exchange, Administrateur d'utilisateurs, Administrateur de la
+       sécurité...).
+    3. Retirer l'attribution Administrateur général de ces titulaires dans **Rôles et
+       administrateurs** ou dans **Gouvernance des ID** > **Privileged Identity Management** >
+       **Rôles Microsoft Entra** > **Attributions**.
+  rollback: |
+    Réattribuer le rôle avec un Administrateur de rôle privilégié ou un compte d'accès d'urgence.

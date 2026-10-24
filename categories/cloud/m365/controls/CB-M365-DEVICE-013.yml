@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-013
+title: Block file opens over HTTP, FTP and FrontPage RPC in Microsoft 365 apps
+finding:
+  title: Microsoft 365 apps can open files over insecure protocols
+  description: Users can open documents over cleartext HTTP or FTP, or fall back to the FrontPage RPC protocol, exposing content and credentials to interception and legacy protocol attacks.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [microsoft-365-apps, baseline-security-mode, cloud-policy, insecure-protocols, encryption-in-transit]
+
+description: |
+  Two Baseline Security Mode settings are turned on in the Microsoft 365 admin center:
+
+  - **Block files from opening with insecure protocols**: Microsoft 365 apps refuse to open files
+    from HTTP or FTP locations (Cloud Policy policy **Block Insecure Protocols**);
+  - **Block files from opening with FPRPC protocol**: apps never fall back to FrontPage Server
+    Extensions RPC and use HTTPS instead (Cloud Policy policy **Restrict Apps from FPRPC
+    Fallback**).
+
+  In both cases users can no longer override the behavior in the Trust Center.
+rationale: |
+  HTTP and FTP carry document content, and sometimes credentials, in clear text: anyone on the
+  network path can read or modify them, or inject a malicious document. FrontPage RPC is a
+  decades-old authoring protocol with a history of exploitable flaws. Microsoft 365 apps already
+  block FPRPC by default; enforcing both settings removes the user override and the remaining
+  cleartext paths.
+impact: |
+  Documents published on plain HTTP or FTP servers no longer open from Office; move them to HTTPS,
+  SharePoint or OneDrive. Old intranet servers that only support FrontPage extensions stop working
+  for file opens. Run the Baseline Security Mode impact reports first.
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft 365 admin center (https://admin.cloud.microsoft) as at least a
+       Global Reader.
+    2. Browse to **Settings** > **Org settings** > **Security & privacy** > **Baseline security
+       mode**.
+    3. Check that **Block files from opening with insecure protocols** and **Block files from
+       opening with FPRPC protocol** are both turned on.
+    4. In the Office Cloud Policy service (https://config.office.com), **Customization** > **Policy
+       Management**, check that no policy configuration with a higher priority than the tenant one
+       sets **Block Insecure Protocols** or **Restrict Apps from FPRPC Fallback** to **Disabled**.
+    5. Fail if either setting is off or overridden for a group of users.
+
+remediation:
+  manual: |
+    1. In **Settings** > **Org settings** > **Security & privacy** > **Baseline security mode**,
+       open each setting and download its impact report; move the listed documents to HTTPS
+       locations.
+    2. Turn on **Block files from opening with insecure protocols** and **Block files from opening
+       with FPRPC protocol**. Role: Office Apps Administrator.
+    3. Alternative: in the Office Cloud Policy service, set **Block Insecure Protocols** and
+       **Restrict Apps from FPRPC Fallback** to **Enabled** in a policy configuration targeting all
+       users. No PowerShell cmdlet exists.
+  rollback: |
+    Turn the settings off in Baseline security mode, or set the Cloud Policy policies back to not
+    configured.
+
+references:
+  - title: Block insecure protocols for file opens
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-insecure-protocols-file-opens
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Block FPRPC protocol for file opens
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/block-server-extensions-protocol-file-opens
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: Baseline security mode settings
+    url: https://learn.microsoft.com/microsoft-365/baseline-security-mode/baseline-security-mode-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+  - framework: mitre-attack
+    id: T1203
+related_controls:
+  - id: CB-M365-DEVICE-012
+    type: related
+  - id: CB-M365-DEVICE-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

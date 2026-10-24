@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-041
+title: Require SSPR registration at sign-in and reconfirmation every {{ sspr_reconfirm_days }} days
+finding:
+  title: Users are not required to register or reconfirm their password reset methods
+  description: Unregistered accounts cannot use SSPR, and stale methods (an old phone number, a former personal address) can be reused by someone else.
+status: active
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [sspr, registration, account-recovery]
+
+description: |
+  In the self-service password reset settings, **Require users to register when signing in** is
+  **Yes** and **Number of days before users are asked to reconfirm their authentication
+  information** is set to {{ sspr_reconfirm_days }} (never 0, which disables reconfirmation).
+  Users without reset methods register at their next sign-in, and every user checks periodically
+  that the registered methods are still theirs.
+rationale: |
+  A reset method that belongs to someone else (a recycled phone number, an address of a former
+  partner) is a ready-made takeover path. Periodic reconfirmation makes users remove methods they no
+  longer control. Forced registration also closes the window where an attacker with the password
+  registers their own methods first.
+impact: |
+  Users see a registration or reconfirmation prompt at sign-in; they can skip it a limited number of
+  times. The prompt only appears when SSPR is enabled for the user (CB-M365-AUTH-039).
+notes: |
+  Registration should be protected by Conditional Access (CB-M365-AUTH-019) so that an attacker
+  with only the password cannot register methods. Combined registration means that methods
+  registered for MFA are also used for SSPR.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Password reset > Registration
+  default_value: Require users to register when signing in = Yes, reconfirmation = 180 days
+  recommended_value: "Require users to register when signing in = Yes, reconfirmation = {{ sspr_reconfirm_days }} days"
+
+parameters:
+  - name: sspr_reconfirm_days
+    type: integer
+    description: Number of days after which users are asked to reconfirm their reset methods. 0 is not allowed (it disables reconfirmation).
+    unit: days
+    default: 180
+    minimum: 1
+    maximum: 730
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Password reset** > **Registration**.
+    3. Check that **Require users to register when signing in** is **Yes** and that **Number of days
+       before users are asked to reconfirm their authentication information** is between 1 and
+       {{ sspr_reconfirm_days }}.
+    4. Fail if registration is not required or the number of days is 0 or above
+       {{ sspr_reconfirm_days }}.
+
+remediation:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    2. Browse to **Entra ID** > **Password reset** > **Registration**.
+    3. Set **Require users to register when signing in** to **Yes**.
+    4. Set **Number of days before users are asked to reconfirm their authentication information**
+       to {{ sspr_reconfirm_days }} and **Save**.
+  rollback: |
+    Set the values back to the previous ones.
+
+references:
+  - title: How self-service password reset works - registration and reconfirmation
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-howitworks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: "Tutorial: Enable users to unlock their account or reset passwords using Microsoft Entra self-service password reset"
+    url: https://learn.microsoft.com/entra/identity/authentication/tutorial-enable-sspr
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.4.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+related_controls:
+  - id: CB-M365-AUTH-039
+    type: requires
+  - id: CB-M365-AUTH-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

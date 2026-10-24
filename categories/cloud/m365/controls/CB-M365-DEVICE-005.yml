@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-DEVICE-005
+title: Do not add Global Administrators as local administrators at Entra join
+finding:
+  title: Global Administrators become local administrators on every Entra-joined device
+  description: Every Global Administrator is added to the local Administrators group of each newly joined Windows device, so a cloud administrator account is exposed on endpoints.
+status: active
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [entra-id, device-join, local-admin, privileged-access, tiering]
+
+description: |
+  The device setting **Global administrator role is added as local administrator on the device
+  during Microsoft Entra join (Preview)** is set to **No**. Local administration of Entra-joined
+  devices is then delegated through the **Microsoft Entra Joined Device Local Administrator** role
+  (setting **Manage Additional local administrators on all Microsoft Entra joined devices**), or
+  through an Intune account protection policy targeting groups of devices.
+rationale: |
+  Global Administrators control the whole tenant. Using such an account to sign in to a
+  workstation exposes its credentials and tokens to anything running on that device: malware, a
+  local user with admin rights, or a credential dumping tool. Separating cloud administration from
+  device administration follows the tiering model and means a compromised endpoint does not give
+  access to a Global Administrator session.
+impact: |
+  Global Administrators lose implicit local administrator rights on devices joined after the
+  change. Helpdesk and device administrators must receive local rights through the Microsoft Entra
+  Joined Device Local Administrator role or Intune local group policies before the change. The
+  setting applies at join time only: devices joined earlier keep the Global Administrator role SID
+  in their local Administrators group until it is removed by policy (for example an Intune account
+  protection policy that replaces the group membership).
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Devices > Device settings > Global administrator role is added as local administrator on the device during Microsoft Entra join (Preview)
+  default_value: "Yes"
+  recommended_value: "No"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**.
+    3. Check that **Global administrator role is added as local administrator on the device during
+       Microsoft Entra join (Preview)** is **No**.
+    4. Alternative, read only: `Invoke-MgGraphRequest -Method GET -Uri
+       https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy` and read
+       `azureADJoin.localAdmins.enableGlobalAdmins`.
+    5. Fail if the setting is **Yes** (`enableGlobalAdmins` is `true`).
+
+remediation:
+  manual: |
+    1. Make sure device administration is delegated another way: assign the **Microsoft Entra
+       Joined Device Local Administrator** role (Device settings > **Manage Additional local
+       administrators on all Microsoft Entra joined devices**), or deploy an Intune **Account
+       protection** > **Local user group membership** policy.
+    2. Browse to **Entra ID** > **Devices** > **Device settings**. Role: Cloud Device
+       Administrator.
+    3. Set **Global administrator role is added as local administrator on the device during
+       Microsoft Entra join (Preview)** to **No** and save.
+    4. Graph equivalent: `PUT https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy`
+       with the full policy object and `azureADJoin.localAdmins.enableGlobalAdmins` set to `false`.
+    5. For devices already joined, remove the Global Administrator role SID from the local
+       Administrators group with an Intune local group membership policy (action **Replace**).
+  rollback: |
+    Set the setting back to **Yes**.
+
+references:
+  - title: How to manage local administrators on Microsoft Entra joined devices
+    url: https://learn.microsoft.com/entra/identity/devices/assign-local-admin
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: deviceRegistrationPolicy resource type
+    url: https://learn.microsoft.com/graph/api/resources/deviceregistrationpolicy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.1.4.3"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1003
+related_controls:
+  - id: CB-M365-DEVICE-006
+    type: related
+  - id: CB-M365-DEVICE-007
+    type: related
+  - id: CB-M365-ADMIN-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24

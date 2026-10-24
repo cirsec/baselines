@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-M365-AUTH-040
+title: Require two methods to reset a password with SSPR
+finding:
+  title: A single method is enough to reset a user's password
+  description: An attacker who controls one factor, such as a SIM-swapped phone number or a mailbox, can reset the password and take over the account.
+status: active
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [sspr, password-reset, account-recovery]
+
+description: |
+  In the self-service password reset settings, **Number of methods required to reset** is set to
+  **2**. Users prove their identity with two different registered methods (for example an
+  Authenticator notification and an alternate email) before setting a new password.
+rationale: |
+  A password reset is an account takeover path: whoever completes it owns the account until the user
+  notices. With one method, compromising a single phone number or personal mailbox is enough. Two
+  independent methods raise the bar to the level expected of a sign-in with MFA.
+impact: |
+  Users must register at least two reset methods, otherwise they cannot use SSPR. Users who lose one
+  method need the help desk more often.
+notes: |
+  Since the move to the unified authentication methods policy, the methods available for SSPR follow
+  that policy; avoid relying on SMS and voice where they are disabled (CB-M365-AUTH-011).
+  Administrators already need two methods under Microsoft's administrator policy.
+
+setting:
+  location: Microsoft Entra admin center > Entra ID > Password reset > Authentication methods > Number of methods required to reset
+  default_value: "1"
+  recommended_value: "2"
+
+audit:
+  manual: |
+    1. Sign in to the Microsoft Entra admin center (https://entra.microsoft.com) as at least a
+       Global Reader.
+    2. Browse to **Entra ID** > **Password reset** > **Authentication methods**.
+    3. Check that **Number of methods required to reset** is **2**.
+    4. Fail if it is **1**.
+
+remediation:
+  manual: |
+    1. Check in **Entra ID** > **Authentication methods** > **User registration details** how many
+       users have fewer than two methods; run a registration campaign first if needed.
+    2. Sign in to the Microsoft Entra admin center as at least an Authentication Policy
+       Administrator.
+    3. Browse to **Entra ID** > **Password reset** > **Authentication methods**.
+    4. Set **Number of methods required to reset** to **2** and **Save**.
+  rollback: |
+    Set **Number of methods required to reset** back to **1**.
+
+references:
+  - title: How self-service password reset works - authentication methods
+    url: https://learn.microsoft.com/entra/identity/authentication/concept-sspr-howitworks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+  - title: "Tutorial: Enable users to unlock their account or reset passwords using Microsoft Entra self-service password reset"
+    url: https://learn.microsoft.com/entra/identity/authentication/tutorial-enable-sspr
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-10-24
+mappings:
+  - framework: cis-m365
+    framework_version: "7.0.0"
+    id: "5.2.4.2"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-M365-AUTH-039
+    type: requires
+  - id: CB-M365-AUTH-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-10-24
+updated: 2026-10-24
