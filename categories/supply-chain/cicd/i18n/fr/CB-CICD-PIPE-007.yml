@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir périodiquement les définitions de pipeline et les scripts de build
+finding:
+  title: Les définitions de pipeline et les scripts de build de mise en production ne sont jamais revus après leur écriture
+  description: Des étapes ajoutées il y a des mois, par des personnes parties depuis ou par un compte compromis, continuent de s'exécuter avec les identifiants de production parce que personne ne relit le pipeline dans son ensemble.
+description: |
+  Les dépôts de pipeline, les modèles partagés et les scripts appelés par les builds de mise en
+  production sont relus dans leur ensemble selon un calendrier fixe (par exemple chaque trimestre)
+  et chaque fois que le pipeline change de propriétaire ou obtient de nouveaux identifiants. La revue
+  recherche les étapes inattendues ou inexpliquées, les téléchargements depuis des hôtes inconnus,
+  les étapes qui affichent ou envoient des variables, les contrôles de sécurité désactivés, les
+  identifiants inutilisés et les étapes dont personne ne sait expliquer le rôle. Les constats sont
+  suivis jusqu'à leur clôture.
+
+  La revue de chaque modification relève de CB-CICD-SCM-012 et CB-CICD-SCM-018 ; l'analyse
+  automatique des fichiers de pipeline relève de CB-CICD-TEST-004.
+rationale: |
+  La revue des modifications ne voit qu'un diff à la fois. Les étapes malveillantes sont souvent
+  introduites par petits morceaux plausibles, ou survivent après que leur raison d'être a été
+  oubliée. Une relecture périodique de bout en bout de ce que fait réellement le pipeline de mise en
+  production repère les dérives, les identifiants morts et les portes dérobées construites lentement
+  que la revue par modification laisse passer.
+impact: |
+  Demande du temps de relecture à chaque cycle ; prioriser les pipelines qui publient des versions
+  ou déploient en production.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les dépôts de pipeline et leur historique.
+
+    1. Vérifier qu'un inventaire des pipelines de mise en production et de déploiement existe, avec
+       un propriétaire pour chacun.
+    2. Vérifier la trace de la dernière revue de chaque pipeline (date, relecteur, constats,
+       clôture).
+    3. Éventuellement, lancer un analyseur de pipeline (zizmor, poutine, Checkov) et comparer ses
+       résultats avec le compte rendu de revue.
+    4. Échec si un pipeline de mise en production ou de déploiement n'a pas été revu dans la période
+       définie, ou si des constats de revue restent ouverts sans décision.
+remediation:
+  manual: |
+    1. Définir la période de revue et les événements déclencheurs (nouveaux identifiants,
+       changement de propriétaire, incident).
+    2. Pour chaque pipeline de mise en production et de déploiement, lire la définition complète,
+       les modèles inclus et les scripts appelés, et consigner une courte justification pour chaque
+       étape qui utilise un identifiant ou un accès réseau.
+    3. Supprimer les étapes inexpliquées et les identifiants inutilisés ; ouvrir des tickets pour le
+       reste.
+    4. Conserver le compte rendu de revue avec le dépôt du pipeline.

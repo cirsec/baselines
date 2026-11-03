@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Gérer la configuration des plates-formes CI/CD en code sous contrôle des changements
+finding:
+  title: La configuration de la plate-forme est modifiée à la main dans l'interface, sans revue ni historique
+  description: Les réglages de sécurité, liaisons d'identifiants et définitions de jobs des outils CI/CD sont modifiés directement dans l'interface web ; un changement malveillant ou erroné passe inaperçu et ne peut être ni comparé à un état sain connu ni annulé.
+description: |
+  La configuration de chaque outil CI/CD (domaine de sécurité et autorisations, réglages globaux,
+  jeu de plugins, définitions de runners ou d'agents, intégrations) est exportée ou définie dans des
+  fichiers conservés dans un dépôt protégé. Les changements passent par une revue dans ce dépôt
+  (CB-CICD-SCM-006, CB-CICD-SCM-012). Ces fichiers ne contiennent pas de secrets : ils sont
+  référencés depuis un coffre de secrets ou le magasin d'identifiants de la plate-forme.
+
+  Les changements inattendus sont détectés : la configuration en service est régulièrement comparée
+  au dépôt, et les écarts sont analysés.
+
+  Avec `config_scope` à `applied-from-code` (ici **{{ config_scope }}**), la configuration n'est
+  appliquée que depuis le dépôt par automatisation (par exemple Jenkins Configuration as Code), et
+  les modifications manuelles dans l'interface sont écrasées ou bloquées.
+
+  Les définitions de pipeline relèvent de CB-CICD-PIPE-001 ; ce contrôle porte sur la configuration
+  des plates-formes elles-mêmes.
+rationale: |
+  Un attaquant disposant d'un accès administrateur, ou un administrateur pressé, peut affaiblir les
+  autorisations, ajouter un identifiant ou installer un plugin par l'interface, sans que rien ne
+  garde trace de la configuration antérieure. La configuration en code apporte un historique revu,
+  un état sain de référence, et un moyen rapide de reconstruire ou de revenir en arrière après un
+  incident.
+impact: |
+  Les administrateurs doivent passer par le dépôt pour leurs changements. Avec
+  `applied-from-code`, les modifications faites dans l'interface sont perdues à la prochaine
+  application, ce qu'il faut annoncer. Exporter une configuration existante demande un effort
+  initial.
+notes: |
+  Dans Jenkins, Configuration as Code nécessite le plugin `configuration-as-code` ; son fichier YAML
+  est désigné par `CASC_JENKINS_CONFIG` et peut référencer des secrets depuis des sources de secrets
+  au lieu de valeurs en clair. JCasC écrase les réglages modifiés dans l'interface au rechargement
+  de la configuration.
+parameters:
+  config_scope: Degré de gestion de la configuration en code. `versioned` exige que la configuration soit exportée ou définie dans un dépôt protégé avec contrôle des écarts ; `applied-from-code` exige en plus qu'elle ne soit appliquée que depuis ce dépôt.
+audit:
+  manual: |
+    Utiliser un accès en lecture au dépôt de configuration et une vue administrateur de chaque
+    plate-forme.
+
+    1. Pour chaque plate-forme CI/CD, trouver le dépôt qui contient sa configuration et vérifier ses
+       règles de protection de branche et de revue.
+    2. Chercher dans les fichiers de configuration des secrets en clair (jetons, mots de passe, clés
+       privées).
+    3. Comparer la configuration en service au dépôt (export, API ou interface) et rechercher des
+       écarts non documentés ; vérifier la fréquence de cette comparaison.
+    4. **Jenkins** : vérifier que le plugin `configuration-as-code` est installé, que **Manage
+       Jenkins** > **Configuration as Code** charge son YAML depuis `CASC_JENKINS_CONFIG` pointant
+       vers le dépôt revu, et que les secrets passent par des sources de secrets (références
+       `${...}`) plutôt que des valeurs littérales. Avec `applied-from-code`, vérifier que le YAML
+       est rechargé automatiquement depuis le dépôt et que les modifications de l'interface ne sont
+       pas conservées.
+    5. Échec si la configuration d'une plate-forme n'est pas dans un dépôt protégé et revu, contient
+       des secrets en clair, n'a pas de contrôle des écarts, ou (avec `applied-from-code`) peut être
+       modifiée durablement hors du dépôt.
+remediation:
+  manual: |
+    1. Exporter la configuration actuelle de chaque plate-forme et la versionner dans un dépôt
+       protégé avec revue obligatoire.
+    2. Remplacer les secrets des fichiers par des références au coffre de secrets.
+    3. **Jenkins** : installer le plugin `configuration-as-code`, utiliser **View Configuration**
+       pour exporter la configuration actuelle, stocker le YAML dans le dépôt et y faire pointer
+       `CASC_JENKINS_CONFIG` ; pour `applied-from-code`, recharger la configuration depuis le dépôt
+       par automatisation après chaque fusion.
+    4. Planifier une comparaison entre la configuration en service et le dépôt, et alerter sur les
+       écarts.
+    5. Pour `applied-from-code`, réserver l'administration par l'interface au bris de glace.

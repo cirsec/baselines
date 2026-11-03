@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-020
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tester le résultat fusionné avant la fusion et garder un historique linéaire
+finding:
+  title: Des pull requests sont fusionnées sans test du résultat combiné avec la branche cible
+  description: Les vérifications ont tourné sur une branche en retard sur la cible ; le code réellement fusionné, combinaison des deux, n'a donc jamais été construit ni analysé, et un commit de fusion peut masquer des modifications qu'aucun relecteur n'a vues dans le diff.
+description: |
+  Sur les dépôts critiques, le résultat qui arrive sur une branche protégée est celui qui a été
+  testé :
+
+  - la branche source doit être à jour avec la cible avant la fusion, ou les fusions passent par une
+    file de fusion (merge queue ou merge train) qui teste chaque modification au-dessus des autres ;
+  - les branches protégées gardent un historique linéaire (fusions squash, rebase ou fast-forward),
+    si bien que chaque commit de la branche correspond à une modification revue.
+
+  Les vérifications obligatoires elles-mêmes relèvent de CB-CICD-SCM-019.
+rationale: |
+  Deux modifications qui réussissent séparément leurs vérifications peuvent casser le build, un
+  test ou un contrôle de sécurité une fois combinées. Tester le résultat fusionné supprime cet
+  écart. Un historique linéaire simplifie aussi la revue et l'analyse d'incident : des commits de
+  fusion avec résolution de conflits peuvent porter des modifications qui n'apparaissent dans aucun
+  diff de pull request. La valeur de sécurité est modérée, d'où la place de ce contrôle dans le seul
+  profil hardened.
+impact: |
+  Les dépôts très actifs voient davantage d'exécutions de pipeline ou attendent dans une file. Les
+  équipes qui s'appuient sur les commits de fusion pour garder l'historique des branches de
+  fonctionnalité doivent passer aux fusions squash ou rebase.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la protection de branche, les réglages de merge requests et les
+    stratégies de branche.
+
+    1. Vérifier les réglages de fusion sur les branches protégées :
+       - **GitHub** : la règle de vérification de statut active **Require branches to be up to date
+         before merging**, ou le ruleset active **Require merge queue** ; le ruleset active aussi
+         **Require linear history**.
+       - **GitLab** : **Settings** > **Merge requests** > **Merge method** vaut **Merge commit with
+         semi-linear history** ou **Fast-forward merge** (les deux exigent une branche source à
+         jour), ou les merge trains avec pipelines de résultats fusionnés sont activés.
+       - **Azure DevOps** : la stratégie de branche **Limiter les types de fusion** n'autorise que la
+         **Fusion squash** ou **Rebase et avance rapide**, et la **Validation de build** expire
+         **Immédiatement quand** la branche cible est mise à jour.
+    2. Échec si une branche protégée accepte la fusion de branches en retard sans file ni train de
+       fusion, ou autorise des fusions non linéaires.
+remediation:
+  manual: |
+    1. Activer le test sur branche à jour :
+       - **GitHub** : activer **Require branches to be up to date before merging** dans la règle de
+         vérification de statut, ou **Require merge queue** avec des workflows déclenchés sur
+         `merge_group`.
+       - **GitLab** : choisir **Merge commit with semi-linear history** ou **Fast-forward merge**, ou
+         activer les pipelines de résultats fusionnés et les merge trains.
+       - **Azure DevOps** : régler l'expiration de la validation de build sur **Immédiatement quand**
+         la branche est mise à jour.
+    2. Imposer un historique linéaire :
+       - **GitHub** : activer **Require linear history** dans le ruleset.
+       - **GitLab** : utiliser la méthode de fusion semi-linéaire ou fast-forward.
+       - **Azure DevOps** : activer **Limiter les types de fusion** avec squash ou rebase seulement.

@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-005
+title: Gate production deployments with automated policy checks
+finding:
+  title: Production environments rely on human approval alone, with no automated checks
+  description: Without automated gates, a deployment that skips the approved pipeline template, has no change ticket, or lands while alerts are firing goes through as soon as someone clicks approve.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [deployment, policy-gates, required-template, change-management, checks]
+
+applicability:
+  versions: [github, azure-devops]
+
+description: |
+  Production environments and the resources they use enforce automated checks before any
+  deployment runs, in addition to human approval:
+
+  - the deploying pipeline extends an approved template stored in a protected repository and ref;
+  - an external system confirms that an approved change record exists, and that monitoring shows no
+    active alert for the service (change-management and health gates);
+  - a wait timer or similar delay is applied where a cooling-off period is required;
+  - where supported, the artifact is evaluated against a policy before deployment.
+
+  Approval by a person is covered by CB-CICD-DEPLOY-003; verification of artifact signatures and
+  provenance by CB-CICD-ART-006; mandatory pipeline templates in general by CB-CICD-PIPE-003.
+rationale: |
+  Human approvers miss things, especially under time pressure, and cannot see whether a pipeline was
+  quietly changed to skip a security stage. Automated gates check facts that people would not
+  verify each time: that the run uses the vetted template, that a change was approved through the
+  normal process, and that production is healthy. A pipeline that drops its security steps or an
+  unplanned deployment is then stopped by the platform.
+impact: |
+  Gates need integration work (GitHub Apps, Azure Functions or REST endpoints, monitoring queries)
+  and can block deployments when the external system is down, so a bypass procedure is needed
+  (CB-CICD-DEPLOY-004). Pipelines must be converted to extend the required template.
+notes: |
+  On GitHub, wait timers and custom deployment protection rules on private repositories need GitHub
+  Enterprise (on Free, Pro and Team they are available for public repositories only); custom
+  protection rules are provided by GitHub Apps installed on the repository. In Azure Pipelines the
+  **Required template** check only applies to pipelines that use `extends`, and **Evaluate artifact**
+  works with container images only.
+
+audit:
+  manual: |
+    Use a role that can read environment and resource checks.
+
+    1. List production environments and the service connections, agent pools and other resources
+       used by production deployments.
+    2. Check the automated gates:
+       - **Azure DevOps**: on the environment and production service connections, **Approvals and
+         checks** includes **Required template** (repository, ref and path of the approved template),
+         and at least one of **Invoke REST API**, **Invoke Azure Function** or **Query Azure Monitor
+         alerts** that checks change approval or service health; **Evaluate artifact** is used for
+         container images where an artifact policy exists.
+       - **GitHub**: **Settings** > **Environments** > production has an enabled custom deployment
+         protection rule (GitHub App) that checks change management or monitoring, and a **Wait
+         timer** where the policy requires one.
+    3. Check that the template referenced by **Required template** lives in a protected repository
+       and ref, and that the external gate service is itself access-controlled.
+    4. Fail if production deployments are gated only by human approval, or if a pipeline that does not
+       extend the approved template can deploy to production.
+
+remediation:
+  manual: |
+    1. Define the automated conditions for a production deployment (approved template, change
+       record, health) with the change and operations teams.
+    2. Configure the gates:
+       - **Azure DevOps**: on the production environment and service connections, open **Approvals
+         and checks**, add **Required template** with the template repository, ref and path, then add
+         **Invoke REST API** or **Invoke Azure Function** for the change-management system and
+         **Query Azure Monitor alerts** for service health.
+       - **GitHub**: install or build a GitHub App that implements a custom deployment protection
+         rule, enable it in **Settings** > **Environments** > production, and set a **Wait timer**
+         where needed.
+    3. Convert production pipelines to extend the approved template.
+    4. Document the bypass procedure for gate outages (CB-CICD-DEPLOY-004).
+
+references:
+  - title: Define approvals and checks
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Deployments and environments
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Creating custom deployment protection rules
+    url: https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/create-custom-protection-rules
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-DEPLOY-003
+    type: related
+  - id: CB-CICD-PIPE-003
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+  - id: CB-CICD-DEPLOY-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

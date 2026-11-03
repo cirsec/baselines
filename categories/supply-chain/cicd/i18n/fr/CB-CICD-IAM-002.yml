@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Valider les assertions d'identité quand l'authentification est déléguée
+finding:
+  title: La connexion déléguée accepte des jetons, des adresses ou des en-têtes d'identité non vérifiés
+  description: Quand la vérification des certificats est désactivée, que des adresses non vérifiées sont acceptées ou que des en-têtes d'identité sont acceptés de n'importe quelle source, un attaquant peut se connecter sous l'identité d'un autre utilisateur avec un jeton forgé ou en envoyant l'en-tête directement à la plate-forme.
+description: |
+  Quand une plate-forme délègue la connexion à un fournisseur OpenID Connect, à un connecteur Dex ou
+  à un proxy inverse qui authentifie, elle vérifie ce qu'elle reçoit : le certificat TLS du
+  fournisseur d'identité est vérifié, les adresses électroniques ne sont acceptées que si le
+  fournisseur les marque comme vérifiées, et les en-têtes d'identité posés par un proxy inverse ne
+  sont acceptés que depuis les adresses de ce proxy, la plate-forme n'étant joignable qu'à travers lui.
+
+  La mise en place du SSO elle-même relève de CB-CICD-IAM-001.
+rationale: |
+  La plate-forme associe l'identité reçue à un compte et à ses rôles. Sans vérification TLS, toute
+  personne capable d'intercepter la connexion au fournisseur d'identité peut forger des jetons. Faire
+  confiance aux adresses non vérifiées permet à un utilisateur d'un fournisseur partagé ou
+  multi-locataire d'enregistrer l'adresse d'un administrateur et d'hériter de son compte. Accepter les
+  en-têtes d'identité depuis n'importe quelle adresse permet à quiconque atteint la plate-forme
+  directement d'envoyer `X-WEBAUTH-USER: admin`.
+impact: |
+  Aucun connu quand le fournisseur d'identité a un certificat valide et que les adresses du proxy
+  sont connues. Corriger un proxy « tout accepter » peut demander des changements réseau pour que la
+  plate-forme n'accepte que le trafic du proxy.
+audit:
+  manual: |
+    Un accès en lecture à la configuration de la plate-forme (ConfigMap `argocd-cm`, `app.ini`)
+    suffit.
+
+    1. Identifier comment la connexion est déléguée sur chaque plate-forme.
+    2. Vérifier les réglages d'assertion :
+       - **Argo CD** : dans `argocd-cm`, `oidc.tls.insecure.skip.verify` est absent ou vaut
+         `"false"` ; dans `dex.config`, aucun connecteur ne pose `insecureSkipEmailVerified: true`,
+         sauf si le fournisseur d'identité est mono-locataire et n'émet que des adresses vérifiées.
+         `insecureEnableGroups` n'est posé que si le fournisseur renvoie les groupes dans le jeton et
+         que leurs noms sont maîtrisés par l'organisation.
+       - **Gitea / Forgejo** : si `[service] ENABLE_REVERSE_PROXY_AUTHENTICATION` ou
+         `ENABLE_REVERSE_PROXY_AUTHENTICATION_API` vaut `true`, `[security]
+         REVERSE_PROXY_TRUSTED_PROXIES` ne liste que les adresses du proxy (défaut
+         `127.0.0.0/8,::1/128`) et le port de l'application n'est joignable que par le proxy.
+    3. Échec si la vérification TLS du fournisseur d'identité est désactivée, si des adresses non
+       vérifiées sont acceptées sur un fournisseur multi-locataire, ou si l'authentification par proxy
+       inverse fait confiance à `*` ou à une plage plus large que les proxys.
+remediation:
+  manual: |
+    1. **Argo CD** : poser `oidc.tls.insecure.skip.verify: "false"` (ou le retirer) et fournir à Argo
+       CD l'autorité de certification du fournisseur d'identité si elle est privée ; retirer
+       `insecureSkipEmailVerified` des connecteurs Dex. Redémarrer `argocd-server` et tester la
+       connexion.
+    2. **Gitea / Forgejo** : réduire `REVERSE_PROXY_TRUSTED_PROXIES` aux seules adresses du proxy, lier
+       l'application à localhost ou à une interface privée joignable uniquement par le proxy, et poser
+       `ENABLE_REVERSE_PROXY_AUTHENTICATION = false` si le proxy n'authentifie plus les utilisateurs.
+    3. Faire supprimer par le proxy tout en-tête d'identité venant du client avant d'ajouter le sien.

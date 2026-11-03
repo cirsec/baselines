@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-025
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'accès interactif aux builds en cours
+finding:
+  title: Des utilisateurs peuvent ouvrir des shells dans des builds en cours
+  description: Les relances SSH, terminaux web et sessions de débogage donnent à une personne un shell dans le build, d'où elle peut lire les secrets en mémoire et dans l'environnement, utiliser l'identité cloud du runner et modifier ce que le build produit.
+parameters:
+  interactive_access: Périmètre où l'accès interactif aux builds est désactivé. production-jobs désigne les jobs qui utilisent des secrets, contextes ou identifiants de déploiement de production ; all-jobs désigne tous les jobs.
+description: |
+  Les fonctionnalités qui ouvrent une session interactive dans un build en cours (relance avec SSH,
+  terminaux web, bureau à distance, sessions de débogage via un gestionnaire de sessions cloud) sont
+  désactivées pour les jobs fixés par `{{ interactive_access }}` :
+
+  - `production-jobs` : jobs qui reçoivent des secrets de production, des contextes restreints ou des
+    identifiants de déploiement, et builds de release ;
+  - `all-jobs` : tous les jobs de la plate-forme.
+
+  Là où la fonctionnalité reste disponible pour d'autres jobs, son usage est journalisé et revu.
+rationale: |
+  Une session interactive contourne la définition du pipeline, la revue et l'approbation : la personne
+  dans le shell peut tout exécuter avec les secrets du job et l'identité du runner, et modifier l'artefact
+  avant son téléversement. SLSA Build L3 attend qu'un build ne puisse pas être influencé en dehors de ses
+  paramètres déclarés.
+impact: |
+  Les développeurs perdent la possibilité de déboguer sur place les jobs de production en échec ; ils
+  déboguent le même job dans un contexte hors production, ou avec davantage de journalisation.
+notes: |
+  Sur CircleCI, quiconque peut lancer un job peut le relancer avec SSH, et seul l'utilisateur qui a lancé
+  la relance obtient l'accès SSH ; les jetons OIDC portent une revendication `oidc.circleci.com/ssh-rerun`
+  que les politiques de confiance cloud peuvent vérifier. Sur les agents hébergés Buildkite, l'accès
+  terminal dépend du réglage d'accès distant de l'organisation ; avec le plan Enterprise, les sessions
+  apparaissent dans le journal d'audit sous `JOB_TERMINAL_SESSION_STARTED`.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur en lecture sur la plate-forme et un accès en lecture aux réglages des
+    projets de build.
+
+    1. Lister les fonctionnalités d'accès interactif proposées par la plate-forme et qui peut les utiliser.
+    2. Par produit :
+       - **CircleCI** : les contextes utilisés par les jobs de production ont une restriction par
+         expression qui inclut `not job.ssh.enabled` ; les rôles cloud approuvés via OIDC rejettent les
+         jetons dont la revendication `oidc.circleci.com/ssh-rerun` vaut `true`.
+       - **Buildkite** : pour les agents hébergés, l'accès distant est désactivé au niveau de
+         l'organisation, ou les événements `JOB_TERMINAL_SESSION_STARTED` sont revus.
+       - **AWS CodeBuild** : les builds des projets de release et de déploiement ne sont pas lancés avec
+         **Enable session connection** (`debugSessionEnabled` dans `StartBuild`), et leurs buildspecs ne
+         contiennent pas `codebuild-breakpoint` ; les rôles de service de ces projets n'ont pas de
+         permissions `ssmmessages:*`.
+    3. Échec si un job de la portée fixée par `{{ interactive_access }}` peut être ouvert en interactif.
+remediation:
+  manual: |
+    1. Décider quels jobs sont dans la portée et donner aux développeurs un moyen de déboguer hors
+       production.
+    2. Par produit :
+       - **CircleCI** : ajouter `and not job.ssh.enabled` à la restriction par expression des contextes de
+         production ; exiger `ssh-rerun` à `false` dans les politiques de confiance OIDC.
+       - **Buildkite** : désactiver l'accès distant aux agents hébergés sauf besoin, et alerter sur
+         `JOB_TERMINAL_SESSION_STARTED`.
+       - **AWS CodeBuild** : retirer `codebuild-breakpoint` des buildspecs de release, retirer les
+         permissions Session Manager de leurs rôles de service, et restreindre qui peut appeler
+         `StartBuild` avec surcharges sur ces projets.
+    3. Superviser l'usage restant des sessions interactives via les journaux d'audit.

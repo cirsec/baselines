@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Épingler et vérifier les outils et paquets installés par les pipelines
+finding:
+  title: Les scripts de pipeline téléchargent outils et paquets sans épinglage ni vérification
+  description: Les steps qui envoient un script distant dans un shell, installent la dernière version d'un outil ou installent des paquets hors fichier de verrouillage exécutent ce que le serveur distant renvoie ce jour-là, avec les secrets du job à portée.
+parameters:
+  install_pinning: Règles d'installation dans les steps de pipeline. `verified` = installations depuis les fichiers de verrouillage, outils et scripts téléchargés vérifiés par empreinte ou signature, aucun script distant envoyé dans un shell ; `locked-only` = en plus, aucune installation de paquet ad hoc dans les steps et aucune version d'outil « latest » non épinglée.
+description: |
+  Ce que les scripts de pipeline téléchargent et installent est fixé dans le dépôt et vérifié avant
+  exécution. Le niveau exigé est `{{ install_pinning }}` :
+  - `verified` : les dépendances sont installées depuis un fichier de verrouillage versionné en
+    mode figé (`npm ci`, `yarn --frozen-lockfile`, `pip install --require-hashes`,
+    `go mod verify`) ; les outils et scripts téléchargés le sont dans une version fixe et vérifiés
+    par une empreinte ou une signature connue avant usage ; aucun script distant n'est envoyé dans
+    un shell (`curl ... | bash`, `iex (iwr ...)`).
+  - `locked-only` : en plus, les steps n'installent pas de paquets hors manifeste
+    (`npm install -g x`, `pip install x`), et les actions ou tâches d'installation d'outil reçoivent
+    une version explicite au lieu de la dernière.
+
+  Les règles de fichier de verrouillage des dépendances applicatives relèvent de CB-DEP-LOCK-002 et
+  CB-DEP-LOCK-003, et la séparation entre étapes d'installation et secrets de CB-DEP-CI-001.
+rationale: |
+  Un téléchargement sans vérification fait confiance au serveur et à chaque saut réseau au moment
+  du build. Des scripts d'installation récupérés par URL ont été remplacés sur des serveurs
+  compromis pour voler des secrets CI. Les outils « latest » non épinglés changent entre deux
+  exécutions du même commit, ce qui masque une altération et empêche la reproductibilité.
+impact: |
+  Les pipelines doivent conserver les empreintes ou les clés de signature des outils qu'ils
+  téléchargent et les mettre à jour à chaque version. Déplacer les installations ad hoc dans des
+  manifestes ou des images de runner demande un peu de reprise.
+notes: |
+  Une empreinte récupérée au moment du build sur le même serveur que le téléchargement ne protège
+  que contre les erreurs de transfert. Prendre l'empreinte ou la clé de signature auprès de
+  l'éditeur par un canal distinct et la versionner dans le dépôt.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts.
+
+    1. Rechercher dans les fichiers de pipeline et les scripts qu'ils appellent les installations
+       et téléchargements. Outils utiles : poutine `unverified_script_exec`, zizmor
+       `unpinned-tools` et `adhoc-packages`, Checkov `CKV_GHA_3`, `CKV_GHA_4`,
+       `CKV_CIRCLECIPIPELINES_5`, `CKV_CIRCLECIPIPELINES_7`, Scorecard `Pinned-Dependencies`.
+    2. Chercher, sur toutes les plates-formes (`run:` GitHub, `script:` GitLab, steps
+       `script`/`bash`/`pwsh` Azure DevOps, `run:` CircleCI, et équivalents) :
+       - une sortie de `curl`/`wget` envoyée dans `sh`, `bash`, `python` ou `iex` ;
+       - des téléchargements exécutés ou décompressés sans contrôle d'empreinte (`sha256sum -c`)
+         ni de signature ;
+       - `npm install`, `yarn install`, `pip install` sans les options figées ou d'empreinte d'un
+         fichier de verrouillage ;
+       - pour `locked-only` : des installations globales ou ad hoc (`npm install -g`,
+         `pip install <nom>`, `gem install`) et des actions ou tâches d'installation sans `version`
+         explicite.
+    3. Échec si l'un de ces motifs se trouve dans un pipeline qui construit ou déploie.
+remediation:
+  manual: |
+    1. Remplacer `curl | bash` par un step qui télécharge une version fixe, vérifie son empreinte
+       ou sa signature puis l'exécute.
+    2. Passer les installations en mode figé (`npm ci`, `yarn install --frozen-lockfile`,
+       `pip install --require-hashes -r requirements.txt`, `go mod download` puis
+       `go mod verify`).
+    3. Pour `locked-only`, déplacer les outils dans l'image du runner ou dans un manifeste, et
+       définir `version:` sur les actions et tâches d'installation.
+    4. Ajouter les outils d'audit de l'étape 1 comme contrôle obligatoire sur les modifications de
+       pipeline (CB-CICD-TEST-004).

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-018
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder des administrateurs d'organisation et d'instance peu nombreux, nommés et délégués
+finding:
+  title: Trop de personnes, ou une seule, détiennent des droits de propriétaire ou d'administrateur d'instance
+  description: Chaque propriétaire ou administrateur d'instance peut modifier n'importe quel dépôt, pipeline, runner ou secret ; une longue liste multiplie les comptes qui valent un hameçonnage, et un propriétaire unique est un point de défaillance unique.
+description: |
+  Les rôles de propriétaire et d'administrateur au niveau de l'organisation, de l'entreprise ou de
+  l'instance sont détenus par un petit nombre de personnes nommées (en général deux à cinq, jamais une
+  seule), avec des comptes dédiés à ce rôle quand la plate-forme le permet. L'administration CI/CD
+  courante (runners, stratégies Actions, secrets, pipelines) est déléguée par des rôles plus étroits.
+  Les agents de build et identités de service ne sont jamais membres des groupes d'administrateurs.
+
+  Les administrateurs de dépôts et de projets relèvent de CB-CICD-IAM-019, l'élévation par
+  réauthentification ou juste-à-temps de CB-CICD-IAM-020.
+rationale: |
+  Les droits d'administration sur une plate-forme CI/CD équivalent au contrôle de tout ce qu'elle
+  construit et déploie : sur Jenkins, Overall/Administer ouvre la console de scripts et le
+  téléversement de plugins ; sur GitHub, un propriétaire peut désactiver la protection des branches et
+  lire les données d'audit de toute l'organisation. Moins d'administrateurs, c'est moins de comptes à
+  protéger et une revue réellement faisable ; au moins deux évite de perdre le contrôle quand une
+  personne est absente ou part.
+impact: |
+  Les anciens administrateurs qui ont encore besoin d'une partie du rôle passent à un rôle délégué.
+  Les rôles d'organisation personnalisés de GitHub nécessitent GitHub Enterprise Cloud.
+notes: |
+  Sur Azure DevOps, les membres de **Project Collection Service Accounts** héritent de **Project
+  Collection Administrators** : une identité de build placée là devient administrateur de
+  l'organisation. Sur Woodpecker, `WOODPECKER_ADMIN` ne fait qu'accorder les droits : un utilisateur
+  retiré dans l'interface redevient administrateur à sa prochaine connexion après redémarrage s'il est
+  encore listé.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Lister les administrateurs de chaque plate-forme et vérifier noms, nombre et raison :
+       - **GitHub** : **Organization** > **People** filtré sur le rôle **Owner**
+         (`GET /orgs/{org}/members?role=admin`), et les propriétaires de l'entreprise ; les tâches
+         CI/CD déléguées passent par un rôle d'organisation personnalisé (par exemple avec **Manage
+         organization Actions policies** et les permissions sur runners et secrets) plutôt que par le
+         rôle de propriétaire.
+       - **Jenkins** : utilisateurs et groupes qui ont `Overall/Administer` dans la stratégie
+         d'autorisation.
+       - **Azure DevOps** : membres de **Project Collection Administrators** et de **Project
+         Collection Service Accounts** dans **Paramètres de l'organisation** > **Autorisations** ;
+         aucune identité de build ou d'agent.
+       - **Spinnaker** : `fiat.admin.roles` dans `fiat-local.yml` désigne un seul petit groupe.
+       - **Woodpecker** : `WOODPECKER_ADMIN` ne liste que les administrateurs actuels, et
+         `WOODPECKER_ADMIN_PRIMARY_FORGE_ONLY=true` quand plusieurs forges sont connectées.
+       - **GitLab auto-hébergé** : utilisateurs avec le niveau d'accès Administrator (**Admin** >
+         **Users**, filtre **Administrators**).
+    2. Échec s'il n'y a qu'un administrateur, si le nombre dépasse le maximum documenté, ou si des
+       identités de service ou de build ont des droits d'administration.
+remediation:
+  manual: |
+    1. Définir le nombre maximal d'administrateurs et les nommer.
+    2. Créer des rôles délégués pour le travail CI/CD courant :
+       - **GitHub** : créer un rôle d'organisation personnalisé avec les permissions Actions, runners
+         et secrets nécessaires, l'attribuer à une équipe, et rétrograder les propriétaires en trop au
+         rang de membres.
+       - **Jenkins** : accorder `Overall/Manage` ou `Overall/SystemRead` au lieu de
+         `Overall/Administer` quand cela suffit.
+       - **Azure DevOps** : retirer les utilisateurs en trop et toute identité de build ou d'agent de
+         Project Collection Administrators et de Project Collection Service Accounts.
+       - **Spinnaker** : limiter `fiat.admin.roles` à un groupe d'administrateurs.
+       - **Woodpecker** : retirer les anciens administrateurs de `WOODPECKER_ADMIN` et dans les
+         réglages d'administration, et poser `WOODPECKER_ADMIN_PRIMARY_FORGE_ONLY=true`.
+    3. Consigner la liste et la revoir avec la revue des accès (CB-CICD-IAM-026).

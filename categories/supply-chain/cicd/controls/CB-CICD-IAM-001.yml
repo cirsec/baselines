@@ -1,0 +1,186 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-001
+title: Authenticate platform users through the central identity provider
+finding:
+  title: Users sign in to CI/CD platforms with local accounts outside the identity provider
+  description: Local platform accounts escape the joiner and leaver process, MFA and conditional access of the identity provider, so a departed employee or a phished password keeps working on the source and pipeline platforms.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [sso, saml, oidc, identity-provider, authentication]
+
+description: |
+  People sign in to the source control, CI and CD platforms through the organization identity
+  provider (SAML, OpenID Connect or LDAP), and the platform enforces it: on SaaS platforms single
+  sign-on is required for the organization or enterprise, on self-managed platforms the security
+  realm or authentication module points to the identity provider and the built-in login is turned
+  off or kept for break-glass accounts only. Group membership comes from the identity provider so
+  that roles follow it.
+
+  This control covers interactive sign-in of people. Break-glass and bootstrap accounts are covered
+  by CB-CICD-IAM-003, MFA by CB-CICD-IAM-006, and automatic deprovisioning by CB-CICD-IAM-025.
+rationale: |
+  The identity provider is where the organization applies MFA, conditional access, password policy
+  and the leaver process. A platform that keeps its own user database duplicates all of it, usually
+  without MFA and without anyone removing accounts when people leave. A stolen or forgotten local
+  account on an SCM or CI platform gives write access to code and pipelines, which is enough to
+  inject code into a release.
+impact: |
+  Enforcing SSO blocks users who have no identity in the provider, including contractors and
+  service accounts that used to sign in with a password: provision them in the identity provider or
+  move automation to dedicated non-human identities (CB-CICD-IAM-027) first. On SaaS SCMs it needs
+  an enterprise edition.
+notes: |
+  With GitHub SAML SSO on personal accounts, users keep a GitHub account that exists outside the
+  identity provider, and their personal access tokens and SSH keys must be authorized for the
+  organization; Enterprise Managed Users removes that gap. Jenkins has no native MFA: MFA must be
+  enforced by the identity provider behind the security realm. TeamCity OAuth modules restricted to
+  an organization keep access for an existing TeamCity account until that account is removed.
+
+audit:
+  manual: |
+    Use a platform administrator or auditor role that can read authentication settings.
+
+    1. List every SCM, CI, CD and registry platform in use and the identity provider it trusts.
+    2. Check that SSO is enforced, not only available, and that the built-in login is off or limited
+       to break-glass accounts:
+       - **GitHub**: **Enterprise settings** > **Authentication security** > **SAML single sign-on**
+         is enabled with **Require SAML authentication**, or the enterprise uses Enterprise Managed
+         Users (GitHub Enterprise Cloud). On GitHub Enterprise Server, **Management Console** >
+         **Authentication** uses SAML, LDAP or CAS.
+       - **GitLab**: on GitLab.com, top-level group **Settings** > **SAML SSO** has **Enforce
+         SSO-only authentication for web activity for this group** and **Enforce SSO-only
+         authentication for Git and Dependency Proxy activity for this group** selected (Premium).
+         On self-managed, sign-in uses an instance SAML, OIDC or LDAP provider.
+       - **Azure DevOps**: **Organization settings** > **Microsoft Entra** shows the organization
+         connected to the company tenant.
+       - **Bitbucket Cloud**: in Atlassian Administration, an authentication policy enforces SAML
+         single sign-on for managed accounts (Atlassian Guard).
+       - **CircleCI**: **Organization Settings** > **Single Sign-On** is set up and enforced (Scale
+         plan).
+       - **Buildkite**: **Organization Settings** > **SSO** has a provider enabled (Pro or
+         Enterprise plan).
+       - **Harness**: **Account Settings** > **Authentication** uses SAML, LDAP or OIDC, and **Use
+         Public OAuth Providers** is off.
+       - **Jenkins**: **Manage Jenkins** > **Security** > **Security Realm** (or `jenkins.securityRealm`
+         in configuration as code) is a SAML, OpenID Connect, LDAP or Entra ID realm, not
+         **Jenkins' own user database**.
+       - **TeamCity**: **Administration** > **Authentication** uses LDAP, Windows domain or an
+         OAuth/SSO module; the built-in module is removed or limited to break-glass.
+       - **Argo CD**: `argocd-cm` has `dex.config` or `oidc.config`; local accounts under
+         `accounts.<name>` are API-only (`apiKey`) or disabled.
+       - **Spinnaker**: Gate authentication is enabled with OAuth 2.0, SAML 2.0, LDAP or X.509.
+       - **Gitea / Forgejo**: an OAuth2, OIDC or LDAP authentication source exists; on Forgejo,
+         `[service] ENABLE_INTERNAL_SIGNIN = false` once SSO works.
+    3. Compare the platform user list with the identity provider and list accounts that do not map
+       to an identity.
+    4. Fail if a platform accepts interactive sign-in with a local password for anyone other than
+       a documented break-glass account, or if SSO is configured but not enforced.
+
+remediation:
+  manual: |
+    1. Register each platform as an application in the identity provider, with group claims, MFA
+       and conditional access applied to it.
+    2. Test SSO with a pilot group, keeping one break-glass administrator (CB-CICD-IAM-003).
+    3. Enforce it:
+       - **GitHub**: configure SAML at enterprise level and select **Require SAML authentication**,
+         or migrate to Enterprise Managed Users with OIDC (GitHub Enterprise Cloud).
+       - **GitLab**: set up group SAML SSO and select both **Enforce SSO-only authentication**
+         options; on self-managed, configure the OmniAuth SAML or OIDC provider or LDAP.
+       - **Azure DevOps**: **Organization settings** > **Microsoft Entra** > **Connect directory**
+         (Project Collection Administrator and Entra rights required).
+       - **Bitbucket Cloud**: verify the domain, subscribe to Atlassian Guard and create an
+         authentication policy that enforces SAML SSO.
+       - **CircleCI**, **Buildkite**, **Harness**: configure the SAML or OIDC provider in the
+         organization or account authentication settings, then enforce it; on Harness turn off
+         **Use Public OAuth Providers** before enabling SAML.
+       - **Jenkins**: install the SAML, OpenID Connect, LDAP or Entra ID plugin and switch the
+         security realm.
+       - **TeamCity**: enable the LDAP, Windows domain or OAuth module and remove the built-in one.
+       - **Argo CD**: add `oidc.config` or `dex.config` to `argocd-cm` and map groups in
+         `argocd-rbac-cm`.
+       - **Spinnaker**: enable Gate authentication with the identity provider.
+       - **Gitea / Forgejo**: add the authentication source, then disable registration and local
+         sign-in.
+    4. Remove or disable the local accounts that are not break-glass.
+  rollback: |
+    Keep the break-glass account able to sign in locally; it restores access if the identity
+    provider or the SSO configuration fails.
+
+references:
+  - title: Configuring SAML single sign-on for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/managing-iam/using-saml-for-enterprise-iam/configuring-saml-single-sign-on-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SAML SSO for GitLab.com groups
+    url: https://docs.gitlab.com/user/group/saml_sso/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Connect your organization to Microsoft Entra ID
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/connect-organization-to-azure-ad
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Access Control (Jenkins)
+    url: https://www.jenkins.io/doc/book/security/access-control/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD user management
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-2 Inadequate Identity and Access Management
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-02-Inadequate-Identity-And-Access-Management
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: partial
+    note: SLSA requires the source control system to identify and authenticate actors; central SSO is one way to meet it, roles are covered elsewhere.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R38"
+    relation: partial
+    note: Centralized authentication applied to CI/CD platform users, not only to administrators.
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-IAM-003
+    type: related
+  - id: CB-CICD-IAM-006
+    type: related
+  - id: CB-CICD-IAM-025
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

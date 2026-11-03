@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le débit des requêtes vers la plate-forme et plafonner les ressources par requête
+finding:
+  title: La plate-forme CI/CD accepte un nombre illimité de requêtes et des charges sans plafond
+  description: Les points d'accès API, web et Git n'ont pas de limite de débit et certaines requêtes peuvent consommer une mémoire sans borne ; un script, une intégration défaillante ou un attaquant rend la plate-forme indisponible et bloque mises en production et corrections d'incident.
+description: |
+  Les plates-formes auto-hébergées limitent le débit des requêtes sur leurs points d'accès API, web
+  et Git, par utilisateur et par IP source pour le trafic non authentifié, soit avec les limites du
+  produit, soit sur le proxy inverse quand le produit n'en a pas. Les traitements coûteux par
+  requête sont plafonnés quand le produit offre un réglage, pour qu'une requête ou une application
+  ne puisse épuiser le serveur.
+
+  - GitHub Enterprise Server : les limites HTTP API, secondaires et Git sont activées.
+  - GitLab auto-hébergé : les limites par utilisateur et par IP des requêtes API et web, non
+    authentifiées et authentifiées, sont activées, ainsi que les limites Git, API de fichiers et
+    registre de paquets.
+  - TeamCity : la limitation de débit se fait sur le proxy inverse, le produit n'ayant pas de
+    protection intégrée.
+  - Argo CD : le repo-server limite la taille cumulée des manifestes des applications de type
+    répertoire.
+
+  Les limites des exécutions de pipeline elles-mêmes (délais, concurrence) relèvent de
+  CB-CICD-PIPE-020.
+rationale: |
+  Une plate-forme CI/CD indisponible arrête les mises en production et aussi les corrections
+  d'urgence nécessaires pendant un incident. Les limites de débit contiennent les tentatives de force
+  brute et d'aspiration, l'automatisation emballée et les intégrations abusives, et les plafonds de
+  ressources empêchent un dépôt ou un manifeste forgé de faire tomber un composant partagé par
+  toutes les équipes.
+impact: |
+  Des limites trop basses peuvent bloquer une automatisation légitime intensive (robots de CI,
+  miroirs). Partir des valeurs par défaut de l'éditeur, utiliser le mode d'essai quand il existe, et
+  ajouter des exceptions pour des comptes de service nommés plutôt que relever les limites pour
+  tous.
+audit:
+  manual: |
+    Utiliser un compte administrateur avec accès en lecture aux réglages de la plate-forme.
+
+    1. Vérifier les limites de débit de chaque plate-forme :
+       - **GitHub Enterprise Server** : **Site admin** > **Management Console**, sous **Rate
+         Limiting** : **Enable HTTP API Rate Limiting**, **Enable Secondary Rate Limiting** et
+         **Enable Git Rate Limiting** sont cochés avec des limites non nulles.
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **Network** > **User and IP rate
+         limits** : les quatre cases pour les requêtes API non authentifiées, web non
+         authentifiées, API authentifiées et web authentifiées sont cochées ; les sections de
+         limites Git HTTP, API de fichiers et registre de paquets sont activées. Les politiques
+         legitify `throttle_unauthenticated_request_not_enabled` et
+         `throttle_authenticated_api_not_enabled` signalent les limites manquantes.
+       - **TeamCity** : le proxy inverse devant le serveur applique des limites de débit.
+       - **Argo CD** : `argocd-cmd-params-cm` définit
+         `reposerver.max.combined.directory.manifests.size` à une valeur tirée de la limite mémoire
+         du repo-server (mémoire / (300 x nombre d'applications de type répertoire)).
+    2. Échec si une plate-forme n'a aucune limite de débit, ni dans le produit ni sur le proxy, ou
+       si Argo CD exécute des applications de type répertoire sans limite de taille de manifeste.
+remediation:
+  manual: |
+    Utiliser un compte administrateur et prévenir les équipes qui ont une automatisation intensive.
+
+    1. Activer les limites en partant des valeurs par défaut de l'éditeur :
+       - **GitHub Enterprise Server** : dans **Management Console** > **Rate Limiting**, cocher
+         **Enable HTTP API Rate Limiting**, **Enable Secondary Rate Limiting** et **Enable Git Rate
+         Limiting**, garder ou ajuster les valeurs proposées, puis **Save settings**.
+       - **GitLab auto-hébergé** : définir d'abord `GITLAB_THROTTLE_DRY_RUN='*'` dans
+         `gitlab_rails['env']` pour journaliser ce qui serait limité, puis cocher les quatre cases
+         dans **Admin** > **Settings** > **Network** > **User and IP rate limits** et retirer la
+         variable d'essai.
+       - **TeamCity** : configurer des limites de débit sur le proxy inverse (par exemple
+         `limit_req` de NGINX).
+       - **Argo CD** : définir `reposerver.max.combined.directory.manifests.size` dans
+         `argocd-cmd-params-cm` et redémarrer le repo-server.
+    2. Ajouter des exceptions pour les comptes de service nommés qui ont besoin de limites plus
+       hautes au lieu de relever les valeurs globales.
+  rollback: |
+    Relever la limite précise qui bloque un trafic légitime, ou décocher sa case, plutôt que
+    désactiver toutes les limites de débit.

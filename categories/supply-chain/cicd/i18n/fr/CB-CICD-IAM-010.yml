@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'appartenance aux plates-formes et les notifications aux domaines de l'entreprise
+finding:
+  title: Les comptes des plates-formes et les notifications de sécurité utilisent des adresses personnelles
+  description: Les membres inscrits avec une adresse personnelle échappent aux contrôles de l'entreprise, et les alertes de sécurité ou extraits de code envoyés par courriel finissent dans des boîtes que l'organisation ne maîtrise pas.
+description: |
+  L'appartenance aux organisations, groupes et comptes CI/CD est limitée aux utilisateurs dont
+  l'adresse électronique est dans un domaine vérifié de l'entreprise, et les notifications des
+  plates-formes qui peuvent contenir du code, des vulnérabilités ou des secrets ne sont envoyées qu'à
+  ces domaines. Les exceptions (prestataires avec leur propre domaine) sont approuvées et listées.
+
+  L'inscription libre sur les plates-formes auto-hébergées relève de CB-CICD-IAM-009, les
+  collaborateurs externes de CB-CICD-IAM-023.
+rationale: |
+  Une restriction de domaine empêche d'ajouter quelqu'un à un groupe avec une adresse personnelle ou
+  ressemblante, ce qui contourne en général le fournisseur d'identité et son processus de départ. Les
+  notifications par courriel transportent des différences de pull requests, des alertes de sécurité
+  et parfois des détections de secrets ; les envoyer à des boîtes personnelles fait sortir ce contenu
+  de l'organisation, où il reste après le départ de la personne.
+impact: |
+  Les membres existants dont l'adresse principale n'est pas de l'entreprise doivent la changer avant
+  que la restriction s'applique à eux. Les prestataires doivent faire ajouter leur domaine ou utiliser
+  un compte de l'entreprise.
+notes: |
+  Sur GitHub, le réglage ne restreint que la destination des notifications ; il n'empêche pas un
+  membre d'utiliser un compte personnel. L'utiliser avec le SSO SAML ou Enterprise Managed Users
+  (CB-CICD-IAM-001) ; seul, il ne couvre ce contrôle que partiellement.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Vérifier la restriction :
+       - **GitLab** : groupe racine **Settings** > **General** > **Permissions and group features** >
+         **Restrict membership by email domain** liste les domaines de l'entreprise (Premium).
+       - **Harness** : **Account Settings** > **Authentication** > **Only allow users with the
+         following email domains** contient les domaines de l'entreprise.
+       - **GitHub** : **Organization settings** (ou **Enterprise settings**) > **Verified and approved
+         domains** liste les domaines de l'entreprise comme vérifiés, et **Restrict email
+         notifications to only approved or verified domains** est coché (GitHub Enterprise Cloud).
+    2. Lister les membres dont l'adresse principale est hors des domaines autorisés.
+    3. Échec si l'appartenance n'est pas limitée aux domaines de l'entreprise là où la plate-forme le
+       permet, ou si les notifications peuvent partir vers des domaines non vérifiés.
+remediation:
+  manual: |
+    1. Vérifier les domaines de l'entreprise sur la plate-forme (enregistrement DNS TXT si demandé).
+    2. Appliquer la restriction :
+       - **GitLab** : saisir les domaines dans **Restrict membership by email domain** (Owner du
+         groupe).
+       - **Harness** : activer **Only allow users with the following email domains** et ajouter les
+         domaines (administrateur du compte).
+       - **GitHub** : ajouter et vérifier les domaines, puis cocher **Restrict email notifications to
+         only approved or verified domains** (propriétaire de l'organisation ou de l'entreprise).
+    3. Demander aux membres ayant une adresse personnelle d'en changer, ou les retirer.

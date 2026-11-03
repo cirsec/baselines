@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-025
+title: Archive unmaintained repositories and delete stale branches
+finding:
+  title: Unmaintained repositories and stale branches remain active
+  description: Forgotten repositories keep their runners, secrets, webhooks and write access, and old branches keep pipeline definitions that can still be triggered, giving attackers targets that nobody watches or patches.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [repository-hygiene, archiving, stale-branches, attack-surface]
+
+applicability:
+  versions: [github, gitlab]
+
+description: |
+  Repositories with no activity for `{{ inactive_months }}` months are reviewed by their owners
+  and either confirmed as maintained or archived (read-only). Head branches are deleted once their
+  pull or merge request is merged, and branches without commits for several months are reviewed
+  and deleted when no longer needed.
+
+  Deleting repositories, and the risk of re-registered names, is covered by CB-CICD-SCM-003;
+  removal of unused runners and credentials by CB-CICD-RUN-006 and CB-CICD-SEC-011.
+rationale: |
+  An unmaintained repository still carries everything that made it useful: pipelines with secrets,
+  deploy keys, webhooks and members with write access. Nobody reviews its dependency alerts or its
+  access list, so it is an easy entry point. Stale branches keep old pipeline definitions and old
+  vulnerable code that can still run when someone pushes to them. Archiving makes the repository
+  read-only and stops scheduled pipelines on GitLab.
+impact: |
+  Archived repositories must be unarchived before any change. Teams need to delete merged branches
+  or accept automatic deletion, and keep long-lived branches under explicit names.
+
+parameters:
+  - name: inactive_months
+    type: integer
+    description: Months without activity after which a repository is reviewed for archiving.
+    unit: months
+    default: 12
+    minimum: 1
+    maximum: 36
+
+audit:
+  manual: |
+    Use an organization owner or group owner role, or a token with read access to all
+    repositories.
+
+    1. List repositories with their last activity date and flag those with no commit, pull request
+       or release for `{{ inactive_months }}` months. Scorecard's `Maintained` check and legitify's
+       unmaintained-repository policies help at scale.
+    2. Check the branch hygiene:
+       - **GitHub**: repository **Settings** > **General** > **Pull Requests** > **Automatically
+         delete head branches** is selected; the **Branches** page shows the stale branches to
+         review.
+       - **GitLab**: **Code** > **Branches** shows stale branches (no commit in the last three
+         months), and merged branches are deleted (**Delete merged branches** or the "delete source
+         branch" option on merge requests).
+    3. Fail if inactive repositories are neither archived nor confirmed as maintained by an owner,
+       or if merged and stale branches accumulate without review.
+
+remediation:
+  manual: |
+    1. Ask the owners of each inactive repository to confirm maintenance or agree to archive it.
+    2. Archive the repositories that are no longer maintained:
+       - **GitHub**: **Settings** > **General** > **Danger Zone** > **Archive this repository**.
+       - **GitLab**: on the project overview, **Actions** menu > **Archive** (Owner or
+         administrator).
+    3. Before archiving, revoke the repository's deploy keys, tokens and webhooks that are no longer
+       needed.
+    4. Enable **Automatically delete head branches** (GitHub) or delete merged branches regularly
+       (GitLab), and review stale branches periodically.
+
+references:
+  - title: Archiving repositories
+    url: https://docs.github.com/en/repositories/archiving-a-github-repository/archiving-repositories
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing the automatic deletion of branches
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage projects
+    url: https://docs.gitlab.com/user/project/working_with_projects/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Branches
+    url: https://docs.gitlab.com/user/project/repository/branches/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenSSF Scorecard checks
+    url: https://github.com/ossf/scorecard/blob/main/docs/checks.md
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-003
+    type: related
+  - id: CB-CICD-RUN-006
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+  - id: CB-CICD-PIPE-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

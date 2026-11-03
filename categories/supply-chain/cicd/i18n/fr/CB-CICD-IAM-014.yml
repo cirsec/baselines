@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer un modèle d'autorisation explicite sur les serveurs CI/CD
+finding:
+  title: Le serveur CI/CD fonctionne sans autorisation fondée sur les rôles
+  description: Quand tout utilisateur connecté peut tout faire, ou que tous les utilisateurs agissent avec l'identité de service du serveur, n'importe quel compte de la plate-forme peut modifier des pipelines, lire des identifiants ou déployer.
+description: |
+  La plate-forme fonctionne avec une stratégie d'autorisation explicite : les permissions sont
+  accordées par rôle ou par groupe (matrice, rôles ou règles RBAC), chaque pipeline, application et
+  compte a des propriétaires explicites, et les ressources sans permissions ne sont pas ouvertes à
+  tous. Les modes où tout utilisateur authentifié est administrateur, où l'autorisation est
+  désactivée, ou où tous les utilisateurs agissent avec une identité de serveur partagée ne sont pas
+  utilisés.
+
+  Les permissions par défaut de tous les membres relèvent de CB-CICD-IAM-015, la conception des rôles
+  de CB-CICD-IAM-016.
+rationale: |
+  Ces serveurs sont livrés avec des réglages permissifs pour faciliter le premier lancement.
+  L'assistant d'installation de Jenkins laisse « Logged-in users can do anything », Spinnaker a
+  l'autorisation désactivée et considère les ressources sans permissions comme non restreintes, et
+  Argo Workflows en mode `server` donne à chaque utilisateur de l'interface les permissions du compte
+  de service argo-server. Sur un serveur partagé, cela signifie que n'importe quel compte peut
+  exécuter du code avec les identifiants du serveur.
+impact: |
+  Activer l'autorisation retire l'accès aux utilisateurs qui dépendaient du mode ouvert. Associer les
+  groupes aux rôles avant la bascule, et garder un groupe d'administrateurs capable de se connecter.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou un accès en lecture à la configuration du serveur.
+
+    1. Vérifier le modèle d'autorisation :
+       - **Jenkins** : **Manage Jenkins** > **Security** > **Authorization** vaut **Matrix-based
+         security**, **Project-based Matrix Authorization Strategy** ou une stratégie par rôles, pas
+         **Logged-in users can do anything** ni **Anyone can do anything**
+         (`jenkins.authorizationStrategy: unsecured` en configuration as code).
+       - **Spinnaker** : l'autorisation Fiat est activée avec un fournisseur de rôles (Google Groups,
+         GitHub Teams, LDAP, SAML ou fichier), et chaque compte cloud et application déclare des
+         permissions `READ` et `WRITE` ; aucun compte ni application n'est laissé sans permissions.
+       - **Argo Workflows** : `argo server` tourne avec `--auth-mode sso` (et `client` pour la CLI),
+         jamais `server` seul sur un déploiement partagé ; `workflow-controller-configmap` contient
+         `sso.rbac.enabled: true`, les comptes de service portent des annotations
+         `workflows.argoproj.io/rbac-rule`, et la règle par défaut (`"true"`, précédence la plus
+         basse) pointe vers un compte de service en lecture seule.
+    2. Échec si tout utilisateur authentifié obtient des droits d'administration par défaut, si
+       l'autorisation est désactivée, ou si les utilisateurs agissent avec une identité de serveur
+       partagée.
+remediation:
+  manual: |
+    1. Associer les groupes du fournisseur d'identité à des rôles (administrateurs, mainteneurs de
+       pipelines, développeurs, lecteurs).
+    2. Activer le modèle d'autorisation :
+       - **Jenkins** : installer Matrix Authorization Strategy ou Role-based Authorization Strategy,
+         accorder `Overall/Administer` au seul groupe des administrateurs, puis quitter
+         **Logged-in users can do anything** dans **Authorization**.
+       - **Spinnaker** : activer Fiat, configurer le fournisseur de rôles, puis ajouter des
+         `permissions` avec des rôles `READ` et `WRITE` à chaque compte et application.
+       - **Argo Workflows** : lancer `argo server` avec `--auth-mode sso`, poser
+         `sso.rbac.enabled: true`, annoter un compte de service par groupe avec `rbac-rule` et
+         `rbac-rule-precedence`, et associer la règle par défaut à un compte de service en lecture
+         seule.
+    3. Tester avec un compte non administrateur avant de retirer le mode ouvert.

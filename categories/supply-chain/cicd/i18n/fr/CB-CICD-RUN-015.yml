@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter les jobs dans un conteneur ou une VM, jamais directement sur un hôte de runner partagé
+finding:
+  title: Des runners partagés exécutent les jobs directement sur l'hôte
+  description: Avec un exécuteur shell, host ou local, les commandes du job tournent sous l'utilisateur du runner sur l'hôte ; n'importe quel job peut lire le code des autres projets, les identifiants du runner et les jetons de job, et modifier le runner pour les jobs suivants.
+description: |
+  Les runners partagés par plusieurs dépôts ou projets exécutent les jobs dans un conteneur ou une machine
+  virtuelle : exécuteurs Docker, Podman, LXC, Kubernetes ou à base de VM. Les exécuteurs qui lancent les
+  commandes directement sur l'hôte (`shell` de GitLab, labels `host` de Gitea et Forgejo, backend `local`
+  de Woodpecker) ne servent que sur des runners dédiés à un seul dépôt de confiance dont tous les
+  contributeurs en écriture sont de confiance.
+
+  Les privilèges dans le conteneur relèvent de CB-CICD-RUN-016 et CB-CICD-RUN-018.
+rationale: |
+  L'exécution sur l'hôte n'a aucune frontière entre les jobs et le runner : les commandes tournent sous
+  l'utilisateur du runner, lisent sa configuration et ses identifiants, et partagent le réseau de l'hôte.
+  Sur un runner partagé, le job de chaque projet peut lire et modifier ce que les autres construisent.
+impact: |
+  Les builds qui ont besoin d'outils de l'hôte (signature matérielle, SDK de plate-forme) doivent garder
+  un runner hôte dédié par projet ou intégrer les outils dans des images.
+notes: |
+  L'exécuteur SSH de GitLab ne vérifie pas les clés d'hôte et est exposé aux attaques de l'homme du
+  milieu. L'exécuteur par défaut de GitLab Runner dans `config.toml` est `shell`. Sur Forgejo, l'exécution
+  `host` expose aussi aux jobs le fichier d'état du runner.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de configuration des runners.
+
+    1. Lister les runners qui servent plus d'un dépôt ou projet, avec leur exécuteur.
+    2. Par produit :
+       - **GitLab** : `executor` dans chaque section `[[runners]]` de `config.toml` vaut `docker`,
+         `docker-autoscaler`, `kubernetes`, `docker+machine`, `instance` ou un exécuteur à base de VM, pas
+         `shell` ni `ssh`.
+       - **Gitea / Forgejo** : les labels du runner désignent un environnement conteneur
+         (`docker://<image>`, ou `lxc` sur Forgejo), pas `:host` ; sur Gitea, un label sans schéma signifie
+         aussi host.
+       - **Woodpecker** : les agents utilisent `WOODPECKER_BACKEND=docker` ou `kubernetes`, pas `local`.
+    3. Échec si un runner partagé par plusieurs dépôts ou projets exécute des jobs directement sur son
+       hôte.
+remediation:
+  manual: |
+    1. Intégrer les outils dont les jobs ont besoin dans des images de build.
+    2. Par produit :
+       - **GitLab** : enregistrer les runners partagés avec l'exécuteur Docker, Kubernetes ou un exécuteur
+         autoscalé ; garder les runners `shell` comme runners de projet pour des projets de confiance
+         uniquement.
+       - **Gitea / Forgejo** : remplacer les labels `:host` par des labels de conteneur sur les runners
+         partagés.
+       - **Woodpecker** : poser `WOODPECKER_BACKEND=docker` (ou `kubernetes`) sur les agents partagés.
+    3. Réinstaller les hôtes qui ont exécuté des jobs non fiables avec un exécuteur hôte.

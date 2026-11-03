@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-008
+title: Distribute artifacts through The Update Framework with expiring, scoped delegations
+finding:
+  title: Distributed artifacts and their metadata can be replayed, frozen or replaced without clients noticing
+  description: When clients only check a signature on each file, an attacker who controls the mirror or download server can serve an old vulnerable version, withhold updates, or use one compromised publishing key to sign artifacts it was never meant to cover.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [tuf, distribution, freshness, delegations, update-security]
+
+description: |
+  Artifacts that the organization distributes to clients outside the build platform (agents,
+  installers, plugins, update channels, internal mirrors of critical software) are served through a
+  mechanism based on The Update Framework (TUF) or an equivalent design:
+
+  - clients verify integrity and freshness from signed metadata (timestamp, snapshot, targets) that
+    expires, so a frozen or replayed repository is detected;
+  - signing duties are split across roles with separate keys and thresholds, with root keys kept
+    offline;
+  - each party (team, pipeline, vendor) is delegated only the artifact names or paths it publishes,
+    and delegations expire and must be renewed.
+
+  In-toto metadata (layouts and attestations) is distributed through the same channel when it is
+  used. Signing of individual artifacts is covered by CB-CICD-ART-005; key custody by
+  CB-CICD-ART-007.
+rationale: |
+  A signature on each file does not stop a mirror or a man in the middle from serving a stale but
+  validly signed version with known vulnerabilities, or from hiding a security update. TUF's expiring
+  metadata detects these rollback and freeze attacks, and scoped delegations stop a single
+  compromised publisher key from signing artifacts it does not own.
+impact: |
+  Running a TUF repository adds roles, keys, expiry renewal and client support. Most package
+  ecosystems and CI platforms do not provide TUF for the organization's own artifacts, so this
+  usually means operating a TUF-capable distribution service or library. Applies only where the
+  organization distributes software to clients.
+notes: |
+  No CI/CD platform in scope offers a TUF repository setting for the user's own artifacts. Sigstore
+  clients use TUF to distribute their own trust root, which is a useful reference implementation.
+
+audit:
+  manual: |
+    Use a role that can read the distribution service configuration and its metadata.
+
+    1. List the channels through which the organization distributes software to clients (update
+       servers, plugin repositories, internal mirrors).
+    2. For each channel, check that clients verify signed, expiring metadata for integrity and
+       freshness, not only a per-file signature or checksum.
+    3. Check the role and key setup: separate keys for the root, targets, snapshot and timestamp
+       roles; root keys offline; thresholds for the root role.
+    4. Check delegations: each publisher can only sign the paths or names it owns, and delegations
+       have an expiry date that is renewed.
+    5. Fail if a distribution channel lets clients accept stale metadata, or if one publisher key can
+       sign any artifact in the repository.
+
+remediation:
+  manual: |
+    1. Choose a TUF implementation or a distribution service built on it for each client-facing
+       channel.
+    2. Create the root, targets, snapshot and timestamp roles with separate keys, keep root keys
+       offline, and set short expiry for timestamp and snapshot metadata.
+    3. Create one delegated targets role per publishing team or pipeline, limited to its paths, with
+       an expiry date, and have the release pipeline sign only through that role (keys in a KMS,
+       CB-CICD-ART-007).
+    4. Update clients to verify through the TUF client library, and test that expired or rolled-back
+       metadata is rejected.
+
+references:
+  - title: The Update Framework
+    url: https://theupdateframework.io/
+    publisher: The Update Framework project
+    kind: standard
+    accessed: 2026-11-03
+  - title: CNCF Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/tree/main/community/working-groups/supply-chain-security/supply-chain-security-paper
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: in-toto
+    url: https://github.com/in-toto/in-toto
+    publisher: in-toto project
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(15)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-11
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-ART-005
+    type: related
+  - id: CB-CICD-ART-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

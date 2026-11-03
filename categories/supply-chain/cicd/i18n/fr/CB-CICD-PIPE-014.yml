@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne jamais exécuter le code d'une pull request dans un pipeline qui détient des secrets ou des jetons en écriture
+finding:
+  title: Un workflow privilégié récupère et construit le code d'une pull request
+  description: Un workflow lancé par `pull_request_target`, `workflow_run`, un commentaire ou un build de PR avec identifiants récupère la tête de la pull request et exécute ses scripts de build ; l'auteur de la pull request exécute alors du code avec les secrets et le jeton en écriture du dépôt de base (« pwn request »).
+description: |
+  Les workflows qui s'exécutent avec des secrets, un jeton en écriture, un jeton OIDC ou une écriture
+  de cache pour le compte d'une pull request ne récupèrent, ne construisent, ne testent et
+  n'installent jamais le code de la pull request, et n'exécutent jamais de scripts ou d'artefacts
+  qu'elle a produits. Ces déclencheurs privilégiés ne servent qu'à des tâches sur les métadonnées
+  (labels, commentaires) ou consomment les résultats d'une exécution non privilégiée comme données
+  non fiables. Le code non fiable est construit dans un pipeline séparé, non privilégié. Les
+  identifiants ne sont jamais liés autour d'étapes qui exécutent du code qu'un contributeur peut
+  modifier.
+
+  Les secrets des pipelines de forks relèvent de CB-CICD-PIPE-010 ; les artefacts transmis entre
+  pipelines relèvent de CB-CICD-ART-013.
+rationale: |
+  Ces déclencheurs existent précisément pour donner à un workflow des privilèges qu'un fork n'a pas.
+  Y récupérer la tête de la pull request remet ces privilèges à son auteur : scripts de build,
+  fichiers de test, manifestes de paquets et hooks pre-commit exécutent tous du code qu'il contrôle.
+  C'est la mauvaise configuration CI/CD la plus exploitée dans les dépôts publics.
+impact: |
+  Les workflows qui combinent build et commentaire doivent être scindés en un build non privilégié et
+  un rapporteur privilégié qui traite le résultat du build comme des données.
+notes: |
+  `actions/checkout` refuse les références de tête de fork sous `pull_request_target` sauf si
+  `allow-unsafe-pr-checkout: true` est défini ; cette protection ne couvre pas `git fetch`,
+  `gh pr checkout` ni les artefacts téléchargés. Le même risque s'applique aux workflows Gitea et
+  Forgejo ; sur Forgejo, les exécutions `pull_request_target` reçoivent un jeton avec droit
+  d'écriture.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline.
+
+    1. Lister les workflows et pipelines qui s'exécutent avec des secrets ou des jetons en écriture et
+       sont lancés par des événements liés aux pull requests. zizmor (`dangerous-triggers`), poutine
+       (`untrusted_checkout_exec`) ou Scorecard (`Dangerous-Workflow`) peuvent aider.
+    2. Vérifier par plate-forme :
+       - **GitHub / Gitea / Forgejo** : les workflows avec `on: pull_request_target`, `workflow_run`
+         ou `issue_comment` n'utilisent pas `actions/checkout` avec `ref:` pointant sur la tête de la
+         pull request (`github.event.pull_request.head.sha`, `head.ref`), ni `git fetch` de la
+         référence de la pull request ni `gh pr checkout`, ne définissent pas
+         `allow-unsafe-pr-checkout: true`, et n'exécutent pas d'artefacts téléchargés. Sur Forgejo,
+         ces workflows définissent `persist-credentials: false`, ne définissent pas
+         `enable-openid-connect` et n'écrivent pas de cache.
+       - **Azure DevOps** : les pipelines avec un déclencheur `pr:` qui récupèrent et construisent le
+         code n'utilisent ni groupes de variables, ni fichiers sécurisés, ni connexions de service
+         ayant un accès de production.
+       - **Jenkins** : les blocs `withCredentials` n'entourent que des étapes qui exécutent du code de
+         confiance ; les builds de pull requests d'auteurs non fiables ne s'exécutent pas à
+         l'intérieur.
+    3. Échec si un pipeline privilégié exécute, installe ou construit du code ou des artefacts venant
+       d'une pull request.
+remediation:
+  manual: |
+    1. Modifier les workflows privilégiés de pull request pour qu'ils ne travaillent que sur les
+       métadonnées, ou les remplacer par un workflow `pull_request` non privilégié.
+    2. Quand des résultats sont nécessaires dans une étape privilégiée, scinder le travail : un
+       workflow non privilégié construit et téléverse les résultats, et un workflow `workflow_run` les
+       lit comme données non fiables (sans exécution, contenu validé).
+    3. Retirer `allow-unsafe-pr-checkout: true` et toute récupération manuelle de références de pull
+       request des workflows privilégiés ; sur Forgejo, définir `persist-credentials: false`.
+    4. **Azure DevOps** : créer un pipeline de validation des pull requests séparé, sans secrets ni
+       connexions de service. **Jenkins** : déplacer `withCredentials` dans des étapes qui ne
+       s'exécutent que sur des branches de confiance.

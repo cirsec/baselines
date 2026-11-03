@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les plugins, résolveurs et outils de rendu inutilisés
+finding:
+  title: Les serveurs CI et les contrôleurs gardent des plugins et des résolveurs dont personne n'a besoin
+  description: Chaque plugin, résolveur distant ou outil de rendu de manifestes en trop ajoute du code qui s'exécute avec les privilèges du contrôleur, et ceux qui ne sont plus maintenus portent des failles jamais corrigées.
+parameters:
+  minimization: Degré de réduction des composants. `unmaintained-removed` = les plugins obsolètes et non maintenus sont retirés ; `unused-disabled` = en plus, les résolveurs et outils de rendu inutilisés sont désactivés, la sortie réseau des contrôleurs est restreinte à une liste d'autorisation et les actions superflues sont retirées.
+description: |
+  Les serveurs CI, contrôleurs de pipeline et contrôleurs GitOps n'exécutent que les extensions
+  dont ils ont besoin. Le niveau exigé est `{{ minimization }}` :
+  - `unmaintained-removed` : les plugins obsolètes, non maintenus et inutilisés sont désinstallés
+    des serveurs CI ; la liste des plugins est tenue sous forme de code (par exemple un fichier
+    `plugins.txt` ou de configuration as code).
+  - `unused-disabled` : en plus, les résolveurs distants et outils de rendu de manifestes inutilisés
+    sont désactivés, les contrôleurs qui récupèrent du contenu distant ont une liste d'autorisation
+    de sortie réseau, et les workflows n'ajoutent pas d'actions pour des outils déjà fournis par
+    l'image du runner.
+
+  Le retrait des composants vulnérables relève de CB-CICD-COMP-003, et les fonctions inutilisées
+  de la plate-forme de CB-CICD-PLAT-014.
+rationale: |
+  Les plugins et résolveurs s'exécutent dans le contrôleur avec accès à ses identifiants et à tous
+  les projets. Chacun élargit la surface d'attaque et la charge de correctifs. Les résolveurs
+  distants récupèrent du contenu depuis des URL choisies par les auteurs de pipelines, et des outils
+  de rendu comme Helm ou Kustomize peuvent lire des fichiers hors du répertoire de l'application sur
+  le serveur de dépôts lorsqu'ils sont mal configurés.
+impact: |
+  Retirer un plugin ou désactiver un résolveur casse les pipelines qui l'utilisent encore ; lister
+  les utilisateurs avant le retrait. Une liste d'autorisation de sortie réseau doit être maintenue
+  quand de nouvelles sources sont ajoutées.
+notes: |
+  Tekton active par défaut les résolveurs bundles, git, hub et cluster. L'option Argo CD
+  `kustomize.buildOptions: --load_restrictor none` permet à Kustomize de lire hors du répertoire de
+  l'application et ne doit pas être utilisée.
+audit:
+  manual: |
+    Utiliser un compte administrateur en lecture (Jenkins **Overall/Read** et gestionnaire de
+    plugins, `kubectl get` sur les namespaces Tekton et Argo CD).
+
+    1. Lister les extensions installées et les comparer à ce qu'utilisent les pipelines :
+       - **Jenkins** : **Manage Jenkins** > **Plugins** > **Installed plugins** ; repérer les
+         plugins obsolètes, à adopter ou inutilisés.
+       - **Tekton** : ConfigMap `resolvers-feature-flags` dans le namespace des résolveurs, clés
+         `enable-bundles-resolver`, `enable-git-resolver`, `enable-hub-resolver`,
+         `enable-cluster-resolver`, `enable-http-resolver` ; NetworkPolicy sur le déploiement des
+         résolveurs.
+       - **Argo CD** : ConfigMap `argocd-cm`, clés `kustomize.buildOptions` (sans
+         `--load_restrictor none`) et `helm.valuesFileSchemes` ; sidecars Config Management Plugin
+         en service.
+       - **GitHub** : zizmor `superfluous-actions` sur les workflows.
+    2. Échec si des plugins obsolètes ou non maintenus sont installés, ou, quand
+       `{{ minimization }}` vaut `unused-disabled`, si un résolveur ou outil de rendu inutilisé est
+       activé, si des contrôleurs qui récupèrent du contenu distant ont une sortie réseau sans
+       restriction, ou si des workflows utilisent des actions qui ne font que dupliquer un outil
+       préinstallé.
+remediation:
+  manual: |
+    1. Convenir avec les responsables de pipelines de la liste des plugins, résolveurs et outils
+       nécessaires.
+    2. Réduire l'ensemble :
+       - **Jenkins** (administrateur) : désinstaller les plugins inutiles depuis **Manage
+         Jenkins** > **Plugins** > **Installed plugins** et tenir la liste restante dans
+         `plugins.txt` ou en configuration as code.
+       - **Tekton** (administrateur du cluster) : passer à `"false"` les clés `enable-*-resolver`
+         inutilisées dans `resolvers-feature-flags`, et ajouter une NetworkPolicy qui limite la
+         sortie des résolveurs aux registres et serveurs Git utilisés.
+       - **Argo CD** (administrateur) : retirer `--load_restrictor none` de
+         `kustomize.buildOptions`, limiter `helm.valuesFileSchemes` à `https`, et n'exécuter les
+         Config Management Plugins que pour des dépôts de confiance.
+       - **GitHub** : remplacer les actions relevées par zizmor `superfluous-actions` par l'outil
+         déjà présent sur le runner.
+    3. Redémarrer les contrôleurs si nécessaire et lancer une fois les principaux pipelines.
+  rollback: |
+    Réactiver le résolveur ou réinstaller le plugin, puis planifier son retrait avec ses
+    utilisateurs.

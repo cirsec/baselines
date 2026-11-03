@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-025
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Déprovisionner automatiquement les départs depuis le fournisseur d'identité
+finding:
+  title: Retirer un utilisateur du fournisseur d'identité ne retire pas son accès à la plate-forme
+  description: Sans déprovisionnement SCIM, une personne partie garde son appartenance à l'organisation, ses accès d'équipe et ses jetons personnels sur la plate-forme SCM ou CI jusqu'à ce que quelqu'un la retire à la main.
+description: |
+  Les comptes et appartenances des plates-formes sont provisionnés et déprovisionnés depuis le
+  fournisseur d'identité par SCIM. Quand une personne part ou n'est plus affectée à l'application de
+  la plate-forme, son appartenance est retirée automatiquement, sans étape manuelle. Les utilisateurs
+  arrivés avant la mise en place de SCIM sont rattachés à leur identité pour que le déprovisionnement
+  s'applique aussi à eux.
+
+  L'authentification unique relève de CB-CICD-IAM-001 ; les comptes inactifs de CB-CICD-IAM-024.
+rationale: |
+  Le SSO seul bloque les nouvelles connexions web d'une personne partie, mais ne retire pas ce que le
+  compte a déjà : appartenance à l'organisation, permissions d'équipe, jetons d'accès personnels et
+  clés SSH qui continuent de fonctionner jusqu'à leur révocation. Le départ manuel plate-forme par
+  plate-forme est l'étape qu'on oublie.
+impact: |
+  Nécessite une offre entreprise sur les plates-formes SaaS et une intégration SCIM dans le
+  fournisseur d'identité. Une mauvaise affectation de groupe dans le fournisseur d'identité retire des
+  utilisateurs légitimes : tester avec un groupe pilote.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire de l'entreprise ou d'administrateur de l'organisation.
+
+    1. Vérifier que SCIM est configuré et actif :
+       - **GitHub Enterprise Cloud** : avec Enterprise Managed Users, SCIM est obligatoire et tout
+         compte vient du fournisseur d'identité. Avec des comptes personnels, SCIM est configuré pour
+         les organisations, et **Enterprise settings** > **Policies** > **Member privileges** >
+         **Unaffiliated user** est réglé pour retirer les utilisateurs qui n'appartiennent plus à
+         aucune organisation (par défaut ils restent dans l'entreprise avec leurs rôles d'entreprise,
+         équipes et licences).
+       - **Buildkite** : SCIM est activé pour le fournisseur SSO Okta ou Microsoft Entra ID (offre
+         Enterprise), et les utilisateurs arrivés avant SCIM ont été synchronisés.
+    2. Prendre un échantillon de départs récents auprès des RH ou du fournisseur d'identité et
+       vérifier qu'ils ne sont plus membres de la plate-forme.
+    3. Échec si le déprovisionnement SCIM n'est pas configuré, ou si une personne partie a encore
+       accès.
+remediation:
+  manual: |
+    1. Configurer l'application SCIM dans le fournisseur d'identité avec un jeton pour la plate-forme.
+    2. **GitHub Enterprise Cloud** : activer SCIM pour chaque organisation (ou utiliser Enterprise
+       Managed Users), puis régler la stratégie **Unaffiliated user** pour retirer les utilisateurs de
+       l'entreprise. Les propriétaires d'entreprise et gestionnaires de facturation ne sont pas
+       couverts : les retirer à la main.
+    3. **Buildkite** : activer SCIM dans les réglages du fournisseur SSO et synchroniser les
+       utilisateurs existants.
+    4. Supprimer les comptes des anciens départs trouvés pendant l'audit et révoquer leurs jetons.

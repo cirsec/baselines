@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-006
+title: Remove stale and unused runners
+finding:
+  title: Offline and unused runners are still registered
+  description: Runners that have not connected for weeks keep valid credentials and their place in the runner fleet, so a forgotten host or a copied configuration can come back and receive jobs without anyone noticing.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [runners, agents, inventory, hygiene]
+
+description: |
+  The inventory of runners, agents and delegates is reviewed at least quarterly. Runners that are
+  offline, have not run a job for a defined period, or no longer have an owner are deleted on the
+  platform, which revokes their credentials. Where the platform offers automatic cleanup of stale
+  runners, it is turned on.
+rationale: |
+  Each registered runner is a credential that can receive jobs. Stale entries hide the real fleet,
+  keep credentials of decommissioned machines alive and make it hard to spot a runner that should
+  not be there.
+impact: |
+  Runners used rarely (yearly release builds, disaster recovery) need an owner and an exception, or
+  will be re-registered when needed.
+notes: |
+  GitLab stale runner cleanup is a group setting available on GitLab Ultimate; it removes group
+  runners inactive for more than seven days.
+
+audit:
+  manual: |
+    Use a platform administrator read role.
+
+    1. Export the list of runners and agents at every scope with their status, last contact and
+       owner (GitLab **Admin** > **CI/CD** > **Runners** with the stale and offline filters, GitHub
+       **Settings** > **Actions** > **Runners** at organization and repository level, Azure DevOps
+       agent pools, Buildkite clusters).
+    2. Check the date of the last review and the deletions it led to.
+    3. **GitLab** (Ultimate): in each group, **Settings** > **CI/CD** > **Runners** > **Enable stale
+       runner cleanup** is on.
+    4. Fail if runners offline for more than 90 days, or without an owner, are still registered, or if
+       no review took place in the last quarter.
+remediation:
+  manual: |
+    1. Delete runners that are stale or have no owner, from the platform first, then from their hosts.
+    2. **GitLab**: as a group owner on GitLab Ultimate, turn on **Enable stale runner cleanup**.
+    3. Record an owner for each remaining runner and schedule a quarterly review of the inventory.
+
+references:
+  - title: Manage runners (Clean up stale group runners)
+    url: https://docs.gitlab.com/ci/runners/runners_scope/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Monitoring and troubleshooting self-hosted runners
+    url: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/monitor-and-troubleshoot
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-4
+    relation: related
+related_controls:
+  - id: CB-CICD-RUN-005
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

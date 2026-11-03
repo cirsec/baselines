@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-008
+title: Restrict GitOps projects to allow-listed sources, destinations and resource kinds
+finding:
+  title: GitOps applications can pull from any repository and deploy any resource to any cluster
+  description: With a permissive default project or templated project names, anyone who can create an Application or write to a generator source can deploy cluster-wide resources, reach other tenants' namespaces, or take over the GitOps controller itself.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [gitops, argo-cd, appproject, multi-tenancy, applicationset]
+
+applicability:
+  versions: [argo-cd, flux]
+
+description: |
+  Every GitOps application belongs to a project (Argo CD `AppProject`, or a Flux tenant with its own
+  namespace and service account) that allow-lists:
+
+  - the source repositories it may pull manifests from, by explicit URL, with no `*`;
+  - the destination clusters and namespaces it may deploy to;
+  - the resource kinds it may create: no cluster-scoped kinds for tenant projects, and no changes to
+    kinds that enforce isolation (for example `ResourceQuota`, `LimitRange`, `NetworkPolicy`).
+
+  The built-in default project allows nothing, so an application must be placed in a dedicated
+  project on purpose. Tenancy level: `{{ tenancy }}`.
+
+  - `locked-projects`: the default project is emptied and every application lives in a project
+    with explicit sources, destinations and kinds.
+  - `strict-multi-tenant`: in addition, Applications in any namespace are enabled only for listed
+    namespaces, each tied to unprivileged projects through `sourceNamespaces`; ApplicationSet
+    templates hard-code the project; ApplicationSet SCM providers are disabled or allow-listed;
+    project-scoped clusters cannot be used as an implicit wildcard destination.
+
+  The identities used to apply changes are covered by CB-CICD-DEPLOY-009 and CB-CICD-IAM-035.
+rationale: |
+  A GitOps controller usually holds cluster-admin rights on many clusters. Projects are what stop
+  one team's repository, or one compromised Git account, from using those rights everywhere. The
+  default Argo CD project trusts any repository, any cluster and any kind, and a templated project
+  field in an ApplicationSet lets whoever controls the generator source choose a privileged project,
+  which Argo CD documents as a path to taking over Argo CD itself.
+impact: |
+  Existing applications in the default project must be moved to dedicated projects, and project
+  definitions must be maintained as repositories and namespaces change. Teams that relied on
+  cluster-scoped resources need a platform-owned project for them.
+notes: |
+  The repository allow-list only covers the repository Argo CD clones: Kustomize remote bases and
+  Helm chart dependencies can pull content from other repositories. Clusters registered as
+  project-scoped add an implicit destination unless `permitOnlyProjectScopedClusters: true` is set.
+  When Applications in any namespace are used, Argo CD recommends switching resource tracking from
+  `label` to `annotation` or `annotation+label`. On Flux, the equivalent is multi-tenancy lockdown
+  (per-tenant namespaces and service accounts, no cross-namespace references), which is not detailed
+  here.
+
+parameters:
+  - name: tenancy
+    type: enum
+    description: GitOps tenancy restrictions. locked-projects empties the default project and gives every application a project with explicit sources, destinations and kinds; strict-multi-tenant also restricts Applications in any namespace, hard-codes ApplicationSet projects and allow-lists SCM providers.
+    allowed: [locked-projects, strict-multi-tenant]
+    default: locked-projects
+    profile_defaults:
+      hardened: strict-multi-tenant
+
+audit:
+  manual: |
+    Use a role that can read Argo CD projects, applications and configuration in the Argo CD
+    namespace.
+
+    1. Run `argocd proj get default -o yaml` (or `kubectl get appproject default -n argocd -o yaml`)
+       and check that `sourceRepos`, `destinations` and `clusterResourceWhitelist` are empty.
+    2. Run `argocd app list` and check that no application uses the `default` project.
+    3. For each `AppProject`:
+       - `spec.sourceRepos` lists explicit repository URLs, no `*`;
+       - `spec.destinations` lists named servers and namespaces;
+       - tenant projects have no `clusterResourceWhitelist` entry (or only harmless kinds) and
+         block `ResourceQuota`, `LimitRange` and `NetworkPolicy` through `namespaceResourceBlacklist`
+         or a `namespaceResourceWhitelist`;
+       - `permitOnlyProjectScopedClusters: true` where project-scoped clusters are used.
+    4. With `strict-multi-tenant`:
+       - in `argocd-cmd-params-cm`, `application.namespaces` lists only intended namespaces, and
+         privileged projects have no user-controlled namespace in `spec.sourceNamespaces`;
+       - every `ApplicationSet` has a literal `template.spec.project`, not a template expression;
+       - in `argocd-cmd-params-cm`, `applicationsetcontroller.enable.scm.providers` is `"false"` or
+         `applicationsetcontroller.allowed.scm.providers` lists only trusted SCM URLs.
+    5. Fail if the default project allows any source, destination or kind, if an application uses
+       a project with a `*` source or destination, or (hardened) if any condition in step 4 is not
+       met.
+
+remediation:
+  manual: |
+    1. Create one `AppProject` per team or application group with explicit `sourceRepos`,
+       `destinations` and allowed kinds, and move applications into it.
+    2. Empty the default project by applying an `AppProject` named `default` with empty
+       `sourceRepos`, `destinations` and `clusterResourceWhitelist`.
+    3. Set `permitOnlyProjectScopedClusters: true` on projects that use project-scoped clusters.
+    4. For `strict-multi-tenant`:
+       - set `application.namespaces` in `argocd-cmd-params-cm` to the tenant namespaces only, list
+         each in the `sourceNamespaces` of an unprivileged project, and switch tracking to
+         `annotation`;
+       - hard-code `template.spec.project` in every `ApplicationSet`;
+       - set `applicationsetcontroller.enable.scm.providers: "false"`, or set
+         `applicationsetcontroller.allowed.scm.providers` to the trusted SCM URLs.
+    5. Manage project definitions as code, reviewed by the platform team.
+
+references:
+  - title: Projects
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/projects/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: ApplicationSet Security
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Applications in any namespace
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/app-any-namespace/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers the scope of GitOps applications; the privileges of the controller identity are in CB-CICD-DEPLOY-009.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+  - framework: mitre-attack
+    id: T1610
+related_controls:
+  - id: CB-CICD-DEPLOY-009
+    type: related
+  - id: CB-CICD-IAM-035
+    type: related
+  - id: CB-CICD-DEPLOY-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

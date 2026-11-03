@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le contournement des protections de déploiement à un groupe d'urgence audité
+finding:
+  title: Les administrateurs peuvent ignorer couramment les approbations et vérifications de production
+  description: Quand chaque administrateur de dépôt ou de ressource peut contourner les approbations et vérifications d'environnement, la barrière d'approbation ne s'impose qu'aux personnes les moins susceptibles d'en abuser, et un attaquant qui prend le contrôle d'un compte administrateur déploie directement en production.
+description: |
+  La possibilité de contourner les protections des environnements de production (approbations,
+  temporisations, vérifications de branche et personnalisées) est réglée sur `{{ bypass }}` :
+
+  - `break-glass` : seul un petit groupe d'urgence nommé détient la permission de contournement, elle
+    ne fait partie du rôle quotidien de personne, et chaque contournement est journalisé, alerté et
+    revu après coup.
+  - `disabled` : le contournement est désactivé pour les environnements de production quand la
+    plate-forme le permet, et les déploiements d'urgence passent par un chemin accéléré mais toujours
+    approuvé.
+
+  L'exigence d'approbation elle-même relève de CB-CICD-DEPLOY-003 ; le contournement de la protection
+  des branches de CB-CICD-SCM-011.
+rationale: |
+  Les droits de contournement font de chaque détenteur un point de défaillance unique pour la
+  production. S'ils sont largement répandus, les approbations deviennent facultatives pour les
+  personnes qui ont le plus d'accès, et hameçonner l'une d'elles suffit pour déployer du code
+  malveillant sans que personne d'autre ne le remarque. Réserver le contournement à un groupe
+  d'urgence, ou le supprimer, garde son sens à la règle des quatre yeux tout en laissant un chemin
+  d'urgence documenté.
+impact: |
+  Les déploiements d'urgence passent par la procédure d'urgence ou par un approbateur d'astreinte.
+  Avec `disabled`, une indisponibilité du processus d'approbation peut retarder un correctif jusqu'à
+  ce qu'un approbateur soit joint.
+notes: |
+  Sur GitHub, les administrateurs peuvent contourner les règles de protection d'environnement par
+  défaut. Le réglage **Allow administrators to bypass configured protection rules** est disponible
+  sur les dépôts publics pour les offres Free, Pro et Team, et sur les dépôts privés avec GitHub
+  Enterprise. Dans Azure DevOps, seuls les utilisateurs ayant le rôle Administrateur sur la ressource
+  protégée peuvent choisir **Bypass check**, et le panneau des vérifications indique qui a
+  contourné ; le contournement s'applique aux vérifications d'approbation, d'heures ouvrées, de
+  fonction Azure et d'API REST.
+parameters:
+  bypass: Qui peut contourner les protections de déploiement en production. break-glass limite la permission à un groupe d'urgence audité ; disabled désactive le contournement par les administrateurs sur les environnements de production.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de sécurité des environnements et ressources et le
+    journal d'audit.
+
+    1. Lister les environnements de production et les ressources protégées.
+    2. Vérifier qui peut contourner leurs protections :
+       - **GitHub** : **Settings** > **Environments** > production : avec `disabled`, **Allow
+         administrators to bypass configured protection rules** est décoché ; avec `break-glass`, les
+         administrateurs du dépôt se limitent au groupe d'urgence.
+       - **Azure DevOps** : sur l'environnement de production et les connexions de service,
+         **Sécurité** liste les utilisateurs et groupes ayant le rôle **Administrateur** ; seul le
+         groupe d'urgence le détient.
+    3. Relire le journal d'audit ou l'historique des déploiements pour repérer les déploiements avec
+       contournement sur la dernière période, et vérifier que chacun a une justification consignée et
+       une revue a posteriori.
+    4. Échec si des utilisateurs hors du groupe d'urgence peuvent contourner les protections de
+       production, si les contournements ne sont pas revus, ou, avec `disabled`, si le contournement
+       par les administrateurs reste autorisé sur un environnement de production GitHub.
+remediation:
+  manual: |
+    1. Créer un groupe d'urgence de quelques membres nommés, avec une procédure documentée.
+    2. Restreindre le contournement :
+       - **GitHub** : dans **Settings** > **Environments** > production, décocher **Allow
+         administrators to bypass configured protection rules** (`disabled`), ou réduire les
+         administrateurs du dépôt au groupe d'urgence (`break-glass`).
+       - **Azure DevOps** : dans les réglages **Sécurité** de l'environnement et des connexions de
+         service, retirer le rôle **Administrateur** à tous sauf au groupe d'urgence.
+    3. Alerter sur les contournements (contournement de revue de déploiement GitHub, vérifications
+       ignorées Azure DevOps) et revoir chacun (CB-CICD-LOG-006).

@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-021
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter les scripts de pipeline Jenkins dans le bac à sable et les builds sous une identité autre que système
+finding:
+  title: Des scripts de pipeline Jenkins s'exécutent hors du bac à sable ou des builds s'exécutent en SYSTEM
+  description: Un script Groovy hors bac à sable ou une signature dangereuse approuvée exécute du code dans le contrôleur, et des builds exécutés en SYSTEM peuvent lancer, configurer ou lire n'importe quel autre job ; un seul Jenkinsfile modifiable peut ainsi prendre le contrôle de toute l'instance.
+description: |
+  Les scripts de pipeline que les utilisateurs peuvent modifier s'exécutent dans le bac à sable
+  Groovy. La liste des scripts et signatures de méthodes approuvés dans **In-process Script
+  Approval** ne contient aucune signature donnant accès au contrôleur (par exemple
+  `Jenkins.getInstance`, API de fichiers ou d'exécution de processus) et est revue périodiquement.
+  Seules les bibliothèques globales de confiance gérées sous le contrôle des changements du
+  contrôleur s'exécutent hors du bac à sable (CB-CICD-PIPE-003).
+
+  Le niveau attendu est `{{ build_identity }}` :
+
+  - `sandboxed` : le bac à sable est actif pour chaque Pipeline modifiable par les utilisateurs et
+    aucune signature dangereuse n'est approuvée ;
+  - `dedicated-user` : en plus, **Access Control for Builds** fait s'exécuter les builds sous
+    l'utilisateur qui les a déclenchés ou sous un utilisateur dédié peu privilégié au lieu de SYSTEM,
+    et des filtres de variables d'environnement retirent ou refusent les variables dangereuses (par
+    exemple les surcharges de `PATH` et `LD_PRELOAD`) sur les étapes de build.
+
+  Les builds exécutés sur le contrôleur lui-même relèvent de CB-CICD-RUN-008.
+rationale: |
+  Les pipelines Jenkins sont des programmes Groovy exécutés par le contrôleur. Hors du bac à sable,
+  ou avec une signature dangereuse approuvée, un script peut appeler des API internes, lire les
+  identifiants de tous les jobs et exécuter des commandes sur le contrôleur. Par défaut, les builds
+  s'exécutent en SYSTEM : un utilisateur qui peut configurer un job peut utiliser des étapes de
+  pipeline pour déclencher n'importe quel autre job ou en copier les artefacts.
+impact: |
+  Les scripts qui s'appuyaient sur des signatures dangereuses approuvées doivent être déplacés dans
+  une bibliothèque globale de confiance. Exécuter les builds sous un utilisateur précis suppose que
+  cet utilisateur détienne les droits nécessaires aux builds (par exemple pour déclencher des jobs
+  en aval). Le plugin Authorize Project n'est pas activement maintenu.
+notes: |
+  Désactiver le bac à sable pour un Pipeline demande qu'un administrateur approuve le script entier.
+  Les filtres de variables d'environnement sont disponibles depuis Jenkins 2.248 et LTS 2.249.1 et
+  demandent des plugins comme Safe Batch Environment Filter ou Generic Build Step Environment
+  Filters.
+parameters:
+  build_identity: sandboxed exige le bac à sable Groovy et aucune approbation dangereuse ; dedicated-user exécute aussi les builds sous un utilisateur autre que système avec des filtres de variables d'environnement.
+audit:
+  manual: |
+    Utiliser un compte administrateur Jenkins (la lecture seule ne suffit pas pour voir les
+    approbations de scripts).
+
+    1. Pour chaque job Pipeline défini dans l'interface, vérifier que **Use Groovy Sandbox** est
+       coché.
+    2. Ouvrir **Manage Jenkins** > **In-process Script Approval** et relire les scripts et signatures
+       approuvés. Échec sur les signatures qui atteignent l'instance Jenkins, le système de fichiers
+       ou l'exécution de processus, et sur les scripts entiers approuvés sans propriétaire.
+    3. Pour `dedicated-user` :
+       - **Manage Jenkins** > **Security** > **Access Control for Builds** (plugin Authorize Project)
+         est configuré pour exécuter les builds sous l'utilisateur qui les a déclenchés ou sous un
+         utilisateur précis, pas SYSTEM ;
+       - **Manage Jenkins** > **System** : des filtres de variables d'environnement sont configurés
+         pour les étapes de build (Safe Batch Environment Filter, Generic Build Step Environment
+         Filters).
+    4. Échec si un Pipeline modifiable par les utilisateurs s'exécute hors du bac à sable, si une
+       signature dangereuse est approuvée, ou, pour `{{ build_identity }}` = `dedicated-user`, si les
+       builds s'exécutent encore en SYSTEM.
+remediation:
+  manual: |
+    1. Cocher **Use Groovy Sandbox** sur chaque Pipeline défini dans l'interface ; les Pipelines
+       issus d'un Jenkinsfile en gestion de sources s'exécutent dans le bac à sable par défaut.
+    2. Révoquer les approbations dangereuses dans **In-process Script Approval** et déplacer le code
+       qui en a besoin dans une bibliothèque globale de confiance relue.
+    3. Pour `dedicated-user` : installer le plugin Authorize Project, régler **Access Control for
+       Builds** pour exécuter les builds sous l'utilisateur déclencheur ou un utilisateur dédié, et
+       configurer des filtres de variables d'environnement pour les étapes de build.
+    4. Revoir la liste des approbations selon un calendrier.

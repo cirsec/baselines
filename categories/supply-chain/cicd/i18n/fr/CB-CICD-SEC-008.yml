@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne rendre les secrets de déploiement disponibles qu'aux branches et environnements protégés
+finding:
+  title: Les identifiants de déploiement sont lisibles depuis des branches non protégées et des pipelines de merge request
+  description: N'importe quel développeur peut pousser une branche ou ouvrir une merge request dont le pipeline affiche les identifiants de production, sans revue et sans toucher à la branche protégée.
+description: |
+  Les identifiants qui atteignent la production ou d'autres cibles de déploiement sont liés à des
+  références ou environnements protégés : ils ne sont fournis qu'aux jobs qui s'exécutent sur une
+  branche ou une étiquette protégée, ou qui déclarent un environnement dont les règles de
+  protection (relecteurs obligatoires, branches autorisées) sont satisfaites. Les pipelines des
+  branches non protégées, des merge ou pull requests et des forks ne les reçoivent pas.
+
+  Quand `{{ scope_coverage }}` vaut `all-secrets`, tous les secrets, pas seulement les
+  identifiants de déploiement, sont limités à un environnement ou une branche protégés, et les
+  plates-formes qui le permettent ajoutent une restriction par expression, revendication ou
+  politique (branche, pipeline, projet) en plus de l'appartenance à un groupe.
+
+  La protection des branches elles-mêmes relève de CB-CICD-SCM-006 et CB-CICD-PIPE-008 ; les
+  restrictions par projet, de CB-CICD-SEC-007 ; les pipelines de forks, de CB-CICD-PIPE-010.
+parameters:
+  scope_coverage: deploy-credentials limite les identifiants de production et de déploiement aux branches ou environnements protégés ; all-secrets applique cette limite à tous les secrets et ajoute des restrictions par expression, revendication ou politique quand la plate-forme le permet.
+rationale: |
+  La protection des branches et la revue ne protègent la production que si les identifiants de
+  production en dépendent. Quand un secret est disponible pour tous les pipelines du projet, un
+  développeur, un compte de développeur compromis ou une dépendance malveillante dans une branche
+  de fonctionnalité peut le lire avant toute revue. Lier le secret à une référence protégée ou à un
+  environnement avec relecteurs obligatoires fait de la revue la condition d'usage de
+  l'identifiant.
+impact: |
+  Les jobs des branches de fonctionnalité ne peuvent plus déployer vers les environnements qui
+  utilisent des identifiants protégés ; les déploiements de prévisualisation ont besoin de leurs
+  propres identifiants, moins privilégiés. Sur GitLab, quiconque peut pousser ou fusionner sur une
+  branche protégée ou créer une étiquette protégée peut toujours lire les variables protégées.
+notes: |
+  Les politiques de configuration CircleCI nécessitent l'offre Scale (ou CircleCI Server 4.2 ou
+  ultérieur). Les pipelines de merge request GitLab n'atteignent les variables protégées que si le
+  réglage dédié est activé et que les deux branches sont protégées et dans le même projet ; les
+  pipelines de forks ne les atteignent jamais.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des variables CI/CD, les environnements et les
+    contextes (les valeurs ne sont pas nécessaires).
+
+    1. Lister les identifiants qui atteignent la production ou des cibles de déploiement (d'après
+       l'inventaire, CB-CICD-SEC-001).
+    2. Vérifier comment chacun est fourni :
+       - **GitLab** : sous **Settings** > **CI/CD** > **Variables** (projet, groupe, instance),
+         chaque identifiant de déploiement a **Protect variable** coché et une portée
+         **Environments** (`environment_scope`) correspondant à un environnement protégé, pas `*`.
+         Sous **Access protected resources in merge request pipelines**, **Allow merge request
+         pipelines to access protected variables and runners** est décoché sauf revue. Sur les
+         instances auto-hébergées, **Admin** > **Settings** > **CI/CD** > **Protect CI/CD variables
+         by default** est coché.
+       - **GitHub** : les identifiants de déploiement sont des secrets d'environnement, pas des
+         secrets de dépôt ou d'organisation, et les jobs qui les utilisent déclarent
+         `environment:` ; l'environnement a des règles de branches de déploiement et, pour la
+         production, des relecteurs obligatoires. L'audit zizmor `secrets-outside-env` liste les
+         secrets utilisés hors d'un environnement.
+       - **CircleCI** : les contextes de production ont des **Expression restrictions** (par
+         exemple `pipeline.git.branch == "main"`) en plus des groupes de sécurité et des
+         restrictions par projet.
+       - **Buildkite** : chaque secret Buildkite servant au déploiement a une politique d'accès
+         fondée sur des revendications de première partie, comme le pipeline et la branche
+         protégée.
+    3. Quand `{{ scope_coverage }}` vaut `all-secrets`, vérifier aussi qu'aucun secret n'est défini
+       sans environnement ou portée protégée, et :
+       - **CircleCI** (offre Scale) : une politique de configuration utilise
+         `contexts_reserved_by_branches` ou `contexts_allowed_by_project_ids` pour faire échouer les
+         pipelines qui utilisent des contextes de production hors de leurs branches ou projets.
+    4. Échec si un identifiant de déploiement est disponible pour les pipelines de branches non
+       protégées, de merge ou pull requests, ou, pour `all-secrets`, si un secret n'est pas limité
+       à un environnement ou une branche protégés.
+remediation:
+  manual: |
+    1. Protéger les branches et étiquettes qui déploient (CB-CICD-SCM-006) et créer des
+       environnements protégés pour chaque cible de déploiement.
+    2. Relier les identifiants :
+       - **GitLab** : modifier chaque variable de déploiement, cocher **Protect variable** et régler
+         **Environments** sur l'environnement cible ; protéger cet environnement. Décocher **Allow
+         merge request pipelines to access protected variables and runners**. Les administrateurs
+         d'instances auto-hébergées cochent **Protect CI/CD variables by default**.
+       - **GitHub** : créer des environnements avec règles de branches de déploiement et
+         relecteurs obligatoires, déplacer les identifiants en secrets d'environnement, ajouter
+         `environment: <nom>` aux jobs de déploiement, puis supprimer les copies de dépôt et
+         d'organisation.
+       - **CircleCI** : ajouter des **Expression restrictions** aux contextes de production ; avec
+         l'offre Scale, ajouter des politiques de configuration avec
+         `contexts_reserved_by_branches` et `contexts_allowed_by_project_ids`, en commençant en mode
+         soft-fail.
+       - **Buildkite** : ajouter à chaque secret de déploiement une politique d'accès qui le
+         restreint au pipeline et à la branche qui déploient.
+    3. Renouveler les identifiants qui étaient lisibles depuis des branches non protégées.

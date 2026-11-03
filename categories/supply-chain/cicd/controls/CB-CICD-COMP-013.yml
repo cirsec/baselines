@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-013
+title: Pin job, service and builder images to immutable versions
+finding:
+  title: Pipeline jobs run container images referenced by latest, no tag or a variable
+  description: An image referenced as `latest`, without a tag or through a variable changes whenever someone pushes to that name, so a compromised registry account or an injected variable puts attacker code in every job using it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [pinning, container-images, digest, build-environment]
+
+parameters:
+  - name: image_pin
+    type: enum
+    description: How images are referenced. `version-tag` = explicit version tag from a trusted registry, never latest, untagged or built from variables; `digest` = image digest (`@sha256:...`).
+    default: version-tag
+    profile_defaults:
+      hardened: digest
+    allowed: [version-tag, digest]
+
+description: |
+  Container images that pipelines run (job images, service containers, builder and step images,
+  pipes, container actions) come from a trusted registry and are referenced at level
+  `{{ image_pin }}`:
+  - `version-tag`: an explicit version tag; never `latest`, an omitted tag (which means
+    `latest`) or a reference assembled from pipeline variables;
+  - `digest`: an image digest (`name@sha256:<digest>`, optionally after the tag for readability).
+
+  Pipeline components other than images are covered by CB-CICD-COMP-011, and the hardening of
+  runner images by CB-CICD-RUN-021.
+rationale: |
+  An image tag is a mutable pointer like a Git tag. Whoever can push to the repository, or
+  compromises it, changes what every pipeline runs, and the job image sees the source code,
+  secrets and job token. A digest names one exact image. References built from variables can be
+  redirected by anyone who can set those variables.
+impact: |
+  Digests and exact tags must be updated on purpose; an update bot that handles image references
+  (CB-CICD-COMP-009) keeps them current. Some managed build images are only offered as moving
+  tags maintained by the vendor.
+notes: |
+  Bitbucket Pipelines uses `atlassian/default-image:latest` when no image is set. On AWS
+  CodeBuild, curated images use `imagePullCredentialsType` `CODEBUILD`, while private or
+  cross-account ECR images need `SERVICE_ROLE`. The inventory decision kept digests at hardened
+  level; an organization can raise baseline to `digest`.
+
+audit:
+  manual: |
+    Use read access to the pipeline files and project settings.
+
+    1. Search pipeline files for image references without a tag, with `latest`, built from
+       variables, or (for `digest`) without `@sha256:`. zizmor `unpinned-images` (GitHub) and
+       Checkov `CKV_GITLABCI_3`, `CKV_AZUREPIPELINES_1`, `CKV_AZUREPIPELINES_2`,
+       `CKV_CIRCLECIPIPELINES_1`, `CKV_CIRCLECIPIPELINES_2`, `CKV_BITBUCKETPIPELINES_1` help.
+    2. Places to check per platform:
+       - **GitHub**: `jobs.<id>.container.image`, `jobs.<id>.services.<id>.image` and
+         `uses: docker://...`.
+       - **GitLab**: `image:` and `services:`.
+       - **Azure DevOps**: `resources.containers[].image` and `container:`.
+       - **CircleCI**: `docker: - image:`.
+       - **Bitbucket Pipelines**: `image:` (global and per step) and `pipe:` versions.
+       - **Google Cloud Build**: `steps[].name` in `cloudbuild.yaml`.
+       - **AWS CodeBuild**: project `environment.image`.
+       - **Woodpecker**: `steps[].image`.
+    3. Fail if an image is untagged, uses `latest` or a variable-built reference, comes from an
+       untrusted registry, or, when `{{ image_pin }}` is `digest`, is not referenced by digest.
+
+remediation:
+  manual: |
+    1. Mirror the images in use into a trusted registry where possible.
+    2. Replace each reference with an explicit version tag, or with `name:tag@sha256:<digest>`
+       for `digest` (get the digest with `docker buildx imagetools inspect <image>` or the
+       registry UI).
+    3. Remove image names built from variables, or restrict those variables to fixed values.
+    4. Configure the update bot to propose image updates (Dependabot `package-ecosystem: docker`,
+       Renovate managers for CI files).
+
+references:
+  - title: Use Docker images as build environments
+    url: https://support.atlassian.com/bitbucket-cloud/docs/use-docker-images-as-build-environments/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: ProjectEnvironment (AWS CodeBuild API reference)
+    url: https://docs.aws.amazon.com/codebuild/latest/APIReference/API_ProjectEnvironment.html
+    publisher: Amazon Web Services
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Build configuration file schema
+    url: https://cloud.google.com/build/docs/build-config-file-schema
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using the Docker execution environment
+    url: https://circleci.com/docs/guides/execute/using-docker/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Checkov
+    url: https://www.checkov.io/
+    publisher: Prisma Cloud
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.1.7"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1525
+related_controls:
+  - id: CB-CICD-COMP-011
+    type: related
+  - id: CB-CICD-COMP-009
+    type: related
+  - id: CB-CICD-RUN-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

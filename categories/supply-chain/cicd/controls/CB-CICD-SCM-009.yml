@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-009
+title: Block force pushes and deletion of protected branches
+finding:
+  title: Protected branches can be force-pushed or deleted
+  description: A force push or a delete-and-recreate rewrites the history of a release branch, which can silently remove a security fix or slip in a commit that never went through review, and erases the trail investigators rely on.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [branch-protection, force-push, history-integrity, branch-deletion]
+
+description: |
+  The history of default and release branches only moves forward. Force pushes (history rewrite)
+  and deletion of these branches are denied to everyone, administrators included.
+
+  When content must really be removed from history (a leaked secret, illegal content), the
+  organization follows a documented expunging procedure: the request is recorded, an
+  administrator and a second trusted person approve and perform it, the rule is lifted only for
+  the time of the operation, and the action is logged. Who may bypass protection rules in general
+  is covered by CB-CICD-SCM-011.
+rationale: |
+  Review, signatures and audit assume that a commit, once merged, stays in the history. Rewriting
+  a protected branch breaks this: an attacker or a careless maintainer can drop a fix, replace a
+  reviewed commit with an unreviewed one that has the same message, or delete the branch and
+  recreate it from another point. Consumers that build from the branch then get code nobody
+  approved, and the evidence is gone.
+impact: |
+  Maintainers cannot clean up history on protected branches with a force push. Mistakes are fixed
+  with revert commits; true removal goes through the expunging procedure.
+notes: |
+  On GitLab, protected branches cannot be deleted with Git, but users with the Maintainer or
+  Owner role can still delete them from the web interface or API; keep that role limited
+  (CB-CICD-IAM-019). On Bitbucket Cloud, the **Allow rewriting branch history** and **Allow deleting
+  this branch** options only exist inside a branch restriction. On Azure DevOps, a branch with
+  required policies cannot be deleted.
+
+audit:
+  manual: |
+    Use a role that can read branch protection and repository security settings.
+
+    1. For each repository, open the rule protecting the default and release branches.
+    2. Check that force push and deletion are denied:
+       - **GitHub**: the ruleset enables **Block force pushes** and **Restrict deletions**, or the
+         branch protection rule has **Allow force pushes** and **Allow deletions** cleared. On
+         GitHub Enterprise Server, enterprise **Policies** > **Options** > **Force pushes** is set to
+         **Block** or **Block to the default branch**, with **Enforce on all repositories**.
+       - **GitLab**: **Settings** > **Repository** > **Branch rules**: **Allowed to force push** is
+         off for each protected branch.
+       - **Azure DevOps**: **Project settings** > **Repositories** > **Security** (all repositories
+         and each repository): **Force push (rewrite history, delete branches and tags)** is not
+         allowed for any group or user except a documented break-glass identity.
+       - **Bitbucket Cloud**: in **Branch restrictions**, **Allow rewriting branch history** and
+         **Allow deleting this branch** are cleared for the protected branches.
+       - **Bitbucket Data Center**: **Branch permissions** includes **Prevent rewriting history**
+         and **Prevent deletion** without broad exemptions.
+       - **Gitea**: the branch rule uses **Disable force push** and **Disable branch deletion**.
+    3. Check that a written expunging procedure exists, requires two people and is logged.
+    4. Fail if anyone other than a documented break-glass identity can force-push or delete a
+       protected branch, or if there is no expunging procedure.
+
+remediation:
+  manual: |
+    1. Deny force push and deletion on protected branches:
+       - **GitHub**: enable **Block force pushes** and **Restrict deletions** in the ruleset, with
+         no bypass actor; on GitHub Enterprise Server, also set the enterprise **Force pushes**
+         policy.
+       - **GitLab**: turn off **Allowed to force push** on each protected branch.
+       - **Azure DevOps**: set **Force push (rewrite history, delete branches and tags)** to **Not
+         set** for every group (it is not granted by default), and **Deny** where an inherited
+         **Allow** exists.
+       - **Bitbucket**: clear **Allow rewriting branch history** and **Allow deleting this branch**
+         (Cloud), or add **Prevent rewriting history** and **Prevent deletion** (Data Center).
+       - **Gitea**: select **Disable force push** and **Disable branch deletion**.
+    2. Write the expunging procedure: request ticket, approval by an administrator and a second
+       trusted person, temporary lifting of the rule, log of the operation, and restoration of the
+       rule.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitlab.com/user/project/repository/branches/protected/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set Git repository permissions
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/set-git-repository-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using branch permissions
+    url: https://confluence.atlassian.com/bitbucketserver/using-branch-permissions-776639807.html
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track - Safe expunging process
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.16"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.17"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: partial
+    note: Covers history preservation and safe expunging; SLSA Source L2 also requires source provenance attestations.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1565.001
+related_controls:
+  - id: CB-CICD-SCM-006
+    type: requires
+  - id: CB-CICD-SCM-010
+    type: related
+  - id: CB-CICD-SCM-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

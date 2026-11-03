@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-002
+title: Make new repositories private by default and block anonymous reads
+finding:
+  title: New repositories are public by default or readable without authentication
+  description: A repository created with the default visibility, or opened to anonymous Git reads, exposes source code, pipeline definitions, build logs and sometimes secrets to anyone who can reach the platform.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [visibility, private-by-default, anonymous-access, data-exposure]
+
+description: |
+  New repositories and projects are created private (or internal, visible only to authenticated
+  members) unless an owner deliberately makes one public. No repository can be read through Git,
+  the API or the web interface without authentication, except repositories the organization
+  publishes on purpose.
+
+  The scope is set by `{{ visibility_scope }}`:
+
+  - `repositories`: default repository and project visibility is private, and anonymous Git read
+    access is disabled.
+  - `repositories-and-accounts`: in addition, new user and organization profiles default to a
+    limited or private visibility, and self-managed Gitea or Forgejo instances force every new
+    repository to be private.
+
+  On CI servers that expose projects separately from the forge (Woodpecker), a project's
+  visibility also governs who sees its builds, logs and artifacts; it follows the same rule.
+  Instance-wide anonymous access is covered by CB-CICD-IAM-011; who may change a repository's
+  visibility afterwards by CB-CICD-SCM-003.
+rationale: |
+  Most accidental source code leaks come from a repository created public by default or made
+  readable without login for convenience. Pipeline definitions reveal internal hostnames, runner
+  labels and deployment paths, and history often still holds a credential that was "removed".
+  A private default turns publication into an explicit decision instead of an oversight.
+impact: |
+  Teams that publish open source must change the visibility explicitly, which owners can do
+  (CB-CICD-SCM-003). Tools that cloned anonymously need a read-only token or deploy key.
+notes: |
+  Azure DevOps has retired public projects: new public projects cannot be created and existing
+  ones are converted to private in 2027, so the check is only that none remain. Anonymous Git
+  read access exists only on GitHub Enterprise Server with private mode enabled and is disabled
+  by default.
+
+parameters:
+  - name: visibility_scope
+    type: enum
+    description: Whether only repository defaults, or also user and organization profile defaults, are restricted.
+    allowed: [repositories, repositories-and-accounts]
+    default: repositories
+    profile_defaults:
+      hardened: repositories-and-accounts
+
+audit:
+  manual: |
+    Use an owner or administrator role with read access to organization or instance settings.
+
+    1. List repositories and projects whose visibility is public and confirm each one is meant to
+       be published.
+    2. Check the defaults on each platform:
+       - **GitHub**: on GitHub Enterprise Server, enterprise **Policies** > **Options** >
+         **Default repository visibility** is **Private** (or **Internal**), and **Anonymous Git
+         read access** is disabled with **Prevent repository admins from changing anonymous Git
+         read access** selected. On GitHub.com, members cannot create public repositories
+         (CB-CICD-SCM-001).
+       - **GitLab**: **Admin** > **Settings** > **General** > **Visibility and access controls**:
+         default project visibility and **Default group visibility** are **Private** (or
+         **Internal**).
+       - **Azure DevOps**: no project has public visibility.
+       - **Gitea / Forgejo**: `app.ini` `[repository] DEFAULT_PRIVATE = private`; for
+         `repositories-and-accounts` also `FORCE_PRIVATE = true` and
+         `[service] DEFAULT_USER_VISIBILITY` and `DEFAULT_ORG_VISIBILITY` set to `limited` or
+         `private`.
+       - **Woodpecker**: each repository's **Settings** > **Project visibility** is **Private** or
+         **Internal** unless the project is published on purpose.
+    3. Fail if a default allows public creation, if anonymous Git read access is enabled, or if a
+       public repository or project has no recorded decision to publish it.
+
+remediation:
+  manual: |
+    1. Set private defaults:
+       - **GitHub**: on GitHub Enterprise Server, set **Default repository visibility** to
+         **Private** and disable **Anonymous Git read access** with the lock option selected; on
+         every edition, restrict public repository creation to owners (CB-CICD-SCM-001).
+       - **GitLab**: as administrator, set default project and group visibility to **Private**, and
+         add **Public** to **Restricted visibility levels** so only administrators can create public
+         projects.
+       - **Azure DevOps**: change the visibility of any remaining public project to **Private** in
+         **Project settings** > **Overview**.
+       - **Gitea / Forgejo**: set `DEFAULT_PRIVATE = private` (and `FORCE_PRIVATE = true`,
+         `DEFAULT_USER_VISIBILITY` and `DEFAULT_ORG_VISIBILITY` to `limited` or `private` for
+         `repositories-and-accounts`), then restart the service.
+       - **Woodpecker**: set **Project visibility** to **Private** or **Internal**.
+    2. Make public repositories that are not meant to be published private, and check their
+       history for secrets (CB-CICD-SEC-009).
+    3. Give tools that read anonymously a scoped read-only credential.
+
+references:
+  - title: Enforcing repository management policies in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Control access and visibility
+    url: https://docs.gitlab.com/administration/settings/visibility_and_access_controls/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security best practices
+    url: https://learn.microsoft.com/en-us/azure/devops/organizations/security/security-best-practices
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Project settings
+    url: https://woodpecker-ci.org/docs/usage/project-settings
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-011
+    type: related
+  - id: CB-CICD-SCM-001
+    type: related
+  - id: CB-CICD-SCM-003
+    type: related
+  - id: CB-CICD-PIPE-022
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

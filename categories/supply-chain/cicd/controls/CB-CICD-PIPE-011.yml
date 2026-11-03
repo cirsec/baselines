@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-011
+title: Limit pipeline triggers to the events, refs and sources each pipeline needs
+finding:
+  title: Pipelines trigger on any event, branch or source
+  description: Broad triggers (every push to every branch, implied CI triggers, issue comments, pull_request_target, any repository behind an organization webhook) let outsiders or low-privileged users start pipelines that were never meant to run in that context.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [triggers, pull-request-target, webhooks, event-filters]
+
+description: |
+  Each pipeline declares the events, branches or tags, paths and source repositories that may
+  start it, and nothing else. Events that run with elevated rights on behalf of untrusted input
+  (`pull_request_target`, `workflow_run`, issue and comment events) are blocked by policy except
+  for the workflows explicitly allowed to use them.
+
+  The expected level is `{{ trigger_scope }}`:
+
+  - `required-events`: only the events each pipeline needs, and privileged events blocked by
+    platform policy where the platform offers one;
+  - `explicit-filters`: in addition, every trigger carries explicit branch, tag or path filters,
+    implied triggers are disabled, the source integrations a project may build from are
+    allow-listed, and builds that must run cannot be skipped with a commit-message keyword.
+
+  Protection of the trigger branches is covered by CB-CICD-PIPE-008; who may start a run by
+  CB-CICD-PIPE-012; what privileged triggers may do with pull request code by CB-CICD-PIPE-014.
+rationale: |
+  Every extra trigger is another way to start a pipeline that holds credentials. Comment and issue
+  events can be raised by any user of a public repository, `pull_request_target` runs with secrets
+  on behalf of forks, and an organization-wide webhook without a repository filter builds a newly
+  created repository with the privileged project's role. Narrow triggers keep pipelines from
+  running in contexts their authors did not plan for.
+impact: |
+  Pipelines that relied on implicit triggers stop running until explicit triggers are added. GitHub
+  workflow execution protections need GitHub Team or Enterprise for private repositories, and the
+  **Evaluate** mode is only available on GitHub Enterprise Cloud.
+notes: |
+  On GitHub, an explicit event policy replaces GitHub's default policy that blocks
+  `pull_request_target` on public repositories. On AWS CodeBuild organization or global webhooks,
+  add a `REPOSITORY_NAME` filter so that a new repository cannot start a privileged build.
+
+parameters:
+  - name: trigger_scope
+    type: enum
+    description: required-events limits triggers to needed events with privileged events blocked; explicit-filters also requires explicit ref/path filters, no implied triggers and allow-listed sources.
+    allowed: [required-events, explicit-filters]
+    default: required-events
+    profile_defaults:
+      hardened: explicit-filters
+
+audit:
+  manual: |
+    Use a role that can read pipeline files, trigger settings and organization policies.
+
+    1. For each pipeline, list the events and filters that start it, and compare them with what it
+       needs. Run a workflow linter (zizmor `dangerous-triggers`) on GitHub Actions workflows.
+    2. Check the platform settings:
+       - **GitHub**: **Settings** > **Actions** > **Policies** at enterprise, organization or
+         repository level (or `/actions/policies` REST API): a workflow execution policy with
+         **Restrict events** blocks `pull_request_target` except for named workflows.
+       - **Azure DevOps**: **Organization settings** and **Project settings** > **Pipelines** >
+         **Settings** > **Disable implied YAML CI trigger** is on.
+       - **AWS CodeBuild**: webhook `filterGroups` use `EVENT` with only the needed events,
+         `HEAD_REF`/`BASE_REF` anchored patterns (for example `^refs/heads/main$`), and
+         `REPOSITORY_NAME` on organization or global webhooks.
+       - **AWS CodePipeline** (V2): `triggers[].gitConfiguration` `push` and `pullRequest` entries
+         list explicit `branches`, `tags` or `filePaths` includes; pull request triggers only exist
+         on pipelines without deployment rights.
+       - **Google Cloud Build**: trigger `includedFiles` and `ignoredFiles` filters are reviewed;
+         the organization policy `constraints/cloudbuild.allowedIntegrations` lists only approved
+         source hosts.
+       - **Buildkite**: **Pipeline Settings** > **GitHub**: builds on issue activity are off unless
+         needed, and issue content is treated as untrusted when on.
+    3. Fail if a privileged pipeline can be started by an event it does not need, if
+       `pull_request_target` or comment events are allowed without an explicit decision, or, for
+       `{{ trigger_scope }}` = `explicit-filters`, if a trigger has no ref filter, implied triggers
+       are on, or a required build can be skipped by a commit-message keyword.
+
+remediation:
+  manual: |
+    1. Rewrite pipeline triggers to the events and filters each pipeline needs, and remove unused
+       comment, issue and `pull_request_target` triggers.
+    2. Add platform policies:
+       - **GitHub**: create a workflow execution policy with **Restrict events** targeting the
+         repositories or workflow paths, starting in **Evaluate** mode where available.
+       - **Azure DevOps**: turn on **Disable implied YAML CI trigger** and add an explicit
+         `trigger:` section to each YAML pipeline.
+       - **AWS CodeBuild**: update webhook filter groups with `EVENT`, anchored `HEAD_REF` /
+         `BASE_REF` and `REPOSITORY_NAME` filters.
+       - **AWS CodePipeline**: add branch, tag and file path filters to the pipeline triggers
+         (**Edit triggers** > **Specify filter**).
+       - **Google Cloud Build**: set the `constraints/cloudbuild.allowedIntegrations` organization
+         policy to the approved source hosts.
+       - **Buildkite**: turn off builds on issue activity where not needed.
+    3. For `explicit-filters`, document which builds are mandatory and make sure they cannot be
+       skipped with `[skip ci]` keywords (for example by running them on the protected branch after
+       merge or as required status checks).
+
+references:
+  - title: Governing execution of GitHub Actions workflows
+    url: https://docs.github.com/en/actions/how-tos/administer/control-workflow-execution
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securely using pull_request_target
+    url: https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Troubleshoot pipeline triggers (Disable implied YAML CI trigger)
+    url: https://learn.microsoft.com/azure/devops/pipelines/troubleshooting/troubleshoot-triggers
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Filter GitHub webhook events in AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/github-webhook.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Add trigger with code push or pull request event types
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-filter.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Create and manage build triggers
+    url: https://docs.cloud.google.com/build/docs/automating-builds/create-manage-triggers
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Narrows the events that can start a pipeline; it does not by itself stop a malicious change on an allowed trigger.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-008
+    type: related
+  - id: CB-CICD-PIPE-012
+    type: related
+  - id: CB-CICD-PIPE-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

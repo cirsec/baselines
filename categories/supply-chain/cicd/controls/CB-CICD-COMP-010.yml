@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-010
+title: Verify the provenance of critical build tools and libraries
+finding:
+  title: Build tools and critical libraries are used without checking where they come from
+  description: Compilers, build tools and key libraries are taken from public sources as-is, so a tampered release or a compromised upstream build reaches every product built with them.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [provenance, sbom, vex, build-tools, rebuild, supply-chain]
+
+description: |
+  Tools that shape every build output (compilers, SDKs, build systems, packaging tools, base
+  runner images) and the CI components and libraries the organization rates as critical are
+  checked before use:
+  - their integrity and provenance are verified (signature, published provenance attestation or
+    checksum from an independent channel) before they enter a runner image or a mirror;
+  - critical open source libraries are either rebuilt from a mirrored, reviewed copy of their
+    source by the organization's own pipeline, or come with a signed SBOM and VEX statements from
+    the supplier;
+  - the list of critical tools and libraries, and how each one was verified, is recorded.
+
+  Signature and provenance checks for ordinary package installs are covered by CB-DEP-INV-003 and
+  CB-CICD-COMP-014; provenance of runner images by CB-CICD-RUN-028.
+rationale: |
+  Attacks on build tools and widely used libraries reach many downstream products at once, and
+  the tampering is invisible in the application's own code. Checking provenance and integrity
+  before adoption, and rebuilding the most critical inputs from reviewed source, removes trust in
+  upstream build infrastructure that the organization cannot audit.
+impact: |
+  Rebuilding libraries from source needs a dedicated pipeline, storage for mirrored sources and
+  people to maintain them; reserve it for a short list of critical inputs. Requiring signed SBOMs
+  and VEX may need contract changes with suppliers.
+notes: |
+  The OpenSSF S2C2F places rebuilding from source at its highest maturity level; treat it as a
+  target for the most critical dependencies, not for all of them.
+
+audit:
+  manual: |
+    Use read access to the runner image build definitions, the internal mirrors and the supplier
+    records.
+
+    1. Get the list of critical build tools, CI components and libraries and the record of how
+       each was verified.
+    2. For a sample, check the evidence: signature or provenance verification step in the image
+       or mirror pipeline, rebuild pipeline from mirrored source, or signed SBOM and VEX received
+       from the supplier and checked.
+    3. Fail if there is no list, if a critical tool or library enters runner images or mirrors
+       without an integrity and provenance check, or if critical third-party components come
+       with neither a rebuild from source nor a signed SBOM.
+
+remediation:
+  manual: |
+    1. Name the critical build tools, CI components and libraries with their owners.
+    2. Add verification to the paths they take into the organization: check signatures and
+       provenance attestations (for example with Sigstore `cosign verify-attestation` or the
+       vendor's checksum and signature files) in the runner image build and in mirror ingestion,
+       and stop on failure.
+    3. For the most critical open source libraries, mirror the source, review changes between
+       versions and build them in an internal pipeline that produces its own provenance.
+    4. For commercial suppliers, require a signed SBOM and VEX statements with each delivery and
+       verify the signature on receipt.
+
+references:
+  - title: Secure Supply Chain Consumption Framework (S2C2F)
+    url: https://github.com/ossf/s2c2f
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: SLSA specification v1.2
+    url: https://slsa.dev/spec/v1.2/
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-218, Secure Software Development Framework (SSDF) 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.4.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.6.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-DEP-INV-003
+    type: related
+  - id: CB-CICD-COMP-014
+    type: related
+  - id: CB-CICD-RUN-028
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

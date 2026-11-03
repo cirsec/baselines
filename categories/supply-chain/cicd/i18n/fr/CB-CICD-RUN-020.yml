@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-020
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les agents aux dépôts autorisés et aux commandes versionnées
+finding:
+  title: Les agents construisent n'importe quel dépôt et exécutent n'importe quelle commande reçue
+  description: Un agent qui clone le dépôt qu'un job lui indique et exécute la chaîne de commande qu'il reçoit exécutera le code d'un attaquant dès que quelqu'un peut créer ou modifier un pipeline, ou abuser d'un plan de contrôle compromis.
+description: |
+  Les agents Buildkite auto-hébergés n'acceptent des jobs que pour une liste de dépôts autorisés
+  (`allowed-repositories`, expressions régulières ancrées pour les dépôts de l'organisation). Quand les
+  pipelines peuvent fonctionner avec des scripts versionnés dans le dépôt, les agents tournent aussi avec
+  l'évaluation de commandes désactivée (`no-command-eval`) : ils n'exécutent que des scripts versionnés et
+  refusent les chaînes de commande arbitraires envoyées par le plan de contrôle.
+
+  Les pipelines signés, les listes de plugins autorisés et les hooks pre-bootstrap sont des contrôles
+  complémentaires côté agent (CB-CICD-PIPE-006, CB-CICD-COMP-001).
+rationale: |
+  L'agent fait confiance au plan de contrôle pour lui dire quoi cloner et exécuter. Restreindre dépôts et
+  commandes sur l'agent lui-même signifie qu'un job forgé ou modifié, issu d'un compte, d'un jeton d'API
+  ou d'un plan de contrôle compromis, ne peut pas faire récupérer à l'agent un dépôt étranger ni exécuter
+  une commande absente des sources revues.
+impact: |
+  `no-command-eval` désactive aussi les plugins et force le mode strict de surcharge du checkout ; les
+  pipelines doivent appeler des scripts du dépôt au lieu de commandes en ligne. Il ne protège pas contre
+  des modifications malveillantes du dépôt lui-même, ne contraint pas un hook `command` personnalisé, et
+  les jobs peuvent toujours être influencés par des variables d'environnement.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration des agents (`buildkite-agent.cfg`, options de
+    démarrage, variables d'environnement ou valeurs d'Agent Stack for Kubernetes).
+
+    1. Pour chaque pool d'agents, lire la configuration de l'agent.
+    2. Vérifier que `allowed-repositories` (`--allowed-repositories`, `BUILDKITE_ALLOWED_REPOSITORIES`) est
+       renseigné avec des motifs ancrés et échappés qui ne correspondent qu'aux dépôts de l'organisation.
+    3. Vérifier que `no-command-eval` (`--no-command-eval`, `BUILDKITE_NO_COMMAND_EVAL`) vaut `true` sur les
+       agents dont les pipelines n'utilisent que des scripts versionnés.
+    4. Échec si un agent accepte n'importe quel dépôt, ou si l'évaluation de commandes reste active sur des
+       agents dont les pipelines n'en ont pas besoin.
+remediation:
+  manual: |
+    1. Poser `allowed-repositories` sur chaque agent auto-hébergé, par exemple
+       `allowed-repositories="^git@github\.com:my-org/.*$"`, et l'appliquer à tous les agents d'une queue.
+    2. Déplacer les commandes en ligne des pipelines sensibles dans des scripts du dépôt, puis poser
+       `no-command-eval=true` sur leurs agents.
+    3. Compléter par un hook pre-bootstrap ou la liste de variables d'environnement autorisées pour rejeter
+       les variables d'environnement inattendues.
+    4. Redémarrer les agents et lancer les pipelines pour vérifier qu'ils passent toujours.

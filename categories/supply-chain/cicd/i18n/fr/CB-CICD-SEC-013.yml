@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Refuser l'usage inter-projets des jetons de job hors d'une liste d'autorisation explicite
+finding:
+  title: Les jetons de job de n'importe quel projet atteignent le dépôt, les paquets et les artefacts de ce projet
+  description: Quand la liste d'autorisation des jetons de job est désactivée ou que l'envoi Git avec un jeton de job est permis, un pipeline d'un projet sans lien ou compromis peut lire ou modifier ce projet avec les droits de l'utilisateur qui l'a déclenché.
+description: |
+  Un projet n'accepte les jetons de job que de ses propres pipelines et des groupes ou projets
+  d'une liste d'autorisation explicite. Les jetons de job ne peuvent pas pousser dans le dépôt,
+  sauf besoin GitOps ou de release revu, et le format du jeton est le format JWT signé quand la
+  plate-forme offre le choix.
+
+  Quand `{{ cross_project_scope }}` vaut `fine-grained`, chaque entrée de la liste d'autorisation
+  est limitée aux permissions d'API dont elle a besoin (par exemple la seule lecture des paquets),
+  et les fonctions de projet que les jetons de job de n'importe quel projet pourraient sinon
+  atteindre sur les projets publics ou internes (artefacts CI/CD, registres de conteneurs et de
+  paquets, releases, environnements, dépôt) ne sont visibles que des membres du projet.
+
+  Les permissions par défaut du jeton de job dans son propre projet relèvent de CB-CICD-SEC-012.
+parameters:
+  cross_project_scope: allowlist impose la liste d'autorisation des jetons de job, laisse désactivé l'envoi Git avec un jeton de job et utilise le format JWT ; fine-grained fixe en plus des permissions minimales pour chaque entrée de la liste et réserve les fonctions du projet aux membres.
+rationale: |
+  Un jeton de job porte les permissions de l'utilisateur qui a lancé le job. Sans liste
+  d'autorisation, tout pipeline que cet utilisateur peut exécuter, dans n'importe quel projet, peut
+  utiliser son jeton contre ce projet ; une merge request malveillante dans un projet de faible
+  valeur devient alors une porte d'entrée vers un projet de forte valeur. L'envoi Git avec un jeton
+  de job permet à un job compromis de modifier le code source sans déclencher de pipeline dans le
+  projet cible.
+impact: |
+  Les pipelines qui téléchargent des artefacts, paquets ou images d'autres projets doivent être
+  ajoutés aux listes d'autorisation de ces projets. Les outils qui poussent avec le jeton de job
+  (étiquetage de release, montée de version) ont besoin du réglage d'envoi ou d'un autre
+  identifiant.
+notes: |
+  Sur GitLab, ne pas autoriser l'envoi Git avec un jeton de job sur les miroirs en mode pull : le
+  propriétaire du dépôt amont pourrait utiliser le jeton pour pousser dans le miroir. L'ancien
+  format de jeton de job reste sélectionnable jusqu'à GitLab 20.0.
+audit:
+  manual: |
+    Utiliser le rôle Maintainer sur les projets (et un accès administrateur sur les instances
+    auto-hébergées).
+
+    1. Vérifier la liste d'autorisation et les réglages d'envoi :
+       - **GitLab** : **Settings** > **CI/CD** > **Job token permissions** : **Authorized groups and
+         projects** vaut **This project and any groups and projects in the allowlist** (API
+         `ci_job_token_scope_enabled` / GraphQL `inboundJobTokenScopeEnabled` à true) et la liste ne
+         contient que des projets au besoin documenté. **Allow Git push requests to the
+         repository** (`ci_push_repository_for_job_token_allowed`) et **Allow cross-project Git
+         push requests from allowlisted projects** sont désactivés sauf revue. Sur les instances
+         auto-hébergées, **Admin** > **Settings** > **CI/CD** > **Job token permissions** > **Enable
+         and enforce job token allowlist for all projects** est coché. Sur le groupe de premier
+         niveau, **Settings** > **CI/CD** > **General pipelines** > **Enable JWT format for CI/CD
+         job tokens** est activé.
+       - **Gitea** : **Settings** > **Actions** > **General** > **Cross-Repository Access** de
+         l'utilisateur ou de l'organisation ne liste que les dépôts privés qui doivent être lisibles
+         (par exemple des actions partagées), et les propriétaires collaborateurs des dépôts
+         privés se limitent à ceux qui en ont besoin.
+    2. Quand `{{ cross_project_scope }}` vaut `fine-grained`, vérifier aussi :
+       - **GitLab** : chaque entrée de la liste a des permissions fines (politiques de jeton de job
+         comme la lecture des paquets) plutôt que les permissions par défaut, et **Settings** >
+         **General** > **Visibility, project features, permissions** règle CI/CD, registre de
+         conteneurs, registre de paquets, releases, environnements et dépôt sur **Only project
+         members** pour les projets publics ou internes.
+    3. Échec si la liste d'autorisation est désactivée, si elle contient des projets sans besoin
+       documenté, si les jetons de job peuvent pousser sans raison revue, ou, pour `fine-grained`,
+       si des entrées ont les permissions par défaut ou si les fonctions restent visibles de tous
+       ceux qui ont accès.
+remediation:
+  manual: |
+    1. Sur GitLab :
+       - Choisir **This project and any groups and projects in the allowlist** et n'ajouter que les
+         projets qui ont besoin d'un accès inter-projets. Les administrateurs d'instances
+         auto-hébergées cochent **Enable and enforce job token allowlist for all projects**.
+       - Décocher **Allow Git push requests to the repository** et **Allow cross-project Git push
+         requests from allowlisted projects** sauf si un workflow revu en a besoin.
+       - Garder **Enable JWT format for CI/CD job tokens** activé pour le groupe de premier niveau.
+       - Pour `fine-grained`, modifier chaque entrée de la liste pour n'accorder que les
+         permissions fines nécessaires, et régler les fonctions de projet citées plus haut sur
+         **Only project members**.
+    2. Sur Gitea, retirer les dépôts de **Cross-Repository Access** et des propriétaires
+       collaborateurs sauf besoin, et n'accorder que la lecture.

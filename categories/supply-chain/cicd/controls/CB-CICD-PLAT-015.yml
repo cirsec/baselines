@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-015
+title: Manage CI/CD platform configuration as code under change control
+finding:
+  title: Platform configuration is changed by hand in the UI with no review or history
+  description: Security settings, credentials bindings and job definitions of the CI/CD tools are edited directly in the web interface; a malicious or mistaken change goes unnoticed and cannot be compared with a known good state or rolled back.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [configuration-as-code, change-control, drift-detection, jcasc, gitops]
+
+description: |
+  The configuration of each CI/CD tool (security realm and authorization, global settings,
+  plugin set, runner or agent definitions, integrations) is exported to, or defined in, files kept
+  in a protected repository. Changes go through review in that repository (CB-CICD-SCM-006,
+  CB-CICD-SCM-012). Secrets are not stored in these files: they are referenced from a secret store
+  or the platform's credential store.
+
+  Unexpected changes are detected: the running configuration is compared regularly with the
+  repository, and differences are investigated.
+
+  With `config_scope` set to `applied-from-code` (**{{ config_scope }}** here), the configuration is
+  applied only from the repository by automation (for example Jenkins Configuration as Code), and
+  manual UI changes are overwritten or blocked.
+
+  Pipeline definitions are covered by CB-CICD-PIPE-001; this control is about the configuration of
+  the platforms themselves.
+rationale: |
+  An attacker with administrator access, or a hurried administrator, can weaken authorization,
+  add a credential or install a plugin through the UI, and nothing records what the configuration
+  looked like before. Configuration as code gives a reviewed history, a known good state to compare
+  with, and a fast way to rebuild or roll back a platform after an incident.
+impact: |
+  Administrators must make changes through the repository. With `applied-from-code`, changes made
+  in the UI are lost at the next apply, which must be communicated. Exporting an existing
+  configuration takes an initial effort.
+notes: |
+  In Jenkins, Configuration as Code needs the `configuration-as-code` plugin; its YAML file is
+  located by `CASC_JENKINS_CONFIG` and can reference secrets from secret sources instead of
+  plaintext. JCasC overwrites settings changed in the UI when the configuration is reloaded.
+
+parameters:
+  - name: config_scope
+    type: enum
+    description: How strictly the configuration is managed as code. `versioned` requires the configuration to be exported or defined in a protected repository with drift checks; `applied-from-code` also requires it to be applied only from that repository.
+    allowed: [versioned, applied-from-code]
+    default: versioned
+    profile_defaults:
+      hardened: applied-from-code
+
+audit:
+  manual: |
+    Use read access to the configuration repository and an administrator view of each platform.
+
+    1. For each CI/CD platform, find the repository that holds its configuration and check its
+       branch protection and review rules.
+    2. Search the configuration files for secrets in clear text (tokens, passwords, private keys).
+    3. Compare the running configuration with the repository (export, API or UI) and look for
+       undocumented differences; check how often this comparison runs.
+    4. **Jenkins**: check that the `configuration-as-code` plugin is installed, that
+       **Manage Jenkins** > **Configuration as Code** loads its YAML from `CASC_JENKINS_CONFIG`
+       pointing to the reviewed repository, and that secrets use secret sources (`${...}`
+       references) rather than literal values. With `applied-from-code`, check that the YAML is
+       reloaded automatically from the repository and that UI changes are not kept.
+    5. Fail if a platform's configuration is not in a protected, reviewed repository, contains
+       secrets in clear text, has no drift check, or (with `applied-from-code`) can be changed
+       durably outside the repository.
+
+remediation:
+  manual: |
+    1. Export the current configuration of each platform and commit it to a protected repository
+       with mandatory review.
+    2. Replace secrets in the files with references to the secret store.
+    3. **Jenkins**: install the `configuration-as-code` plugin, use **View Configuration** to export
+       the current setup, store the YAML in the repository, and point `CASC_JENKINS_CONFIG` at it;
+       for `applied-from-code`, reload the configuration from the repository by automation after
+       each merge.
+    4. Schedule a comparison between the running configuration and the repository, and alert on
+       differences.
+    5. For `applied-from-code`, restrict UI administration to break-glass use.
+
+references:
+  - title: Configuration as Code
+    url: https://www.jenkins.io/doc/book/managing/casc/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration as Code plugin
+    url: https://plugins.jenkins.io/configuration-as-code/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure Software Development Framework (SSDF) Version 1.1 (SP 800-218)
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.6.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.9.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-CICD-PIPE-001
+    type: related
+  - id: CB-CICD-SCM-006
+    type: related
+  - id: CB-CICD-PLAT-016
+    type: related
+  - id: CB-CICD-DEPLOY-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

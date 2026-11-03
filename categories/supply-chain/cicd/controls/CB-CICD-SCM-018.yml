@@ -1,0 +1,142 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-018
+title: Require code owner review for pipeline files and sensitive paths
+finding:
+  title: Changes to pipeline definitions and security-relevant files need no review from their owners
+  description: Any approver can accept a change to a workflow file, a shared CI template or an authentication module, so a pipeline can be altered to leak secrets or skip checks without the team responsible for it seeing the change.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [code-owners, codeowners, pipeline-files, expert-review]
+
+description: |
+  Each repository names owners for the paths whose changes carry the most risk, and a merge into a
+  protected branch requires their approval when those paths change. At a minimum, owners are
+  defined for:
+
+  - pipeline definitions and included CI files (`.github/workflows/`, `.gitlab-ci.yml` and its
+    includes, `azure-pipelines*.yml`, `Jenkinsfile`, shared templates);
+  - the ownership file itself (`CODEOWNERS`);
+  - infrastructure as code, container build files and deployment manifests;
+  - security-relevant code (authentication, authorization, cryptography, input handling).
+
+  Owners are teams with the expertise to review that kind of change (platform, security, the
+  component's maintainers), not individuals, so that reviews stay possible when someone is away.
+  The general approval requirement is covered by CB-CICD-SCM-012.
+rationale: |
+  The generic approval rule accepts any reviewer with write access, often a teammate who is not
+  familiar with CI/CD or security code. Pipeline definitions are the most direct path from a code
+  change to secrets and production; requiring their owners' approval ensures that someone who
+  understands those risks reads the change. Protecting the CODEOWNERS file prevents an author from
+  removing the requirement in the same pull request.
+impact: |
+  Owner teams receive more review requests and must keep response times reasonable. The ownership
+  file needs maintenance as teams and paths change.
+notes: |
+  On GitHub, when a path has several owners, an approval from any one of them is enough; the
+  ruleset **Required reviewers** option (per-path team approvals) gives finer control where
+  available. GitHub reads `CODEOWNERS` from `.github/`, the repository root or `docs/`. On GitLab,
+  code owner approval on protected branches needs Premium. Azure Repos has no CODEOWNERS file: the
+  **Automatically included reviewers** branch policy with a path filter plays that role.
+
+audit:
+  manual: |
+    Use a role that can read repository content and branch protection settings.
+
+    1. Check that each repository has an ownership definition covering pipeline files, the
+       ownership file itself, infrastructure and security-relevant paths, assigned to teams.
+    2. Check that owner approval is required on protected branches:
+       - **GitHub**: the ruleset rule **Require a pull request before merging** enables **Require
+         review from Code Owners** (or per-path **Required reviewers**), and a valid `CODEOWNERS`
+         file exists. Allstar's `codeowners` policy and legitify help at scale.
+       - **GitLab** (Premium): a `CODEOWNERS` file covers `.gitlab-ci.yml` and included CI files,
+         and **Settings** > **Repository** > **Branch rules** > **Code owner approval** is on for
+         the protected branches.
+       - **Azure DevOps**: branch policy **Automatically included reviewers** lists the owner group
+         as **Required** with a path filter such as `/azure-pipelines*.yml;/templates/*`.
+    3. Fail if pipeline definitions or the ownership file can be changed on a protected branch
+       without approval from their owners.
+
+remediation:
+  manual: |
+    1. Write the ownership file with team owners for pipeline files, CI templates, the ownership
+       file, infrastructure and security-relevant paths.
+    2. Require owner approval:
+       - **GitHub**: enable **Require review from Code Owners** in the ruleset, or add **Required
+         reviewers** for the sensitive paths.
+       - **GitLab**: turn on **Code owner approval** for each protected branch.
+       - **Azure DevOps**: add an **Automatically included reviewers** policy with the owner group,
+         set to **Required**, and a path filter for pipeline and infrastructure files.
+    3. Give the owner teams write access to the repository so their approvals count.
+
+references:
+  - title: About code owners
+    url: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Code Owners
+    url: https://docs.gitlab.com/user/project/codeowners/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitlab.com/user/project/repository/branches/protected/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SP 800-218 Secure Software Development Framework (SSDF) Version 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.7.1"
+    relation: partial
+    note: Enforces expert review on high-risk paths; deciding which code needs which review method is left to the organization.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.7.2"
+    relation: partial
+    note: Enforces that the owners review the change; the review method itself is not checked.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.6"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: related
+  - id: CB-CICD-PIPE-003
+    type: related
+  - id: CB-CICD-PIPE-005
+    type: related
+  - id: CB-CICD-PIPE-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

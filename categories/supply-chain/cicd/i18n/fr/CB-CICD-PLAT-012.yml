@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les fonctions d'administration qui exécutent du code ou les réserver à un bris de glace journalisé
+finding:
+  title: Les fonctions de la plate-forme qui exécutent du code arbitraire sur le serveur sont largement accessibles
+  description: Consoles de script, terminaux web, hooks Git côté serveur, imports de chemins locaux ou plugins exec de kubeconfig sont ouverts à plus que quelques administrateurs ; un seul compte volé exécute des commandes sur le serveur CI/CD, lit tous les secrets stockés et rebondit vers les clusters.
+description: |
+  Les fonctions qui exécutent du code arbitraire ou lisent des fichiers sur le serveur de la
+  plate-forme ou dans les clusters gérés sont désactivées. Quand une fonction est nécessaire à
+  l'exploitation, elle est limitée à des administrateurs nommés utilisés en bris de glace, et chaque
+  usage est journalisé et revu :
+
+  - Console de script Jenkins (`/script`, `/computer/<agent>/script`) : seuls les quelques
+    détenteurs de **Overall/Administer** peuvent l'utiliser, et son usage est journalisé par la
+    piste d'audit (CB-CICD-LOG-001). Le serveur SSH (plugin sshd) est désactivé sauf besoin, et
+    l'accès CLI utilise le client à jour en HTTP ou WebSocket avec des jetons d'API.
+  - Terminal web d'Argo CD : `exec.enabled` vaut `"false"`, ou la permission RBAC `exec, create`
+    n'est accordée qu'à un rôle de bris de glace.
+  - Flux : helm-controller et kustomize-controller ne tournent pas avec
+    `--insecure-kubeconfig-exec` ni `--insecure-kubeconfig-tls`.
+  - Gitea et Forgejo : les hooks Git personnalisés côté serveur restent désactivés
+    (`DISABLE_GIT_HOOKS = true`) et l'import de chemins locaux du serveur est interdit
+    (`IMPORT_LOCAL_PATHS = false`).
+
+  Les détenteurs des droits d'administrateur de la plate-forme relèvent de CB-CICD-IAM-018 ; l'accès
+  interactif aux builds en cours de CB-CICD-RUN-025.
+rationale: |
+  Ces fonctions transforment un compte de la plate-forme en exécution de code sur le serveur. La
+  console de script Jenkins peut créer des processus, lire les fichiers de l'hôte et déchiffrer
+  chaque identifiant stocké. Le privilège de hook Git de Gitea exécute du code sous l'utilisateur du
+  service, qui peut ensuite devenir administrateur. Un terminal web Argo CD hérite du jeton de compte
+  de service du pod. Les plugins exec de kubeconfig permettent à un locataire d'exécuter un binaire
+  dans le contrôleur Flux. Chacune fait d'un seul compte hameçonné une compromission complète de la
+  chaîne CI/CD.
+impact: |
+  Les administrateurs perdent les corrections interactives rapides et doivent passer par la
+  configuration en code ou une procédure de bris de glace. Les équipes qui s'appuyaient sur des
+  hooks côté serveur doivent déplacer cette logique dans des contrôles de CI ou des règles de push.
+audit:
+  manual: |
+    Utiliser un compte administrateur avec accès en lecture à la configuration et au RBAC de la
+    plate-forme.
+
+    1. Vérifier chaque produit :
+       - **Jenkins** : lister qui détient **Overall/Administer** (ou le rôle équivalent dans la
+         stratégie d'autorisation) et vérifier qu'il s'agit d'une courte liste d'administrateurs
+         nommés ; vérifier que la piste d'audit journalise les requêtes `/script` ; dans **Manage
+         Jenkins** > **Security**, le port **SSH Server** est désactivé sauf besoin documenté ; les
+         clients CLI sont à jour et utilisent le mode HTTP ou WebSocket.
+       - **Argo CD** : `argocd-cm` `exec.enabled` est absent ou à `"false"` (défaut) ; s'il vaut
+         `"true"`, la politique `argocd-rbac-cm` n'accorde `exec, create` qu'à un rôle de bris de
+         glace.
+       - **Flux** : `kubectl describe pod -n flux-system -l app=helm-controller` (et
+         `app=kustomize-controller`) ne montre aucun argument `--insecure-kubeconfig-exec=true` ni
+         `--insecure-kubeconfig-tls=true`.
+       - **Gitea / Forgejo** : `app.ini` `[security] DISABLE_GIT_HOOKS = true` (défaut) et
+         `IMPORT_LOCAL_PATHS = false` (défaut) ; aucun utilisateur n'a le privilège de hook Git.
+    2. Rechercher dans le journal d'audit les usages de ces fonctions sur les 90 derniers jours et
+       rapprocher chacun d'un ticket ou d'un incident.
+    3. Échec si une fonction d'exécution de code est ouverte à d'autres utilisateurs que des
+       administrateurs nommés de bris de glace, ou si son usage n'est pas journalisé.
+remediation:
+  manual: |
+    Utiliser un compte administrateur de la plate-forme ; appliquer les changements par la
+    configuration en code quand elle existe (CB-CICD-PLAT-015).
+
+    1. **Jenkins** : réduire **Overall/Administer** à quelques comptes nommés (ou un compte de bris
+       de glace), installer et configurer le plugin de piste d'audit, désactiver le serveur SSH dans
+       **Manage Jenkins** > **Security** s'il ne sert pas, et mettre à jour les clients CLI.
+    2. **Argo CD** : poser `exec.enabled: "false"` dans `argocd-cm`, ou retirer `exec, create` de
+       tous les rôles sauf un rôle de bris de glace dans `argocd-rbac-cm`.
+    3. **Flux** : retirer `--insecure-kubeconfig-exec` et `--insecure-kubeconfig-tls` des arguments
+       des contrôleurs (correctifs de bootstrap ou valeurs Helm).
+    4. **Gitea / Forgejo** : poser `DISABLE_GIT_HOOKS = true` et `IMPORT_LOCAL_PATHS = false` sous
+       `[security]`, et retirer le privilège de hook Git aux utilisateurs.
+    5. Documenter la procédure de bris de glace et la revue de chaque usage.

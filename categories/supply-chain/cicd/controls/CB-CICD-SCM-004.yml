@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-004
+title: Restrict forking of private and internal repositories
+finding:
+  title: Private repositories can be forked to accounts outside the organization
+  description: A member can fork private code into a personal or external namespace where the organization's protections, audit and offboarding do not reach, and fork pull requests become a path to run modified code in the original pipelines.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [forking, private-repositories, data-exposure, fork-pull-requests]
+
+applicability:
+  versions: [github, gitlab, bitbucket, gitea, forgejo]
+
+description: |
+  Private and internal repositories cannot be forked outside the organization. The policy is set
+  by `{{ fork_policy }}`:
+
+  - `within-organization`: forks are allowed only into namespaces owned by the organization,
+    group, enterprise or workspace, never into personal or external accounts.
+  - `disabled`: forking of private and internal repositories is disabled; contributors use
+    branches in the original repository under branch protection.
+
+  The policy is set at the highest level available (enterprise, top-level group, workspace,
+  instance) so repository administrators cannot relax it. How pipelines treat pull requests from
+  forks is covered by CB-CICD-PIPE-009 and CB-CICD-PIPE-010.
+rationale: |
+  A fork in a personal namespace is a full copy of the history that escapes the organization's
+  access reviews and, on some platforms, survives the member's removal for a while. Fork pull
+  requests are also the usual way to get attacker-controlled code to run in a workflow. Keeping
+  forks inside the organization limits who can hold copies and who can open such pull requests.
+impact: |
+  Contributors who worked from personal forks must use organization-owned forks or branches.
+  With `disabled`, contribution flows that rely on forks (external contributors, inner source
+  across organizations) need another path.
+notes: |
+  Gitea has no switch that disables forking. With `MAX_CREATION_LIMIT = 0` (CB-CICD-SCM-001) and
+  `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false`, forks count against the creation limit and users
+  without an explicit quota cannot fork. Forgejo has `[repository] DISABLE_FORKS`. On Bitbucket
+  Cloud, a public repository always allows public forks, and the workspace forking policy takes
+  precedence over the repository setting.
+
+parameters:
+  - name: fork_policy
+    type: enum
+    description: Where private and internal repositories may be forked.
+    allowed: [within-organization, disabled]
+    default: within-organization
+    profile_defaults:
+      hardened: disabled
+
+audit:
+  manual: |
+    Use an owner or administrator role with read access to organization or instance settings.
+
+    1. List existing forks of private and internal repositories and note those owned by personal
+       or external namespaces.
+    2. Check the forking policy:
+       - **GitHub**: **Enterprise** > **Policies** > **Repositories** > **Repository forking**
+         (and where forks are allowed), each organization's **Settings** > **Member privileges** >
+         **Repository forking**, and each repository's **Settings** > **General** > **Allow
+         forking**. For `within-organization`, forks are limited to the organization or
+         enterprise; for `disabled`, forking of private and internal repositories is not allowed.
+       - **GitLab** (Premium): top-level group **Settings** > **General** > **Permissions and group
+         features** > **Prevent project forking outside current group** is selected. For
+         `disabled`, each project's **Settings** > **General** > **Visibility, project features,
+         permissions** > **Forks** is off.
+       - **Bitbucket Cloud**: workspace forking policy and repository **Settings** > **Repository
+         details** > **Forking** set to **Allow only private forks** (`within-organization`) or
+         **No forks** (`disabled`).
+       - **Gitea**: `app.ini` `[repository] ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` with a
+         creation limit of `0` (`disabled`).
+       - **Forgejo**: `app.ini` `[repository] DISABLE_FORKS = true` (`disabled`), or
+         `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` with a creation limit.
+    3. Fail if a private or internal repository can be forked outside the organization, or, with
+       `disabled`, if it can be forked at all.
+
+remediation:
+  manual: |
+    1. Set the policy at the highest level:
+       - **GitHub**: as enterprise owner, set **Repository forking** to allow forks only within
+         the enterprise or organization, or to disallow forking of private and internal
+         repositories; otherwise set it per organization under **Member privileges**.
+       - **GitLab**: as top-level group owner, select **Prevent project forking outside current
+         group**; for `disabled`, turn **Forks** off in each sensitive project.
+       - **Bitbucket Cloud**: set the workspace forking policy to prevent forking outside the
+         workspace, and set **Forking** to **Allow only private forks** or **No forks**.
+       - **Gitea / Forgejo**: set `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` with a creation
+         limit, or `DISABLE_FORKS = true` on Forgejo, then restart the service.
+    2. Ask owners of external forks of private repositories to delete them, and remove the
+       members' access to forks the organization cannot delete.
+
+references:
+  - title: Enforcing repository management policies in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing the forking policy for your organization
+    url: https://docs.github.com/en/organizations/managing-organization-settings/managing-the-forking-policy-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Group access and permissions
+    url: https://docs.gitlab.com/user/group/access_and_permissions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set repository privacy and forking options
+    url: https://support.atlassian.com/bitbucket-cloud/docs/set-repository-privacy-and-forking-options/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-21
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-009
+    type: related
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-SCM-001
+    type: related
+  - id: CB-CICD-RUN-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

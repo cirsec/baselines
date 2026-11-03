@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-018
+title: Do not send pipeline variables to hosts that are not approved
+finding:
+  title: Pipeline scripts send CI variables or secrets to external endpoints
+  description: A step that posts environment variables with curl or wget, or opens a netcat connection to a raw IP address, is either an exfiltration backdoor or an accident waiting to leak every secret of the job.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [exfiltration, curl, network, secrets]
+
+description: |
+  Pipeline scripts do not send CI/CD variables, secrets or job tokens to network endpoints, except
+  to reviewed hosts that need them (the registry, the cloud API, the deployment target) and that
+  are listed for the pipeline. The expected level is `{{ exfil_check }}`:
+
+  - `ci-variables`: no `curl`, `wget` or similar call carries CI variables or secrets to a host
+    outside the approved list;
+  - `any-unlisted-host`: in addition, any network call from scripts to a raw IP address or to a
+    host not on the list is flagged and justified, including `nc`/netcat connections.
+
+  Network egress filtering on runners is covered by CB-CICD-RUN-023; secrets handling inside jobs by
+  CB-CICD-SEC-023.
+rationale: |
+  The fastest way to steal CI secrets is a one-line `curl` that posts `env` to an attacker's
+  server, often hidden in a long script or a helper file. Reviewing and listing the hosts each
+  pipeline talks to turns such a line into an obvious anomaly in review and in automated scans.
+impact: |
+  Each pipeline needs a short list of the hosts it legitimately calls. Scanners flag legitimate
+  calls too, which must be reviewed once and documented.
+
+parameters:
+  - name: exfil_check
+    type: enum
+    description: ci-variables forbids sending CI variables to unlisted hosts; any-unlisted-host flags every call to raw IPs or unlisted hosts.
+    allowed: [ci-variables, any-unlisted-host]
+    default: ci-variables
+    profile_defaults:
+      hardened: any-unlisted-host
+
+audit:
+  manual: |
+    Use read access to the pipeline files and the scripts they call.
+
+    1. Search `script:` (GitLab), `run:` (GitHub Actions, CircleCI) and equivalent steps, plus
+       called shell scripts, for `curl`, `wget`, `nc`/`netcat`, `Invoke-WebRequest` and similar
+       commands. Checkov (`CKV_GITLABCI_1`, `CKV_CIRCLECIPIPELINES_5`,
+       `CKV_CIRCLECIPIPELINES_7`) flags the common patterns.
+    2. For each call, check the destination against the pipeline's approved host list and whether
+       variables, secrets or tokens are sent.
+    3. Fail if a script sends CI variables or secrets to a host not on the list, or, for
+       `{{ exfil_check }}` = `any-unlisted-host`, if any call goes to a raw IP address or an
+       unlisted host without a recorded justification.
+
+remediation:
+  manual: |
+    1. Remove calls that send variables to unknown hosts and investigate how they were introduced
+       (CB-CICD-LOG-009 if malicious).
+    2. Write the approved host list for each pipeline next to its definition.
+    3. Add a pipeline linter or a custom rule to the pipeline repository checks so new calls to
+       unlisted hosts fail review (CB-CICD-TEST-004).
+    4. Enforce the same list at network level on the runners (CB-CICD-RUN-023).
+
+references:
+  - title: GitLab CI/CD variables
+    url: https://docs.gitlab.com/ci/variables/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Checkov policy index
+    url: https://www.checkov.io/5.Policy%20Index/all.html
+    publisher: Prisma Cloud
+    kind: tool
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1041
+related_controls:
+  - id: CB-CICD-RUN-023
+    type: related
+  - id: CB-CICD-SEC-023
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

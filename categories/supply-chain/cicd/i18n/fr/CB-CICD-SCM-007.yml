@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne modifier les branches protégées que par des pull requests fusionnées
+finding:
+  title: Des utilisateurs peuvent pousser directement sur des branches protégées
+  description: Un push direct contourne la revue et les vérifications obligatoires ; un seul compte développeur ou jeton compromis suffit alors à placer du code malveillant sur la branche qui est construite et déployée.
+description: |
+  Personne ne pousse directement sur les branches par défaut et de release. Chaque modification
+  arrive par une pull request ou merge request fusionnée par un groupe défini (maintainers, équipe
+  de release ou file de fusion). La seule exception est un bot ou une application de release
+  dédiée dont les pushes se limitent aux opérations qu'elle réalise (montée de version, changelog)
+  et sont journalisés.
+
+  Les approbations obligatoires relèvent de CB-CICD-SCM-012 ; le droit de contourner les règles de
+  CB-CICD-SCM-011.
+rationale: |
+  La revue et les vérifications de statut ne s'appliquent qu'aux modifications qui passent par une
+  pull request. Si des écrivains peuvent encore pousser sur la branche protégée, toute exigence de
+  revue devient facultative : un jeton volé ou un développeur pressé peut déposer du code non revu,
+  y compris une définition de pipeline modifiée, directement sur la branche qui déploie en
+  production.
+impact: |
+  Les développeurs qui poussaient de petits correctifs directement doivent ouvrir des pull
+  requests. L'automatisation de release qui pousse des tags ou des montées de version a besoin
+  d'une identité dédiée ajoutée comme seule exception.
+notes: |
+  Sur GitLab, les utilisateurs de **Allowed to push and merge** peuvent aussi fusionner sans
+  figurer dans **Allowed to merge** ; garder cette liste à **No one** ou à un seul bot. Sur Azure
+  DevOps, une branche qui porte au moins une stratégie de branche obligatoire refuse déjà les
+  pushes directs, sauf pour les identités qui ont **Ignorer les stratégies lors de l'envoi (push)**
+  (CB-CICD-SCM-011).
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de protection de branche.
+
+    1. Pour chaque dépôt, ouvrir la règle qui protège les branches par défaut et de release
+       (CB-CICD-SCM-006).
+    2. Vérifier que les pushes directs sont refusés :
+       - **GitHub** : le ruleset active **Require a pull request before merging** (et **Restrict
+         updates** si seule une application de release peut pousser), ou la règle de protection de
+         branche active **Require a pull request before merging** et **Restrict who can push to
+         matching branches** avec une liste vide ou limitée à un bot.
+       - **GitLab** : **Settings** > **Repository** > **Branch rules** > détail de la branche :
+         **Allowed to push and merge** vaut **No one** (ou seulement une clé de déploiement ou un
+         bot), et **Allowed to merge** vaut **Maintainers** ou un groupe nommé.
+       - **Azure DevOps** : la branche porte au moins une stratégie de branche obligatoire (par
+         exemple **Exiger un nombre minimal de réviseurs**), ce qui bloque les pushes directs.
+       - **Bitbucket Cloud** : **Branch restrictions** > **Branch permissions** : **Write access**
+         est limité à personne ou au bot de release, et **Merge access via pull requests** à un
+         groupe nommé.
+       - **Bitbucket Data Center** : **Branch permissions** contient **Prevent changes without a
+         pull request** sans autre exemption que le bot de release.
+       - **Gitea / Forgejo** : la règle de branche utilise **Disable push** (ou une liste
+         d'autorisation limitée à un bot).
+    3. Passer en revue les pushes récents sur les branches protégées dans le journal d'audit et
+       confirmer que chacun vient d'une pull request fusionnée ou du bot de release.
+    4. Échec si un utilisateur humain ou un jeton à usage général peut pousser directement sur une
+       branche protégée.
+remediation:
+  manual: |
+    1. Identifier l'automatisation qui pousse directement et lui donner une identité dédiée
+       (GitHub App, bot de projet, clé de déploiement en écriture) limitée à ce dépôt.
+    2. Bloquer les pushes directs :
+       - **GitHub** : dans le ruleset, activer **Require a pull request before merging** et
+         n'ajouter l'application de release à la liste de contournement que si elle doit pousser ;
+         en protection de branche, activer **Restrict who can push to matching branches**.
+       - **GitLab** : régler **Allowed to push and merge** sur **No one** (ou le bot) et **Allowed to
+         merge** sur **Maintainers** ou le groupe de release.
+       - **Azure DevOps** : ajouter à la branche une stratégie obligatoire comme **Exiger un nombre
+         minimal de réviseurs**.
+       - **Bitbucket** : restreindre **Write access** et régler **Merge access via pull requests**
+         (Cloud), ou ajouter **Prevent changes without a pull request** (Data Center).
+       - **Gitea / Forgejo** : choisir **Disable push** dans la règle de branche.
+    3. Annoncer le changement et orienter les développeurs vers le circuit de pull request.

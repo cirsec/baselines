@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-016
+title: Use typed pipeline parameters and restrict runtime variable overrides
+finding:
+  title: Users can override pipeline variables when they start a run
+  description: Anyone who can run a pipeline can set or override variables at queue time, including variables the pipeline trusts (target environment, image, script flags, system variables), and steps can set arbitrary new variables for later steps.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [pipeline-variables, queue-time-variables, typed-inputs, logging-commands]
+
+description: |
+  Runs are parameterized through typed inputs with allowed values, a pattern or a fixed list, not
+  through free-form variables. Overriding pipeline or queue-time variables when starting a run is
+  disabled or limited to owners. Variables that must not change at run time are read-only.
+
+  The expected level is `{{ variable_override }}`:
+
+  - `restricted`: queue-time or pipeline variable override is disabled or limited to the owner
+    role, and pipelines use typed inputs;
+  - `locked`: in addition, steps cannot set arbitrary variables or call privileged logging
+    commands: the variables a step may set are explicitly listed (empty where possible) and step
+    commands run in restricted mode.
+
+  Injection of untrusted values into scripts is covered by CB-CICD-PIPE-015.
+rationale: |
+  A variable that the user starting the run can override is an input from that user. Pipelines
+  often use variables to choose the deployment target, the image, the version to publish or
+  security switches; overriding them can redirect a release or disable a check without changing
+  the pipeline file. Steps that can set variables let one compromised tool influence every later
+  step.
+impact: |
+  Runs that relied on ad hoc variable overrides need declared inputs instead. On GitLab,
+  `no_one_allowed` and `owner` can then only be changed by the Owner role.
+notes: |
+  GitLab: the default of `ci_pipeline_variables_minimum_override_role` is `no_one_allowed` for new
+  projects in new namespaces on GitLab.com and `maintainer` on GitLab Self-Managed and Dedicated.
+  The restriction does not affect project or group CI/CD variables.
+
+parameters:
+  - name: variable_override
+    type: enum
+    description: restricted limits queue-time and pipeline variable overrides and uses typed inputs; locked also restricts which variables steps may set and logging commands.
+    allowed: [restricted, locked]
+    default: restricted
+    profile_defaults:
+      hardened: locked
+
+audit:
+  manual: |
+    Use a role that can read project and organization pipeline settings.
+
+    1. Check the override settings:
+       - **GitLab**: **Settings** > **CI/CD** > **Variables** > **Minimum role to use pipeline
+         variables** (`ci_pipeline_variables_minimum_override_role` in `GET /projects/:id`) is
+         `no_one_allowed` or `owner`; on GitLab Self-Managed, **Admin** > **Settings** > **CI/CD** >
+         **Allow pipeline variables by default in new groups** is cleared. Pipelines that take
+         input use `spec:inputs` with `type`, `options` or `regex`.
+       - **Azure DevOps**: **Organization settings** and **Project settings** > **Pipelines** >
+         **Settings** > **Limit variables that can be set at queue time** is on; pipelines use
+         `parameters:` with `type` and `values`, and fixed variables are declared `readonly: true`.
+    2. For `locked`, check that **Azure DevOps** steps or templates declare `target:` with
+       `commands: restricted` and a `settableVariables:` list (empty where nothing needs to be
+       set).
+    3. Fail if users below the owner role can override pipeline variables when starting a run, if a
+       pipeline input that selects a target or a version is a free-form variable, or, for
+       `{{ variable_override }}` = `locked`, if steps can set any variable.
+
+remediation:
+  manual: |
+    1. Replace free-form run variables with typed inputs:
+       - **GitLab**: declare `spec:inputs` with `type`, `options` or `regex` in the configuration
+         and components.
+       - **Azure DevOps**: declare `parameters:` with `type` and `values`, and set `readonly: true`
+         on variables that must not change.
+    2. Restrict overrides:
+       - **GitLab**: as a Maintainer (Owner to change it back), set **Minimum role to use pipeline
+         variables** to `no_one_allowed` (or `owner`), or use the group **Start migration** action
+         for projects that do not use pipeline variables; on Self-Managed, clear **Allow pipeline
+         variables by default in new groups**.
+       - **Azure DevOps**: turn on **Limit variables that can be set at queue time**; keep only the
+         variables that must be settable marked **Let users override this value when running this
+         pipeline**.
+    3. For `locked`, add `target: { commands: restricted, settableVariables: [...] }` to Azure
+       Pipelines steps or enforce it from the extended template.
+
+references:
+  - title: GitLab CI/CD variables - restrict pipeline variables
+    url: https://docs.gitlab.com/ci/variables/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CI/CD inputs
+    url: https://docs.gitlab.com/ci/inputs/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Continuous integration and deployment admin settings
+    url: https://docs.gitlab.com/administration/settings/continuous_integration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure inputs and parameters in Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/inputs
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use templates for security in Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/templates
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-015
+    type: related
+  - id: CB-CICD-PIPE-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

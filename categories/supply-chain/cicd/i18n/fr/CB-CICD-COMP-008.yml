@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Signer les webhooks sortants et les envoyer en TLS vérifié
+finding:
+  title: Les webhooks sont envoyés sans secret ou avec la vérification des certificats désactivée
+  description: Les récepteurs de webhooks qui ne peuvent pas authentifier l'émetteur acceptent des événements forgés qui déclenchent des builds ou des déploiements, et les envois sans vérification de certificat peuvent être lus ou modifiés en transit.
+description: |
+  Les webhooks d'organisation, de groupe, de dépôt et système envoyés par la plate-forme de code :
+  - utilisent une URL `https://` avec la vérification du certificat TLS active ;
+  - portent un secret (un secret de signature HMAC quand la plate-forme en propose un) que le
+    récepteur valide avant d'agir sur le contenu ;
+  - visent uniquement des récepteurs connus ; les hooks système de l'instance ne vont qu'à des
+    points de terminaison internes de confiance comme la supervision ou le SIEM.
+
+  Le secret est aléatoire, stocké comme secret côté récepteur et jamais placé dans l'URL.
+  L'authentification des déclencheurs entrants de pipeline relève de CB-CICD-PIPE-013, et la
+  restriction des requêtes sortantes de la plate-forme de CB-CICD-PLAT-010.
+rationale: |
+  Les webhooks pilotent des déclencheurs CI, des déploiements et du chat-ops. Un récepteur qui ne
+  vérifie pas de signature peut recevoir de faux événements de push ou de release de la part de
+  quiconque connaît son URL, et le HTTP en clair ou l'absence de vérification de certificat
+  permettent à un attaquant réseau de lire les données de dépôt contenues dans les envois ou de les
+  modifier. Les hooks système voient les événements de toute l'instance et divulguent beaucoup
+  s'ils pointent au mauvais endroit.
+impact: |
+  Les récepteurs doivent être modifiés pour valider la signature ou le jeton, et des secrets
+  doivent être posés sur les webhooks existants. Les récepteurs à certificat auto-signé ont besoin
+  d'un certificat d'une autorité interne de confiance au lieu d'une vérification désactivée.
+notes: |
+  GitLab 19.0 et suivantes propose un **Signing token** (HMAC-SHA256) que GitLab recommande à la
+  place du **Secret token** transmis en clair. Les webhooks de groupe GitLab nécessitent Premium ou
+  Ultimate.
+audit:
+  manual: |
+    Utiliser un compte propriétaire d'organisation, mainteneur de projet ou administrateur
+    d'instance ; les secrets de webhook ne sont pas affichés, seulement leur présence.
+
+    1. Lister les webhooks au niveau organisation, groupe, projet et système et vérifier chacun :
+       - **GitHub** : **Settings** > **Webhooks** de l'organisation ou du dépôt, ou REST `GET
+         /orgs/{org}/hooks` et `GET /repos/{owner}/{repo}/hooks` : l'URL de destination est en
+         `https://`, `config.insecure_ssl` vaut `"0"` (vérification SSL active) et un secret est
+         défini. Des outils comme legitify, Scorecard (`Webhooks`) et Checkov `CKV_GITHUB_6` /
+         `CKV_GITHUB_7` le signalent.
+       - **GitLab** : **Settings** > **Webhooks** du projet ou du groupe et **Admin** > **System
+         hooks** : **Enable SSL verification** est coché et un **Signing token** ou un **Secret
+         token** est défini ; les hooks système ne pointent que vers la supervision ou le SIEM
+         internes.
+       - **Gitea / Forgejo** : `app.ini`, section `[webhook]`, `SKIP_TLS_VERIFY = false` ; chaque
+         webhook a un secret.
+    2. Échec si un webhook utilise `http://`, a la vérification de certificat désactivée, n'a pas
+       de secret, ou si un hook système vise un point de terminaison hors de l'ensemble interne de
+       confiance.
+remediation:
+  manual: |
+    1. Faire valider par chaque récepteur la signature (GitHub `X-Hub-Signature-256`, jeton de
+       signature GitLab) ou l'en-tête de jeton avec une comparaison en temps constant.
+    2. Mettre à jour les webhooks :
+       - **GitHub** (propriétaire d'organisation ou administrateur du dépôt) : modifier le webhook,
+         définir une URL `https://`, garder **SSL verification** active et saisir un **Secret**
+         aléatoire.
+       - **GitLab** (Maintainer ou Owner ; administrateur pour les hooks système) : choisir
+         **Generate signing token**, garder **Enable SSL verification** coché, et supprimer les
+         hooks système qui ne visent pas des points de terminaison internes de confiance.
+       - **Gitea / Forgejo** (administrateur) : garder `SKIP_TLS_VERIFY = false` et poser un secret
+         sur chaque webhook.
+    3. Renouveler les secrets de webhook quand les récepteurs ou les responsables changent.

@@ -1,0 +1,170 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-003
+title: Stream CI/CD audit logs continuously to the central SIEM
+finding:
+  title: CI/CD audit logs stay inside each platform
+  description: Audit events are only viewable in each vendor's console for a limited time; they expire before an intrusion is discovered, cannot be correlated with identity and cloud logs, and an attacker with admin rights on the platform can hide in them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [siem, log-streaming, audit-log, centralization, retention]
+
+description: |
+  Audit events of every CI/CD system are exported continuously (streaming, forwarding or a
+  scheduled export of at most a few hours) to the organization's SIEM or central log platform, where
+  they are kept beyond the vendor's retention window and correlated with identity provider, cloud
+  and endpoint logs.
+
+  The export uses the vendor's native mechanism where one exists (audit log streaming, syslog
+  forwarding, cloud audit log sinks). Its health is monitored: a stopped stream raises an alert,
+  since most products keep only a short buffer.
+
+  Which events are recorded is covered by CB-CICD-LOG-001, how long they are kept and protected by
+  CB-CICD-LOG-005, and alert rules by CB-CICD-LOG-006.
+rationale: |
+  Native audit retention is short (for example 90 days in Azure DevOps and AWS CloudTrail event
+  history, 180 days in the GitHub web interface and 7 days for Git events), while CI/CD intrusions
+  are often discovered months later. A copy outside the platform also survives an administrator
+  account compromise and lets analysts follow a stolen token from the identity provider to the
+  pipeline and to the cloud account it reached.
+impact: |
+  Native streaming often requires a higher edition (GitHub Enterprise Cloud, GitLab Ultimate,
+  Atlassian Guard for Bitbucket, CircleCI Scale plan, Buildkite Enterprise for the audit log) and
+  adds SIEM ingestion costs. Streaming is not retroactive: events before the stream starts are not
+  sent.
+notes: |
+  Bitbucket Cloud exposes its full audit log through Atlassian Guard once the workspace is linked to
+  the Atlassian organization; events from before the link are not populated. Harness streams its
+  audit trail from **Account Settings** > **Security and Governance** > **Audit Trail** > **Audit Log
+  Streaming**.
+
+audit:
+  manual: |
+    Use an administrator or auditor role on each platform, and read access to the SIEM.
+
+    1. For each CI/CD system in the inventory, find the export mechanism and check in the SIEM that
+       events from the last 24 hours are present.
+    2. Check the native configuration:
+       - **GitHub Enterprise Cloud**: enterprise **Settings** > **Audit log** > **Log streaming** has
+         an active stream (Splunk, Azure Event Hubs, Azure Blob Storage, Amazon S3, Google Cloud
+         Storage, Datadog or Microsoft Purview) and no health warning.
+       - **GitHub Enterprise Server**: **Management Console** > **Monitoring** > **Enable log
+         forwarding** is selected, with TLS and the receiver's CA certificate.
+       - **GitLab**: group or instance **Secure** > **Audit events** > **Streams** has an HTTP,
+         Amazon S3 or Google Cloud Logging destination (Ultimate); HTTP destinations verify the
+         token header.
+       - **Azure DevOps**: **Organization settings** > **Auditing** > **Streams** has a Splunk,
+         Azure Monitor Logs or Event Grid stream that is enabled.
+       - **Bitbucket Cloud**: the workspace is linked to the Atlassian organization and the Atlassian
+         Guard audit log is exported to the SIEM.
+       - **CircleCI**: **Organization Settings** > **Security** > **Audit Logs** > **Stream audit
+         logs** sends to an S3 or S3-compatible bucket read by the SIEM (Scale plan).
+       - **Buildkite**: the Amazon EventBridge integration streams audit log events (Enterprise
+         plan) to the SIEM.
+       - **TeamCity**: the audit records (**Administration** > **Audit**, also written to the server
+         log) and the server logs are shipped to the SIEM.
+       - **AWS CodeBuild / CodePipeline / CodeArtifact**: a CloudTrail trail (organization trail
+         preferred) delivers management events to a protected bucket and the SIEM; CloudTrail event
+         history alone (90 days) is not enough.
+       - **Google Cloud Build**: a log sink routes `cloudbuild.googleapis.com` audit logs (Admin
+         Activity, and Data Access if enabled) to the central project or SIEM.
+       - **Argo CD**: `argocd-server` logs (including the `security` field) and the Kubernetes events
+         of Applications are collected by the cluster log pipeline and kept in the SIEM.
+    3. Check that a stopped or failing stream triggers an alert.
+    4. Fail if a CI/CD system's audit events are not exported to the SIEM, if the export is more
+       than a day behind, or if stream failures go unnoticed.
+
+remediation:
+  manual: |
+    1. Prepare an ingestion endpoint in the SIEM (HTTP collector, bucket, event hub) with
+       authentication and TLS.
+    2. Configure the native export of each platform:
+       - **GitHub Enterprise Cloud**: in enterprise **Settings** > **Audit log** > **Log
+         streaming**, configure a stream to a supported endpoint and keep SSL verification on.
+       - **GitHub Enterprise Server**: in **Management Console** > **Monitoring**, select **Enable
+         log forwarding**, set the server address, enable TLS and upload the CA certificate.
+       - **GitLab**: in **Secure** > **Audit events** > **Streams**, add a destination at the
+         top-level group or instance.
+       - **Azure DevOps**: in **Organization settings** > **Auditing** > **Streams**, create a stream
+         to the SIEM.
+       - **Bitbucket Cloud**: link the workspace to the Atlassian organization and export the
+         Atlassian Guard audit log.
+       - **CircleCI**: in **Organization Settings** > **Security** > **Audit Logs**, select
+         **Stream audit logs** and configure the bucket with OIDC.
+       - **Buildkite**: enable the Amazon EventBridge integration and route audit events to the
+         SIEM.
+       - **TeamCity**: ship the server logs, including audit records, with the log agent.
+       - **AWS**: create an organization CloudTrail trail to a protected bucket and forward it.
+       - **Google Cloud Build**: create a log sink for the Cloud Build audit logs to the central
+         project.
+       - **Argo CD**: collect `argocd-server` logs and Application events with the cluster log
+         agent.
+    3. Add a SIEM alert on missing data from each source.
+
+references:
+  - title: Streaming the audit log for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/streaming-the-audit-log-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Log forwarding (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/monitoring-activity-in-your-enterprise/exploring-user-activity-in-your-enterprise/log-forwarding
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Audit event streaming
+    url: https://docs.gitlab.com/user/compliance/audit_event_streaming/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Create audit streaming (Azure DevOps)
+    url: https://learn.microsoft.com/en-us/azure/devops/organizations/audit/auditing-streaming
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Audit logs (CircleCI)
+    url: https://circleci.com/docs/guides/security/audit-logs/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Cloud Build audit logging
+    url: https://cloud.google.com/build/docs/securing-builds/audit-logs
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: partial
+    note: Covers centralizing audit logs; recording, retention and alerting are covered by the other LOG controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-6(3)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-4(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+related_controls:
+  - id: CB-CICD-LOG-001
+    type: related
+  - id: CB-CICD-LOG-005
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-RUN-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les tags de release contre la création, le déplacement et la suppression
+finding:
+  title: Les tags de release peuvent être créés, déplacés ou supprimés par n'importe quel écrivain
+  description: Toute personne ayant un accès en écriture peut créer un tag de release qui déclenche un pipeline de production, ou déplacer un tag existant vers un commit malveillant pour que tous les consommateurs figés sur ce tag reçoivent discrètement le nouveau code.
+description: |
+  Les tags qui identifient les releases (par exemple `v*`) sont protégés : seuls l'équipe de release
+  ou l'automatisation de release peuvent les créer, et personne ne peut les déplacer (mise à jour
+  ou push forcé) ni les supprimer une fois créés. La protection s'applique à tout dépôt qui publie
+  des releases ou qui est consommé par tag, y compris les dépôts de composants CI et d'actions
+  réutilisables.
+
+  Les enregistrements et artefacts de release immuables relèvent de CB-CICD-ART-012 ; le figeage des
+  composants consommés sur des références immuables de CB-CICD-COMP-011.
+rationale: |
+  Dans Git, les tags sont modifiables par défaut. Plusieurs attaques de chaîne d'approvisionnement
+  visant des composants CI ont consisté à faire pointer des tags de version existants vers un commit
+  malveillant : chaque workflow qui référençait le composant par tag a exécuté le code de
+  l'attaquant à l'exécution suivante. Sur les plates-formes qui donnent les variables et runners
+  protégés aux tags protégés, quiconque peut créer un tel tag atteint aussi les secrets de
+  production.
+impact: |
+  Les responsables de release ne peuvent plus corriger un tag erroné en le déplaçant ; ils publient
+  une nouvelle version. L'automatisation qui crée les tags doit être le créateur autorisé.
+notes: |
+  Les tags protégés de GitLab limitent la création et la suppression à la liste **Allowed to
+  create** ; la suppression n'est possible que par l'interface ou l'API. Sur Gitea et Forgejo, un
+  tag protégé dont la liste d'autorisation est vide bloque la création et la modification pour
+  tous. Azure DevOps n'a pas de règle de tag : les permissions de dépôt **Créer une balise** et
+  **Forcer l'envoi (push)** sont les seuls leviers.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les règles de dépôt et les réglages de tags protégés.
+
+    1. Lister les dépôts qui publient des releases ou sont consommés par tag, et leur motif de tag
+       de release.
+    2. Vérifier la protection des tags :
+       - **GitHub** : un ruleset de tags (**Rules** > **Rulesets** du dépôt ou de l'organisation)
+         ciblant les motifs de release est **Active** et active **Restrict creations**, **Restrict
+         updates**, **Restrict deletions** et **Block force pushes**, avec seulement l'équipe ou
+         l'application de release dans la liste de contournement.
+       - **GitLab** : **Settings** > **Repository** > **Protected tags** liste le motif de release
+         (par exemple `v*`) avec **Allowed to create** réglé sur Maintainers ou le groupe de
+         release, et la règle de push **Do not allow users to remove Git tags with `git push`** est
+         activée (Premium).
+       - **Gitea / Forgejo** : **Settings** > **Tags** contient une règle de tag protégé pour le
+         motif de release avec seulement les utilisateurs ou équipes de release autorisés.
+       - **Azure DevOps** : sur la page **Sécurité** du dépôt, **Créer une balise** est limité au
+         groupe de release et **Forcer l'envoi (push) (réécrire l'historique, supprimer des branches
+         et des balises)** n'est pas accordé.
+    3. Comparer les tags de release existants aux commits enregistrés au moment de la release
+       (notes de version, provenance) pour détecter les tags déplacés.
+    4. Échec si un tag de release peut être créé par n'importe quel écrivain, ou déplacé ou
+       supprimé par qui que ce soit.
+remediation:
+  manual: |
+    1. Protéger les motifs de tags de release :
+       - **GitHub** : créer un ruleset de tags ciblant les motifs de release, activer **Restrict
+         creations**, **Restrict updates**, **Restrict deletions** et **Block force pushes**, ajouter
+         l'application ou l'équipe de release à la liste de contournement pour la création, et le
+         passer en **Active**. Activer les releases immuables là où elles sont disponibles.
+       - **GitLab** : ajouter un tag protégé pour le motif de release avec **Allowed to create**
+         réglé sur le groupe de release, et activer la règle de push qui bloque la suppression des
+         tags.
+       - **Gitea / Forgejo** : ajouter une règle de tag protégé dans **Settings** > **Tags** avec les
+         utilisateurs ou équipes de release.
+       - **Azure DevOps** : limiter **Créer une balise** au groupe de release et laisser **Forcer
+         l'envoi (push)** non défini.
+    2. Faire créer les tags par le pipeline de release avec sa propre identité.
+    3. Si un tag a été déplacé, publier une nouvelle version, prévenir les consommateurs et
+       enquêter sur la modification.

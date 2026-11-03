@@ -1,0 +1,172 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-014
+title: Read source code with read-only, repository-scoped machine credentials
+finding:
+  title: CI/CD and GitOps tools read repositories with broad or writable credentials
+  description: A personal token, a user key or a read-write deploy key used for checkout lets anyone who can run a job or reach the tool push code or read every repository the credential can see.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [source-access, deploy-keys, github-app, gitops, least-privilege]
+
+description: |
+  The credentials that CI/CD servers, runners and GitOps controllers use to fetch source code are
+  machine credentials (app installation tokens, read-only deploy keys, connections managed by the
+  platform), not personal tokens or user keys. They are read-only unless the tool must write back
+  (image automation, release tagging), and they reach only the repositories the tool builds or
+  deploys. Short-lived tokens are preferred over stored keys.
+
+  When `{{ scope }}` is `per-repository`, tools that discover and build many repositories from one
+  configuration (Jenkins organization folders, multibranch pipelines) use a credential limited to
+  each repository, and agents check out with short-lived app tokens instead of SSH keys stored on
+  every agent.
+
+  Tokens jobs use to call the platform are covered by CB-CICD-SEC-002; integrations between CI and
+  SCM platforms by CB-CICD-COMP-007; host key verification by CB-CICD-SEC-019.
+parameters:
+  - name: scope
+    type: enum
+    description: read-only uses read-only machine credentials (deploy keys, app tokens) and no personal tokens; per-repository also limits multi-repository scan credentials to one repository each and replaces agent SSH keys with short-lived app checkout tokens.
+    allowed: [read-only, per-repository]
+    default: read-only
+    profile_defaults:
+      hardened: per-repository
+rationale: |
+  Checkout credentials are present on every runner and in every GitOps controller, often in
+  places many people can reach. A write-capable credential there lets a compromised job or
+  controller push malicious commits; a broad one lets it read every private repository of the
+  account. On Jenkins, anyone who can edit a `Jenkinsfile` built by an organization folder can use
+  its scan credential arbitrarily, so a broad credential extends write access on one repository to
+  all of them.
+impact: |
+  Separate keys or app installations per repository are more to manage; GitHub Apps and platform
+  connections reduce that work. Write-back tools need a dedicated, separately scoped credential.
+
+audit:
+  manual: |
+    Use a role that can read source credentials in each tool and the deploy keys or app
+    installations on the Git platform.
+
+    1. List the credentials each tool uses to read repositories, and for each one check its type,
+       write permission and repository scope on the Git platform:
+       - **GitHub** (Actions): `actions/create-github-app-token` steps set `repositories:` (or
+         `owner:` with explicit repositories) and `permission-<name>:` inputs; without them the
+         token covers every repository of the installation with all of the app's permissions.
+       - **AWS CodeBuild**: `aws codebuild list-source-credentials` shows the `authType` of stored
+         source credentials; projects connect through CodeConnections or OAuth, not
+         `PERSONAL_ACCESS_TOKEN` or `BASIC_AUTH`. Security Hub control CodeBuild.1 flags tokens or
+         passwords in Bitbucket source URLs.
+       - **Argo CD**: secrets labelled `argocd.argoproj.io/secret-type: repository` or `repo-creds`
+         use a GitHub App with read-only **Contents** permission, a read-only deploy key or a
+         workload identity, not a personal token; credential templates (`repo-creds`) use a URL
+         prefix that matches only the intended repositories.
+       - **Flux**: `GitRepository` objects reference a `spec.secretRef` holding a deploy key that is
+         read-only on the Git platform, unless image automation writes to that repository;
+         `flux bootstrap` creates a read-only key unless `--read-write-key=true` was used.
+       - **CircleCI**: projects use the checkout key CircleCI creates (scoped to one repository and
+         read-only) and additional SSH keys added as read-only deploy keys; no **user key** is
+         used unless needed and reviewed.
+       - **Jenkins**: Branch Source credentials of organization folders and multibranch pipelines
+         are a GitHub App or token restricted to the needed repositories and permissions, not a
+         personal token of an administrator.
+       - **TeamCity**: VCS roots authenticate with a read-only account, deploy key or app
+         connection, not a personal account with write access.
+       - **Buildkite**: self-hosted agents do not hold SSH keys with write access; checkout keys
+         come from `checkout.ssh_secret` or the queue's GitHub App token checkout.
+    2. When `{{ scope }}` is `per-repository`, also check:
+       - **Jenkins**: each organization folder uses a GitHub App whose installation or repository
+         access strategy limits the token to the repository being built.
+       - **Buildkite**: queues used for GitHub repositories have **GitHub App token checkout**
+         enabled, which gives each job a short-lived read-only token.
+    3. Fail if a checkout credential belongs to a person, can write without a documented
+       write-back need, or reaches repositories the tool does not use.
+
+remediation:
+  manual: |
+    1. Replace personal and writable credentials with read-only machine credentials:
+       - **GitHub**: add `repositories:` and `permission-contents: read` (and other minimal
+         `permission-<name>:` inputs) to `actions/create-github-app-token` steps.
+       - **AWS CodeBuild**: create a connection with CodeConnections (or connect with OAuth) and
+         switch projects to it; delete stored personal access tokens with
+         `aws codebuild delete-source-credentials`.
+       - **Argo CD**: register repositories with a GitHub App limited to read-only contents or a
+         read-only deploy key; narrow credential template URL prefixes.
+       - **Flux**: rotate the deploy key with a read-only one; keep a separate read-write key only
+         for repositories that image automation updates.
+       - **CircleCI**: remove user keys, add read-only deploy keys for additional repositories.
+       - **Jenkins**: switch Branch Sources to a GitHub App credential with repository and
+         permission restrictions.
+       - **TeamCity**: change VCS roots to a read-only account or deploy key.
+    2. When `{{ scope }}` is `per-repository`, configure Jenkins organization folders to mint
+       repository-scoped app tokens, and enable GitHub App token checkout on Buildkite queues, then
+       remove SSH keys from agents.
+    3. Revoke the replaced credentials.
+
+references:
+  - title: Making authenticated API requests with a GitHub App in a GitHub Actions workflow
+    url: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Hub CSPM controls for CodeBuild
+    url: https://docs.aws.amazon.com/securityhub/latest/userguide/codebuild-controls.html
+    publisher: Amazon Web Services
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Private repositories
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux bootstrap for GitHub
+    url: https://fluxcd.io/flux/installation/bootstrap/github/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing SCM credentials for Organization Folders and Multibranch Pipelines
+    url: https://www.jenkins.io/doc/book/security/securing-org-folders-and-multibranch-pipelines/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Code access for self-hosted agents
+    url: https://buildkite.com/docs/agent/self-hosted/code-access
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the credentials used to read source code.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-SEC-019
+    type: related
+  - id: CB-CICD-COMP-007
+    type: related
+  - id: CB-CICD-DEPLOY-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

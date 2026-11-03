@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-010
+title: Restrict platform membership and notifications to corporate email domains
+finding:
+  title: Platform accounts and security notifications use personal email addresses
+  description: Members registered with personal email addresses escape corporate controls, and security alerts or code excerpts sent by email end up in mailboxes the organization does not control.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [email-domain, membership, notifications, verified-domain]
+
+description: |
+  Membership of CI/CD organizations, groups and accounts is limited to users whose email address is
+  in a verified corporate domain, and platform notifications that can contain code, vulnerabilities
+  or secrets are sent only to those domains. Exceptions (contractors with their own domain) are
+  approved and listed.
+
+  Self-registration on self-managed platforms is covered by CB-CICD-IAM-009, external collaborators by
+  CB-CICD-IAM-023.
+rationale: |
+  An email domain restriction stops someone from being added to a group with a personal or
+  look-alike address, which typically bypasses the identity provider and its leaver process. Email
+  notifications carry pull request diffs, security alerts and sometimes secret scanning findings;
+  sending them to personal mailboxes leaks that content outside the organization and keeps it there
+  after the person leaves.
+impact: |
+  Existing members with a non-corporate primary email must change it before the restriction applies
+  to them. Contractors need their own domain added or must use a corporate account.
+notes: |
+  On GitHub the setting only restricts where notifications are sent; it does not prevent a member
+  from using a personal account. Use it together with SAML SSO or Enterprise Managed Users
+  (CB-CICD-IAM-001); on its own it gives partial coverage of this control.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. Check the restriction:
+       - **GitLab**: top-level group **Settings** > **General** > **Permissions and group features** >
+         **Restrict membership by email domain** lists the corporate domains (Premium).
+       - **Harness**: **Account Settings** > **Authentication** > **Only allow users with the
+         following email domains** is set to the corporate domains.
+       - **GitHub**: **Organization settings** (or **Enterprise settings**) > **Verified and approved
+         domains** lists the corporate domains as verified, and **Restrict email notifications to
+         only approved or verified domains** is selected (GitHub Enterprise Cloud).
+    2. List members whose primary email is outside the allowed domains.
+    3. Fail if membership is not restricted to corporate domains where the platform supports it, or
+       if notifications can go to unverified domains.
+
+remediation:
+  manual: |
+    1. Verify the corporate domains on the platform (DNS TXT record where required).
+    2. Apply the restriction:
+       - **GitLab**: enter the domains in **Restrict membership by email domain** (group Owner).
+       - **Harness**: enable **Only allow users with the following email domains** and add the
+         domains (account administrator).
+       - **GitHub**: add and verify the domains, then select **Restrict email notifications to only
+         approved or verified domains** (organization or enterprise owner).
+    3. Ask members with personal addresses to switch, or remove them.
+
+references:
+  - title: Restrict group access by domain (GitLab)
+    url: https://docs.gitlab.com/user/group/access_and_permissions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Harness authentication - restrict email domains
+    url: https://developer.harness.io/harness-platform/use-harness-platform/authentication.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restricting email notifications for your organization
+    url: https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-security-settings-for-your-organization/restricting-email-notifications-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.9"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-009
+    type: related
+  - id: CB-CICD-IAM-023
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

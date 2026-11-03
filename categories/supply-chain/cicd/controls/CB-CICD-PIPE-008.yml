@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-008
+title: Protect every branch that can trigger a pipeline with secrets
+finding:
+  title: Pipelines with secrets can be triggered from unprotected branches
+  description: A pipeline whose trigger filter matches branches that branch protection does not cover (for example `release/*` while only `main` is protected) lets anyone with push access run it with production secrets from a branch nobody reviewed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [branch-protection, triggers, poisoned-pipeline-execution]
+
+description: |
+  For every pipeline that can use secrets, deployment credentials or write tokens, the set of
+  branches and tags that can trigger it is covered one to one by branch and tag protection: each
+  trigger pattern (`main`, `release/*`, `v*` tags...) matches a protection rule that requires
+  review and blocks direct pushes. When a new trigger pattern is added, the protection rule is
+  added at the same time.
+
+  The content of branch protection rules is covered by CB-CICD-SCM-006 to CB-CICD-SCM-010; reviewed
+  pipeline definitions by CB-CICD-PIPE-005.
+rationale: |
+  Branch protection and pipeline triggers are usually configured in different places by different
+  people. When they drift apart, a branch that is not protected still starts the privileged
+  pipeline, and the attacker only needs push rights to run their code with the pipeline's
+  credentials.
+impact: |
+  Teams that push directly to trigger branches must go through pull requests.
+
+audit:
+  manual: |
+    Use a role that can read pipeline files, trigger settings and branch protection rules.
+
+    1. For each pipeline with secrets or deployment rights, list its branch and tag trigger
+       patterns (workflow `on:` filters, `rules:`/`workflow:rules`, `trigger:`/`pr:` sections,
+       webhook filter groups, trigger settings in the UI).
+    2. List the branch and tag protection rules of the repository.
+    3. Fail if a trigger pattern matches a branch or tag that no protection rule covers, or if a
+       privileged pipeline has no branch filter at all.
+
+remediation:
+  manual: |
+    1. Narrow trigger filters of privileged pipelines to the branches and tags that really need
+       them.
+    2. Add a branch or tag protection rule for each remaining pattern, with required review and no
+       direct push (CB-CICD-SCM-006, CB-CICD-SCM-010).
+    3. Where the platform supports it, also scope the secrets to protected refs or environments
+       (CB-CICD-SEC-008), so a missed pattern does not expose them.
+
+references:
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers trigger branches that escape protection; other poisoned pipeline paths are covered by other PIPE controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SCM-006
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-PIPE-005
+    type: related
+  - id: CB-CICD-PIPE-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-019
+title: Limit repository and project administrators to a few named owners
+finding:
+  title: Many users hold admin or owner rights on individual repositories
+  description: Repository admins and project owners can remove branch protection, change pipeline settings and read or replace CI/CD variables, so each extra one is another account that can bypass review.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [repository-admin, project-owner, least-privilege, branch-protection]
+
+applicability:
+  versions: [github, gitlab]
+
+description: |
+  Each repository or project has a small number of administrators (two to three, so that one absence
+  does not block changes), named and accountable. Other contributors get write or maintain access
+  through teams or groups. Owner and Maintainer roles on GitLab count as administrators for this
+  purpose, since both can change protection and CI/CD settings.
+
+  Organization and instance administrators are covered by CB-CICD-IAM-018.
+rationale: |
+  Repository administrators can disable branch protection, push directly, change who approves, add
+  deploy keys and webhooks, and on GitLab Maintainers can read unmasked CI/CD variables and edit
+  protected branch settings. Spread across many accounts, these rights make review and approval
+  rules easy to bypass.
+impact: |
+  Users losing admin or maintainer rights may need a team owner to make settings changes on their
+  behalf.
+
+audit:
+  manual: |
+    Use an organization owner or group owner role.
+
+    1. List administrators per repository or project:
+       - **GitHub**: **Repository settings** > **Collaborators and teams** filtered on **Admin**, or
+         `GET /repos/{owner}/{repo}/collaborators?permission=admin`. Allstar's admin policy can flag
+         repositories without a team or user admin.
+       - **GitLab**: project **Manage** > **Members** filtered on Owner and Maintainer, or
+         `GET /projects/:id/members/all`.
+    2. Fail if a repository or project has more administrators (Owner plus Maintainer on GitLab) than
+       the documented maximum, or none.
+
+remediation:
+  manual: |
+    1. For each repository or project, name two or three administrators.
+    2. Lower the others to write or maintain (GitHub) or Developer (GitLab), granted through a team or
+       group.
+    3. Add the list to the access review (CB-CICD-IAM-026).
+
+references:
+  - title: Repository roles for an organization (GitHub)
+    url: https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/repository-roles-for-an-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Roles and permissions (GitLab)
+    url: https://docs.gitlab.com/user/permissions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Allstar
+    url: https://github.com/ossf/allstar
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.7"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: partial
+    note: Covers administrative rights at repository and project level only.
+related_controls:
+  - id: CB-CICD-IAM-018
+    type: related
+  - id: CB-CICD-SCM-011
+    type: related
+  - id: CB-CICD-IAM-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

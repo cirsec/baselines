@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-013
+title: Start each job from a clean workspace on reused runners
+finding:
+  title: Jobs on reused runners inherit the previous job's workspace
+  description: When a runner reuses the checkout and build directories, a job can read files, Git history and outputs left by another project's job, or leave modified sources and binaries that the next build picks up.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [runners, workspace, clean-checkout, isolation]
+
+description: |
+  On runners that are reused between jobs, every job starts from a clean checkout: the source
+  directory is deleted or cloned from scratch, build output directories are recreated, and no
+  writable volume is shared between jobs of different pipelines. Release and deployment builds, and
+  builds of untrusted code, always use a clean checkout.
+
+  This control applies only where runners are not ephemeral; CB-CICD-RUN-012 removes the need for it.
+  Dependency caches are covered by CB-DEP-CI-004.
+rationale: |
+  An incremental checkout keeps whatever the previous job wrote: modified sources, extra files that
+  the build picks up, Git objects of other branches, submodules. A malicious job can plant code that
+  ends up in the next release, and a later job can read data it should not see.
+impact: |
+  Clean checkouts are slower for large repositories. Shallow clones and dedicated caches reduce the
+  cost.
+notes: |
+  GitLab's `fetch` strategy reuses the working copy and is safe only when everyone with access to the
+  shared environment is trusted. Azure Pipelines YAML checkouts default to `clean: true`, but the
+  pipeline setting and runtime parameters can change it.
+
+audit:
+  manual: |
+    Use read access to pipeline definitions and project settings.
+
+    1. List the persistent runners and the pipelines that use them.
+    2. Per product:
+       - **GitLab**: jobs on shared persistent runners use `GIT_STRATEGY: clone` (in `.gitlab-ci.yml`
+         or the project setting **Settings** > **CI/CD** > **General pipelines** > **Git strategy**);
+         static hosts set `FF_ENABLE_JOB_CLEANUP`.
+       - **Azure DevOps**: release and pull request jobs on self-hosted agents set
+         `workspace: clean: all` on the job, and `checkout` steps keep `clean: true`.
+       - **TeamCity**: release and deployment build configurations enforce a clean checkout.
+       - **Buildkite**: steps that build untrusted code set `BUILDKITE_CLEAN_CHECKOUT: true`.
+       - **Tekton**: writable workspaces use a `volumeClaimTemplate` per run, not a
+         `persistentVolumeClaim` shared by pipeline runs.
+    3. Fail if a release, deployment or untrusted build on a reused runner starts from a previous
+       job's workspace, or if pipelines of different trust levels share a writable volume.
+remediation:
+  manual: |
+    1. Prefer ephemeral runners (CB-CICD-RUN-012). Where runners stay persistent:
+       - **GitLab**: set `GIT_STRATEGY: clone` for jobs on shared runners and enable
+         `FF_ENABLE_JOB_CLEANUP` on static runners.
+       - **Azure DevOps**: add `workspace: clean: all` to release and pull request jobs.
+       - **TeamCity**: turn on clean checkout for release and deployment build configurations.
+       - **Buildkite**: set `BUILDKITE_CLEAN_CHECKOUT: true` in the `env` of untrusted steps.
+       - **Tekton**: replace shared `persistentVolumeClaim` workspaces with `volumeClaimTemplate`.
+    2. Remove writable host volumes shared between jobs (CB-CICD-RUN-017).
+
+references:
+  - title: Configuring runners (Git strategy)
+    url: https://docs.gitlab.com/ci/runners/configure_runners/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Options for Git repositories (Clean the local repo on the agent)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/repos/pipeline-options-for-git
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity security notes (Run clean production builds)
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite agent security (Force clean checkouts)
+    url: https://buildkite.com/docs/agent/self-hosted/security
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton workspaces
+    url: https://tekton.dev/docs/pipelines/workspaces/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-14
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-RUN-017
+    type: related
+  - id: CB-DEP-CI-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

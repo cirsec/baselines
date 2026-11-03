@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-009
+title: Apply deployments with least-privilege identities scoped to each target
+finding:
+  title: Deployment tools apply every change with one shared, cluster-admin level identity
+  description: When the deployment controller or agent uses the same highly privileged identity for every pipeline and namespace, any team that can deploy anything can change anything on the target, including other teams' workloads and the controller itself.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [deployment, least-privilege, impersonation, kubernetes, argo-cd, spinnaker]
+
+applicability:
+  versions: [argo-cd, spinnaker, gitlab]
+
+description: |
+  Deployment tools apply changes with an identity limited to the target of each pipeline or
+  application (a namespace, an account, a set of resource kinds), not with a shared identity that
+  holds cluster-admin or account-wide rights. Level: `{{ privilege }}`.
+
+  - `scoped-identities`: each pipeline or project gets its own deployment identity or access scope:
+    Spinnaker pipelines run as managed service accounts with only the pipeline's roles, and GitLab
+    agent access is granted to named projects or groups and, where possible, to specific
+    environments, impersonating the CI job rather than using the agent's own identity.
+  - `impersonation-enforced`: in addition, Argo CD sync impersonation is enabled and enforced, every
+    project maps each destination to a least-privilege service account, and the cluster roles of the
+    Argo CD components are reduced to cluster-wide read plus write only on the managed namespaces and
+    kinds, with sensitive kinds excluded.
+
+  Which applications and destinations a GitOps project may use is covered by CB-CICD-DEPLOY-008;
+  identities of pipelines in general by CB-CICD-IAM-034 and CB-CICD-IAM-035.
+rationale: |
+  A shared deployment identity turns the deployment tool into a skeleton key: whoever can influence
+  one application's manifests or one pipeline can use the full privilege of the controller on every
+  target. Scoping the identity to the target limits the damage of a compromised repository, pipeline
+  or team account to what that team was supposed to manage.
+impact: |
+  Each target needs a service account or role and its bindings, which must be maintained as teams and
+  namespaces change. Reducing the controller's own cluster roles can break applications that manage
+  cluster-scoped resources, which then need a dedicated privileged project.
+notes: |
+  Argo CD sync impersonation is a beta feature (since v3.5) and is disabled by default; without it,
+  syncs run with the privileges of the Argo CD control plane. When enabled, enforcement is on by
+  default and a sync fails if no service account matches. With Spinnaker managed service accounts, a
+  pipeline with several triggers that used different `runAsUser` values gets one managed account
+  holding all their roles. GitLab agent impersonation needs Premium; by default the agent's own
+  identity is used. The certificate-based GitLab Kubernetes integration is removed and must not be
+  used.
+
+parameters:
+  - name: privilege
+    type: enum
+    description: Privilege model of deployment identities. scoped-identities gives each pipeline or project its own scoped identity (Spinnaker managed service accounts, GitLab agent access per project and environment); impersonation-enforced also requires Argo CD sync impersonation and reduced controller cluster roles.
+    allowed: [scoped-identities, impersonation-enforced]
+    default: scoped-identities
+    profile_defaults:
+      hardened: impersonation-enforced
+
+audit:
+  manual: |
+    Use a role that can read the deployment tool configuration and the target cluster's RBAC.
+
+    1. For each deployment tool, find the identity it uses on each target and its permissions.
+    2. Check the scoping:
+       - **Spinnaker**: `orca-local.yml` sets `tasks.useManagedServiceAccounts: true` (and
+         `useSharedManagedServiceAccounts: true`), Deck sets
+         `window.spinnakerSettings.feature.managedServiceAccounts = true`, and pipelines run as their
+         managed service account with only the roles they need.
+       - **GitLab**: the agent configuration file `.gitlab/agents/<name>/config.yaml` lists
+         `ci_access` `projects` or `groups` explicitly, with `environments` where possible, and uses
+         `access_as: ci_job: {}` (Premium) rather than the agent identity; the agent's service account
+         is not cluster-admin.
+       - **Argo CD** (with `impersonation-enforced`): `argocd-cm` has
+         `application.sync.impersonation.enabled: "true"` and does not set
+         `application.sync.impersonation.enforced: "false"`; each `AppProject` has
+         `spec.destinationServiceAccounts` mapping every destination to a namespace-scoped service
+         account; the application controller and server cluster roles grant write access only to
+         managed namespaces and kinds, and `resource.exclusions` hides sensitive kinds.
+    3. Fail if a single identity with cluster-admin or account-wide rights applies changes for
+       several unrelated pipelines or projects, or (hardened) if Argo CD syncs run with the
+       controller's own privileges.
+
+remediation:
+  manual: |
+    1. Create one least-privilege identity per target (namespace, account) or per pipeline.
+    2. Configure the tools:
+       - **Spinnaker**: set `tasks.useManagedServiceAccounts: true` and
+         `useSharedManagedServiceAccounts: true` in `orca-local.yml`, enable
+         `feature.managedServiceAccounts` in Deck, and give each pipeline only the roles it needs.
+       - **GitLab**: in the agent configuration, list the allowed `projects` or `groups` under
+         `ci_access` with `environments`, and set `access_as: ci_job: {}`; bind the impersonated
+         identities to namespace-scoped roles.
+       - **Argo CD**: set `application.sync.impersonation.enabled: "true"` in `argocd-cm`, add
+         `destinationServiceAccounts` to every `AppProject`, then reduce the controller's cluster
+         roles and add `resource.exclusions` for sensitive kinds.
+    3. Remove the old shared, cluster-admin deployment identity once all pipelines use scoped ones.
+
+references:
+  - title: Sync applications using impersonation
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/app-sync-using-impersonation/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pipeline permissions
+    url: https://spinnaker.io/docs/setup/other_config/security/authorization/pipeline-permissions/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using GitLab CI/CD with a Kubernetes cluster
+    url: https://docs.gitlab.com/user/clusters/agent/ci_cd_workflow/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers the privileges of deployment identities on targets; other pipeline permissions are IAM controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-DEPLOY-008
+    type: related
+  - id: CB-CICD-IAM-034
+    type: related
+  - id: CB-CICD-IAM-035
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

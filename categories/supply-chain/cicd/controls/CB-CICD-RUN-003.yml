@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-003
+title: Force all jobs onto approved, governed runner pools
+finding:
+  title: Jobs can choose ungoverned runners outside the approved pools
+  description: When workflows can still target standard hosted runners or the default worker pool, and bot jobs such as dependency updates follow their own routing, part of the CI workload runs outside the network, logging and access controls set on the approved pools.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [runners, worker-pools, policy, dependabot, governance]
+
+applicability:
+  versions: [github, google-cloud-build]
+
+description: |
+  An organization-level policy makes every build run on an approved runner pool: runner groups on
+  GitHub, private worker pools on Google Cloud Build. Pipelines cannot fall back to standard hosted
+  runners or the default pool, and jobs started by platform bots, such as Dependabot updates on
+  GitHub, are routed explicitly to a pool chosen for them.
+
+  Which repositories may use which pool is covered by CB-CICD-RUN-010.
+rationale: |
+  Network isolation, egress filtering, monitoring and data residency are configured on the
+  approved pools. A job that can pick another runner escapes all of them. Dependabot jobs on GitHub
+  run as dynamic workflows that are not governed by the Actions policies set for ordinary
+  workflows, so their routing has to be set on purpose.
+impact: |
+  Disabling standard hosted runners requires every workflow to target runners through runner
+  groups; workflows that use plain `ubuntu-latest` style labels stop running until they are
+  updated. On Google Cloud Build, builds that do not name an allowed private pool fail.
+notes: |
+  On GitHub, labeled runners for Dependabot are not available for public repositories, which keep
+  using standard hosted runners. When "Dependabot on self-hosted runners" is enabled, Dependabot
+  jobs run only on self-hosted runners or on larger runners with a `dependabot` label.
+
+audit:
+  manual: |
+    Use an enterprise or organization owner role with read access to Actions policies (GitHub), or
+    a role that can read organization policies (Google Cloud).
+
+    1. **GitHub** (GitHub Enterprise Cloud): **Enterprise** > **Policies** > **Actions** >
+       **Standard hosted runners**: standard hosted runners are disabled for all organizations.
+       In each organization, **Settings** > **Code security** > **Global settings**: check whether
+       Dependabot runs on Actions runners and on self-hosted runners, and which runner group or
+       `dependabot` label it uses.
+    2. **Google Cloud Build**: the organization policy constraint `cloudbuild.allowedWorkerPools` is
+       enforced on the folders or projects that run builds and lists only the approved private
+       pools.
+    3. Review recent runs and check that each job ran on an approved pool.
+    4. Fail if jobs can still run on standard hosted runners or the default pool, or if Dependabot
+       jobs are routed to a runner group that is not approved for them.
+remediation:
+  manual: |
+    1. Create the approved runner groups or private pools and give repositories access to them
+       (CB-CICD-RUN-010).
+    2. Update workflows and build configurations to target those pools.
+    3. Enforce the policy:
+       - **GitHub**: as an enterprise owner, in **Policies** > **Actions**, under **Standard hosted
+         runners**, select **Disable for all organizations**. Route Dependabot to a dedicated runner
+         group or to larger runners labeled `dependabot` through the organization's Dependabot
+         runner settings.
+       - **Google Cloud Build**: set the organization policy `cloudbuild.allowedWorkerPools` to the
+         list of approved private pools on the organization or the build folders.
+    4. Watch for failed runs after enforcement and fix the workflows that still use other runners.
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise (Disabling standard hosted runners)
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: About Dependabot on GitHub Actions runners
+    url: https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using VPC Service Controls with private pools
+    url: https://docs.cloud.google.com/build/docs/private-pools/using-vpc-service-controls
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+related_controls:
+  - id: CB-CICD-RUN-010
+    type: related
+  - id: CB-CICD-RUN-023
+    type: related
+  - id: CB-CICD-PIPE-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

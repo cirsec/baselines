@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tester automatiquement les contrôles de sécurité du pipeline lui-même
+finding:
+  title: Les points de contrôle de sécurité du pipeline ne sont jamais testés en échec
+  description: Une analyse qui a cessé de tourner en silence, une politique avec une coquille ou un contrôle réglé sur avertir au lieu de bloquer passent inaperçus dans des pipelines toujours verts, et le trou n'est découvert qu'après qu'un élément malveillant est passé.
+description: |
+  Les contrôles de sécurité intégrés aux pipelines (blocages de fusion, analyses et leurs seuils,
+  politiques d'admission et de déploiement, vérification de signature, détection de secrets) sont
+  couverts par des tests automatisés qui prouvent qu'ils bloquent ce qu'ils doivent bloquer :
+  - les règles de policy-as-code ont des tests unitaires avec des cas qui passent et des cas qui
+    échouent ;
+  - un projet de test ou un job planifié soumet régulièrement des entrées connues comme mauvaises
+    (un secret de test, une dépendance vulnérable, un artefact non signé, une action non épinglée)
+    et vérifie que chaque contrôle le signale ou le bloque ;
+  - l'échec d'un test de contrôle déclenche une alerte vers le responsable du contrôle.
+
+  L'évaluation périodique de la posture des plates-formes elles-mêmes relève de
+  CB-CICD-PLAT-016.
+rationale: |
+  Les contrôles de sécurité échouent en mode ouvert de façon discrète : un analyseur s'arrête trop
+  tôt, un fichier de politique n'est pas chargé, une mise à jour change un défaut. Les pipelines
+  restent verts et personne ne le remarque. Tester les contrôles avec des entrées connues comme
+  mauvaises rend visibles ces défaillances silencieuses, comme les tests unitaires le font pour le
+  code applicatif.
+impact: |
+  L'équipe responsable des contrôles de pipeline doit écrire et maintenir les tests et un projet de
+  test. Les entrées connues comme mauvaises doivent être clairement marquées comme données de test
+  pour ne pas déclencher la réponse aux incidents.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts de politiques, au projet de test des contrôles et à ses
+    résultats.
+
+    1. Lister les contrôles de sécurité intégrés aux pipelines et leurs responsables.
+    2. Pour chacun, trouver son test automatisé (tests unitaires de politique comme `opa test`, ou
+       une entrée connue comme mauvaise dans un projet de test) et vérifier ses derniers résultats.
+    3. Échec si un contrôle de sécurité n'a pas de test automatisé, si les tests n'ont pas tourné
+       depuis un mois, ou si un test en échec n'a pas déclenché d'alerte.
+remediation:
+  manual: |
+    1. Ajouter des tests unitaires aux dépôts de policy-as-code et les exécuter dans leur propre
+       pipeline.
+    2. Créer un projet de test avec des entrées connues comme mauvaises pour chaque contrôle et un
+       pipeline planifié qui vérifie que chacune est signalée ou bloquée.
+    3. Envoyer les échecs de ces tests aux responsables des contrôles et les suivre comme des
+       incidents.

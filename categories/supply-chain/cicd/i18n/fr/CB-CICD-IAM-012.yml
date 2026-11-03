@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre l'accès aux plates-formes CI/CD SaaS à des réseaux autorisés
+finding:
+  title: Les plates-formes SCM et CI/CD SaaS acceptent connexions et jetons depuis n'importe quel réseau
+  description: Un mot de passe, un cookie de session ou un jeton d'accès volé fonctionne depuis l'infrastructure de l'attaquant, car la plate-forme ne vérifie pas l'origine de la requête.
+description: |
+  L'accès web, Git et API à l'organisation sur les plates-formes SCM et CI/CD SaaS est limité à des
+  réseaux connus : adresses de sortie de l'entreprise, VPN, plages des runners auto-hébergés et des
+  intégrations. La restriction s'applique aussi aux flux non interactifs (jetons d'accès personnels,
+  OAuth, SSH), pas seulement à la connexion par navigateur.
+
+  L'exposition des plates-formes auto-hébergées relève de CB-CICD-PLAT-005.
+rationale: |
+  Les identifiants des plates-formes CI/CD sont volés sur les postes des développeurs, dans les
+  journaux et dans les pipelines. Une restriction par adresse IP fait d'un identifiant volé quelque
+  chose que l'attaquant ne peut utiliser que depuis le réseau de l'entreprise, ce qui est bien plus
+  difficile et plus visible que depuis n'importe où sur internet.
+impact: |
+  Les runners hébergés, applications tierces et télétravailleurs hors des plages listées sont bloqués.
+  Les prévoir avant l'activation : runners auto-hébergés ou grands runners à IP fixe, applications
+  qui publient leurs plages, VPN pour le personnel distant. Une plage erronée peut bloquer les
+  administrateurs.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur qui peut lire les réglages de sécurité.
+
+    1. Vérifier la liste d'autorisation :
+       - **GitHub** : **Organization settings** (ou **Enterprise settings**) > **Authentication
+         security** > **IP allow list** est activé avec les plages de l'entreprise, et **Enable IP
+         allow list configuration for installed GitHub Apps** est coché (GitHub Enterprise Cloud).
+         Avec Enterprise Managed Users sur Entra ID, la stratégie d'accès conditionnel du fournisseur
+         d'identité peut être utilisée à la place.
+       - **GitLab** : groupe racine **Settings** > **General** > **Permissions and group features** >
+         **Restrict access by IP address** liste les plages de l'entreprise et des runners (Premium).
+         En auto-hébergé, **Admin** > **Settings** > **General** > **Visibility and access controls**
+         > **Globally-allowed IP ranges** ne contient que les composants de la plate-forme elle-même.
+       - **Azure DevOps** : une stratégie d'accès conditionnel Entra restreint les emplacements, et
+         **Paramètres de l'organisation** > **Stratégies** > **Enable IP Conditional Access policy
+         validation on non-interactive flows** est activé.
+       - **Bitbucket Cloud** : **Workspace settings** > **Access controls** > **Restrict access to
+         users on certain IP addresses** est activé (Premium).
+       - **Buildkite** : les réglages de sécurité API de l'organisation contiennent une liste
+         d'adresses IP autorisées pour l'API (offre Enterprise).
+       - **Harness** : **Account Settings** > **Authentication** > **Allowlist** a une liste activée
+         avec les plages de l'entreprise.
+    2. Échec si la plate-forme accepte l'accès web, Git ou API depuis n'importe quelle adresse, ou si
+       les flux par jeton ne sont pas couverts.
+remediation:
+  manual: |
+    1. Recenser les plages de sortie de l'entreprise, du VPN, des runners auto-hébergés et des
+       intégrations ; ajouter d'abord sa propre adresse pour éviter un blocage.
+    2. Configurer la liste d'autorisation (propriétaire ou administrateur) :
+       - **GitHub** : ajouter les plages dans **IP allow list**, l'activer et cocher l'option pour les
+         GitHub Apps.
+       - **GitLab** : ajouter chaque plage dans **Restrict access by IP address** sur le groupe racine.
+       - **Azure DevOps** : créer une stratégie d'accès conditionnel par emplacement, puis activer
+         **IP Conditional Access policy validation on non-interactive flows**.
+       - **Bitbucket Cloud** : activer la restriction IP dans **Access controls** et ajouter les
+         plages.
+       - **Buildkite** : définir la liste d'adresses IP autorisées pour l'API dans les réglages de
+         sécurité API de l'organisation.
+       - **Harness** : **Authentication** > **Allowlist** > **Add IP Addresses**.
+    3. Surveiller les requêtes refusées dans le journal d'audit pendant quelques jours et ajouter les
+       plages légitimes manquantes.
+  rollback: |
+    Désactiver la liste d'autorisation depuis une adresse autorisée, ou contacter le support de
+    l'éditeur si tous les administrateurs sont bloqués.

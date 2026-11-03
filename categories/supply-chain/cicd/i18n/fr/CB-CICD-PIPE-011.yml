@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les déclencheurs de pipeline aux événements, références et sources nécessaires à chaque pipeline
+finding:
+  title: Les pipelines se déclenchent sur n'importe quel événement, branche ou source
+  description: Des déclencheurs larges (chaque poussée sur chaque branche, déclencheurs CI implicites, commentaires d'issue, pull_request_target, n'importe quel dépôt derrière un webhook d'organisation) permettent à des personnes extérieures ou peu privilégiées de lancer des pipelines qui n'étaient pas prévus pour ce contexte.
+description: |
+  Chaque pipeline déclare les événements, branches ou tags, chemins et dépôts sources qui peuvent le
+  lancer, et rien d'autre. Les événements qui s'exécutent avec des droits élevés pour le compte d'une
+  entrée non fiable (`pull_request_target`, `workflow_run`, événements d'issue et de commentaire)
+  sont bloqués par une politique, sauf pour les workflows explicitement autorisés à les utiliser.
+
+  Le niveau attendu est `{{ trigger_scope }}` :
+
+  - `required-events` : seulement les événements dont chaque pipeline a besoin, et les événements
+    privilégiés bloqués par une politique de la plate-forme quand elle en offre une ;
+  - `explicit-filters` : en plus, chaque déclencheur porte des filtres explicites de branche, de tag
+    ou de chemin, les déclencheurs implicites sont désactivés, les intégrations sources à partir
+    desquelles un projet peut construire sont sur liste d'autorisation, et les builds obligatoires
+    ne peuvent pas être sautés par un mot-clé dans le message de commit.
+
+  La protection des branches de déclenchement relève de CB-CICD-PIPE-008 ; qui peut lancer une
+  exécution relève de CB-CICD-PIPE-012 ; ce que les déclencheurs privilégiés peuvent faire du code
+  des pull requests relève de CB-CICD-PIPE-014.
+rationale: |
+  Chaque déclencheur supplémentaire est une autre façon de lancer un pipeline qui détient des
+  identifiants. Les événements de commentaire et d'issue peuvent être émis par n'importe quel
+  utilisateur d'un dépôt public, `pull_request_target` s'exécute avec les secrets pour le compte des
+  forks, et un webhook d'organisation sans filtre de dépôt construit un dépôt nouvellement créé avec
+  le rôle du projet privilégié. Des déclencheurs étroits empêchent les pipelines de s'exécuter dans
+  des contextes que leurs auteurs n'avaient pas prévus.
+impact: |
+  Les pipelines qui reposaient sur des déclencheurs implicites cessent de s'exécuter tant que des
+  déclencheurs explicites ne sont pas ajoutés. Les protections d'exécution de workflow GitHub
+  demandent GitHub Team ou Enterprise pour les dépôts privés, et le mode **Evaluate** n'est
+  disponible que sur GitHub Enterprise Cloud.
+notes: |
+  Sur GitHub, une politique d'événements explicite remplace la politique par défaut de GitHub qui
+  bloque `pull_request_target` sur les dépôts publics. Sur les webhooks d'organisation ou globaux
+  d'AWS CodeBuild, ajouter un filtre `REPOSITORY_NAME` pour qu'un nouveau dépôt ne puisse pas lancer
+  un build privilégié.
+parameters:
+  trigger_scope: required-events limite les déclencheurs aux événements nécessaires et bloque les événements privilégiés ; explicit-filters exige aussi des filtres explicites de référence ou de chemin, aucun déclencheur implicite et des sources sur liste d'autorisation.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les fichiers de pipeline, les réglages de déclenchement et les
+    politiques d'organisation.
+
+    1. Pour chaque pipeline, lister les événements et filtres qui le lancent et les comparer à ses
+       besoins. Lancer un analyseur de workflows (zizmor `dangerous-triggers`) sur les workflows
+       GitHub Actions.
+    2. Vérifier les réglages de la plate-forme :
+       - **GitHub** : **Settings** > **Actions** > **Policies** au niveau entreprise, organisation ou
+         dépôt (ou API REST `/actions/policies`) : une politique d'exécution de workflow avec
+         **Restrict events** bloque `pull_request_target` sauf pour des workflows nommés.
+       - **Azure DevOps** : **Paramètres de l'organisation** et **Paramètres du projet** >
+         **Pipelines** > **Paramètres** > **Désactiver le déclencheur CI YAML implicite** est activé.
+       - **AWS CodeBuild** : les `filterGroups` des webhooks utilisent `EVENT` avec les seuls
+         événements nécessaires, des motifs `HEAD_REF`/`BASE_REF` ancrés (par exemple
+         `^refs/heads/main$`), et `REPOSITORY_NAME` sur les webhooks d'organisation ou globaux.
+       - **AWS CodePipeline** (V2) : les entrées `push` et `pullRequest` de
+         `triggers[].gitConfiguration` listent des inclusions explicites de `branches`, `tags` ou
+         `filePaths` ; les déclencheurs de pull request n'existent que sur des pipelines sans droits
+         de déploiement.
+       - **Google Cloud Build** : les filtres `includedFiles` et `ignoredFiles` des déclencheurs sont
+         relus ; la politique d'organisation `constraints/cloudbuild.allowedIntegrations` ne liste
+         que les hôtes sources approuvés.
+       - **Buildkite** : **Pipeline Settings** > **GitHub** : les builds sur activité d'issue sont
+         désactivés sauf besoin, et le contenu des issues est traité comme non fiable quand ils sont
+         activés.
+    3. Échec si un pipeline privilégié peut être lancé par un événement dont il n'a pas besoin, si
+       `pull_request_target` ou les événements de commentaire sont autorisés sans décision explicite,
+       ou, pour `{{ trigger_scope }}` = `explicit-filters`, si un déclencheur n'a pas de filtre de
+       référence, si les déclencheurs implicites sont actifs, ou si un build obligatoire peut être
+       sauté par un mot-clé dans le message de commit.
+remediation:
+  manual: |
+    1. Réécrire les déclencheurs des pipelines pour ne garder que les événements et filtres
+       nécessaires à chacun, et supprimer les déclencheurs de commentaire, d'issue et
+       `pull_request_target` inutilisés.
+    2. Ajouter des politiques de plate-forme :
+       - **GitHub** : créer une politique d'exécution de workflow avec **Restrict events** ciblant les
+         dépôts ou chemins de workflows, en commençant en mode **Evaluate** quand il est disponible.
+       - **Azure DevOps** : activer **Désactiver le déclencheur CI YAML implicite** et ajouter une
+         section `trigger:` explicite à chaque pipeline YAML.
+       - **AWS CodeBuild** : mettre à jour les groupes de filtres des webhooks avec des filtres
+         `EVENT`, `HEAD_REF` / `BASE_REF` ancrés et `REPOSITORY_NAME`.
+       - **AWS CodePipeline** : ajouter des filtres de branche, de tag et de chemin de fichier aux
+         déclencheurs du pipeline (**Edit triggers** > **Specify filter**).
+       - **Google Cloud Build** : régler la politique d'organisation
+         `constraints/cloudbuild.allowedIntegrations` sur les hôtes sources approuvés.
+       - **Buildkite** : désactiver les builds sur activité d'issue là où ils ne sont pas nécessaires.
+    3. Pour `explicit-filters`, documenter quels builds sont obligatoires et s'assurer qu'ils ne
+       peuvent pas être sautés par des mots-clés `[skip ci]` (par exemple en les exécutant sur la
+       branche protégée après fusion ou comme contrôles de statut requis).

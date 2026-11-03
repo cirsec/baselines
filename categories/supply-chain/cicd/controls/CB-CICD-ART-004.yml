@@ -1,0 +1,155 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-004
+title: Publish provenance and signatures alongside every release
+finding:
+  title: Provenance and signatures exist but consumers cannot retrieve them with the artifact
+  description: Attestations that stay inside the build platform, or are only kept as job artifacts that expire, cannot be checked by the people and systems that deploy the release, so signing gives no protection downstream.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [provenance, signatures, transparency-log, distribution, rekor]
+
+description: |
+  For every release, the provenance and the signatures of the artifacts are distributed to
+  consumers in a place they can find from the artifact itself: attached to the image in the OCI
+  registry (as referrers or `.sig` / `.att` tags), published next to the package in its ecosystem
+  (for example npm or PyPI attestations), attached to the release, or available through the
+  platform's attestation API. They are kept for as long as the artifact can be deployed.
+
+  Transparency logging is set to {{ transparency_log }}. With `required`, every signature and
+  attestation is also recorded in a transparency log so that signing events can be audited and a
+  leaked signing identity is noticed: the public Sigstore Rekor log for public artifacts, a private
+  log for private ones, so that internal names and digests are not disclosed.
+
+  Generating the provenance is covered by CB-CICD-ART-001, signing by CB-CICD-ART-005 and verifying
+  by CB-CICD-ART-006.
+rationale: |
+  Provenance only protects a release when the deployer can get it and check it. If attestations
+  live in a build log or a short-lived job artifact, a consumer has nothing to verify against and an
+  attacker who swaps the artifact in the registry is not detected. A transparency log adds an
+  append-only record of every signing event, so a signing identity used outside the normal pipeline
+  becomes visible.
+impact: |
+  Registries must accept attached signatures and attestations, and retention policies must not
+  delete them before the artifact. Writing to the public Rekor log discloses artifact names,
+  digests and the signing identity; private artifacts need a private transparency log, which is an
+  extra service to run.
+notes: |
+  GitHub writes attestations of public repositories to the public Sigstore instance and its
+  transparency log, while private repositories use GitHub's Sigstore instance, which has no
+  transparency log. GitLab's `SIGSTORE` attestation method records signatures in the public Rekor
+  log and is not used for private or internal projects. In Tekton Chains, `transparency.enabled`
+  defaults to `false` and `transparency.url` to `https://rekor.sigstore.dev`.
+
+parameters:
+  - name: transparency_log
+    type: enum
+    description: Whether signatures and attestations must also be recorded in a transparency log. optional leaves it to each pipeline; required means every release is logged, in a private log for private artifacts.
+    allowed: [optional, required]
+    default: optional
+    profile_defaults:
+      hardened: required
+
+audit:
+  manual: |
+    Use a role that can read the registries, release pages and attestation store.
+
+    1. For a sample of recent releases, start from the published artifact (image digest, package
+       version, release asset) and try to retrieve its provenance and signature the way a consumer
+       would.
+    2. Check retention: attestations and signatures must not be removed while the artifact can still
+       be deployed.
+    3. Check the platform settings:
+       - **GitHub**: `gh attestation verify <artifact> --owner <org>` finds the attestation; for
+         images, attestations are pushed to the registry when the `attest` step sets
+         `push-to-registry: true`.
+       - **GitLab**: container signatures made with cosign are stored next to the image in the
+         container registry; SLSA level 3 attestations (Ultimate, experiment) are listed under
+         **Build** > **Attestations**.
+       - **Google Cloud Build**: `gcloud artifacts docker images describe <image>@sha256:<digest> --show-provenance`
+         returns the provenance stored in Artifact Registry.
+       - **Tekton**: `chains-config` stores attestations with `artifacts.pipelinerun.storage` (or
+         `artifacts.taskrun.storage`) including `oci`; `transparency.enabled` is `true` when the
+         parameter is `required`, and `transparency.url` points to a private Rekor for private
+         artifacts.
+    4. Fail if a consumer cannot retrieve the provenance and signature of a release from the artifact,
+       or, when the parameter is `required`, if a signing event of a release is missing from the
+       transparency log.
+
+remediation:
+  manual: |
+    1. Store attestations and signatures where consumers look for them:
+       - **GitHub**: keep the `actions/attest` step and set `push-to-registry: true` for container
+         images so the attestation is stored in the registry next to the image.
+       - **GitLab**: sign images with cosign in the release job (keyless with an `id_tokens` token,
+         CB-CICD-ART-005) so the signature is pushed to the container registry.
+       - **Tekton**: set `artifacts.pipelinerun.storage: oci` (or `tekton,oci`) in `chains-config`.
+       - Package ecosystems: publish with the ecosystem's attestation support (for example npm
+         provenance or PyPI trusted publishing attestations) where available.
+    2. Align registry cleanup and retention rules so attestations live as long as their artifacts.
+    3. When the parameter is `required`: turn on transparency logging (Tekton:
+       `transparency.enabled: "true"`) and, for private artifacts, run a private Rekor instance and
+       point `transparency.url` (or the cosign `--rekor-url`) to it.
+    4. Document for consumers how to fetch and verify the attestations (CB-CICD-ART-006).
+
+references:
+  - title: SLSA Distributing provenance
+    url: https://slsa.dev/spec/v1.2/distributing-provenance
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: Tekton Chains configuration
+    url: https://tekton.dev/docs/chains/config/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Artifact attestations
+    url: https://docs.github.com/en/actions/concepts/security/artifact-attestations
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Sigstore transparency log overview
+    url: https://docs.sigstore.dev/logging/overview/
+    publisher: Sigstore
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.3.2"
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L1
+    relation: partial
+    note: Covers the distribution of provenance to consumers; generating it is in CB-CICD-ART-001.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-10
+    relation: related
+related_controls:
+  - id: CB-CICD-ART-001
+    type: requires
+  - id: CB-CICD-ART-005
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+  - id: CB-CICD-ART-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

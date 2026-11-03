@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Construire les artefacts de release sur une plate-forme de build gérée
+finding:
+  title: Des artefacts de release sont construits sur des postes de développeurs ou des hôtes non gérés
+  description: Un artefact construit sur un portable ou un serveur improvisé embarque tout ce que la machine contenait au moment du build, sans trace côté plate-forme de la façon dont il a été produit ; un poste compromis peut donc publier des releases altérées sans que personne ne le voie.
+description: |
+  Chaque artefact publié ou déployé est construit par la plate-forme de build CI/CD de l'organisation
+  (service hébergé ou plate-forme auto-hébergée exploitée par une équipe plate-forme), à partir d'une
+  définition de pipeline versionnée. Aucun artefact de release n'est construit sur un poste de
+  développeur, un serveur d'administrateur ou une machine virtuelle ponctuelle, puis téléversé à la main.
+
+  La plate-forme de build est choisie pour le niveau SLSA Build visé : elle exécute les builds sur une
+  infrastructure qu'elle maîtrise, garde une trace de chaque exécution et sait générer la provenance de
+  l'artefact (CB-CICD-ART-001). Les runners auto-hébergés rattachés à la plate-forme sont admis ; leur
+  durcissement relève des autres contrôles RUN.
+rationale: |
+  Un build sur une machine personnelle dépend de l'état de cette machine : outils locaux, dépendances en
+  cache, sources modifiées, logiciel malveillant. Personne ne peut dire ensuite ce qui a produit
+  l'artefact. Une plate-forme de build gérée exécute un pipeline connu sur une infrastructure maîtrisée et
+  laisse un journal et une provenance, condition de tous les contrôles d'intégrité ultérieurs.
+impact: |
+  Les équipes qui publient depuis leur poste doivent déplacer leurs étapes de release dans un pipeline.
+  Certains artefacts (builds mobiles signés, firmware) peuvent nécessiter des runners dédiés avec du
+  matériel ou des clés particuliers avant la migration.
+notes: |
+  SLSA considère que les runners auto-hébergés sont hors du périmètre de confiance de la plate-forme de
+  build, même au niveau Build L3 : la plate-forme répond de la provenance, l'organisation répond du runner.
+  Ce contrôle porte sur l'endroit où tournent les builds de release, pas sur une interdiction des runners
+  auto-hébergés.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les enregistrements de release, les métadonnées du registre de paquets
+    et l'historique des exécutions de pipeline.
+
+    1. Lister les artefacts publiés sur la période revue (paquets, images de conteneur, binaires, builds
+       mobiles) et retrouver pour chacun l'exécution de pipeline qui l'a produit.
+    2. Vérifier l'identité qui a téléversé l'artefact dans le registre : une identité CI, pas une personne
+       (CB-CICD-ART-009).
+    3. Quand une provenance est publiée, vérifier que l'identité du builder désigne la plate-forme de
+       build.
+    4. Demander aux responsables de release comment chaque produit est construit et publié ; chercher des
+       étapes de téléversement manuel dans les procédures de release.
+    5. Échec si un artefact publié n'a pas d'exécution de pipeline correspondante sur la plate-forme de
+       build, ou a été téléversé par une personne à partir d'un build fait hors de la plate-forme.
+remediation:
+  manual: |
+    1. Pour chaque produit publié à la main, écrire les étapes de build et de release sous forme de
+       pipeline dans le dépôt et l'exécuter sur la plate-forme de build de l'organisation.
+    2. Donner une identité CI à l'étape de publication et retirer les droits de publication personnels
+       dans le registre (CB-CICD-ART-009).
+    3. Activer la génération de provenance sur la plate-forme (CB-CICD-ART-001).
+    4. Mettre à jour les procédures de release pour lancer le pipeline de release au lieu de téléverser
+       des fichiers.

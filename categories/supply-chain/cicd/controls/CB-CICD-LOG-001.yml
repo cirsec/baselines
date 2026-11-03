@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-001
+title: Enable audit logging on every CI/CD system
+finding:
+  title: A CI/CD system records no audit trail of who changed what
+  description: Configuration, permission, credential and pipeline changes on a CI/CD system are not recorded, so after an intrusion nobody can tell which account changed a job, added a credential or ran a script, nor when.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [audit-log, logging, accountability, forensics]
+
+description: |
+  Every CI/CD system (SCM, CI and CD servers, artifact registries, GitOps controllers and the
+  orchestrators they run on) records audit events for actions by people and by programmatic
+  identities (tokens, apps, service accounts). Each event identifies at least the actor and the
+  credential used, the action, the object changed, the time, and where available the source
+  address.
+
+  Events cover at least: sign-ins and administrative actions; changes to permissions, members and
+  roles; creation and revocation of tokens, keys and secrets; changes to branch protection,
+  pipeline and runner settings; job configuration changes; and changes to the platform's own
+  security settings.
+
+  Where audit logging is optional or provided by a plugin, it is enabled. Source IP and API request
+  detail are covered by CB-CICD-LOG-002, export to the SIEM by CB-CICD-LOG-003, and retention and
+  protection by CB-CICD-LOG-005.
+rationale: |
+  Without an audit trail, an investigation cannot establish how an attacker entered, which
+  pipelines or credentials were changed, or what must be rotated and rebuilt. Several products
+  ship with audit logging off (Azure DevOps organizations, Gitea) or without it in the core
+  (Jenkins), so the default state is often no trail at all.
+impact: |
+  Audit records consume storage and, for some products, need a plugin or a higher edition. Records
+  may contain personal data (user names, IP addresses) and fall under data protection rules.
+notes: |
+  Azure DevOps auditing is available only for organizations backed by Microsoft Entra ID and keeps
+  events for 90 days. Gitea keeps audit events for `RETENTION_DAYS` (30 by default); set a longer
+  value or export them (CB-CICD-LOG-003). The Forgejo documentation describes no structured audit
+  log; only access and router logs can be collected. On GitLab Self-Managed, instance-level audit
+  events need Premium or Ultimate.
+
+audit:
+  manual: |
+    Use an administrator or auditor role that can read audit settings and events.
+
+    1. List the CI/CD systems from the inventory (CB-CICD-PLAT-002) and, for each, check that
+       audit logging is enabled and that a recent change (for example a test permission change)
+       appears with the actor, action, object and time.
+    2. Check the products where audit logging is optional:
+       - **Azure DevOps**: **Organization settings** > **Policies** > **Log Audit Events** is on, and
+         **Auditing** appears in the organization settings with recent events.
+       - **Gitea**: `app.ini` `[audit] RECORD_OUTPUT = database`, and events appear under **Site
+         administration** > **Monitoring** > **Audit Log** (`/-/admin/monitor/audit_logs`).
+       - **Forgejo**: `app.ini` `[log]` enables the access logger (`LOGGER_ACCESS_MODE`) and the
+         router logger, and these logs are collected, since no structured audit log is documented.
+       - **Jenkins**: the Audit Trail plugin is installed and configured in **Manage Jenkins** >
+         **System** > **Audit Trail** with a file, syslog or Elasticsearch logger, and its URL
+         pattern covers configuration changes, credential changes, builds and `/script`.
+    3. Fail if a CI/CD system records no audit events, if audit logging is disabled, or if events
+       do not identify the actor and the object changed.
+
+remediation:
+  manual: |
+    Use an administrator account of each system.
+
+    1. **Azure DevOps**: in **Organization settings** > **Policies**, turn **Log Audit Events** on
+       (the organization must be connected to Microsoft Entra ID).
+    2. **Gitea**: set `[audit] RECORD_OUTPUT = database` and a `RETENTION_DAYS` that matches the
+       retention policy, then restart.
+    3. **Forgejo**: enable the access and router loggers in `[log]` and forward them to the central
+       log collector.
+    4. **Jenkins**: install the Audit Trail plugin and configure a logger that writes outside the
+       controller (syslog or Elasticsearch); add Job Configuration History if configuration diffs are
+       needed.
+    5. For other products, enable every optional audit or security log category, and check that
+       programmatic actions are attributed to the token or app that performed them.
+
+references:
+  - title: Access, export, and filter audit logs (Azure DevOps)
+    url: https://learn.microsoft.com/en-us/azure/devops/organizations/audit/azure-devops-auditing
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Audit Logging
+    url: https://docs.gitea.com/administration/audit-logging
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Audit Trail plugin
+    url: https://plugins.jenkins.io/audit-trail/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Audit events
+    url: https://docs.gitlab.com/user/compliance/audit_events/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: About the audit log for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/about-the-audit-log-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-10 Insufficient Logging and Visibility
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: partial
+    note: Covers recording audit events; centralization, retention and alerting are covered by the other LOG controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.6.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-12
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: partial
+    note: SLSA Source L2 needs the history of who changed each ref and when; this control asks for audit events across all CI/CD systems, not only the SCM.
+related_controls:
+  - id: CB-CICD-LOG-002
+    type: related
+  - id: CB-CICD-LOG-003
+    type: related
+  - id: CB-CICD-LOG-005
+    type: related
+  - id: CB-CICD-PLAT-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

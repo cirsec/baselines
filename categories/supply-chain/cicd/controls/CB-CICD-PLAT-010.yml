@@ -1,0 +1,164 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-010
+title: Restrict outbound requests made by the platform, its webhooks and extensions
+finding:
+  title: Webhooks, imports and extensions can reach the internal network
+  description: Any project member can point a webhook, repository import, mirror or extension at an internal address, and the platform server makes the request for them, reaching internal services and cloud metadata it should not expose (server-side request forgery).
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [ssrf, egress, webhooks, migrations, outbound-requests, self-managed]
+applicability:
+  versions: [forgejo, gitea, gitlab, woodpecker]
+
+description: |
+  Outbound requests that the platform makes on behalf of users (webhooks, integrations, system
+  hooks, repository imports and mirrors, pipeline configuration extensions) cannot reach loopback,
+  private or link-local addresses, except specific internal hosts that are explicitly listed. DNS
+  rebinding protection stays enabled, and imports and migrations are disabled when not used.
+
+  With `outbound_policy` set to `allowlist-only` (**{{ outbound_policy }}** here), every outbound
+  request is denied unless its destination is on an allowlist, and optional calls to third-party
+  services (Gravatar avatars, usage statistics) are turned off.
+
+  Signing and TLS of webhook deliveries are covered by CB-CICD-COMP-008; runner egress by
+  CB-CICD-RUN-023.
+rationale: |
+  Webhook URLs, import sources and extension endpoints are chosen by users, but the request leaves
+  from the platform server, which usually sits next to databases, internal APIs and cloud metadata
+  endpoints. Without filtering, a project maintainer can scan the internal network, read internal
+  HTTP services or steal instance credentials. Woodpecker extensions are called before pipeline
+  approval and may receive Git credentials, so an extension pointed at an attacker-chosen host
+  leaks them.
+impact: |
+  Integrations with internal services (internal CI, chat or ticketing servers) must be added to the
+  allowlist. With `allowlist-only`, every new integration needs an allowlist change, and DNS-based
+  entries may need to be updated when providers change addresses.
+
+parameters:
+  - name: outbound_policy
+    type: enum
+    description: Outbound filtering level. `block-local` denies requests to loopback, private and link-local addresses unless a host is listed; `allowlist-only` denies every destination not on an explicit allowlist and disables optional third-party calls.
+    allowed: [block-local, allowlist-only]
+    default: block-local
+    profile_defaults:
+      hardened: allowlist-only
+
+audit:
+  manual: |
+    Use an administrator account (GitLab) or read access to the server configuration file or
+    environment (Gitea, Forgejo, Woodpecker).
+
+    1. Check the outbound settings of each platform:
+       - **GitLab self-managed**: **Admin** > **Settings** > **Network** > **Outbound requests**:
+         **Allow requests to the local network from webhooks and integrations** and **Allow
+         requests to the local network from system hooks** are both cleared (the system hooks one
+         is selected by default), **Enforce DNS rebinding attack protection** is selected, and the
+         local allowlist contains only named internal hosts. With `allowlist-only`, **Block all
+         requests, except for IP addresses, IP ranges, and domain names defined in the allowlist**
+         is selected, **Admin** > **Settings** > **General** > **Account and limit** > **Gravatar
+         enabled** is cleared, and service ping is off in **Metrics and profiling**. The legitify
+         policy `webhooks_are_allowed_to_be_sent_to_local_network` flags the first setting.
+       - **Gitea**: `app.ini` `[security] ALLOWED_HOST_LIST` (webhooks and OAuth2 clients) and
+         `[migrations] ALLOWED_HOST_LIST` (imports and mirrors) contain no `loopback`, `private` or
+         `*` entry, only named hosts or CIDRs that are needed; with `allowlist-only`,
+         `EGRESS_MODE = strict` in both sections; `[repository] DISABLE_MIGRATIONS = true` if
+         imports are not used; `[migrations] SKIP_TLS_VERIFY` is `false`.
+       - **Forgejo**: `app.ini` `[webhook] ALLOWED_HOST_LIST` is `external` (default) or a narrower
+         list, without `private`, `loopback` or `*` unless a named internal host requires it;
+         `[migrations] ALLOW_LOCALNETWORKS = false` and `ALLOWED_DOMAINS` lists the code hosts used
+         (empty means every domain is allowed, which fails `allowlist-only`);
+         `[repository] DISABLE_MIGRATIONS = true` if imports are not used.
+       - **Woodpecker**: `WOODPECKER_EXTENSIONS_ALLOWED_HOSTS` is `external` (default) or an
+         explicit host or CIDR list, and contains `loopback` or `private` only when the extension
+         itself runs locally; with `allowlist-only`, it is an explicit list.
+    2. Note that the Gitea and Forgejo lists apply to direct connections only: when a proxy is
+       configured for webhooks or migrations, check that the proxy enforces the same restriction.
+    3. Fail if webhooks, system hooks, imports, mirrors or extensions can reach loopback or private
+       networks beyond named hosts, if DNS rebinding protection is off, or (with `allowlist-only`)
+       if any outbound path is not limited to an allowlist.
+
+remediation:
+  manual: |
+    Use an administrator account and list the internal hosts that integrations legitimately need.
+
+    1. **GitLab**: in **Admin** > **Settings** > **Network** > **Outbound requests**, clear both
+       **Allow requests to the local network** checkboxes, keep **Enforce DNS rebinding attack
+       protection** selected, and add the needed internal hosts to the allowlist. For
+       `allowlist-only`, select **Block all requests, except for IP addresses, IP ranges, and
+       domain names defined in the allowlist** (GitLab refuses it while a configured URL would be
+       blocked, so add those hosts first), clear **Gravatar enabled** and turn off service ping.
+    2. **Gitea**: set `[security] ALLOWED_HOST_LIST` and `[migrations] ALLOWED_HOST_LIST` to the
+       named hosts or CIDRs needed, without `private`, `loopback` or `*`; for `allowlist-only`, set
+       `EGRESS_MODE = strict` in both sections. Set `[repository] DISABLE_MIGRATIONS = true` if
+       imports are not used.
+    3. **Forgejo**: keep `[webhook] ALLOWED_HOST_LIST = external` or narrow it; set
+       `[migrations] ALLOWED_DOMAINS` to the code hosts used and keep `ALLOW_LOCALNETWORKS = false`;
+       disable migrations if unused.
+    4. **Woodpecker**: set `WOODPECKER_EXTENSIONS_ALLOWED_HOSTS` to the extension hosts only, and
+       verify request signatures in the extensions.
+    5. Restart the services and test a webhook to an internal address: it must be refused.
+
+references:
+  - title: Filtering outbound requests
+    url: https://docs.gitlab.com/security/webhooks/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Hardening - Application recommendations
+    url: https://docs.gitlab.com/security/hardening_application_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Extensions
+    url: https://woodpecker-ci.org/docs/usage/extensions
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: legitify
+    url: https://github.com/Legit-Labs/legitify
+    publisher: Legit Security
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1552.005
+related_controls:
+  - id: CB-CICD-COMP-008
+    type: related
+  - id: CB-CICD-RUN-023
+    type: related
+  - id: CB-CICD-PLAT-014
+    type: related
+  - id: CB-CICD-COMP-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

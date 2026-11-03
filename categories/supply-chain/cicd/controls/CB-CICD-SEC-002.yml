@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-002
+title: Authenticate pipelines with platform-issued or machine credentials, not personal tokens
+finding:
+  title: Pipelines store personal access tokens or personal SSH keys of employees
+  description: A personal token stored as a CI secret acts with everything its owner can reach, often across many repositories and organizations, and keeps working after the owner changes role; anyone who can edit a pipeline can read it and act as that person.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, personal-access-tokens, job-token, github-app, machine-identity]
+
+description: |
+  Jobs authenticate to the platform and to other repositories in this order of preference: the
+  token the platform issues for the job (`GITHUB_TOKEN`, `CI_JOB_TOKEN`, `System.AccessToken`),
+  then a credential that belongs to an application,
+  project, group or service account (GitHub App installation token, project or group access
+  token, repository or workspace access token, service connection). Personal access tokens,
+  passwords and personal SSH keys of employees are not stored in CI secrets or variables.
+
+  Machine tokens that remain have the smallest scope that works (one repository or project,
+  read-only where possible), an expiry date, a name that tells what they are for, and an owner. A
+  machine account used as a last resort follows the same rules as a person (MFA, review).
+
+  Cloud and registry credentials are covered by CB-CICD-SEC-015. Platform-wide token lifetime and
+  scope policies are covered by CB-CICD-IAM-028 and CB-CICD-IAM-029.
+rationale: |
+  A personal token carries the full reach of its owner, frequently an administrator, and is rarely
+  tied to a single repository. Stored in CI, it is readable by anyone who can change a pipeline
+  file, and its use in audit logs looks like the owner's own activity. The built-in job token is
+  scoped to the run and expires with it; app and project tokens are limited to the resources they
+  were created for and do not depend on one employee staying in place.
+impact: |
+  Pipelines that push to other repositories, create releases or call the platform API need an app
+  or a project-level token to be created and granted the matching permissions. Some features of
+  project and group tokens depend on the edition (see the per-platform steps).
+
+audit:
+  manual: |
+    Use a platform role that can list secret and variable names and machine tokens (values are not
+    needed).
+
+    1. List secrets and variables at every level and identify tokens and keys by name or prefix
+       (for example `ghp_`, `github_pat_`, `glpat-`, or an SSH private key). For each one, find
+       the account it belongs to.
+    2. Check each platform:
+       - **GitHub**: workflows that call the API or push use `GITHUB_TOKEN` or a GitHub App token
+         (for example `actions/create-github-app-token`); any remaining fine-grained personal
+         access token belongs to a dedicated machine account with 2FA. The zizmor `github-app`
+         audit helps review app token use.
+       - **GitLab**: no CI/CD variable holds a `glpat-` token of a person; cross-project access uses
+         `CI_JOB_TOKEN`, project or group access tokens or a service account. Under **Settings** >
+         **Access tokens**, each token has an expiry, read-only scopes where possible and a name
+         that says what it is for. Under **Settings** > **CI/CD** > **Pipeline trigger tokens**, each
+         token belongs to a service account and is still used; prefer the `trigger:` keyword with
+         `CI_JOB_TOKEN` for multi-project pipelines.
+       - **Bitbucket**: **Repository settings** (or project / workspace settings) > **Access tokens**:
+         one token per integration, minimal scopes, an expiry date; no personal API token or app
+         password is stored in **Repository variables** or **Workspace variables**.
+       - **Azure DevOps**: pipelines use `$(System.AccessToken)` to call Azure DevOps; where
+         another identity is needed, an **Azure DevOps** service connection backed by a workload
+         identity (preview) or a service principal is used instead of a personal access token
+         stored in a variable group.
+    3. Fail if a personal access token, password or personal SSH key of a person is stored in CI,
+       or if a remaining machine token has no expiry, broader scopes than its use, or no owner.
+
+remediation:
+  manual: |
+    1. For each personal credential found, identify what the pipeline does with it and pick the
+       least powerful replacement: job token, then app or project-level token, then a dedicated
+       machine account.
+       - **GitHub**: use `GITHUB_TOKEN` with explicit `permissions:` (CB-CICD-SEC-012); for
+         cross-repository access install a GitHub App on the needed repositories and mint a token
+         in the job with `actions/create-github-app-token`, limited with `repositories:` and
+         `permission-<name>:` inputs (CB-CICD-SEC-014).
+       - **GitLab**: use `CI_JOB_TOKEN` and add the calling project to the target project's job
+         token allowlist (CB-CICD-SEC-013); otherwise create a project or group access token or a
+         service account token with read scopes and an expiry. On GitLab.com, project and group
+         access tokens need Premium or Ultimate.
+       - **Bitbucket**: create a repository access token with the needed scopes and an expiry;
+         project and workspace access tokens need Bitbucket Premium. Each scope holds at most 25
+         tokens and the value is shown only once.
+       - **Azure DevOps**: use `$(System.AccessToken)` mapped into the step environment, or create
+         an **Azure DevOps** service connection with a workload identity that has only the needed
+         permissions.
+    2. Store the new token as a secret (CB-CICD-SEC-003), update the pipeline, run it, then revoke
+       the personal token.
+    3. Record the new credential in the inventory (CB-CICD-SEC-001).
+
+references:
+  - title: Use GITHUB_TOKEN for authentication in workflows
+    url: https://docs.github.com/en/actions/concepts/security/github_token
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Making authenticated API requests with a GitHub App in a GitHub Actions workflow
+    url: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab token overview
+    url: https://docs.gitlab.com/security/tokens/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Trigger pipelines with the API
+    url: https://docs.gitlab.com/ci/triggers/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Access tokens
+    url: https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: You can now use the Azure DevOps service connection instead of a PAT or build session token
+    url: https://devblogs.microsoft.com/devops/you-can-now-use-the-azure-devops-service-connection-instead-of-a-pat-or-build-session-token/
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the choice of credential type for platform and repository access; storage, scope and rotation are covered by other SEC controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-001
+    type: related
+  - id: CB-CICD-SEC-012
+    type: related
+  - id: CB-CICD-SEC-013
+    type: related
+  - id: CB-CICD-SEC-014
+    type: related
+  - id: CB-CICD-IAM-027
+    type: related
+  - id: CB-CICD-IAM-028
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

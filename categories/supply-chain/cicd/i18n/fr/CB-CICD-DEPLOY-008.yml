@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les projets GitOps à des sources, destinations et types de ressources autorisés
+finding:
+  title: Les applications GitOps peuvent tirer depuis n'importe quel dépôt et déployer n'importe quelle ressource sur n'importe quel cluster
+  description: Avec un projet par défaut permissif ou des noms de projet issus de modèles, quiconque peut créer une Application ou écrire dans une source de générateur peut déployer des ressources à l'échelle du cluster, atteindre les espaces de noms d'autres locataires, ou prendre le contrôle du contrôleur GitOps lui-même.
+description: |
+  Chaque application GitOps appartient à un projet (`AppProject` Argo CD, ou locataire Flux avec son
+  propre espace de noms et compte de service) qui autorise explicitement :
+
+  - les dépôts sources depuis lesquels il peut tirer des manifestes, par URL explicite, sans `*` ;
+  - les clusters et espaces de noms de destination où il peut déployer ;
+  - les types de ressources qu'il peut créer : aucun type à portée cluster pour les projets de
+    locataires, et aucune modification des types qui assurent l'isolement (par exemple
+    `ResourceQuota`, `LimitRange`, `NetworkPolicy`).
+
+  Le projet par défaut intégré n'autorise rien, si bien qu'une application doit être placée
+  délibérément dans un projet dédié. Niveau de cloisonnement : `{{ tenancy }}`.
+
+  - `locked-projects` : le projet par défaut est vidé et chaque application vit dans un projet aux
+    sources, destinations et types explicites.
+  - `strict-multi-tenant` : en plus, les Applications dans n'importe quel espace de noms ne sont
+    activées que pour des espaces de noms listés, chacun rattaché à des projets non privilégiés via
+    `sourceNamespaces` ; les modèles d'ApplicationSet fixent le projet en dur ; les fournisseurs SCM
+    d'ApplicationSet sont désactivés ou listés explicitement ; les clusters à portée projet ne peuvent
+    pas servir de destination générique implicite.
+
+  Les identités utilisées pour appliquer les changements relèvent de CB-CICD-DEPLOY-009 et
+  CB-CICD-IAM-035.
+rationale: |
+  Un contrôleur GitOps détient généralement des droits cluster-admin sur de nombreux clusters. Les
+  projets sont ce qui empêche le dépôt d'une équipe, ou un compte Git compromis, d'utiliser ces droits
+  partout. Le projet Argo CD par défaut fait confiance à n'importe quel dépôt, cluster et type, et un
+  champ de projet issu d'un modèle dans un ApplicationSet permet à quiconque contrôle la source du
+  générateur de choisir un projet privilégié, ce qu'Argo CD documente comme un moyen de prendre le
+  contrôle d'Argo CD lui-même.
+impact: |
+  Les applications existantes du projet par défaut doivent être déplacées dans des projets dédiés, et
+  les définitions de projets doivent être entretenues au fil de l'évolution des dépôts et espaces de
+  noms. Les équipes qui dépendaient de ressources à portée cluster ont besoin d'un projet détenu par
+  l'équipe plate-forme pour celles-ci.
+notes: |
+  La liste des dépôts autorisés ne couvre que le dépôt cloné par Argo CD : les bases distantes
+  Kustomize et les dépendances de charts Helm peuvent tirer du contenu d'autres dépôts. Les clusters
+  enregistrés à portée projet ajoutent une destination implicite sauf si
+  `permitOnlyProjectScopedClusters: true` est posé. Quand les Applications dans n'importe quel espace
+  de noms sont utilisées, Argo CD recommande de passer le suivi des ressources de `label` à
+  `annotation` ou `annotation+label`. Sur Flux, l'équivalent est le verrouillage multi-locataire
+  (espaces de noms et comptes de service par locataire, pas de références inter-espaces de noms),
+  non détaillé ici.
+parameters:
+  tenancy: Restrictions de cloisonnement GitOps. locked-projects vide le projet par défaut et donne à chaque application un projet aux sources, destinations et types explicites ; strict-multi-tenant restreint en plus les Applications dans n'importe quel espace de noms, fixe en dur les projets des ApplicationSet et liste explicitement les fournisseurs SCM.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les projets, applications et la configuration d'Argo CD dans son
+    espace de noms.
+
+    1. Exécuter `argocd proj get default -o yaml` (ou `kubectl get appproject default -n argocd -o yaml`)
+       et vérifier que `sourceRepos`, `destinations` et `clusterResourceWhitelist` sont vides.
+    2. Exécuter `argocd app list` et vérifier qu'aucune application n'utilise le projet `default`.
+    3. Pour chaque `AppProject` :
+       - `spec.sourceRepos` liste des URL de dépôts explicites, sans `*` ;
+       - `spec.destinations` liste des serveurs et espaces de noms nommés ;
+       - les projets de locataires n'ont aucune entrée `clusterResourceWhitelist` (ou seulement des
+         types inoffensifs) et bloquent `ResourceQuota`, `LimitRange` et `NetworkPolicy` via
+         `namespaceResourceBlacklist` ou une `namespaceResourceWhitelist` ;
+       - `permitOnlyProjectScopedClusters: true` là où des clusters à portée projet sont utilisés.
+    4. Avec `strict-multi-tenant` :
+       - dans `argocd-cmd-params-cm`, `application.namespaces` ne liste que les espaces de noms
+         prévus, et les projets privilégiés n'ont aucun espace de noms contrôlé par des utilisateurs
+         dans `spec.sourceNamespaces` ;
+       - chaque `ApplicationSet` a un `template.spec.project` littéral, pas une expression de modèle ;
+       - dans `argocd-cmd-params-cm`, `applicationsetcontroller.enable.scm.providers` vaut `"false"`
+         ou `applicationsetcontroller.allowed.scm.providers` ne liste que des URL SCM de confiance.
+    5. Échec si le projet par défaut autorise une source, une destination ou un type, si une
+       application utilise un projet avec une source ou une destination `*`, ou (renforcé) si une
+       condition de l'étape 4 n'est pas remplie.
+remediation:
+  manual: |
+    1. Créer un `AppProject` par équipe ou groupe d'applications avec des `sourceRepos`, des
+       `destinations` et des types autorisés explicites, et y déplacer les applications.
+    2. Vider le projet par défaut en appliquant un `AppProject` nommé `default` avec `sourceRepos`,
+       `destinations` et `clusterResourceWhitelist` vides.
+    3. Poser `permitOnlyProjectScopedClusters: true` sur les projets qui utilisent des clusters à
+       portée projet.
+    4. Pour `strict-multi-tenant` :
+       - régler `application.namespaces` dans `argocd-cmd-params-cm` sur les seuls espaces de noms des
+         locataires, inscrire chacun dans les `sourceNamespaces` d'un projet non privilégié, et passer
+         le suivi en `annotation` ;
+       - fixer en dur `template.spec.project` dans chaque `ApplicationSet` ;
+       - poser `applicationsetcontroller.enable.scm.providers: "false"`, ou régler
+         `applicationsetcontroller.allowed.scm.providers` sur les URL SCM de confiance.
+    5. Gérer les définitions de projets comme du code, relu par l'équipe plate-forme.

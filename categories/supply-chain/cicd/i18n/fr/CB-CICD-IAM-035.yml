@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-035
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire agir les contrôleurs CI/CD et réconciliateurs GitOps avec des identités limitées au locataire
+finding:
+  title: Des contrôleurs partagés agissent avec des privilèges de niveau cluster pour le compte de chaque locataire
+  description: Quand un contrôleur GitOps ou de workflows applique les ressources de chaque locataire avec sa propre identité cluster-admin, un locataire qui peut écrire dans son propre dépôt peut créer des objets dans d'autres espaces de noms ou prendre le contrôle du cluster.
+description: |
+  Sur les clusters partagés par plusieurs équipes, les contrôleurs qui agissent pour le compte d'un
+  locataire utilisent l'identité de ce locataire :
+
+  - le compte de service par défaut utilisé par les contrôleurs n'a aucune permission, et les
+    réconciliations de chaque locataire tournent avec un compte de service de moindre privilège de
+    son propre espace de noms ;
+  - les références entre espaces de noms (sources, secrets, kubeconfigs) sont désactivées ;
+  - les serveurs d'interface et d'API qui ne font qu'afficher l'état tournent avec des permissions en
+    lecture seule ;
+  - les locataires ne peuvent ni retirer ni modifier les liaisons des administrateurs de la
+    plate-forme ni les contrôleurs eux-mêmes.
+
+  Les cibles de déploiement des projets GitOps relèvent de CB-CICD-DEPLOY-008 et CB-CICD-DEPLOY-009.
+rationale: |
+  Les contrôleurs GitOps et de workflows tournent en général avec des droits cluster-admin pour
+  pouvoir tout appliquer. Sans usurpation d'une identité de locataire, tout ce qu'un locataire
+  commite dans son dépôt est appliqué avec ces droits, ce qui annule l'isolation par espace de noms.
+  Un serveur d'interface avec des permissions d'écriture donne le même pouvoir à quiconque l'atteint.
+impact: |
+  Chaque espace de noms de locataire a besoin d'un compte de service et de liaisons de rôles pour ce
+  qu'il déploie. Les Kustomizations et HelmReleases existantes sans `serviceAccountName` cessent de se
+  réconcilier une fois que le compte de service par défaut n'a plus de permissions.
+audit:
+  manual: |
+    Utiliser un rôle de cluster qui peut lire les déploiements, liaisons de rôles et ressources Flux
+    ou Argo Workflows.
+
+    1. **Flux** :
+       - helm-controller, kustomize-controller, notification-controller,
+         image-reflector-controller, image-automation-controller (et source-watcher) tournent avec
+         `--no-cross-namespace-refs=true` ;
+       - kustomize-controller et helm-controller (et source-watcher) tournent avec
+         `--default-service-account=<nom>`, ce compte de service n'ayant aucune permission, et les
+         objets `Kustomization` et `HelmRelease` des locataires posent `spec.serviceAccountName` ;
+       - les valeurs par défaut d'identité d'objet sont définies : `--default-service-account` sur
+         source-, notification-, image-reflector- et image-automation-controller,
+         `--default-decryption-service-account` et `--default-kubeconfig-service-account` sur
+         kustomize-controller, `--default-kubeconfig-service-account` sur helm-controller ;
+       - des règles d'admission ou le RBAC empêchent les locataires de modifier l'espace de noms de
+         Flux et les liaisons des administrateurs de la plate-forme.
+    2. **Argo Workflows** : le Role ou ClusterRole `argo-server` n'a que les verbes `get`, `list` et
+       `watch` quand le serveur sert seulement à consulter les workflows ; les utilisateurs agissent
+       avec leur propre identité (`client` ou RBAC SSO, CB-CICD-IAM-014).
+    3. Échec si les réconciliations des locataires tournent avec l'identité propre du contrôleur, si
+       les références entre espaces de noms sont permises, ou si un serveur d'interface en lecture
+       seule a des permissions d'écriture.
+remediation:
+  manual: |
+    1. **Flux** : modifier les déploiements des contrôleurs (par exemple par un patch Kustomize dans le
+       dépôt d'amorçage) pour ajouter `--no-cross-namespace-refs=true`, `--default-service-account`
+       et les options d'identité d'objet ; créer un compte de service de moindre privilège dans chaque
+       espace de noms de locataire et poser `spec.serviceAccountName` sur les objets des locataires ;
+       ajouter des politiques d'admission qui protègent l'espace de noms de Flux et les liaisons
+       d'administration, avec une procédure de secours documentée.
+    2. **Argo Workflows** : remplacer le rôle `argo-server` par un rôle limité à `get`, `list` et
+       `watch` si le serveur est utilisé en lecture seule.
+    3. Tester la réconciliation de chaque locataire après le changement.

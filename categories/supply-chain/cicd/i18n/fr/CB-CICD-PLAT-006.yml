@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Verrouiller l'installateur de premier démarrage une fois la plate-forme configurée
+finding:
+  title: L'installateur de la plate-forme peut être relancé par n'importe quel visiteur
+  description: L'installateur web ou l'assistant de premier démarrage reste accessible ; après une réinitialisation de base de données ou sur un volume vierge, la première personne qui ouvre la page choisit la base et devient administrateur.
+description: |
+  Une fois une instance Gitea, Forgejo ou TeamCity configurée, son installateur web ou son
+  assistant de premier démarrage est verrouillé dans le fichier de configuration, pour qu'il ne
+  puisse plus servir même si la base de données est vide, injoignable ou restaurée depuis une
+  ancienne copie :
+
+  - Gitea et Forgejo : `app.ini` `[security] INSTALL_LOCK = true`.
+  - TeamCity : `teamcity.installation.completed=true` dans
+    `<TeamCity Home>/conf/teamcity-startup.properties`, et la base de données du serveur utilise
+    un compte dédié avec un mot de passe robuste.
+
+  Les installations initiales se font sur un réseau isolé, et le fichier de configuration qui
+  porte le verrou est géré avec le reste de la configuration de la plate-forme (CB-CICD-PLAT-015).
+rationale: |
+  Un installateur non verrouillé laisse le premier visiteur choisir la base de données et créer le
+  compte administrateur. Cela peut arriver longtemps après l'installation : conteneur redémarré sur
+  un volume vide, base brièvement injoignable, ou restauration. TeamCity indique qu'un serveur
+  démarré avec une base vide donne l'accès au premier utilisateur qui se connecte. L'attaquant
+  contrôle alors chaque dépôt, pipeline et secret stocké.
+impact: |
+  Aucun connu. Une réinstallation volontaire oblige à modifier d'abord le fichier de configuration.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de configuration sur le serveur ou dans le dépôt de
+    déploiement (valeurs Helm, variables d'environnement, gestion de configuration).
+
+    1. Trouver la configuration effective (pour les conteneurs, vérifier aussi les variables
+       d'environnement comme `GITEA__security__INSTALL_LOCK` ou `FORGEJO__security__INSTALL_LOCK`).
+    2. Vérifier le réglage du produit :
+       - **Gitea / Forgejo** : `app.ini` `[security] INSTALL_LOCK = true` (défaut `false`) ; la page
+         `/install` n'est pas servie.
+       - **TeamCity** : `<TeamCity Home>/conf/teamcity-startup.properties` contient
+         `teamcity.installation.completed=true` ;
+         `<TeamCity Data Directory>/config/database.properties` utilise un compte de base de
+         données dédié.
+    3. Échec si le verrou est absent ou à false, ou si la page d'installation répond.
+remediation:
+  manual: |
+    Utiliser un compte qui peut modifier la configuration de la plate-forme et redémarrer le
+    service.
+
+    1. Poser le verrou dans la configuration gérée comme du code :
+       - **Gitea / Forgejo** : ajouter `INSTALL_LOCK = true` sous `[security]` dans `app.ini` (ou
+         définir `GITEA__security__INSTALL_LOCK=true` / `FORGEJO__security__INSTALL_LOCK=true` dans
+         l'environnement du conteneur).
+       - **TeamCity** : ajouter `teamcity.installation.completed=true` à
+         `<TeamCity Home>/conf/teamcity-startup.properties`, et donner au serveur un compte de base
+         de données dédié avec un mot de passe robuste.
+    2. Redémarrer le service et vérifier que la page d'installation ne répond plus.
+    3. Pour les nouvelles instances, n'exécuter l'installateur que sur un réseau isolé et poser le
+       verrou avant d'ouvrir l'accès.

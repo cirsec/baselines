@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-005
+title: Keep self-managed CI/CD platforms and their admin interfaces off the internet
+finding:
+  title: A self-managed CI/CD platform or its admin interface is reachable from the internet
+  description: The web UI, agent port, administrative SSH or management console of a CI/CD server answers from any network, so anyone can try stolen credentials, brute force logins or exploit the next unpatched vulnerability.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [network-exposure, attack-surface, administration, firewall, self-managed]
+
+description: |
+  Self-managed CI/CD platforms (SCM, CI and CD servers, artifact registries, GitOps dashboards)
+  are reachable only from approved networks: the internal network, a VPN, or a reverse proxy that
+  requires authentication with the organization's identity provider before forwarding requests.
+  Ports that only runners or agents need are reachable only from the runner networks.
+
+  Administrative interfaces (management consoles, administrative SSH, database and cache ports,
+  JMX or debug ports) are reachable only from an administration network or bastion, and their
+  accounts are named.
+
+  When a platform must accept traffic from the internet (for example webhooks from a SaaS SCM),
+  only the specific path and source ranges needed are exposed. Restricting which networks users may
+  sign in from at the application level is covered by CB-CICD-IAM-012; dedicated admin workstations
+  by CB-CICD-IAM-021.
+rationale: |
+  Internet-facing CI servers are routinely scanned and exploited, often within days of a public
+  vulnerability. Keeping them behind a VPN or an identity-aware proxy means an attacker needs valid
+  corporate credentials before reaching any vulnerable code, and keeping administrative interfaces
+  on a separate network stops a stolen user password from reaching root-level configuration.
+impact: |
+  Remote users need the VPN or the identity-aware proxy. Webhooks and integrations from SaaS
+  services need a dedicated, narrowly filtered entry point.
+
+audit:
+  manual: |
+    Use read access to the firewall, load balancer and reverse proxy configuration, and a host
+    outside the corporate network for external tests.
+
+    1. List the public DNS names and IP addresses of the CI/CD platforms and run a port scan or an
+       HTTPS request from outside the corporate network.
+    2. Check the firewall and security group rules for each platform and its administrative ports.
+    3. Check the products with documented administrative interfaces:
+       - **GitHub Enterprise Server**: ports 8443 (Management Console) and 122 (administrative
+         SSH) are reachable only from the administration network; 8080 is closed. In
+         **Management Console**, the accounts listed under user management are named
+         administrators, and the root site administrator password is held as break-glass.
+       - **Jenkins**: the controller (HTTP port 8080 by default) is reachable only through the
+         internal network or an authenticating reverse proxy; the TCP inbound agent port is
+         disabled in **Manage Jenkins** > **Security** when agents use WebSocket, or reachable only
+         from agent networks; the SSH server (sshd plugin) is disabled or restricted the same way.
+    4. Fail if a CI/CD platform answers from the internet without prior authentication by the
+       organization's identity provider or VPN, or if an administrative interface is reachable from
+       a network other than the administration network.
+
+remediation:
+  manual: |
+    1. Move the platforms behind the VPN or an identity-aware reverse proxy that authenticates
+       users with the organization's identity provider.
+    2. Restrict administrative ports to the administration network or bastion with firewall rules
+       or security groups:
+       - **GitHub Enterprise Server**: allow 8443 and 122 only from the admin network; create named
+         **Management Console** users instead of sharing the root site administrator password.
+       - **Jenkins**: bind the controller to an internal address or proxy; in **Manage Jenkins** >
+         **Security**, disable the TCP inbound agent port if agents can use WebSocket, otherwise use
+         a fixed port open only to agent networks.
+    3. For inbound webhooks from SaaS services, expose only the webhook path through a filtering
+       proxy, restricted to the provider's published source ranges where available, and require
+       webhook secrets (CB-CICD-PIPE-013).
+
+references:
+  - title: Network ports (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/configuring-settings/configuring-network-settings/network-ports
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing access to the Management Console
+    url: https://docs.github.com/en/enterprise-server@latest/admin/administering-your-instance/administering-your-instance-from-the-web-ui/managing-access-to-the-management-console
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Exposed Services and Ports
+    url: https://www.jenkins.io/doc/book/security/services/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Les essentiels DevSecOps
+    url: https://cyber.gouv.fr/publications/les-essentiels-devsecops
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-7 Insecure System Configuration
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-07-Insecure-System-Configuration
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: partial
+    note: Covers network exposure of the platforms and their administrative interfaces.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1190
+  - framework: mitre-attack
+    id: T1133
+related_controls:
+  - id: CB-CICD-IAM-012
+    type: related
+  - id: CB-CICD-IAM-021
+    type: related
+  - id: CB-CICD-PLAT-004
+    type: related
+  - id: CB-CICD-PIPE-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

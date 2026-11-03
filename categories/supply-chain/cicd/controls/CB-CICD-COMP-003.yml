@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-003
+title: Remove vulnerable, compromised and unmaintained CI components
+finding:
+  title: Pipelines use CI components with known vulnerabilities or no maintainer
+  description: Actions, tasks and plugins with published advisories, archived upstream repositories or end-of-life runtimes stay in pipelines, and a component known to be compromised keeps running because nobody can block it quickly.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [third-party-components, vulnerability-management, deny-list, plugins, actions]
+
+description: |
+  Components executed by pipelines and platform plugins are kept free of known vulnerabilities
+  and are maintained:
+  - components with a published advisory are updated to a fixed version or replaced;
+  - components whose upstream repository is archived, or that run on an end-of-life runtime, are
+    replaced by a maintained alternative;
+  - the organization can block a compromised component (or one of its versions) at platform
+    level within hours, without editing every pipeline;
+  - CI server plugins are updated on a regular schedule and their security warnings are acted on.
+
+  Automated update proposals for components are covered by CB-CICD-COMP-009, and vulnerability
+  handling for application dependencies by CB-DEP-VULN-001 and CB-DEP-VULN-004.
+rationale: |
+  CI components run with the pipeline's secrets. A vulnerable action can be exploited from a
+  pull request, and a compromised one exfiltrates secrets from every pipeline that runs it until
+  it is removed. When the response depends on editing every workflow, the window stays open for
+  days. Unmaintained components no longer get fixes and run on runtimes that platforms are
+  removing.
+impact: |
+  Updates of components and plugins need testing, and a deny list entry fails the pipelines that
+  still use the blocked component until they are changed. Jenkins plugin updates may need a
+  controller restart.
+notes: |
+  On GitHub, Dependabot alerts do not fire for actions pinned to a commit SHA; use an audit tool
+  such as zizmor (`known-vulnerable-actions`, `archived-uses`) or poutine
+  (`known_vulnerability_in_build_component`) in addition. The Azure DevOps setting **Restrict out
+  of support Node.js versions in pipeline tasks** is documented for Azure DevOps Services only.
+
+audit:
+  manual: |
+    Use a role that can read pipeline definitions and organization settings; for Jenkins, an
+    account with **Overall/Read** and access to the plugin manager.
+
+    1. Run an audit tool over the pipeline definitions (zizmor `known-vulnerable-actions` and
+       `archived-uses`, poutine `known_vulnerability_in_build_component`) and list the components
+       with advisories, archived upstreams or end-of-life runtimes.
+    2. Check how each platform keeps components current and blocks bad ones:
+       - **GitHub**: **Settings** > **Actions** > **General** > **Policies** at enterprise or
+         organization level supports block patterns with the `!` prefix (for example
+         `!owner/action@*`); check that the incident procedure uses it.
+       - **Azure DevOps**: **Organization settings** > **Pipelines** > **Settings** > **Task
+         restrictions** > **Restrict out of support Node.js versions in pipeline tasks** is on
+         (Azure DevOps Services) and no pipeline uses tasks that rely on Node.js 6, 10 or 16
+         runners.
+       - **Jenkins**: **Manage Jenkins** > **Plugins** > **Updates** shows no pending security
+         update, and no security warning about installed plugins is displayed or hidden.
+    3. Fail if a component with a known advisory or an archived upstream is still used, if
+       plugins carry unaddressed security warnings, or if there is no way to block a compromised
+       component across the organization.
+
+remediation:
+  manual: |
+    1. Update or replace each component found in the audit; prefer a maintained, widely reviewed
+       alternative or an internal copy.
+    2. Prepare the containment path:
+       - **GitHub** (enterprise or organization owner): add a block pattern such as
+         `!owner/action@*` to the allowed actions list during an incident, and remove it once the
+         component is fixed or replaced.
+       - **Azure DevOps** (Project Collection Administrator): turn on **Restrict out of support
+         Node.js versions in pipeline tasks**, read the warnings in the logs and update the tasks
+         concerned.
+       - **Jenkins** (administrator): apply plugin updates from **Manage Jenkins** > **Plugins** >
+         **Updates** at least weekly, and act on the security warnings listed for installed
+         plugins.
+    3. Add the deny list step to the CI/CD incident response runbook (CB-CICD-LOG-009).
+
+references:
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Task types and usage (task restrictions)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/process/tasks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Jenkins security process for plugins
+    url: https://www.jenkins.io/security/plugins/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: poutine
+    url: https://github.com/boostsecurityio/poutine
+    publisher: BoostSecurity
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-22
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-001
+    type: related
+  - id: CB-CICD-COMP-009
+    type: related
+  - id: CB-DEP-VULN-004
+    type: related
+  - id: CB-CICD-LOG-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

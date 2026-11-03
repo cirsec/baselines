@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-022
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les identifiants durables hors des hôtes de runners
+finding:
+  title: Des hôtes de runners stockent des identifiants que tout job peut utiliser
+  description: Clés SSH, clés cloud, sessions de registre ou rôles d'instance larges présents sur un hôte de runner sont à la disposition de chaque job qui y tourne ; quiconque peut déclencher un workflow peut les voler ou les utiliser.
+description: |
+  Les hôtes et images de runners ne détiennent aucun identifiant qui survit à un job ou est partagé entre
+  jobs : pas de clés privées SSH, pas de clés d'accès cloud, pas de session `docker login` ou
+  `podman login` authentifiée de l'utilisateur du runner, pas de `.netrc` ni de jetons de registre de
+  paquets, et pas de rôle d'instance, d'identité managée ou de compte de service de nœud avec des
+  permissions au-delà de ce dont le runner a besoin pour fonctionner. Les jobs obtiennent les identifiants
+  nécessaires par job, via les secrets de la plate-forme ou une identité fédérée (CB-CICD-SEC-015).
+
+  L'identifiant propre du runner auprès de la plate-forme relève de CB-CICD-RUN-005 ; l'accès au point de
+  métadonnées d'instance de CB-CICD-RUN-023.
+rationale: |
+  Tout utilisateur qui peut lancer un workflow sur un runner dispose de l'accès de l'utilisateur de ce
+  runner : tout ce qui est stocké sur l'hôte, et tout ce que son identité cloud peut faire. Les
+  identifiants au niveau de l'hôte contournent la portée par job, les approbations et les protections
+  d'environnement posées sur les secrets de la plate-forme.
+impact: |
+  Les jobs qui s'appuyaient sur des identifiants de l'hôte (clés de déploiement dans le répertoire de
+  l'utilisateur du runner, connexion à un registre faite au provisionnement) doivent les demander par job.
+notes: |
+  Sur les runners Forgejo et Gitea, les workflows peuvent récupérer n'importe quelle image accessible aux
+  sessions connectées du moteur de conteneurs, car les auteurs choisissent les images avec `container:`.
+audit:
+  manual: |
+    Utiliser un accès d'administration en lecture à un échantillon d'hôtes ou d'images de runners, et un
+    accès en lecture à leurs identités cloud.
+
+    1. Sur chaque type de runner, lister les fichiers d'identifiants de l'utilisateur du runner et du
+       système : `~/.ssh/`, `~/.docker/config.json`, `~/.netrc`, configuration des CLI cloud,
+       configuration des gestionnaires de paquets, fichiers d'environnement.
+    2. Lister le rôle d'instance, l'identité managée ou le compte de service de nœud rattaché aux hôtes de
+       runners et revoir ses permissions.
+    3. Par produit :
+       - **GitHub** : les hôtes de runners auto-hébergés ne détiennent ni clés SSH privées ni jetons d'API
+         et leur identité cloud est limitée à ce dont le runner a besoin.
+       - **Gitea / Forgejo** : Docker ou Podman sur les hôtes de runners n'est connecté à aucun registre
+         qui exige une authentification.
+    4. Échec si un hôte ou une image de runner détient un identifiant durable utilisable par les jobs, ou
+       si son identité cloud accorde plus que ce dont le fonctionnement du runner a besoin.
+remediation:
+  manual: |
+    1. Retirer les identifiants des hôtes et images de runners, déconnecter les moteurs de conteneurs, et
+       renouveler chaque identifiant trouvé.
+    2. Réduire le rôle ou l'identité d'instance du runner au minimum (souvent aucun), et donner aux jobs
+       des identifiants par job via les secrets de la plate-forme ou la fédération OIDC (CB-CICD-SEC-015).
+    3. Reconstruire les images depuis un pipeline qui recherche les identifiants avant de les publier.

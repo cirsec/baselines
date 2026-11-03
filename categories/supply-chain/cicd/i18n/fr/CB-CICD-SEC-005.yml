@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les clés qui chiffrent les identifiants CI stockés et les tenir à l'écart des sauvegardes
+finding:
+  title: La clé de chiffrement des identifiants du serveur CI est stockée avec ses sauvegardes ou laissée par défaut
+  description: Quiconque obtient une sauvegarde ou une copie du répertoire de données du serveur avec la clé maître, ou connaît la clé par défaut, peut déchiffrer tous les identifiants stockés par le serveur CI.
+description: |
+  Un serveur CI auto-hébergé chiffre les identifiants qu'il stocke (mots de passe, jetons, clés
+  SSH) avec une clé détenue par le serveur. Cette clé n'est lisible que par le compte de service
+  du serveur, n'est jamais versionnée dans un dépôt et n'est pas incluse dans les sauvegardes
+  ordinaires qui contiennent les identifiants chiffrés : elle est sauvegardée à part, dans un
+  emplacement à l'accès plus restreint.
+
+  Quand `{{ encryption_key }}` vaut `custom`, le serveur utilise en plus une clé de chiffrement
+  générée pour cette installation et fournie par l'exploitant, au lieu de la clé ou du brouillage
+  que le produit utilise par défaut.
+
+  Les permissions de fichiers de l'ensemble du répertoire de données relèvent de CB-CICD-PLAT-007 ;
+  la sauvegarde et la restauration de la plate-forme, de CB-CICD-PLAT-008.
+setting:
+  location: Jenkins `$JENKINS_HOME/secrets/master.key` et `hudson.util.Secret` ; TeamCity **Administration** > **Global Settings** > **Encryption Settings**
+  recommended_value: "{{ encryption_key }}"
+parameters:
+  encryption_key: separated garde la clé maître lisible par le seul service et hors du SCM et des sauvegardes ordinaires ; custom remplace en plus la clé de chiffrement par défaut par une clé fournie par l'exploitant quand le produit le permet (TeamCity).
+rationale: |
+  Les identifiants CI stockés ne sont pas plus sûrs que la clé qui les chiffre. Les sauvegardes
+  sont copiées en plus d'endroits et lisibles par plus de personnes que le serveur lui-même ; une
+  sauvegarde qui contient à la fois les identifiants chiffrés et la clé les livre tous. Une clé par
+  défaut ou un brouillage reposent sur la même logique sur toutes les installations et peuvent
+  être inversés par quiconque lit le répertoire de données ou le dépôt des réglages.
+impact: |
+  La restauration d'un serveur nécessite la clé stockée à part ; la perdre rend illisibles tous
+  les identifiants stockés, la sauvegarde séparée doit donc être testée. Sur TeamCity, les valeurs
+  chiffrées avec la clé précédente ne sont converties qu'après **Re-encrypt with current key**.
+audit:
+  manual: |
+    Utiliser un compte avec un accès en lecture à l'hôte du serveur et à la configuration des
+    sauvegardes.
+
+    1. Vérifier où se trouve la clé, qui peut la lire, et si elle apparaît dans un dépôt ou dans
+       le jeu de sauvegarde :
+       - **Jenkins** : `$JENKINS_HOME/secrets/master.key` et
+         `$JENKINS_HOME/secrets/hudson.util.Secret` ne sont lisibles que par le compte de service
+         Jenkins ; `master.key` (ou le chemin réglé par
+         `jenkins.security.DefaultConfidentialStore.file`) est exclu des sauvegardes ordinaires et
+         de tout dépôt de configuration, et sauvegardé à part.
+       - **TeamCity** : **Administration** > **Global Settings** > **Encryption Settings** indique
+         si une clé de chiffrement personnalisée est définie. Si la clé a été saisie dans
+         l'interface, elle est stockée dans `<TeamCity Data Directory>/config/encryption-config.xml` ;
+         vérifier que ce fichier n'est ni dans un dépôt ni dans la sauvegarde ordinaire. Si elle
+         est importée depuis la variable d'environnement `TEAMCITY_ENCRYPTION_KEYS`, vérifier où
+         cette variable est stockée.
+    2. Examiner une archive de sauvegarde récente et vérifier que le fichier de clé en est absent.
+    3. Échec si le fichier de clé est lisible par d'autres comptes, présent dans un dépôt ou dans la
+       sauvegarde ordinaire, ou, quand `{{ encryption_key }}` vaut `custom`, si TeamCity utilise sa
+       clé par défaut.
+remediation:
+  manual: |
+    1. Restreindre les fichiers de clé au compte de service (lecture et écriture pour le seul
+       propriétaire).
+    2. Exclure la clé du job de sauvegarde ordinaire et de tout dépôt de configuration, la
+       sauvegarder à part dans un stockage à l'accès plus restreint (par exemple un gestionnaire
+       de secrets ou un coffre hors ligne), et tester une restauration qui l'utilise.
+       - **Jenkins** : sauvegarder `secrets/master.key` seul et jamais dans la sauvegarde de
+         `$JENKINS_HOME`.
+    3. Quand `{{ encryption_key }}` vaut `custom` :
+       - **TeamCity** : en tant qu'administrateur système, définir une clé de chiffrement
+         personnalisée, de préférence en démarrant le serveur avec `TEAMCITY_ENCRYPTION_KEYS`
+         alimentée depuis un coffre de secrets (ce qui verrouille le champ dans l'interface et
+         garde la clé hors du répertoire de données), ou en la générant sous **Administration** >
+         **Global Settings** > **Encryption Settings**. Lancer ensuite **Re-encrypt with current
+         key**.
+    4. Renouveler les identifiants stockés si la clé a été trouvée dans une sauvegarde ou un dépôt.
+  rollback: |
+    Garder l'ancienne clé TeamCity listée après la clé courante dans `TEAMCITY_ENCRYPTION_KEYS`
+    jusqu'à la fin du rechiffrement, pour que les valeurs existantes restent lisibles.

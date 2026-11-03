@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rendre immuables les versions publiées et leurs enregistrements, et les archiver en lecture seule
+finding:
+  title: Les tags, fichiers ou données d'intégrité d'une version publiée peuvent être modifiés après publication
+  description: Quand un tag de version peut être déplacé ou un fichier de version remplacé après publication, un attaquant ou une relance par erreur peut changer ce que les utilisateurs téléchargent sous un numéro de version auquel ils font déjà confiance, et l'organisation ne peut plus prouver ce qu'elle a livré.
+description: |
+  Une fois une version publiée, son tag, ses fichiers et les données qui prouvent son intégrité
+  (sommes de contrôle, signatures, provenance, SBOM, notes de version indiquant le commit) ne peuvent
+  être ni modifiés ni supprimés : le tag ne peut pas être déplacé, les fichiers ne peuvent pas être
+  remplacés, et un numéro de version n'est jamais réutilisé. Les corrections sont publiées dans une
+  nouvelle version.
+
+  Une copie de chaque enregistrement de version est archivée dans un stockage en lecture seule à accès
+  restreint, aussi longtemps que la version est maintenue plus la durée de conservation d'audit : les
+  artefacts, leurs données d'intégrité et de provenance, les versions des modules et dépendances
+  utilisés, et la configuration de build et de déploiement nécessaire pour reproduire la version ou
+  enquêter dessus.
+
+  La protection des tags de version dans le dépôt source relève de CB-CICD-SCM-010 ; les tags
+  immuables dans les registres de CB-CICD-ART-009.
+rationale: |
+  Utilisateurs, systèmes de déploiement et auditeurs comptent sur le fait qu'un numéro de version
+  désigne les mêmes octets pour toujours. Des versions modifiables permettent à un attaquant qui
+  obtient un accès en écriture d'échanger un fichier ou de déplacer un tag vers du code malveillant
+  tout en conservant un numéro de version de confiance, et rendent les enquêtes sur incident peu
+  fiables. Une archive en lecture seule conserve les preuves nécessaires pour répondre à « qu'avons-nous
+  livré exactement ? », même si la plate-forme d'hébergement ou le dépôt est compromis ou supprimé.
+impact: |
+  Les équipes ne peuvent plus corriger une version sur place ; elles doivent publier une nouvelle
+  version. Les workflows de publication qui ajoutent des fichiers après la publication doivent passer
+  par un brouillon, puis joindre les fichiers, puis publier. L'archive demande du stockage et une
+  politique de conservation.
+notes: |
+  Les versions immuables de GitHub verrouillent le tag et les fichiers des versions publiées après
+  l'activation du réglage, génèrent une attestation de version, et empêchent la réutilisation du nom
+  de tag même si le dépôt est supprimé puis recréé. Le titre et les notes de version restent
+  modifiables.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des dépôts et de l'organisation et l'archive des
+    versions.
+
+    1. Lister les dépôts qui publient des versions.
+    2. Vérifier que les versions publiées ne peuvent pas être modifiées :
+       - **GitHub** : **Settings** > **Repository** > **General** > **Releases** de l'organisation
+         impose l'immuabilité à tous les dépôts ou à une sélection, ou chaque dépôt a **Enable release
+         immutability** coché sous **Settings** > **General** > **Releases** ; les versions récentes
+         affichent le libellé **Immutable**.
+       - Autres plates-formes : les tags de version sont protégés (CB-CICD-SCM-010) et les tags de
+         registre et versions de paquets ne peuvent pas être écrasés (CB-CICD-ART-009).
+    3. Prendre une version récente et vérifier que l'archive contient ses artefacts, sommes de
+       contrôle, signatures, provenance, versions de dépendances et configuration de build, et que
+       l'archive est en lecture seule pour tous sauf le processus d'archivage.
+    4. Échec si un tag publié peut être déplacé ou un fichier remplacé, si un numéro de version a été
+       réutilisé, ou si l'enregistrement de la version manque dans l'archive.
+remediation:
+  manual: |
+    1. Activer l'immuabilité :
+       - **GitHub** : dans **Settings** > **Repository** > **General** de l'organisation, sous
+         **Releases**, passer **No policy** à **All repositories** (ou **Selected repositories**) ; ou
+         dans **Settings** > **General** > **Releases** de chaque dépôt, cocher **Enable release
+         immutability**. Modifier les workflows de publication pour créer un brouillon, joindre les
+         fichiers, puis publier.
+       - Autres plates-formes : protéger les tags de version et activer les tags ou versions
+         immuables dans le registre.
+    2. Mettre en place l'archive : un bucket ou coffre avec rétention en écriture unique ou
+       verrouillage d'objet, alimenté uniquement par le pipeline de publication, lisible par un petit
+       groupe.
+    3. Ajouter au pipeline de publication une étape qui copie l'enregistrement de la version dans
+       l'archive.

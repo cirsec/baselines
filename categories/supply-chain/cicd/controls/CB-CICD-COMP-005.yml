@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-005
+title: Approve third-party apps and integrations before they get access
+finding:
+  title: Members can grant third-party apps access to organization code and pipelines
+  description: Without an approval step, any member can authorize an OAuth app or install an extension that reads private repositories or changes pipelines, and a malicious or breached vendor app then holds that access.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [third-party-apps, oauth, extensions, integrations, least-privilege]
+
+parameters:
+  - name: app_approval
+    type: enum
+    description: Level of control over third-party apps. `owner-approval` = OAuth app access is restricted and installs are approved by owners; `no-user-apps` = in addition, users cannot register their own OAuth applications and dynamic client registration is off.
+    default: owner-approval
+    profile_defaults:
+      hardened: no-user-apps
+    allowed: [owner-approval, no-user-apps]
+
+description: |
+  Apps, OAuth applications, extensions and marketplace integrations can reach organization data
+  or pipelines only after an owner or the security team has approved them, with the smallest
+  scopes that work. The required level is `{{ app_approval }}`:
+  - `owner-approval`: OAuth app access to the organization is restricted to approved apps;
+    installing apps and extensions requires an owner or administrator, who reviews the publisher
+    and the requested scopes.
+  - `no-user-apps`: in addition, users cannot register OAuth applications of their own on
+    self-managed platforms, and OAuth dynamic client registration is turned off; applications are
+    owned by the instance or a group.
+
+  The periodic review of what is installed is covered by CB-CICD-COMP-006, and how CI services
+  connect to repositories by CB-CICD-COMP-007.
+rationale: |
+  A third-party app holds a long-lived grant to organization data. Attackers compromise app
+  vendors or publish look-alike apps to collect such grants, then clone private repositories,
+  read secrets in code or push to pipelines. An approval step limits the grants to vendors that
+  were checked and keeps scopes narrow.
+impact: |
+  Members wait for approval before using a new integration. On GitHub, turning on OAuth app
+  access restrictions removes organization access from every OAuth app not yet approved, so list
+  the apps in use first. Turning off GitLab dynamic client registration deletes dynamically
+  registered applications and revokes their tokens.
+
+audit:
+  manual: |
+    Use an organization owner or instance administrator account in read mode.
+
+    1. Check the approval settings:
+       - **GitHub**: organization **Settings** > **Third-party Access** > **OAuth app policy**:
+         access restrictions are on and only reviewed apps are approved; app installation
+         requests from members are reviewed by owners.
+       - **Azure DevOps**: **Organization settings** > **Extensions**: only Project Collection
+         Administrators install extensions; requested extensions are reviewed (publisher, scopes,
+         pipeline decorators) before approval.
+       - **GitLab** (self-managed, Dedicated): **Admin** > **Settings** > **General** > **Account
+         and limit** > **User OAuth applications**, and the application setting
+         `dynamic_client_registration_enabled` (GitLab 19.3 and later).
+       - **Other platforms**: the marketplace or app installation policy requires an
+         administrator.
+    2. Fail if members can grant third-party apps access to organization data without approval,
+       or, when `{{ app_approval }}` is `no-user-apps`, if users can register their own OAuth
+       applications or dynamic client registration is on.
+
+remediation:
+  manual: |
+    1. List the apps and extensions in use and keep the ones with an owner and a need.
+    2. Turn on approval:
+       - **GitHub** (organization owner): under **Third-party application access policy**, click
+         **Setup application access restrictions**, then **Restrict third-party application
+         access**; approve the needed apps one by one.
+       - **Azure DevOps** (Project Collection Administrator): handle extension requests in
+         **Organization settings** > **Extensions**, review scopes and publisher before
+         installing, and uninstall the others.
+       - **GitLab** (administrator): clear **User OAuth applications**, register applications at
+         instance or group level, and set `dynamic_client_registration_enabled` to `false` through
+         the application settings API.
+    3. Record each approval with its owner, scopes and review date.
+
+references:
+  - title: About OAuth app access restrictions
+    url: https://docs.github.com/en/organizations/managing-oauth-access-to-your-organizations-data/about-oauth-app-access-restrictions
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Install extensions
+    url: https://learn.microsoft.com/en-us/azure/devops/marketplace/install-extension
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Account and limit settings
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-8 Ungoverned Usage of 3rd Party Services
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: partial
+    note: Covers the approval of new third-party access; the review of existing grants is CB-CICD-COMP-006.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1199
+related_controls:
+  - id: CB-CICD-COMP-006
+    type: related
+  - id: CB-CICD-COMP-007
+    type: related
+  - id: CB-CICD-IAM-030
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

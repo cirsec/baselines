@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-014
+title: Isolate concurrent builds from each other
+finding:
+  title: Concurrent builds share a network or kernel
+  description: When jobs running at the same time share a container network, the host network or a kernel, one job can reach another's services, intercept its traffic or exploit the shared kernel to read its memory and files.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [isolation, runners, network, virtualization, slsa]
+
+parameters:
+  - name: isolation_strength
+    type: enum
+    description: Minimum isolation between concurrent jobs. container means a separate container network and file system per job; vm means a separate virtual machine per job for critical builds, with no shared kernel.
+    allowed: [container, vm]
+    default: container
+    profile_defaults:
+      hardened: vm
+
+description: |
+  Builds that run at the same time cannot influence each other. Each job gets its own network
+  (no host network, no network shared with other jobs), its own file system and its own process
+  namespace. With `{{ isolation_strength }}` set to `vm`, release and other critical builds run in
+  their own virtual machine (or microVM), not in a container that shares the host kernel with other
+  jobs.
+
+  Reuse of the same environment across consecutive jobs is covered by CB-CICD-RUN-012; host mounts and
+  sockets by CB-CICD-RUN-017.
+rationale: |
+  SLSA Build L3 requires that overlapping builds cannot influence one another. Containers on a shared
+  network can reach each other's services and caches; containers on the host network can reach every
+  local service of the runner host. A shared kernel is a single boundary that a kernel exploit or a
+  misconfigured container crosses.
+impact: |
+  VM-per-job isolation costs more and starts slower. Jobs that relied on reaching other containers on a
+  shared network must declare their services inside the job.
+notes: |
+  On Forgejo and Gitea runners, `container.network` defaults to `""`, which creates a new network per
+  job; `host` removes isolation between jobs and with the host, `bridge` and custom network names let
+  concurrent jobs reach each other.
+
+audit:
+  manual: |
+    Use read access to runner configuration files and runner infrastructure.
+
+    1. For each runner type, check whether several jobs run at the same time on one host and what
+       separates them (network, file system, kernel).
+    2. Per product:
+       - **Gitea / Forgejo**: runner `config.yml` has `container.network` empty (`""`), not `host`,
+         `bridge` or a shared custom network.
+       - Other container-based runners: jobs are not started with the host network and do not share a
+         user-defined network with other jobs.
+    3. With `{{ isolation_strength }}` set to `vm`, check that critical builds run on runners that start
+       a VM per job.
+    4. Fail if concurrent jobs share a network or the host network; with `{{ isolation_strength }}` set
+       to `vm`, also fail if critical builds share a kernel with other jobs.
+remediation:
+  manual: |
+    1. Remove host and shared networks from runner configuration:
+       - **Gitea / Forgejo**: set `container.network: ""` in the runner `config.yml`, or limit
+         `runner.capacity` to `1` when a custom network is unavoidable.
+    2. Lower runner concurrency or move to one job per runner instance (CB-CICD-RUN-012).
+    3. For `vm`: run critical builds on runners that create a VM or microVM per job (cloud instance per
+       job, VM-based executors, hosted runners).
+
+references:
+  - title: Securing Forgejo Actions deployments (container.network)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea Actions runner configuration example
+    url: https://gitea.com/gitea/act_runner/src/branch/main/internal/pkg/config/config.example.yaml
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Producing artifacts (Isolation strength)
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L3
+    relation: partial
+    note: Covers isolation between overlapping builds; L3 also requires ephemeral environments and isolated provenance signing.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1611
+related_controls:
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-RUN-015
+    type: related
+  - id: CB-CICD-RUN-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

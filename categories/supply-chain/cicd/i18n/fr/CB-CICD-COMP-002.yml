@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne récupérer les composants CI que depuis des sources maîtrisées et authentifiées
+finding:
+  title: Les références courtes de composants pointent vers une forge externe ou un site de mise à jour non signé
+  description: Une référence courte comme `actions/checkout@v4` dans un workflow d'une forge auto-hébergée télécharge en silence du code depuis un service extérieur à l'exécution, et un site de mise à jour de plugins sans vérification de signature permet à quiconque sur le chemin réseau de servir des plugins modifiés.
+parameters:
+  component_source: Provenance autorisée des composants de pipeline. `explicit` = la source par défaut est choisie délibérément et les téléchargements de plugins sont vérifiés par signature ; `internal-mirror` = uniquement un miroir interne de composants revus.
+description: |
+  Les forges et serveurs CI auto-hébergés récupèrent les composants de pipeline depuis une source
+  choisie délibérément par l'administrateur, jamais par un défaut implicite. Les références courtes
+  (`uses: owner/repo@ref` sans hôte) pointent vers un emplacement connu, et les sites de mise à
+  jour de plugins sont vérifiés par leur signature.
+
+  Le niveau exigé est `{{ component_source }}` :
+  - `explicit` : la source d'actions par défaut est choisie délibérément (instance interne, ou
+    forge externe acceptée par l'organisation) et documentée ; les workflows qui utilisent une
+    autre forge en donnent l'URL complète ; Jenkins télécharge les plugins depuis le centre de mise
+    à jour officiel ou un miroir, avec la vérification de signature active.
+  - `internal-mirror` : les composants viennent uniquement d'un miroir interne de composants revus
+    (GitHub Enterprise Server synchronisé avec `actions-sync`, Gitea `DEFAULT_ACTIONS_URL = self`,
+    adresse d'une instance Forgejo) ; aucun téléchargement direct depuis une forge externe à
+    l'exécution.
+
+  Le choix des composants autorisés relève de CB-CICD-COMP-001.
+rationale: |
+  Un défaut externe implicite transforme chaque référence courte en téléchargement à l'exécution
+  depuis un service que l'organisation ne maîtrise pas : un propriétaire amont renommé ou repris
+  sert alors du code directement aux runners internes. Sur GitHub Enterprise Server avec GitHub
+  Connect, une organisation interne dont le nom correspond à un propriétaire github.com est
+  prioritaire, ce qui permet l'accaparement de noms. Un site de mise à jour sans vérification de
+  signature permet à un attaquant réseau ou à un miroir malveillant de pousser des plugins modifiés
+  avec un accès complet au contrôleur.
+impact: |
+  Un miroir interne a besoin d'un responsable qui revoit et synchronise les nouvelles versions ; les
+  équipes attendent la synchronisation avant d'utiliser une nouvelle version. Changer la source par
+  défaut casse les workflows qui reposaient sur l'ancien défaut tant qu'ils n'utilisent pas d'URL
+  complètes ou que le miroir ne contient pas le composant.
+notes: |
+  Gitea règle `DEFAULT_ACTIONS_URL` sur `github` par défaut et Forgejo sur
+  `https://data.forgejo.org`. GitHub Enterprise Server ne peut pas utiliser les actions de
+  github.com tant qu'un propriétaire d'entreprise ne l'a pas activé ; `actions-sync` est prévu pour
+  les instances où GitHub Connect est désactivé.
+audit:
+  manual: |
+    Utiliser un compte administrateur d'instance ou un accès en lecture aux fichiers de
+    configuration du serveur.
+
+    1. Vérifier la source des composants sur chaque plate-forme concernée :
+       - **Gitea** : `app.ini`, section `[actions]`, clé `DEFAULT_ACTIONS_URL` (`github` ou `self`).
+       - **Forgejo** : `app.ini`, section `[actions]`, clé `DEFAULT_ACTIONS_URL` (adresse d'une
+         instance).
+       - **GitHub Enterprise Server** : **Enterprise** > **Settings** > **GitHub Connect** >
+         **Users can utilize actions from GitHub.com in workflow runs** ; synchronisation éventuelle
+         des actions dans une organisation dédiée avec `actions-sync` ; **Site admin** > **Retired
+         namespaces**.
+       - **Jenkins** : **Manage Jenkins** > **Plugins** > **Advanced settings** > URL de l'**Update
+         Site**, et propriété système `hudson.model.DownloadService.noSignatureCheck` dans les
+         options de démarrage du contrôleur.
+    2. Échec si la source d'actions par défaut n'a jamais été choisie délibérément, si la
+       vérification de signature Jenkins est désactivée (`noSignatureCheck=true`) ou pointe vers un
+       site de mise à jour inconnu, ou, quand `{{ component_source }}` vaut `internal-mirror`, si
+       les workflows peuvent encore récupérer des composants depuis une forge externe à
+       l'exécution.
+remediation:
+  manual: |
+    1. Décider où vivent les composants revus (organisation ou instance interne, miroir).
+    2. Régler la source :
+       - **Gitea** : définir `[actions] DEFAULT_ACTIONS_URL = self` et copier en miroir les actions
+         revues sur l'instance, ou garder `github` et exiger des URL complètes dans les workflows
+         (`uses: https://host/owner/repo@sha`).
+       - **Forgejo** : définir `[actions] DEFAULT_ACTIONS_URL` sur l'instance interne qui héberge les
+         actions revues.
+       - **GitHub Enterprise Server** (propriétaire d'entreprise) : laisser **Users can utilize
+         actions from GitHub.com in workflow runs** désactivé et synchroniser les actions revues
+         avec `actions-sync` dans une organisation dédiée, ou l'activer avec une politique de
+         liste d'autorisation (CB-CICD-COMP-001) et revoir les **Retired namespaces**.
+       - **Jenkins** (administrateur) : utiliser le centre de mise à jour officiel ou un miroir
+         interne qui conserve les signatures amont, et retirer
+         `-Dhudson.model.DownloadService.noSignatureCheck=true` des options du contrôleur.
+    3. Redémarrer les services après modification de `app.ini` ou des options Java.

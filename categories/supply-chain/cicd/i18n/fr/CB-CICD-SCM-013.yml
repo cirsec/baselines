@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher les auteurs et derniers pousseurs d'approuver leurs propres modifications
+finding:
+  title: Des auteurs, des committers ou l'automatisation peuvent approuver leurs propres pull requests
+  description: Quand l'auteur, un committer ou le jeton du pipeline lui-même compte comme approbateur, la revue obligatoire peut être satisfaite par la personne ou le workflow qui a écrit la modification, et du code peut être ajouté après approbation sans que personne d'autre ne le voie.
+description: |
+  Les approbations exigées sur les branches protégées (CB-CICD-SCM-012) viennent de personnes autres
+  que celles qui ont écrit la modification. L'étendue est fixée par `{{ excluded_approvers }}` :
+
+  - `author` : l'auteur d'une pull request ou merge request ne peut pas l'approuver, et le jeton
+    de job intégré à la plate-forme CI/CD ne peut pas approuver de pull requests.
+  - `author-and-pushers` : en plus, les utilisateurs qui ont ajouté des commits à la demande, et en
+    particulier la dernière personne à avoir poussé, ne peuvent pas fournir l'approbation qui
+    autorise la fusion ; un contenu poussé après une revue doit donc être approuvé par quelqu'un
+    d'autre.
+
+  La réinitialisation des approbations sur nouveaux commits relève de CB-CICD-SCM-014 ;
+  l'interdiction faite aux auteurs de modifier les règles d'approbation dans une merge request de
+  CB-CICD-SCM-015.
+rationale: |
+  L'auto-approbation transforme une règle des quatre yeux en règle à une seule personne. Les
+  contournements courants sont un auteur qui approuve sa propre demande quand la plate-forme le
+  permet, un workflow qui utilise le jeton de job pour approuver la pull request qu'il a ouverte,
+  et le schéma « approuver, puis pousser » : un collaborateur attend une approbation puis pousse
+  des commits supplémentaires sur la branche avant de fusionner.
+impact: |
+  Les pull requests sur lesquelles chaque relecteur a aussi poussé des commits ont besoin d'un
+  relecteur de plus. Les workflows qui ouvraient et approuvaient automatiquement des pull requests
+  (montées de dépendances) ont besoin d'une approbation humaine ou d'une application dédiée soumise
+  à sa propre règle de revue.
+notes: |
+  Sur GitHub, l'auteur ne peut jamais approuver sa propre pull request ; le levier baseline est le
+  réglage Actions, et le levier hardened la règle du dernier push. Sur GitLab, ces réglages
+  nécessitent Premium ; les poser au niveau de l'instance ou du groupe de premier niveau pour les
+  verrouiller, et noter qu'un rebase change le committer Git, si bien que l'utilisateur qui rebase
+  est aussi exclu. Sur Azure DevOps, l'option relative au demandeur existe séparément dans **Exiger
+  un nombre minimal de réviseurs** et dans **Réviseurs inclus automatiquement**.
+parameters:
+  excluded_approvers: Contributeurs exclus de l'approbation d'une modification.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la protection de branche, les réglages d'approbation et les
+    réglages Actions.
+
+    1. Vérifier les réglages d'approbation sur les branches protégées :
+       - **GitHub** : dans l'entreprise, l'organisation et le dépôt, **Settings** > **Actions** >
+         **General** > **Workflow permissions** > **Allow GitHub Actions to create and approve pull
+         requests** est décoché. Pour `author-and-pushers`, la règle de ruleset **Require a pull
+         request before merging** active **Require approval of the most recent reviewable push**.
+       - **GitLab** (Premium) : **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings** : **Prevent approval by merge request creator** est coché ; pour
+         `author-and-pushers`, **Prevent approvals by users who add commits** l'est aussi. Vérifier
+         les réglages de l'instance (**Admin** > **Push rules** > **Merge request approvals**) ou du
+         groupe de premier niveau qui les verrouillent.
+       - **Azure DevOps** : la stratégie de branche **Exiger un nombre minimal de réviseurs** a
+         **Autoriser les demandeurs à approuver leurs propres modifications** décoché (de même dans
+         **Réviseurs inclus automatiquement**) ; pour `author-and-pushers`, **Interdire au dernier
+         pousseur d'approuver ses propres modifications** est coché.
+    2. Examiner un échantillon de pull requests fusionnées et vérifier qu'aucune approbation ne
+       vient de l'auteur, d'un bot utilisant le jeton de job ou, avec `author-and-pushers`, du
+       dernier pousseur.
+    3. Échec si, pour l'étendue configurée, l'approbation d'un contributeur exclu peut satisfaire
+       l'exigence de revue.
+remediation:
+  manual: |
+    1. Exclure les auteurs et l'automatisation :
+       - **GitHub** : décocher **Allow GitHub Actions to create and approve pull requests** au niveau
+         de l'entreprise ou de l'organisation pour que les dépôts en héritent ; pour
+         `author-and-pushers`, activer **Require approval of the most recent reviewable push** dans le
+         ruleset.
+       - **GitLab** : cocher **Prevent approval by merge request creator** (et **Prevent approvals by
+         users who add commits** pour `author-and-pushers`) au niveau du groupe de premier niveau ou
+         de l'instance pour que les projets ne puissent pas les décocher.
+       - **Azure DevOps** : décocher **Autoriser les demandeurs à approuver leurs propres
+         modifications** ; pour `author-and-pushers`, cocher **Interdire au dernier pousseur
+         d'approuver ses propres modifications**.
+    2. Donner à l'automatisation qui doit ouvrir des pull requests une identité dédiée dont les pull
+       requests exigent toujours une approbation humaine.

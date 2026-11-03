@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-004
+title: Limit bypass of deployment protections to an audited break-glass group
+finding:
+  title: Administrators can skip production approvals and checks as a matter of routine
+  description: When every repository or resource administrator can bypass environment approvals and checks, the approval gate only binds the people least likely to abuse it, and an attacker who takes over an admin account deploys straight to production.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [deployment, bypass, break-glass, approvals, administrators]
+
+applicability:
+  versions: [github, azure-devops]
+
+description: |
+  The ability to bypass production environment protections (approvals, wait timers, branch and
+  custom checks) is set to `{{ bypass }}`:
+
+  - `break-glass`: only a small, named break-glass group holds the permission that allows bypass, it
+    is not part of anyone's daily role, and every bypass is logged, alerted and reviewed afterwards.
+  - `disabled`: bypass is turned off for production environments where the platform allows it, so
+    emergency deployments go through an expedited but still approved path.
+
+  The approval requirement itself is covered by CB-CICD-DEPLOY-003; bypass of branch protection by
+  CB-CICD-SCM-011.
+rationale: |
+  Bypass rights turn every holder into a single point of failure for production. If they are
+  broadly held, approvals become optional for the people with the most access, and phishing one of
+  them is enough to deploy malicious code without anyone else noticing. Keeping bypass in a
+  break-glass group, or removing it, keeps the four-eyes rule meaningful while leaving a documented
+  emergency path.
+impact: |
+  Emergency deployments need the break-glass procedure or an on-call approver. With `disabled`, an
+  outage of the approval process can delay a fix until an approver is reached.
+notes: |
+  On GitHub, administrators can bypass environment protection rules by default. The setting **Allow
+  administrators to bypass configured protection rules** is available on public repositories for
+  Free, Pro and Team plans, and on private repositories with GitHub Enterprise. In Azure DevOps, only
+  users with the Administrator role on the protected resource can select **Bypass check**, and the
+  checks panel records who bypassed; bypass applies to approval, business hours, Azure Function and
+  REST API checks.
+
+parameters:
+  - name: bypass
+    type: enum
+    description: Who can bypass production deployment protections. break-glass restricts the permission to an audited break-glass group; disabled turns administrator bypass off on production environments.
+    allowed: [break-glass, disabled]
+    default: break-glass
+    profile_defaults:
+      hardened: disabled
+
+audit:
+  manual: |
+    Use a role that can read environment and resource security settings and the audit log.
+
+    1. List production environments and protected resources.
+    2. Check who can bypass their protections:
+       - **GitHub**: **Settings** > **Environments** > production: with `disabled`, **Allow
+         administrators to bypass configured protection rules** is cleared; with `break-glass`, the
+         repository administrators are limited to the break-glass group.
+       - **Azure DevOps**: on the production environment and service connections, **Security** lists
+         the users and groups with the **Administrator** role; only the break-glass group holds it.
+    3. Review the audit log or deployment history for bypassed deployments in the last period and
+       check that each one has a recorded justification and a post-review.
+    4. Fail if users outside the break-glass group can bypass production protections, if bypass
+       events are not reviewed, or, with `disabled`, if administrator bypass is still allowed on a
+       GitHub production environment.
+
+remediation:
+  manual: |
+    1. Create a break-glass group with a few named members and a documented procedure.
+    2. Restrict bypass:
+       - **GitHub**: in **Settings** > **Environments** > production, clear **Allow administrators to
+         bypass configured protection rules** (`disabled`), or reduce repository administrators to
+         the break-glass group (`break-glass`).
+       - **Azure DevOps**: in the environment's and service connections' **Security** settings,
+         remove the **Administrator** role from everyone except the break-glass group.
+    3. Alert on bypass events (GitHub deployment review bypass, Azure DevOps bypassed checks) and
+       review each one (CB-CICD-LOG-006).
+
+references:
+  - title: Deployments and environments - Allow administrators to bypass configured protection rules
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing environments for deployment
+    url: https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Define approvals and checks - Bypass a check
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(9)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-DEPLOY-003
+    type: related
+  - id: CB-CICD-SCM-011
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

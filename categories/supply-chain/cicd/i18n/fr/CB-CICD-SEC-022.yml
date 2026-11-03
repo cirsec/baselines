@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-022
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Masquer toutes les valeurs secrètes dans les journaux de job
+finding:
+  title: Des valeurs secrètes apparaissent en clair dans les journaux de job
+  description: Les journaux de job sont conservés des mois et lisibles par tous les membres du projet, souvent par quiconque peut voir le pipeline ; un jeton affiché une seule fois par un script ou un drapeau de débogage leur est exposé à tous.
+description: |
+  Le masquage ou la censure des journaux est activé pour chaque secret que la plate-forme fournit
+  aux jobs, y compris les secrets récupérés à l'exécution chez des fournisseurs externes, que la
+  plate-forme ne connaît pas tant qu'ils ne sont pas déclarés à son mécanisme de censure. Aucun job
+  ne désactive la censure, et les valeurs secrètes respectent les conditions de masquage de la
+  plate-forme (longueur, une seule ligne, aucune transformation).
+
+  Les journaux de job existants sont vérifiés à la recherche de secrets exposés ; ceux qui en
+  contiennent sont supprimés et le secret est renouvelé.
+
+  Éviter l'exposition dans les scripts (pas d'echo, pas d'arguments de ligne de commande, une
+  valeur par secret) relève de CB-CICD-SEC-023 ; la journalisation de débogage, de
+  CB-CICD-PIPE-019 ; l'accès aux journaux, de CB-CICD-PIPE-022.
+rationale: |
+  Les journaux sont l'élément le plus largement lisible d'un pipeline : ils sont affichés dans
+  l'interface, renvoyés par l'API, exportés vers des plates-formes de journalisation et conservés
+  longtemps après l'exécution. Un secret qui atteint un journal est aussi exposé que s'il avait été
+  versionné. Le masquage est un filet de sécurité contre l'affichage accidentel ; il n'arrête pas
+  un script malveillant, d'où la nécessité des autres contrôles sur les secrets.
+impact: |
+  Les secrets plus courts que la longueur minimale de la plate-forme ou qui contiennent des
+  caractères non pris en charge doivent être remplacés par des valeurs plus longues pour être
+  masqués. Le masquage peut cacher des chaînes anodines identiques à un secret.
+notes: |
+  Le masquage est approximatif sur toutes les plates-formes : les valeurs encodées ou transformées
+  (base64, encodage URL, échappement par le shell) ne sont pas masquées. Sur GitLab,
+  `CI_DEBUG_SERVICES` peut révéler la valeur des variables, et une variable ne peut être cachée
+  qu'à sa création. Sur Buildkite, définir `redacted-vars` remplace les motifs par défaut, et les
+  valeurs de moins de six octets ne sont jamais censurées. Woodpecker masque les secrets de son
+  propre coffre mais pas les valeurs que les steps récupèrent chez des fournisseurs externes.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des variables CI/CD, la configuration des agents et
+    les journaux de job.
+
+    1. Vérifier comment les secrets sont masqués sur chaque plate-forme :
+       - **GitLab** : chaque variable qui contient un secret a **Visibility** réglé sur **Masked**
+         ou, pour les nouvelles variables, **Masked and hidden**, et **Expand variable reference**
+         décoché ; les valeurs respectent les conditions de masquage (une seule ligne, 8 caractères
+         ou plus).
+       - **Buildkite** : le réglage `redacted-vars` de l'agent (dans `buildkite-agent.cfg`) inclut
+         des motifs correspondant au nom de chaque variable secrète, plus les motifs par défaut s'il
+         a été modifié ; les steps qui récupèrent des secrets dans un coffre externe appellent
+         `buildkite-agent redactor add` avec la valeur ; aucun step n'appelle
+         `buildkite-agent secret get --skip-redaction`.
+       - **Woodpecker** : les secrets viennent du coffre de secrets de Woodpecker (ou d'une
+         extension de secrets), pas de steps qui affichent des valeurs récupérées chez un
+         fournisseur externe.
+       - Autres plates-formes : les secrets sont stockés comme valeurs de type secret
+         (CB-CICD-SEC-003), masquées par défaut.
+    2. Rechercher dans un échantillon de journaux de job récents, et dans les journaux exportés vers
+       des plates-formes de journalisation, les préfixes et valeurs de secrets connus (avec un outil
+       d'analyse des secrets).
+    3. Échec si un secret est fourni sans masquage, si un job désactive la censure, ou si un journal
+       contenant une valeur secrète est encore disponible.
+remediation:
+  manual: |
+    1. Activer le masquage pour chaque secret :
+       - **GitLab** : modifier chaque variable secrète, régler **Visibility** sur **Masked** et
+         décocher **Expand variable reference** ; pour la cacher aussi dans la page de réglages, la
+         recréer avec **Masked and hidden**. Préférer les variables de type fichier ou les secrets
+         externes pour les valeurs sensibles.
+       - **Buildkite** : compléter `redacted-vars` avec des motifs pour chaque nom de secret en
+         gardant les motifs par défaut ; déclarer les secrets récupérés à l'exécution avec
+         `buildkite-agent redactor add` ; retirer `--skip-redaction`.
+       - **Woodpecker** : déplacer les secrets dans le coffre de Woodpecker, ou s'assurer que les
+         steps qui récupèrent des secrets externes ne les affichent jamais.
+    2. Supprimer les journaux de job qui contiennent des secrets, dans la plate-forme et dans les
+       exports de journaux, et renouveler les secrets exposés.

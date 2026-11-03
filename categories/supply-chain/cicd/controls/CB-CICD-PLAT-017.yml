@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-017
+title: Run platform services under dedicated least-privilege accounts on hardened hosts
+finding:
+  title: CI/CD platform services run as root, shared or over-privileged accounts
+  description: The SCM or CI server runs as root, as a shared domain account or on an unhardened host or cluster; a single vulnerability in the platform gives the attacker the host, the other services on it and every system the account can reach.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [service-accounts, least-privilege, host-hardening, kubernetes, self-managed]
+
+description: |
+  Each self-managed CI/CD service (SCM, CI and CD servers, registries, GitOps controllers and their
+  databases) runs under its own dedicated, non-interactive account that is not root or a local or
+  domain administrator, holds only the rights the service needs, and is not reused by people or
+  other services. Kubernetes-hosted components run with dedicated service accounts and without
+  privileged containers.
+
+  With `hardening_scope` set to `hosting-benchmark` (**{{ hardening_scope }}** here), the hosts and
+  the orchestration platform that run the CI/CD services are also hardened against a recognised
+  benchmark (operating system and Kubernetes hardening guides, cloud provider baselines), with
+  restricted administrative access, immutable or regularly rebuilt nodes, availability measures
+  and audit logging.
+
+  Runner and build hosts are covered by CB-CICD-RUN-021 and CB-CICD-RUN-018; service accounts used
+  by pipelines by CB-CICD-IAM-034.
+rationale: |
+  CI/CD servers process untrusted input (repositories, webhooks, plugins) and their vulnerabilities
+  are regularly exploited. When the service runs as root or as a shared administrator account, an
+  exploit immediately controls the host and can reuse the account elsewhere in the domain. A
+  dedicated low-privilege account and a hardened host keep a platform vulnerability from becoming
+  an infrastructure-wide compromise.
+impact: |
+  Existing installations may need file ownership changes and a new service account. Hardening the
+  hosting platform to a benchmark (hardened profile) requires an owner for the host or cluster
+  configuration and periodic checks.
+
+parameters:
+  - name: hardening_scope
+    type: enum
+    description: What must be hardened. `service-accounts` requires dedicated least-privilege accounts for every platform service; `hosting-benchmark` also requires the hosts and orchestration platform to follow a recognised hardening benchmark.
+    allowed: [service-accounts, hosting-benchmark]
+    default: service-accounts
+    profile_defaults:
+      hardened: hosting-benchmark
+
+audit:
+  manual: |
+    Use read access to the hosts (process list, service definitions) or to the cluster
+    (workloads, service accounts, RBAC).
+
+    1. For each platform service, find the account it runs as (`ps -o user`, systemd `User=`,
+       Windows service logon account, pod `securityContext` and `serviceAccountName`).
+    2. Check that the account is dedicated to that service, is not root or an administrator, cannot
+       log in interactively, and has no rights beyond the service's needs (group memberships, RBAC
+       bindings, cloud roles).
+    3. **Azure DevOps Server**: the server service account (TFSService) and the reporting data
+       sources account (TFSReports) are dedicated domain or workgroup accounts with only the rights
+       documented by Microsoft (TFSService needs **Log on as a service**, TFSReports **Allow log on
+       locally**), and build or agent services run under their own accounts.
+    4. With `hosting-benchmark`, get the latest benchmark compliance report for the hosts and the
+       cluster that run the platforms and check the open deviations.
+    5. Fail if a platform service runs as root, as an administrator or under an account shared with
+       people or other services, or (with `hosting-benchmark`) if its hosts or cluster have no
+       benchmark assessment or have unaccepted high-severity deviations.
+
+remediation:
+  manual: |
+    1. Create a dedicated, non-interactive account for each platform service with only the rights it
+       needs, and transfer ownership of its data and configuration directories to it.
+    2. Change the service definitions to run under the new account (systemd `User=`, Windows service
+       logon, pod `securityContext.runAsNonRoot` and a dedicated `serviceAccountName`), then
+       restart.
+    3. **Azure DevOps Server**: use separate dedicated accounts for TFSService, TFSReports and the
+       build or agent services, rather than one shared account, and remove any administrator group
+       membership not required by the product.
+    4. For `hosting-benchmark`, apply a recognised hardening benchmark to the hosts and cluster,
+       rebuild nodes from hardened images, restrict administrative access, and schedule compliance
+       scans.
+
+references:
+  - title: Service accounts and dependencies (Azure DevOps Server)
+    url: https://learn.microsoft.com/en-us/azure/devops/server/admin/service-accounts-dependencies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines (SP 800-204D)
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: Secure Software Development Framework (SSDF) Version 1.1 (SP 800-218)
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(7)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1068
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-RUN-021
+    type: related
+  - id: CB-CICD-RUN-018
+    type: related
+  - id: CB-CICD-IAM-034
+    type: related
+  - id: CB-CICD-PLAT-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

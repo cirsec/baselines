@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Signer chaque artefact publié et chaque image de conteneur
+finding:
+  title: Les artefacts et images publiés ne sont pas signés
+  description: Sans signature, un consommateur ne peut pas distinguer une vraie version d'un fichier ou d'une image remplacés dans le registre ou sur le serveur de téléchargement ; un attaquant ayant un accès en écriture au stockage peut alors diffuser un logiciel malveillant sous le nom du projet.
+description: |
+  Chaque artefact publié (paquet, binaire, archive) et chaque image de conteneur poussée pour une
+  version est signé dans le pipeline de publication, et les empreintes (sommes de contrôle) et
+  signatures, avec le certificat ou la clé publique nécessaires pour les vérifier, sont publiées pour
+  les consommateurs.
+
+  La signature utilise soit une identité sans clé (un certificat éphémère lié à l'identité OIDC du
+  pipeline, par exemple Sigstore Fulcio), soit une clé détenue dans un service de gestion de clés ;
+  une clé privée longue durée stockée en variable CI n'est pas acceptable. Les signatures portent sur
+  l'empreinte de l'artefact, pas sur un tag ou un nom de fichier modifiables.
+
+  La provenance de build (CB-CICD-ART-001) peut tenir lieu de signature quand elle est signée et porte
+  sur l'empreinte de l'artefact. La gestion des clés de signature est détaillée dans CB-CICD-ART-007 ;
+  la diffusion des signatures dans CB-CICD-ART-004 ; la vérification dans CB-CICD-ART-006.
+rationale: |
+  Les registres, serveurs de téléchargement et flux de paquets peuvent être modifiés par plus de
+  personnes et de systèmes que le pipeline de publication : un jeton volé ou un bucket mal configuré
+  suffit à remplacer un fichier. Une signature liée à l'identité du pipeline permet aux consommateurs
+  et aux contrôles de déploiement de détecter la substitution. La signature sans clé ou par KMS évite
+  l'échec inverse, où la clé de signature elle-même fuit depuis les variables CI.
+impact: |
+  Les pipelines de publication ont besoin d'une étape de signature et du droit de demander un jeton
+  OIDC ou d'utiliser la clé KMS. Il faut indiquer aux consommateurs comment vérifier. La signature
+  sans clé avec le service public Sigstore écrit l'identité de signature et l'empreinte dans un journal
+  de transparence public.
+notes: |
+  Sur GitLab, la signature sans clé avec le service public Sigstore ne fait confiance qu'aux pipelines
+  GitLab.com ; GitLab Self-Managed a besoin d'une infrastructure Sigstore auto-hébergée ou de clés
+  adossées à un KMS. Les attestations d'artefacts GitHub sont des bundles Sigstore signés et
+  satisfont ce contrôle pour les artefacts qu'elles couvrent.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline, les pages de versions et les
+    registres.
+
+    1. Lister les artefacts et images des dernières versions.
+    2. Pour chacun, vérifier qu'une signature existe et se vérifie avec l'identité ou la clé attendue
+       (par exemple `cosign verify <image>@sha256:<empreinte> --certificate-identity <identité du
+       pipeline> --certificate-oidc-issuer <émetteur>`, ou `cosign verify-blob` pour les fichiers).
+    3. Vérifier que les sommes de contrôle et le matériel de vérification sont publiés avec la
+       version.
+    4. Vérifier comment la signature est faite dans le pipeline :
+       - **GitLab** : le job de publication déclare `id_tokens: SIGSTORE_ID_TOKEN: aud: sigstore` et
+         exécute `cosign sign` / `cosign sign-blob` ; sur GitLab Self-Managed, il pointe vers un
+         Sigstore auto-hébergé ou utilise une clé KMS.
+       - **GitHub** : le workflow de publication utilise `actions/attest` (attestations d'artefacts)
+         ou la signature cosign sans clé avec `permissions: id-token: write` sur le seul job de
+         publication.
+       - **Tekton** : `chains-config` signe les images OCI (`artifacts.oci.signer` vaut `x509` avec
+         Fulcio ou `kms`, pas `none`).
+       - Autres plates-formes : l'étape de publication appelle cosign ou un autre outil de signature
+         avec une identité sans clé ou KMS.
+    5. Échec si un artefact ou une image publiés ne sont pas signés, si la signature ne se vérifie
+       pas, ou si la clé de signature est stockée en simple variable CI ou en fichier dans le dépôt.
+remediation:
+  manual: |
+    1. Ajouter une étape de signature à chaque pipeline de publication, une fois l'empreinte de
+       l'artefact connue :
+       - **GitLab** : ajouter `id_tokens: SIGSTORE_ID_TOKEN: aud: sigstore` au job de publication et
+         exécuter `cosign sign <image>@<empreinte>` et `cosign sign-blob` pour les fichiers
+         (GitLab.com) ; sur GitLab Self-Managed, suivre la mise en place de Sigstore auto-hébergé ou
+         signer avec une clé KMS.
+       - **GitHub** : ajouter `actions/attest` au job de publication, ou exécuter cosign sans clé
+         avec `permissions: id-token: write` accordé à ce seul job.
+       - **Tekton** : régler `artifacts.oci.signer` sur `kms` ou activer
+         `signers.x509.fulcio.enabled` dans `chains-config`.
+    2. Publier les sommes de contrôle, les signatures et les instructions de vérification (identité
+       et émetteur attendus, ou clé publique) avec chaque version.
+    3. Supprimer les clés de signature stockées en variables CI une fois la nouvelle chaîne de
+       signature en place.

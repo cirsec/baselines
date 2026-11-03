@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-023
+title: Give external collaborators least privilege and time-bound access
+finding:
+  title: Outside collaborators and guests keep broad access after their work ends
+  description: Contractors and guests with admin or write access that nobody reviews keep it after the engagement ends, and their accounts are outside the organization's MFA and leaver process.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [outside-collaborators, guests, external-access, access-review]
+
+description: |
+  Outside collaborators, guests and contractors get access only to the repositories and projects they
+  work on, with the lowest role that fits (read or write, never admin or owner), an end date recorded
+  when access is granted, and a sponsor inside the organization. Their access is reviewed at least
+  quarterly and removed when the work ends.
+
+  Who may invite them is covered by CB-CICD-IAM-022.
+rationale: |
+  External accounts are managed by someone else: their MFA, device security and departure are not
+  under the organization's control. Long-forgotten collaborators with write or admin rights are a
+  recurring finding in SCM audits, and a compromised contractor account is a common supply chain
+  entry point.
+impact: |
+  Sponsors must request renewals. Contractors who need long-term access should get a managed account
+  in the identity provider instead.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. List external users and their access:
+       - **GitHub**: **Organization** > **People** > **Outside collaborators**
+         (`GET /orgs/{org}/outside_collaborators`), then the repositories and role of each one.
+         Allstar's outside collaborators policy can flag admin or push access continuously.
+       - **Azure DevOps**: **Organization settings** > **Users** filtered on guest users; check that
+         **Policies** > **External guest access** is off unless there is a business need, and that
+         guests belong to one dedicated group.
+       - **Other platforms**: list members whose identity is not from the corporate identity provider
+         or domain.
+    2. For each external user, check the sponsor, the end date and the role.
+    3. Fail if an external user has admin or owner rights, has no recorded end date or sponsor, or
+       kept access past the end of the work.
+
+remediation:
+  manual: |
+    1. Lower external users to the lowest role per repository or project, and remove admin rights.
+    2. Record a sponsor and an end date for each; put guests in a dedicated group.
+    3. **Azure DevOps**: turn **External guest access** off when no guest is needed; otherwise manage
+       guests through Entra (with an expiring access package or access review where available).
+    4. **GitHub**: enable the Allstar outside collaborators policy, or review
+       `/orgs/{org}/outside_collaborators` every quarter.
+    5. Remove access on the end date and at each review when it is no longer justified.
+
+references:
+  - title: Adding outside collaborators to repositories in your organization
+    url: https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/adding-outside-collaborators-to-repositories-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Add external users to your organization (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/add-external-user
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Allstar
+    url: https://github.com/ossf/allstar
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-2 Inadequate Identity and Access Management
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-02-Inadequate-Identity-And-Access-Management
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: PS-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R66"
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-022
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+  - id: CB-CICD-IAM-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

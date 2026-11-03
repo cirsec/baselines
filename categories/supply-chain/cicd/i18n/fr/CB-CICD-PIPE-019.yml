@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-019
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Laisser la journalisation de débogage des pipelines désactivée par défaut
+finding:
+  title: La journalisation de débogage ou de trace est activée en permanence dans les pipelines
+  description: Les modes de débogage et de trace affichent l'environnement du job, ses entrées et parfois des secrets masqués dans les journaux de job, lus par toutes les personnes ayant accès au projet et conservés pendant des mois.
+description: |
+  Les modes de débogage ou de trace des étapes, des runners et du système ne sont jamais définis de
+  façon permanente dans les fichiers de pipeline, les variables de projet, de groupe ou
+  d'organisation, ni dans la configuration des runners. Quand une sortie de débogage est nécessaire,
+  elle est activée pour une seule relance, les journaux produits sont relus pour repérer les valeurs
+  exposées puis supprimés, et tout secret apparu est renouvelé.
+
+  Le masquage des secrets dans les journaux normaux relève de CB-CICD-SEC-022 ; la conservation des
+  journaux de job relève de CB-CICD-LOG-004.
+rationale: |
+  La journalisation de débogage sert à montrer ce que voit le job, ce qui inclut son environnement et
+  ses paramètres. Sur certaines plates-formes, elle affiche en clair des variables masquées. Un
+  indicateur de débogage resté actif fait de chaque journal de job une copie des secrets du
+  pipeline, lisible par quiconque peut consulter les journaux.
+impact: |
+  Aucun connu. Le dépannage demande une relance explicite avec le débogage activé.
+notes: |
+  GitLab : définir `CI_DEBUG_TRACE` dans la configuration du runner active les journaux de débogage
+  pour tous les jobs de ce runner et contourne les contrôles de rôle qui s'appliquent normalement à
+  la journalisation de débogage.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les fichiers de pipeline, les variables CI/CD et la configuration
+    des runners (les valeurs ne sont pas nécessaires). poutine (`debug_enabled`) détecte les cas
+    présents dans les fichiers de pipeline.
+
+    1. Rechercher dans les fichiers de pipeline et les variables à tous les niveaux :
+       - **GitHub** : secrets ou variables de dépôt, d'environnement et d'organisation nommés
+         `ACTIONS_STEP_DEBUG` ou `ACTIONS_RUNNER_DEBUG` valant `true`.
+       - **GitLab** : `CI_DEBUG_TRACE` ou `CI_DEBUG_SERVICES` valant `true` dans `variables:` de
+         `.gitlab-ci.yml`, dans les variables CI/CD de projet, de groupe ou d'instance, ou dans
+         `environment` du `config.toml` du runner.
+       - **Azure DevOps** : une variable de pipeline ou de groupe de variables `system.debug` valant
+         `true`.
+    2. Échec si une variable de débogage ou de trace vaut `true` en dehors d'une exécution de
+       dépannage ponctuelle.
+remediation:
+  manual: |
+    1. Retirer les variables de débogage permanentes (`ACTIONS_STEP_DEBUG`, `ACTIONS_RUNNER_DEBUG`,
+       `CI_DEBUG_TRACE`, `CI_DEBUG_SERVICES`, `system.debug`) des fichiers de pipeline, des
+       variables et de la configuration des runners.
+    2. Quand un débogage est nécessaire, utiliser l'option ponctuelle de la plate-forme (GitHub
+       **Re-run jobs** > **Enable debug logging**, Azure DevOps **Exécuter le pipeline** > **Activer
+       les diagnostics système**) ou une variable définie pour une seule exécution manuelle.
+    3. Supprimer les journaux de débogage après usage et renouveler tout secret qui y est apparu.

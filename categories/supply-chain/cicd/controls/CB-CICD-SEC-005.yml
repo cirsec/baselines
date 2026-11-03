@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-005
+title: Protect the keys that encrypt stored CI credentials and keep them apart from backups
+finding:
+  title: The CI server's credential encryption key is stored with its backups or left at the default
+  description: Anyone who obtains a backup or a copy of the server data directory together with the master key, or who knows the default key, can decrypt every credential the CI server stores.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, encryption-keys, backups, jenkins, teamcity]
+applicability:
+  versions: [jenkins, teamcity]
+
+description: |
+  A self-managed CI server encrypts the credentials it stores (passwords, tokens, SSH keys) with a
+  key held by the server. That key is readable only by the server's service account, is never
+  committed to a repository, and is not included in the regular backups that contain the
+  encrypted credentials: it is backed up separately to a location with stricter access.
+
+  When `{{ encryption_key }}` is `custom`, the server also uses an encryption key generated for
+  this installation and supplied by the operator, instead of the key or scrambling scheme the
+  product uses by default.
+
+  File permissions of the whole data directory are covered by CB-CICD-PLAT-007; backup and restore
+  of the platform by CB-CICD-PLAT-008.
+setting:
+  location: Jenkins `$JENKINS_HOME/secrets/master.key` and `hudson.util.Secret`; TeamCity **Administration** > **Global Settings** > **Encryption Settings**
+  default_value: "Jenkins: key generated at first start in the secrets directory; TeamCity: default key unique to the installation"
+  recommended_value: "{{ encryption_key }}"
+parameters:
+  - name: encryption_key
+    type: enum
+    description: separated keeps the master key readable only by the service and out of SCM and regular backups; custom also replaces the default encryption key with an operator-supplied one where the product supports it (TeamCity).
+    allowed: [separated, custom]
+    default: separated
+    profile_defaults:
+      hardened: custom
+rationale: |
+  Stored CI credentials are only as safe as the key that encrypts them. Backups are copied to more
+  places and readable by more people than the server itself; a backup that holds both the
+  encrypted credentials and the key gives all of them away. A default or scrambling key is the
+  same logic on every installation and can be reversed by anyone who reads the data directory or
+  the settings repository.
+impact: |
+  Restoring a server needs the separately stored key; losing it makes every stored credential
+  unreadable, so the separate backup must be tested. On TeamCity, values encrypted with the
+  previous key are not converted until **Re-encrypt with current key** is run.
+
+audit:
+  manual: |
+    Use an account with read access to the server host and to the backup configuration.
+
+    1. Check where the key lives, who can read it, and whether it appears in a repository or in
+       the backup set:
+       - **Jenkins**: `$JENKINS_HOME/secrets/master.key` and `$JENKINS_HOME/secrets/hudson.util.Secret`
+         are readable only by the Jenkins service account; `master.key` (or the path set by
+         `jenkins.security.DefaultConfidentialStore.file`) is excluded from regular backups and
+         from any configuration repository, and backed up separately.
+       - **TeamCity**: **Administration** > **Global Settings** > **Encryption Settings** shows
+         whether a custom encryption key is set. If the key was entered in the interface, it is
+         stored in `<TeamCity Data Directory>/config/encryption-config.xml`; check that this file is
+         not in a repository and not in the regular backup. If it is imported from the
+         `TEAMCITY_ENCRYPTION_KEYS` environment variable, check where that variable is stored.
+    2. Look at a recent backup archive and check that the key file is absent.
+    3. Fail if the key file is readable by other accounts, is present in a repository or in the
+       regular backup, or, when `{{ encryption_key }}` is `custom`, if TeamCity uses its default
+       key.
+
+remediation:
+  manual: |
+    1. Restrict the key files to the service account (owner read/write only).
+    2. Exclude the key from the regular backup job and from any configuration repository, back it
+       up separately to a store with stricter access (for example a secrets manager or an offline
+       vault), and test a restore that uses it.
+       - **Jenkins**: back up `secrets/master.key` on its own and never inside the
+         `$JENKINS_HOME` backup.
+    3. When `{{ encryption_key }}` is `custom`:
+       - **TeamCity**: as a System Administrator, set a custom encryption key, preferably by
+         starting the server with `TEAMCITY_ENCRYPTION_KEYS` set from a secrets store (this locks
+         the field in the interface and keeps the key out of the data directory), or by
+         generating it under **Administration** > **Global Settings** > **Encryption Settings**.
+         Then run **Re-encrypt with current key**.
+    4. Rotate the stored credentials if the key was found in a backup or repository.
+  rollback: |
+    Keep the previous TeamCity key listed after the current one in `TEAMCITY_ENCRYPTION_KEYS` until
+    re-encryption has completed, so that existing values stay readable.
+
+references:
+  - title: Backing-up/Restoring Jenkins
+    url: https://www.jenkins.io/doc/book/system-administration/backing-up/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity configuration and maintenance - encryption settings
+    url: https://www.jetbrains.com/help/teamcity/teamcity-configuration-and-maintenance.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CP-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-PLAT-007
+    type: related
+  - id: CB-CICD-PLAT-008
+    type: related
+  - id: CB-CICD-SEC-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

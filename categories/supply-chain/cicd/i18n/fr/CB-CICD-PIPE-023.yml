@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-023
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder des étapes de build à responsabilité unique et leur fournir leur environnement depuis le pipeline
+finding:
+  title: Des étapes de build cumulent plusieurs responsabilités et récupèrent elles-mêmes leurs commandes et leur configuration
+  description: Une étape qui compile, teste, signe et publie sur un même worker, et télécharge ses propres scripts ou réglages à l'exécution, donne à tout outil compromis qu'elle contient l'accès à tous les identifiants du build et rend le résultat impossible à reproduire.
+description: |
+  Les pipelines critiques sont découpés en étapes à responsabilité unique (récupération, build,
+  test, analyse, signature, publication), avec des entrées et sorties déclarées transmises entre
+  elles sous forme d'artefacts. Chaque étape s'exécute sur son propre worker ou environnement isolé
+  et ne reçoit que les identifiants de sa propre responsabilité : l'étape de build ne détient jamais
+  la clé de signature ni le jeton de publication.
+
+  Les étapes reçoivent leur environnement, leurs paramètres et leurs commandes de la définition du
+  pipeline. Elles ne téléchargent pas de scripts, de configuration ou de versions d'outils choisis à
+  l'exécution hors de la définition relue et de ses dépendances figées.
+
+  L'isolation des builds entre eux relève de CB-CICD-RUN-014 ; les builds de mise en production sans
+  réseau relèvent de CB-CICD-RUN-024 ; le figeage des outils relève de CB-CICD-COMP-014.
+rationale: |
+  Quand une étape fait tout, l'outil le moins fiable qu'elle contient (un framework de test, un
+  script d'installation de dépendance) s'exécute à côté de la clé de signature et du jeton de
+  publication. Séparer les responsabilités limite ce qu'un outil compromis peut atteindre, et une
+  étape dont l'environnement est entièrement fourni par le pipeline produit le même résultat pour
+  les mêmes entrées, ce qui rend la falsification visible.
+impact: |
+  Plus d'étapes signifient plus d'artefacts à transmettre et un peu de temps d'exécution en plus.
+  Les scripts tout-en-un existants doivent être découpés.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers des pipelines critiques (de mise en production).
+
+    1. Associer chaque étape à ses responsabilités et aux identifiants qu'elle reçoit.
+    2. Vérifier que les identifiants de signature et de publication ne sont disponibles que pour les
+       étapes de signature et de publication, et que ces étapes s'exécutent sur un worker séparé de
+       celui des étapes de build et de test.
+    3. Rechercher les étapes qui récupèrent à l'exécution des scripts, de la configuration ou des
+       versions d'outils depuis des emplacements hors de la définition du pipeline et de ses
+       dépendances figées (par exemple `curl ... | sh`, téléchargement d'une configuration depuis une
+       URL).
+    4. Échec si une étape d'un pipeline de mise en production exécute du code de build ou de test
+       tout en détenant des identifiants de signature ou de publication, ou si une étape obtient ses
+       commandes ou sa configuration hors de la définition relue.
+remediation:
+  manual: |
+    1. Découper les pipelines de mise en production en jobs séparés pour le build, le test,
+       l'analyse, la signature et la publication, en transmettant les sorties sous forme d'artefacts
+       avec empreintes.
+    2. Limiter les identifiants au job qui en a besoin (environnements, secrets au niveau du job) et
+       exécuter les jobs de signature et de publication sur des runners dédiés.
+    3. Remplacer les téléchargements de scripts et de configuration à l'exécution par des fichiers du
+       dépôt ou des dépendances figées et vérifiées, et passer les paramètres depuis le pipeline.

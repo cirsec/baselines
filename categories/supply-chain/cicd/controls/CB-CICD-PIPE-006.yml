@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-006
+title: Sign pipeline definitions and verify them before execution
+finding:
+  title: Pipeline definitions and remotely resolved tasks run without signature verification
+  description: The platform runs whatever step definitions it receives, so a definition altered after review, in transit or in a remote catalog is executed with the pipeline's credentials.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [pipeline-signing, trusted-resources, signed-pipelines, integrity]
+
+description: |
+  Pipeline definitions, and tasks or pipelines resolved from remote sources (bundles, Git, hub
+  catalogs), carry a signature made with a key held by the pipeline owners. The platform or the
+  agent verifies that signature before running the steps, in enforce mode: an unsigned or modified
+  definition does not run, and a definition that no verification policy covers is rejected.
+
+  Signing keys are kept in a KMS or HSM, and the agents that run jobs only hold the verification
+  key.
+
+  Signing of the build outputs themselves is covered by CB-CICD-ART-005; reviewed sources of
+  definitions by CB-CICD-PIPE-005.
+rationale: |
+  Review and branch protection guarantee what was merged, not what the executor receives. A
+  compromised control plane, catalog or resolver, or an upload step that rewrites the pipeline, can
+  hand modified steps to the agents. Verification at the point of execution ties what runs back to
+  a key the attacker does not hold.
+impact: |
+  Only Tekton (trusted resources) and Buildkite (signed pipelines, self-hosted agents) offer native
+  verification; elsewhere the control needs custom tooling (for example in-toto layouts). Key
+  management and rotation must be organized. Buildkite signed steps cannot be used with pipeline
+  templates.
+
+audit:
+  manual: |
+    Use a role that can read the cluster or agent configuration.
+
+    1. Identify which pipelines and remote task sources are in scope and how their definitions
+       are signed.
+    2. Check verification per platform:
+       - **Tekton**: `VerificationPolicy` resources cover every resolver source in use
+         (`spec.resources[].pattern`) with `mode: enforce` and key or KMS authorities, and the
+         `feature-flags` ConfigMap sets `trusted-resources-verification-no-match-policy: fail`.
+       - **Buildkite** (self-hosted agents): agents running jobs set `verification-jwks-file` and
+         keep `verification-failure-behavior` at `block`; signing keys are in AWS or GCP KMS or held
+         only by separate signing agents.
+       - **Other platforms**: an equivalent signature check of the definition runs outside the
+         pipeline before any privileged step.
+    3. Fail if a privileged pipeline can run an unsigned or modified definition, if verification is
+       in warning mode, or if job agents hold the signing key.
+
+remediation:
+  manual: |
+    1. Create a signing key in a KMS or HSM, owned by the pipeline maintainers.
+    2. Turn on verification:
+       - **Tekton**: sign tasks and pipelines with `tkn` or cosign, create `VerificationPolicy`
+         objects for each source with `mode: warn`, check the results, switch them to
+         `mode: enforce`, then set `trusted-resources-verification-no-match-policy` to `fail`.
+       - **Buildkite**: generate a JWKS key pair (or use KMS), sign steps at upload on dedicated
+         signing agents, give job agents only `verification-jwks-file`, test with
+         `verification-failure-behavior=warn`, then set it back to `block`.
+    3. Document key rotation and revocation.
+
+references:
+  - title: Tekton trusted resources
+    url: https://tekton.dev/docs/pipelines/trusted-resources/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite signed pipelines
+    url: https://buildkite.com/docs/agent/self-hosted/security/signed-pipelines
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure Software Factory
+    url: https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/secure-software-factory/secure-software-factory.md
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-3 Dependency Chain Abuse
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-03-Dependency-Chain-Abuse
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: partial
+    note: Covers remotely resolved pipeline tasks and definitions; package dependencies are covered by the DEP standard.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-005
+    type: related
+  - id: CB-CICD-ART-005
+    type: related
+  - id: CB-CICD-ART-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

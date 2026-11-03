@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Récupérer les secrets de forte valeur à l'exécution depuis un gestionnaire externe séparé par environnement
+finding:
+  title: Les secrets de production sont dans des variables CI et partagent un coffre avec le hors-production
+  description: Des identifiants de production copiés dans des variables CI sont disponibles pour tous les jobs du projet et lus par la même identité que les pipelines de test ; un job de test ou un membre du projet compromis atteint alors les secrets de production.
+description: |
+  Les secrets de production et autres secrets de forte valeur (matériel de signature, identifiants
+  d'administration de bases de données, clés d'API tierces de production) ne sont pas copiés dans
+  des variables CI. Les jobs les récupèrent à l'exécution depuis un gestionnaire de secrets externe
+  (HashiCorp Vault, un gestionnaire de secrets cloud ou équivalent), en s'authentifiant avec le
+  jeton d'identité du job ou une identité de charge de travail, et ne demandent que les secrets
+  qu'ils nomment. Quand le gestionnaire peut émettre des identifiants dynamiques ou à courte durée
+  de vie, ce sont eux qui sont utilisés.
+
+  Les secrets de production et hors-production sont conservés dans des instances, comptes ou
+  tenants distincts du gestionnaire, avec des rôles d'authentification distincts, pour qu'une
+  identité hors-production ne puisse pas lire un chemin de production, même par erreur de
+  politique.
+
+  Le type de stockage des secrets CI restants relève de CB-CICD-SEC-003 ; la liaison des secrets
+  aux branches et environnements protégés, de CB-CICD-SEC-008.
+rationale: |
+  Les secrets copiés dans la plate-forme CI sont exposés à tout ce qui peut s'exécuter dans le
+  projet, ainsi qu'aux sauvegardes et aux administrateurs de la plate-forme. Un gestionnaire
+  externe ajoute une décision de politique à chaque lecture, une trace d'audit par job, une
+  révocation en un seul endroit, et des identifiants dynamiques qui expirent après l'exécution.
+  Séparer les coffres de production et hors-production empêche une erreur de politique ou un
+  pipeline de test compromis d'atteindre les identifiants de production.
+impact: |
+  Il faut exploiter ou souscrire un gestionnaire de secrets, configurer la confiance entre les
+  jetons d'identité de la plate-forme CI et le gestionnaire, et modifier les jobs pour qu'ils
+  récupèrent les secrets. Les jobs dépendent de la disponibilité du gestionnaire. L'intégration
+  GitLab nécessite une offre payante.
+notes: |
+  GitLab Secrets Manager, le coffre intégré de GitLab, est en disponibilité limitée ; le mot-clé
+  `secrets:` avec un fournisseur externe est la voie documentée pour la production.
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lire les fichiers de pipeline et les réglages du
+    projet, et un accès en lecture aux politiques du gestionnaire de secrets.
+
+    1. Identifier les secrets de forte valeur de chaque pipeline de production (à partir de
+       l'inventaire, CB-CICD-SEC-001) et vérifier d'où chacun est lu.
+    2. Vérifier chaque plate-forme :
+       - **GitLab** (Premium ou Ultimate) : les jobs de déploiement utilisent le mot-clé
+         `secrets:` avec un fournisseur (`vault`, `azure_key_vault`, `gcp_secret_manager`,
+         `aws_secrets_manager`) et s'authentifient avec `id_tokens:` ; les secrets de production ne
+         sont pas des variables CI/CD.
+       - **TeamCity** : le projet a une connexion **HashiCorp Vault** sous **Connections**, et les
+         paramètres de build qui portent des secrets de production sont des paramètres **Remote**
+         de type **HashiCorp Vault Parameter**, pas des paramètres mot de passe avec une valeur
+         stockée.
+       - Autres plates-formes : le job de déploiement appelle le gestionnaire avec le jeton OIDC du
+         job ou l'identité de charge de travail du runner (par exemple l'action ou la CLI de
+         récupération de secrets du fournisseur cloud) et aucun jeton longue durée du
+         gestionnaire n'est stocké dans la CI.
+    3. Dans le gestionnaire de secrets, vérifier que les secrets de production sont dans une
+       instance, un compte ou un tenant séparé (ou au moins un espace de noms séparé avec son
+       propre moteur d'authentification), et que le rôle des pipelines hors-production ne peut pas
+       les lire.
+    4. Échec si un secret de production ou de forte valeur est stocké en variable CI, si les
+       pipelines s'authentifient auprès du gestionnaire avec un jeton longue durée, ou si un même
+       rôle du gestionnaire peut lire à la fois des secrets de production et hors-production.
+remediation:
+  manual: |
+    1. Mettre en place un gestionnaire de secrets par classe d'environnement (production,
+       hors-production), chacun avec son propre rôle d'authentification lié à l'émetteur OIDC de la
+       plate-forme CI et à la branche protégée ou à l'environnement qui déploie (CB-CICD-SEC-016).
+    2. Déplacer les secrets de forte valeur dans le gestionnaire de production, en préférant les
+       secrets dynamiques quand le système cible les prend en charge.
+    3. Modifier les jobs de déploiement pour qu'ils récupèrent les secrets à l'exécution :
+       - **GitLab** : ajouter `id_tokens:` avec l'audience du gestionnaire et une entrée `secrets:`
+         par secret au job de déploiement ; supprimer les variables CI/CD correspondantes.
+       - **TeamCity** : dans les **Connections** du projet, ajouter une connexion **HashiCorp
+         Vault** (authentification AppRole ou GCP IAM), puis créer des paramètres **Remote** de type
+         **HashiCorp Vault Parameter** avec une requête `chemin!/clé`, et les référencer par
+         `%nom_du_paramètre%`.
+    4. Supprimer les copies des variables CI et renouveler les secrets déplacés.

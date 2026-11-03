@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-016
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Utiliser des paramètres de pipeline typés et restreindre la surcharge des variables à l'exécution
+finding:
+  title: Les utilisateurs peuvent surcharger les variables du pipeline au lancement d'une exécution
+  description: Quiconque peut exécuter un pipeline peut définir ou surcharger des variables au moment de la mise en file, y compris des variables auxquelles le pipeline fait confiance (environnement cible, image, options de script, variables système), et les étapes peuvent définir de nouvelles variables arbitraires pour les étapes suivantes.
+description: |
+  Les exécutions sont paramétrées par des entrées typées avec valeurs autorisées, motif ou liste
+  fixe, pas par des variables libres. La surcharge des variables de pipeline ou de mise en file au
+  lancement d'une exécution est désactivée ou limitée aux propriétaires. Les variables qui ne doivent
+  pas changer à l'exécution sont en lecture seule.
+
+  Le niveau attendu est `{{ variable_override }}` :
+
+  - `restricted` : la surcharge des variables de mise en file ou de pipeline est désactivée ou
+    limitée au rôle propriétaire, et les pipelines utilisent des entrées typées ;
+  - `locked` : en plus, les étapes ne peuvent pas définir de variables arbitraires ni appeler de
+    commandes de journalisation privilégiées : les variables qu'une étape peut définir sont listées
+    explicitement (liste vide quand c'est possible) et les commandes des étapes s'exécutent en mode
+    restreint.
+
+  L'injection de valeurs non fiables dans les scripts relève de CB-CICD-PIPE-015.
+rationale: |
+  Une variable que l'utilisateur qui lance l'exécution peut surcharger est une entrée venant de cet
+  utilisateur. Les pipelines utilisent souvent des variables pour choisir la cible de déploiement,
+  l'image, la version à publier ou des interrupteurs de sécurité ; les surcharger peut rediriger une
+  livraison ou désactiver un contrôle sans modifier le fichier de pipeline. Les étapes qui peuvent
+  définir des variables permettent à un outil compromis d'influencer toutes les étapes suivantes.
+impact: |
+  Les exécutions qui s'appuyaient sur des surcharges ponctuelles de variables ont besoin d'entrées
+  déclarées. Sur GitLab, `no_one_allowed` et `owner` ne peuvent ensuite être modifiés que par le
+  rôle Owner.
+notes: |
+  GitLab : la valeur par défaut de `ci_pipeline_variables_minimum_override_role` est
+  `no_one_allowed` pour les nouveaux projets des nouveaux espaces de noms sur GitLab.com, et
+  `maintainer` sur GitLab Self-Managed et Dedicated. La restriction ne concerne pas les variables
+  CI/CD de projet ou de groupe.
+parameters:
+  variable_override: restricted limite la surcharge des variables de mise en file et de pipeline et utilise des entrées typées ; locked restreint aussi les variables que les étapes peuvent définir et les commandes de journalisation.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de pipeline des projets et de l'organisation.
+
+    1. Vérifier les réglages de surcharge :
+       - **GitLab** : **Settings** > **CI/CD** > **Variables** > **Minimum role to use pipeline
+         variables** (`ci_pipeline_variables_minimum_override_role` dans `GET /projects/:id`) vaut
+         `no_one_allowed` ou `owner` ; sur GitLab Self-Managed, **Admin** > **Settings** > **CI/CD** >
+         **Allow pipeline variables by default in new groups** est décoché. Les pipelines qui
+         prennent des entrées utilisent `spec:inputs` avec `type`, `options` ou `regex`.
+       - **Azure DevOps** : **Paramètres de l'organisation** et **Paramètres du projet** >
+         **Pipelines** > **Paramètres** > **Limiter les variables pouvant être définies au moment de
+         la mise en file d'attente** est activé ; les pipelines utilisent `parameters:` avec `type`
+         et `values`, et les variables fixes sont déclarées `readonly: true`.
+    2. Pour `locked`, vérifier que les étapes ou modèles **Azure DevOps** déclarent `target:` avec
+       `commands: restricted` et une liste `settableVariables:` (vide quand rien ne doit être
+       défini).
+    3. Échec si des utilisateurs sous le rôle propriétaire peuvent surcharger les variables de
+       pipeline au lancement d'une exécution, si une entrée de pipeline qui choisit une cible ou une
+       version est une variable libre, ou, pour `{{ variable_override }}` = `locked`, si les étapes
+       peuvent définir n'importe quelle variable.
+remediation:
+  manual: |
+    1. Remplacer les variables d'exécution libres par des entrées typées :
+       - **GitLab** : déclarer `spec:inputs` avec `type`, `options` ou `regex` dans la configuration
+         et les composants.
+       - **Azure DevOps** : déclarer `parameters:` avec `type` et `values`, et définir
+         `readonly: true` sur les variables qui ne doivent pas changer.
+    2. Restreindre la surcharge :
+       - **GitLab** : en tant que Maintainer (Owner pour revenir en arrière), régler **Minimum role to
+         use pipeline variables** sur `no_one_allowed` (ou `owner`), ou utiliser l'action de groupe
+         **Start migration** pour les projets qui n'utilisent pas de variables de pipeline ; sur
+         Self-Managed, décocher **Allow pipeline variables by default in new groups**.
+       - **Azure DevOps** : activer **Limiter les variables pouvant être définies au moment de la
+         mise en file d'attente** ; ne garder marquées **Permettre aux utilisateurs de remplacer
+         cette valeur lors de l'exécution de ce pipeline** que les variables qui doivent l'être.
+    3. Pour `locked`, ajouter `target: { commands: restricted, settableVariables: [...] }` aux étapes
+       Azure Pipelines ou l'imposer depuis le modèle étendu.

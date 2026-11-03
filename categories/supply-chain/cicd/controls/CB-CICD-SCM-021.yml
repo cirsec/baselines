@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-021
+title: Allow automatic merge only where review and checks are enforced
+finding:
+  title: Pull requests can be merged automatically without enforced review and checks
+  description: An auto-merge feature or merge bot that merges as soon as a build passes, or that trusts the pull request's claimed author, lets a change land without the approvals the branch is supposed to require.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [auto-merge, merge-bots, flow-control, dependency-updates]
+
+description: |
+  Automatic merge (merge when checks pass, merge bots, dependency update auto-merge) is enabled
+  only on branches where the required review and status checks are enforced by the platform, so
+  the automatic merge happens only after every requirement is met. Merge bots and auto-merge
+  workflows are reviewed: they use a dedicated identity that cannot bypass protection rules, and
+  they decide what to merge from verified data (the pull request's actual content and the
+  platform's identity of the author), not from fields an attacker can spoof.
+
+  Required approvals are covered by CB-CICD-SCM-012; required checks by CB-CICD-SCM-019; bypass of
+  protection rules by CB-CICD-SCM-011.
+rationale: |
+  Auto-merge turns review and checks from a human gate into a machine gate. When the gate is only
+  advisory (warnings, optional checks), auto-merge removes the last human look at the change. Merge
+  workflows that approve and merge "dependency bot" pull requests based on the triggering actor or
+  branch name have been abused to merge attacker pull requests that impersonate the bot.
+impact: |
+  Repositories without enforced review and checks lose auto-merge until those are in place.
+  Auto-merge workflows may need to be rewritten to check the author through the platform API.
+notes: |
+  On Bitbucket Cloud, **Allow automatic merge when builds pass** is available on all plans but
+  only blocks on the other merge checks if **Prevent a merge with unresolved merge checks**
+  (Premium) is enabled; on Standard, keep it off. poutine's `confused_deputy_auto_merge` rule
+  flags GitHub workflows that auto-merge based on a spoofable actor.
+
+audit:
+  manual: |
+    Use a role that can read repository settings, branch restrictions and workflow files.
+
+    1. List repositories where auto-merge or a merge bot is enabled.
+    2. For each, check that required review and status checks are enforced on the target branch
+       (CB-CICD-SCM-012, CB-CICD-SCM-019):
+       - **GitHub**: **Settings** > **General** > **Pull Requests** > **Allow auto-merge** is only
+         enabled on repositories whose target branches have an active ruleset with required
+         approvals and status checks.
+       - **Bitbucket Cloud**: branch restriction merge setting **Allow automatic merge when builds
+         pass** is only enabled together with **Prevent a merge with unresolved merge checks**
+         (Premium).
+    3. Review merge bots and auto-merge workflows: they use a dedicated identity that is not in any
+       bypass list, and they identify the pull request author through the platform rather than
+       through the triggering actor, branch name or commit message.
+    4. Fail if auto-merge is enabled where review or checks are not enforced, or if a merge bot can
+       bypass protection or be triggered by a spoofed author.
+
+remediation:
+  manual: |
+    1. Enforce review and checks on target branches first (CB-CICD-SCM-012, CB-CICD-SCM-019).
+    2. Disable auto-merge where they cannot be enforced:
+       - **GitHub**: clear **Allow auto-merge** in the repository settings.
+       - **Bitbucket Cloud**: clear **Allow automatic merge when builds pass**, or enable **Prevent a
+         merge with unresolved merge checks** (Premium).
+    3. Remove merge bots from bypass lists and rewrite auto-merge workflows to verify the author
+       through the platform API and to require the same approvals as human pull requests.
+
+references:
+  - title: Managing auto-merge for pull requests in your repository
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Suggest or require checks before a merge
+    url: https://support.atlassian.com/bitbucket-cloud/docs/suggest-or-require-checks-before-a-merge/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Auto-merge
+    url: https://docs.gitlab.com/user/project/merge_requests/auto_merge/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers automatic merge and merge bots; other flow-control mechanisms are separate controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: requires
+  - id: CB-CICD-SCM-019
+    type: requires
+  - id: CB-CICD-SCM-011
+    type: related
+  - id: CB-CICD-COMP-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

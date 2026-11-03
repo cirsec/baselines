@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Authentifier les utilisateurs des plates-formes par le fournisseur d'identité central
+finding:
+  title: Des utilisateurs se connectent aux plates-formes CI/CD avec des comptes locaux hors du fournisseur d'identité
+  description: Les comptes locaux d'une plate-forme échappent au processus d'arrivée et de départ, à la MFA et à l'accès conditionnel du fournisseur d'identité ; un salarié parti ou un mot de passe hameçonné continue donc de fonctionner sur les plates-formes de sources et de pipelines.
+description: |
+  Les personnes se connectent aux plates-formes de gestion de sources, de CI et de CD par le
+  fournisseur d'identité de l'organisation (SAML, OpenID Connect ou LDAP), et la plate-forme l'impose :
+  sur les plates-formes SaaS, l'authentification unique est exigée pour l'organisation ou l'entreprise ;
+  sur les plates-formes auto-hébergées, le domaine de sécurité ou le module d'authentification pointe
+  vers le fournisseur d'identité et la connexion intégrée est désactivée ou réservée aux comptes de
+  secours. L'appartenance aux groupes vient du fournisseur d'identité, pour que les rôles en découlent.
+
+  Ce contrôle couvre la connexion interactive des personnes. Les comptes de secours et d'amorçage
+  relèvent de CB-CICD-IAM-003, la MFA de CB-CICD-IAM-006 et le déprovisionnement automatique de
+  CB-CICD-IAM-025.
+rationale: |
+  Le fournisseur d'identité est l'endroit où l'organisation applique la MFA, l'accès conditionnel, la
+  politique de mots de passe et le processus de départ. Une plate-forme qui garde sa propre base
+  d'utilisateurs duplique tout cela, en général sans MFA et sans que personne ne supprime les comptes
+  au départ des personnes. Un compte local volé ou oublié sur une plate-forme SCM ou CI donne un accès
+  en écriture au code et aux pipelines, ce qui suffit pour injecter du code dans une livraison.
+impact: |
+  Imposer le SSO bloque les utilisateurs sans identité dans le fournisseur, y compris les prestataires
+  et les comptes de service qui se connectaient avec un mot de passe : il faut d'abord les provisionner
+  dans le fournisseur d'identité ou passer l'automatisation sur des identités non humaines dédiées
+  (CB-CICD-IAM-027). Sur les SCM SaaS, il faut une édition entreprise.
+notes: |
+  Avec le SSO SAML de GitHub sur des comptes personnels, les utilisateurs gardent un compte GitHub qui
+  existe hors du fournisseur d'identité, et leurs jetons d'accès personnels et clés SSH doivent être
+  autorisés pour l'organisation ; Enterprise Managed Users supprime cet écart. Jenkins n'a pas de MFA
+  native : la MFA doit être imposée par le fournisseur d'identité derrière le domaine de sécurité. Les
+  modules OAuth de TeamCity restreints à une organisation laissent l'accès d'un compte TeamCity
+  existant jusqu'à la suppression de ce compte.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou d'auditeur de la plate-forme qui peut lire les réglages
+    d'authentification.
+
+    1. Lister chaque plate-forme SCM, CI, CD et registre en service et le fournisseur d'identité
+       auquel elle fait confiance.
+    2. Vérifier que le SSO est imposé, pas seulement disponible, et que la connexion intégrée est
+       désactivée ou limitée aux comptes de secours :
+       - **GitHub** : **Enterprise settings** > **Authentication security** > **SAML single sign-on**
+         est activé avec **Require SAML authentication**, ou l'entreprise utilise Enterprise Managed
+         Users (GitHub Enterprise Cloud). Sur GitHub Enterprise Server, **Management Console** >
+         **Authentication** utilise SAML, LDAP ou CAS.
+       - **GitLab** : sur GitLab.com, le groupe racine **Settings** > **SAML SSO** a **Enforce
+         SSO-only authentication for web activity for this group** et **Enforce SSO-only
+         authentication for Git and Dependency Proxy activity for this group** cochés (Premium). En
+         auto-hébergé, la connexion utilise un fournisseur SAML, OIDC ou LDAP de l'instance.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Microsoft Entra** montre
+         l'organisation connectée au locataire de l'entreprise.
+       - **Bitbucket Cloud** : dans Atlassian Administration, une stratégie d'authentification impose
+         l'authentification unique SAML pour les comptes gérés (Atlassian Guard).
+       - **CircleCI** : **Organization Settings** > **Single Sign-On** est configuré et imposé (offre
+         Scale).
+       - **Buildkite** : **Organization Settings** > **SSO** a un fournisseur activé (offre Pro ou
+         Enterprise).
+       - **Harness** : **Account Settings** > **Authentication** utilise SAML, LDAP ou OIDC, et **Use
+         Public OAuth Providers** est désactivé.
+       - **Jenkins** : **Manage Jenkins** > **Security** > **Security Realm** (ou
+         `jenkins.securityRealm` en configuration as code) est un domaine SAML, OpenID Connect, LDAP
+         ou Entra ID, pas **Jenkins' own user database**.
+       - **TeamCity** : **Administration** > **Authentication** utilise LDAP, le domaine Windows ou un
+         module OAuth/SSO ; le module intégré est retiré ou limité au secours.
+       - **Argo CD** : `argocd-cm` contient `dex.config` ou `oidc.config` ; les comptes locaux sous
+         `accounts.<name>` sont limités à l'API (`apiKey`) ou désactivés.
+       - **Spinnaker** : l'authentification de Gate est activée avec OAuth 2.0, SAML 2.0, LDAP ou
+         X.509.
+       - **Gitea / Forgejo** : une source d'authentification OAuth2, OIDC ou LDAP existe ; sur
+         Forgejo, `[service] ENABLE_INTERNAL_SIGNIN = false` une fois le SSO opérationnel.
+    3. Comparer la liste des utilisateurs de la plate-forme avec le fournisseur d'identité et lister
+       les comptes qui ne correspondent à aucune identité.
+    4. Échec si une plate-forme accepte une connexion interactive par mot de passe local pour une
+       autre personne qu'un compte de secours documenté, ou si le SSO est configuré sans être imposé.
+remediation:
+  manual: |
+    1. Déclarer chaque plate-forme comme application dans le fournisseur d'identité, avec les
+       revendications de groupes, la MFA et l'accès conditionnel appliqués.
+    2. Tester le SSO avec un groupe pilote, en gardant un administrateur de secours
+       (CB-CICD-IAM-003).
+    3. L'imposer :
+       - **GitHub** : configurer SAML au niveau de l'entreprise et cocher **Require SAML
+         authentication**, ou migrer vers Enterprise Managed Users avec OIDC (GitHub Enterprise
+         Cloud).
+       - **GitLab** : configurer le SSO SAML de groupe et cocher les deux options **Enforce SSO-only
+         authentication** ; en auto-hébergé, configurer le fournisseur OmniAuth SAML ou OIDC, ou LDAP.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Microsoft Entra** > **Connect
+         directory** (Project Collection Administrator et droits Entra requis).
+       - **Bitbucket Cloud** : vérifier le domaine, souscrire Atlassian Guard et créer une stratégie
+         d'authentification qui impose le SSO SAML.
+       - **CircleCI**, **Buildkite**, **Harness** : configurer le fournisseur SAML ou OIDC dans les
+         réglages d'authentification de l'organisation ou du compte, puis l'imposer ; sur Harness,
+         désactiver **Use Public OAuth Providers** avant d'activer SAML.
+       - **Jenkins** : installer le plugin SAML, OpenID Connect, LDAP ou Entra ID et changer le
+         domaine de sécurité.
+       - **TeamCity** : activer le module LDAP, domaine Windows ou OAuth et retirer le module intégré.
+       - **Argo CD** : ajouter `oidc.config` ou `dex.config` dans `argocd-cm` et associer les groupes
+         dans `argocd-rbac-cm`.
+       - **Spinnaker** : activer l'authentification de Gate avec le fournisseur d'identité.
+       - **Gitea / Forgejo** : ajouter la source d'authentification, puis désactiver l'inscription et
+         la connexion locale.
+    4. Supprimer ou désactiver les comptes locaux qui ne sont pas des comptes de secours.
+  rollback: |
+    Garder le compte de secours capable de se connecter en local ; il rétablit l'accès si le
+    fournisseur d'identité ou la configuration SSO tombe en panne.

@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-024
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les comptes inactifs des plates-formes après une durée définie
+finding:
+  title: Des comptes inutilisés depuis des mois gardent leur accès au code et aux pipelines
+  description: Personne ne surveille les comptes dormants ni leurs jetons ; la prise de contrôle de l'un d'eux passe inaperçue, et leur accès avait en général été accordé pour un travail terminé.
+parameters:
+  max_inactivity_days: Nombre de jours sans activité au terme duquel un compte utilisateur est désactivé ou supprimé.
+description: |
+  Les comptes utilisateurs sans activité depuis {{ max_inactivity_days }} jours sont désactivés ou
+  retirés des plates-formes SCM et CI/CD, et leurs jetons d'accès personnels, clés SSH et sessions
+  sont révoqués. Les comptes administrateurs sont revus en priorité. La durée est documentée, et la
+  désactivation automatique de la plate-forme est utilisée quand elle existe ; ailleurs, une revue
+  planifiée l'applique.
+
+  Le déprovisionnement automatique des départs relève de CB-CICD-IAM-025, les jetons inutilisés de
+  CB-CICD-IAM-031.
+rationale: |
+  Les comptes inactifs appartiennent à des personnes qui ont changé de poste, sont parties ou n'ont
+  jamais eu besoin de l'accès. Ils sont rarement aussi bien protégés que les comptes actifs, et
+  personne ne remarque quand ils resservent, ce qui en fait de bonnes cibles pour le bourrage
+  d'identifiants et pour les attaquants qui veulent passer inaperçus.
+impact: |
+  Les utilisateurs qui reviennent après une longue absence doivent demander une réactivation.
+  Certaines plates-formes ne comptent pas l'activité API ou Git comme activité : vérifier la
+  définition avant la désactivation automatique, pour ne pas désactiver les comptes de service (qui
+  devraient de toute façon être des identités non humaines, CB-CICD-IAM-027).
+notes: |
+  Sur GitHub Enterprise Server, la dormance ignore l'usage des jetons d'accès personnels, des clés SSH
+  et des GitHub Apps ainsi que les opérations Git sur les dépôts privés, et les utilisateurs dormants
+  ne sont pas suspendus automatiquement.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou de propriétaire qui voit l'activité des utilisateurs.
+
+    1. Lister les comptes avec leur dernière activité :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Account and limit** >
+         **Dormant users** : **Deactivate dormant users after a period of inactivity** est coché avec
+         au plus {{ max_inactivity_days }} jours (minimum 90). Sur GitLab.com, le groupe racine retire
+         automatiquement les membres dormants, ou la liste des membres (`last_activity_on`) est revue.
+       - **GitHub Enterprise Cloud** : **Enterprise settings** > **Compliance** > **Reports** >
+         **Dormant Users**. Sur GitHub Enterprise Server, la liste des utilisateurs dormants du
+         tableau de bord d'administration du site, avec le seuil de dormance réglé selon la politique.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Utilisateurs** montre la date du
+         dernier accès.
+    2. Pour les plates-formes en SSO, vérifier que le fournisseur d'identité désactive les identités
+       inactives selon le même calendrier.
+    3. Échec si des comptes actifs sont inactifs depuis plus de {{ max_inactivity_days }} jours, ou si
+       leurs jetons sont encore valides.
+remediation:
+  manual: |
+    1. Documenter la durée d'inactivité.
+    2. **GitLab auto-hébergé** : activer **Deactivate dormant users after a period of inactivity** et
+       régler le nombre de jours. Sur GitLab.com, activer le retrait automatique des membres dormants
+       pour le groupe (Owner du groupe).
+    3. **GitHub** : télécharger le rapport des utilisateurs dormants chaque trimestre et retirer ou
+       suspendre les utilisateurs listés ; sur GitHub Enterprise Server, régler le seuil de dormance
+       et suspendre les utilisateurs dormants.
+    4. **Azure DevOps** : revoir **Utilisateurs** chaque trimestre, retirer les utilisateurs inactifs
+       et désactiver leur compte Entra s'ils sont partis ; révoquer leurs PAT.
+    5. Révoquer les jetons et clés SSH de chaque compte désactivé.

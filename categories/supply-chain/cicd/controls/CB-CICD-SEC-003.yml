@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-003
+title: Store credentials as secret-typed values in a secrets store
+finding:
+  title: Credentials are stored as plain variables or in plaintext platform configuration
+  description: A token kept in a plain CI variable or a configuration file is shown in the interface, returned by the API and printed in logs, so anyone with read access to the project or the server can copy it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, secret-storage, masking, secrets-manager]
+
+description: |
+  Every credential used by pipelines or by the CI/CD platform itself is stored in the platform's
+  secret store or in a secrets manager, as a value of a secret type: secret, secured, masked or
+  password-typed. Such values are encrypted at rest, cannot be read back in the interface once
+  saved, and are masked in job logs.
+
+  Plain variables, parameters of a text type, and plaintext entries in the platform's own
+  configuration files hold only non-sensitive values. Production credentials are kept at the
+  narrowest level the platform offers (deployment or environment variables rather than
+  organization- or workspace-wide ones).
+
+  Hard-coded secrets in pipeline files are covered by CB-CICD-SEC-021, masking in logs by
+  CB-CICD-SEC-022, and the use of an external manager for high-value secrets by CB-CICD-SEC-004.
+rationale: |
+  Plain variables are designed to be seen: they appear in settings pages, API responses, exported
+  configuration and job logs. A credential stored this way is exposed to every reader of the
+  project and to every backup of the platform. Secret-typed storage keeps the value out of these
+  views and turns on log masking, which removes the most common accidental disclosures.
+impact: |
+  Secured values cannot be read back, so whoever rotates them needs the source of truth (the
+  issuing system or a secrets manager). Converting existing variables means re-entering their
+  values.
+notes: |
+  On Harness, keys of the built-in secret manager cannot be rotated, and Self-Managed Enterprise
+  Edition defaults to a local MongoDB store that Harness does not recommend for production. On
+  TeamCity, password parameters are only scrambled in versioned settings; keep them out of the
+  settings repository (CB-CICD-SEC-021).
+
+audit:
+  manual: |
+    Use a platform role that can list variables, parameters and secrets with their type (values
+    are not needed).
+
+    1. List variables at every level (instance, organization or workspace, group or project,
+       repository, environment or deployment) and check the type of every value that looks like a
+       credential (names containing `TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `PAT`, `CREDENTIALS`).
+    2. Check each platform:
+       - **GitHub**: credentials are under **Settings** > **Secrets and variables** > **Actions** >
+         **Secrets**, not **Variables** (read in workflows as `vars.*`).
+       - **Azure DevOps**: pipeline variables holding credentials have **Keep this value secret**
+         set; variable groups under **Pipelines** > **Library** holding credentials are either
+         secret-typed or **Link secrets from an Azure key vault as variables**, and the library
+         security roles limit who can use and administer them.
+       - **Bitbucket**: credentials under **Repository settings** > **Pipelines** > **Repository
+         variables**, **Workspace settings** > **Pipelines** > **Workspace variables** and
+         **Repository settings** > **Pipelines** > **Deployments** are **Secured**; production
+         credentials are deployment variables, not workspace variables (workspace variables reach
+         every repository build).
+       - **TeamCity**: **Build configuration** or **Project** > **Parameters**: parameters holding
+         credentials have the **Password** type, not **Text**.
+       - **Harness**: the **Connectors** of the account, organization or project include a secret manager
+         (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager or Azure Key Vault) used for
+         pipeline secrets; on Self-Managed Enterprise Edition the default local store is not used
+         for production secrets.
+       - **Spinnaker**: service configuration files and Halyard or Kustomize configuration hold
+         `encrypted:<engine>!...` or `encryptedFile:<engine>!...` references (S3, GCS or another
+         supported engine) instead of plaintext passwords, tokens or kubeconfigs.
+    3. Fail if a credential is stored as a plain variable, a text parameter or plaintext platform
+       configuration, or if a production credential is stored at organization or workspace level
+       where a deployment or environment scope exists.
+
+remediation:
+  manual: |
+    1. For each credential found in a plain variable, create a secret-typed value with the same
+       name at the narrowest level that works, then delete the plain variable.
+       - **GitHub**: create the value under **Secrets** and change `vars.NAME` to `secrets.NAME` in
+         the workflows.
+       - **Azure DevOps**: set **Keep this value secret** on the pipeline variable, or move the
+         value to Azure Key Vault and link it to a variable group; map secret variables explicitly
+         into the steps that need them (`env:`).
+       - **Bitbucket**: add the variable again with **Secured** checked; move production
+         credentials to the deployment environment's variables.
+       - **TeamCity**: edit the parameter and set its **Spec** type to **Password**.
+       - **Harness**: add a connector to an external secret manager, authenticated with OIDC
+         where available, and reference its secrets from pipelines; keep the built-in manager only
+         for the credentials of that connector.
+       - **Spinnaker**: store the values in a supported secret engine and replace them in the
+         configuration with `encrypted:` references, then grant the Spinnaker services read access
+         to that store only.
+    2. Rotate every credential that was stored in plaintext, since it may already have been read
+       from the interface, the API or a backup.
+
+references:
+  - title: Set secret variables
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/set-secret-variables
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Variables and secrets
+    url: https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Typed parameters
+    url: https://www.jetbrains.com/help/teamcity/typed-parameters.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Harness Secret Manager overview
+    url: https://developer.harness.io/docs/platform/secrets/secrets-management/harness-secret-manager-overview
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secrets management
+    url: https://spinnaker.io/docs/reference/secrets/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using secrets in GitHub Actions
+    url: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the storage type of secrets only.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-004
+    type: related
+  - id: CB-CICD-SEC-021
+    type: related
+  - id: CB-CICD-SEC-022
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir la signature de la provenance hors de portée des étapes de build définies par l'utilisateur
+finding:
+  title: Les étapes de build peuvent falsifier ou modifier la provenance des artefacts qu'elles produisent
+  description: Quand le job qui exécute le build contrôle aussi l'identité de signature de la provenance ou les champs qu'elle atteste, une dépendance compromise ou une modification malveillante peut produire une provenance signée revendiquant n'importe quelle source, n'importe quel workflow ou n'importe quelles entrées.
+description: |
+  La provenance des artefacts publiés est générée et signée par une partie de confiance de la
+  plate-forme de build que les étapes de build définies par l'utilisateur ne peuvent pas influencer.
+  Le matériel de signature et l'identité utilisée pour signer ne sont pas lisibles depuis les étapes
+  qui compilent, testent ou empaquettent le code, et chaque champ de la provenance est soit rempli par
+  la plate-forme, soit vérifié par elle. C'est la partie provenance de SLSA Build L3.
+
+  En pratique, le build de publication s'exécute dans une définition de build centrale et relue (un
+  workflow réutilisable partagé ou un modèle de pipeline épinglé sur un commit) qui fait le build et
+  l'attestation, et les vérificateurs ancrent l'attestation sur cette identité de signataire, pas
+  seulement sur le dépôt appelant.
+
+  La génération de la provenance elle-même relève de CB-CICD-ART-001 ; l'isolement de l'environnement
+  de build (runners éphémères à usage unique, sans accès aux secrets de la plate-forme) des contrôles
+  RUN.
+rationale: |
+  Une provenance SLSA Build L2 prouve que la plate-forme a signé quelque chose, mais si l'étape de
+  signature s'exécute dans le même job que des étapes de build non fiables, un outil de build
+  compromis peut modifier ce qui est signé. Déplacer le build et l'attestation dans une définition
+  séparée et contrôlée, et vérifier l'identité du signataire, garantit qu'un attaquant qui contrôle le
+  dépôt applicatif ne peut toujours pas obtenir une provenance revendiquant un autre builder ou un
+  autre workflow.
+impact: |
+  Les builds de publication doivent passer dans un workflow ou un modèle de build partagé, détenu par
+  une équipe plate-forme ou sécurité, ce qui demande du travail et ralentit les évolutions de la
+  logique de build. Les commandes de vérification et les politiques d'admission doivent être mises à
+  jour pour épingler le workflow signataire.
+notes: |
+  GitHub documente que les attestations d'artefacts atteignent SLSA v1.0 Build L3 quand le build et
+  l'attestation s'exécutent dans un workflow réutilisable. Tekton Chains signe depuis son propre
+  contrôleur, hors des pods de tâche, mais une étape de TaskRun écrit les résultats typés que Chains
+  atteste ; la protection des résultats par SPIRE (`enforce-nonfalsifiability: spire`) est documentée
+  par Tekton comme en cours de développement et pas encore fonctionnelle, donc Tekton ne satisfait pas
+  ce contrôle seul aujourd'hui.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline, les réglages d'attestation et les
+    politiques de déploiement.
+
+    1. Identifier les pipelines de publication des logiciels critiques et la définition qui fait le
+       build et signe la provenance.
+    2. Vérifier que cette définition appartient à une équipe distincte, est stockée dans un dépôt
+       protégé et est référencée par une version immuable (SHA de commit ou tag protégé).
+    3. Vérifier qu'aucune clé de signature, aucun identifiant KMS cloud ni aucun jeton OIDC servant à
+       la provenance n'est disponible pour les étapes de build du pipeline appelant.
+    4. Vérifier le côté vérification :
+       - **GitHub** : le build et l'étape `actions/attest` s'exécutent dans un workflow réutilisable
+         appelé avec `jobs.<id>.uses: <org>/<depot>/.github/workflows/<fichier>.yml@<sha>` ; la
+         vérification utilise
+         `gh attestation verify <artefact> --owner <org> --signer-workflow <org>/<depot>/.github/workflows/<fichier>.yml`
+         (ou `--signer-repo`).
+       - **Google Cloud Build** : la provenance est générée par Cloud Build lui-même
+         (`requestedVerifyOption: VERIFIED`) et vérifiée avec
+         `slsa-verifier verify-image --builder-id https://cloudbuild.googleapis.com/GoogleHostedWorker`.
+    5. Échec si la provenance d'une version critique peut être produite depuis un job qui exécute
+       aussi des étapes de build contrôlées par le dépôt avec accès à l'identité de signature, ou si
+       les vérificateurs acceptent n'importe quel workflow signataire.
+remediation:
+  manual: |
+    1. Créer une définition de build centrale pour chaque type d'artefact (image de conteneur,
+       paquet, binaire) dans un dépôt avec protection de branche et revue par les propriétaires du
+       code (CB-CICD-SCM-006, CB-CICD-SCM-018).
+    2. Faire exécuter par cette définition le build et l'attestation ensemble, le pipeline appelant ne
+       passant que des paramètres :
+       - **GitHub** : déplacer le build et `actions/attest` dans un workflow réutilisable ; les
+         appelants utilisent `uses: <org>/<depot-build>/.github/workflows/build.yml@<sha>` et
+         n'accordent `id-token: write` et `attestations: write` qu'à ce job.
+       - **Google Cloud Build** : laisser Cloud Build générer la provenance (`images:` et
+         `requestedVerifyOption: VERIFIED`) au lieu de signer depuis une étape de build.
+    3. Mettre à jour les contrôles de déploiement et les instructions aux consommateurs pour exiger
+       l'identité du signataire (`--signer-workflow`, ou `--builder-id` pour slsa-verifier).
+    4. Retirer les clés et identifiants de signature des pipelines applicatifs.

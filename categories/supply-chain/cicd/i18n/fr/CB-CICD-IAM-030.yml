@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-030
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une approbation pour les jetons qui accèdent à l'organisation
+finding:
+  title: Tout membre peut créer sans approbation un jeton qui atteint les ressources de l'organisation
+  description: Quand les membres créent librement des jetons d'accès, les propriétaires ignorent quels jetons peuvent lire ou modifier le code de l'organisation, et un membre compromis peut émettre un jeton qui survit à une réinitialisation du mot de passe.
+parameters:
+  token_creation: Gouvernance de la création des jetons. `owner-approval` exige l'approbation des propriétaires pour les jetons qui visent l'organisation ; `restricted-group` limite aussi la création de jetons aux administrateurs ou à un groupe en liste d'autorisation.
+description: |
+  Les jetons d'accès personnels qui accèdent aux ressources de l'organisation sont visibles des
+  propriétaires et, avec `{{ token_creation }}` réglé sur `owner-approval`, approuvés par eux avant de
+  fonctionner. Avec `restricted-group`, seuls les administrateurs ou un groupe en liste d'autorisation
+  peuvent créer des jetons, et les autres utilisateurs s'appuient sur le SSO, OAuth ou des identités
+  non humaines.
+
+  La durée de vie et la portée des jetons relèvent de CB-CICD-IAM-028 et CB-CICD-IAM-029.
+rationale: |
+  Un jeton personnel survit à une réinitialisation de mot de passe et à un réenrôlement MFA : c'est
+  ce qu'un attaquant crée en premier après la prise d'un compte. L'approbation des propriétaires rend
+  les nouveaux jetons visibles et leur permet de refuser les jetons larges ; restreindre la création
+  retire cette capacité aux comptes qui n'en ont jamais besoin.
+impact: |
+  Les propriétaires doivent traiter les demandes d'approbation. Avec `restricted-group`, les
+  utilisateurs hors du groupe ne peuvent plus créer de jetons : sur Azure DevOps, Git Credential
+  Manager cesse d'émettre des PAT et les utilisateurs passent à OAuth.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Vérifier l'approbation ou la restriction :
+       - **GitHub** : **Enterprise settings** > **Policies** > **Personal access tokens** >
+         **Fine-grained tokens** > **Require approval** est imposé, ou **Organization settings** >
+         **Personal access tokens** > **Settings** > **Fine-grained tokens** > **Require approval of
+         fine-grained personal access tokens** exige l'approbation d'un administrateur (les
+         organisations exigent l'approbation par défaut mais peuvent la désactiver).
+       - **Azure DevOps** (`restricted-group`) : **Paramètres de l'organisation** > **Stratégies** >
+         **Restrict personal access token (PAT) creation** est activé, avec une liste d'autorisation
+         Entra et, si besoin, **Allow creation of PAT with packaging scope only** (organisations
+         adossées à Entra uniquement).
+       - **Buildkite** (`restricted-group`) : les réglages API de l'organisation ont
+         `restrict_user_api_token_creation` à `true`, si bien que seuls les administrateurs peuvent
+         créer des jetons d'accès API.
+    2. Échec si des jetons atteignent les ressources de l'organisation sans approbation des
+       propriétaires, ou, avec `restricted-group`, si n'importe quel membre peut créer des jetons.
+remediation:
+  manual: |
+    1. **GitHub** : au niveau de l'entreprise, régler **Require approval** pour les jetons
+       fine-grained afin que les organisations ne puissent pas le désactiver, et faire revoir par les
+       propriétaires les demandes d'approbation qu'ils reçoivent.
+    2. **Azure DevOps** (`restricted-group`) : activer **Restrict personal access token (PAT)
+       creation**, ajouter le groupe Entra des utilisateurs autorisés, et cocher les PAT limités au
+       packaging pour les autres s'ils ont besoin des flux.
+    3. **Buildkite** (`restricted-group`) : poser `restrict_user_api_token_creation` à `true` par le
+       point d'accès des réglages API de l'organisation.

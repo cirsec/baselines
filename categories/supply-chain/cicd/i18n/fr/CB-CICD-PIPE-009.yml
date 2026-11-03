@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger l'approbation d'un mainteneur avant l'exécution des pipelines pour les contributions externes
+finding:
+  title: Les pull requests venant de forks ou de non-membres lancent automatiquement des pipelines
+  description: N'importe quel utilisateur extérieur peut ouvrir une pull request dont les scripts de build, tests ou fichier de pipeline modifiés s'exécutent sur les runners du projet, pour miner de la cryptomonnaie, sonder le réseau ou voler tout ce que l'exécution peut atteindre.
+description: |
+  Les pipelines des pull requests venant de forks, de collaborateurs extérieurs et d'autres
+  non-membres ne démarrent pas tant qu'un mainteneur n'a pas regardé la modification et approuvé ce
+  commit précis. Une nouvelle poussée sur la pull request demande une nouvelle approbation. Le droit
+  d'approuver est limité aux mainteneurs ou au rôle équivalent, et les options « toujours faire
+  confiance à cet utilisateur » ne sont pas utilisées pour les contributeurs externes.
+
+  La portée attendue est `{{ approval_scope }}` :
+
+  - `outside-contributors` : chaque pull request venant d'un fork ou d'un non-membre demande une
+    approbation, pas seulement celles des contributeurs novices ;
+  - `all-pull-requests` : sur les pipelines sensibles, chaque pull request, y compris celles venant
+    de branches du même dépôt, demande une approbation avant de s'exécuter.
+
+  Ce à quoi un pipeline de fork approuvé peut accéder relève de CB-CICD-PIPE-010 ; les déclencheurs
+  privilégiés qui s'exécutent sur la branche de base relèvent de CB-CICD-PIPE-014.
+rationale: |
+  Un pipeline de pull request exécute du code choisi par son auteur. Les modes d'approbation « pour
+  les contributeurs novices » sont contournés après une seule modification anodine fusionnée, comme
+  une correction de faute de frappe. Exiger qu'un mainteneur regarde chaque modification externe
+  avant son exécution tient les runners, caches et jetons hors de portée des utilisateurs anonymes.
+impact: |
+  Les mainteneurs doivent approuver les pull requests externes, ce qui ralentit la contribution aux
+  projets open source. Les bots qui agissent pour le projet doivent être membres ou explicitement
+  approuvés.
+notes: |
+  Les workflows GitHub `pull_request_target` s'exécutent toujours, quel que soit le réglage
+  d'approbation (CB-CICD-PIPE-014). Les projets AWS CodeBuild créés avant la fonction de politique de
+  build des pull requests peuvent n'avoir aucune politique : vérifier chaque webhook. Woodpecker
+  donne les secrets courants aux pipelines approuvés. Sur Google Cloud Build, tout utilisateur ayant
+  l'accès en lecture au dépôt peut ouvrir une pull request qui lance un build.
+parameters:
+  approval_scope: outside-contributors exige une approbation pour chaque pull request de fork ou de non-membre ; all-pull-requests l'exige pour chaque pull request sur les pipelines sensibles.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des dépôts, de l'organisation et des déclencheurs de
+    pipeline.
+
+    1. Pour chaque plate-forme, vérifier le réglage d'approbation des pipelines de pull request :
+       - **GitHub** : **Organization** ou **Repository** > **Settings** > **Actions** > **General** >
+         **Approval for running fork pull request workflows from contributors** vaut **Require
+         approval for all outside collaborators** (politique d'entreprise dans **Policies** >
+         **Actions**).
+       - **GitLab** : les pipelines des merge requests venant de forks s'exécutent par défaut dans le
+         fork ; les exécuter dans le projet parent demande qu'un membre choisisse **Run pipeline**
+         après avoir relu le diff (voir CB-CICD-PIPE-010).
+       - **Azure DevOps** : **Déclencheurs** du pipeline > **Validation de pull request** > **Exiger
+         le commentaire d'un membre de l'équipe avant de générer une pull request** est activé, sur
+         **Uniquement pour les pull requests de non-membres de l'équipe** (ou **Sur toutes les pull
+         requests** pour `all-pull-requests`).
+       - **AWS CodeBuild** : chaque webhook a une politique de build des pull requests avec
+         `requiresCommentApproval` à `ALL_PULL_REQUESTS` (au moins `FORK_PULL_REQUESTS` sur les
+         dépôts publics), jamais `DISABLED`, et `approverRoles` limité aux rôles admin et maintain
+         (`GITHUB_ADMIN`, `GITHUB_MAINTAIN` ; GitLab `OWNER`, `MAINTAINER` ; Bitbucket `ADMIN`).
+       - **Google Cloud Build** : les déclencheurs de pull request règlent **Comment control** sur
+         **Required except for owners and collaborators**, ou **Required** sur les dépôts publics
+         avec secrets ou compte de service privilégié.
+       - **Tekton Triggers** : l'intercepteur GitHub utilise `githubOwners` (`enabled: true`,
+         `checkType` `orgMembers` ou `repoMembers`) pour que les non-propriétaires aient besoin d'un
+         commentaire `/ok-to-test`.
+       - **Gitea / Forgejo** : les workflows des pull requests d'utilisateurs sans accès en écriture
+         attendent une approbation ; les mainteneurs utilisent **Approve once**, pas **Approve
+         always**, pour les auteurs externes.
+       - **Woodpecker** : le réglage de dépôt **Require approval for** vaut **forks** ou plus strict
+         (`pull_requests` ou `all_events` pour `all-pull-requests`) ; la valeur par défaut du serveur
+         est `WOODPECKER_DEFAULT_APPROVAL_MODE`.
+       - **Jenkins** : les dossiers multibranch et d'organisation ne construisent pas automatiquement
+         les nouvelles pull requests d'auteurs non fiables ; les contributeurs du dépôt les activent
+         explicitement.
+    2. Échec si une pull request d'un non-membre peut lancer un pipeline sans approbation, si seuls
+       les contributeurs novices demandent une approbation, ou, pour `{{ approval_scope }}` =
+       `all-pull-requests`, si une pull request s'exécute sans approbation sur un pipeline sensible.
+remediation:
+  manual: |
+    1. Régler l'exigence d'approbation :
+       - **GitHub** : choisir **Require approval for all outside collaborators** au niveau
+         entreprise, organisation ou dépôt.
+       - **Azure DevOps** : modifier le pipeline, **Déclencheurs** > **Validation de pull request**,
+         activer **Exiger le commentaire d'un membre de l'équipe avant de générer une pull request**.
+       - **AWS CodeBuild** : mettre à jour chaque webhook (`UpdateWebhook` ou **Comment approval**
+         dans la console) avec `requiresCommentApproval: ALL_PULL_REQUESTS` et `approverRoles`
+         limité aux rôles admin et maintain ; les approbations se font par un commentaire
+         `/codebuild_run(<SHA>)`.
+       - **Google Cloud Build** : modifier le déclencheur et régler **Comment control**.
+       - **Tekton Triggers** : activer `githubOwners` sur l'intercepteur GitHub avec un fichier
+         owners.
+       - **Woodpecker** : régler **Require approval for** dans les réglages du dépôt, et
+         `WOODPECKER_DEFAULT_APPROVAL_MODE` pour les nouveaux dépôts.
+       - **Gitea / Forgejo** : révoquer la confiance **Approve always** donnée à des auteurs externes.
+       - **Jenkins** : cesser de construire automatiquement les nouvelles pull requests et exiger une
+         activation explicite, par exemple par un label.
+    2. Limiter le droit d'approuver aux mainteneurs et documenter ce qu'il faut regarder avant
+       d'approuver (modifications des fichiers de pipeline, scripts de build, tests et manifestes de
+       dépendances).

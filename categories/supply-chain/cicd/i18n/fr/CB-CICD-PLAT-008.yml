@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Sauvegarder séparément les données et les clés secrètes de la plate-forme et tester les restaurations
+finding:
+  title: Les données ou clés de chiffrement de la plate-forme CI/CD ne sont pas sauvegardées, ou la restauration n'a jamais été testée
+  description: Après un rançongiciel, une intrusion destructrice ou une mise à jour ratée, les dépôts, réglages de pipeline et secrets stockés sont irrécupérables, ou la sauvegarde se restaure mais ses valeurs chiffrées sont illisibles faute d'avoir sauvegardé le fichier de clés.
+description: |
+  Les plates-formes CI/CD auto-hébergées sont sauvegardées selon un calendrier : dépôts, base de
+  données, fichiers de configuration et stockage objet (artefacts, paquets, LFS, journaux de CI s'ils
+  y sont conservés). Les sauvegardes vont dans un emplacement que la plate-forme et ses
+  administrateurs ne peuvent ni modifier ni supprimer depuis la plate-forme elle-même, et au moins
+  une copie est hors ligne ou immuable.
+
+  Les clés de chiffrement et fichiers secrets (par exemple `gitlab-secrets.json` de GitLab,
+  `SECRET_KEY` de Gitea et Forgejo) sont sauvegardés à part des données, chiffrés, et avec un accès
+  plus restreint, pour qu'une sauvegarde de données volée ne donne pas aussi les clés qui déchiffrent
+  les secrets stockés.
+
+  Une restauration est testée au moins une fois par an et après les montées de version majeures,
+  sur une instance isolée, et le résultat (durée, données vérifiées) est consigné. Un réplica de
+  haute disponibilité ne remplace pas une sauvegarde, car il réplique suppressions et corruptions.
+rationale: |
+  La plate-forme CI/CD détient l'historique du code source de l'organisation, les définitions de
+  pipeline, les règles d'accès et les secrets. Les attaques destructrices contre les serveurs SCM et
+  CI existent, tout comme les mises à jour ratées. Une sauvegarde sans le fichier de clés restaure
+  une plate-forme dont les variables CI, jetons de runner et secrets 2FA ne se déchiffrent plus ; une
+  sauvegarde stockée là où les administrateurs de la plate-forme peuvent l'effacer disparaît avec
+  elle lors d'une intrusion.
+impact: |
+  Nécessite du stockage, un hôte ou service de sauvegarde, et du temps pour des tests de
+  restauration périodiques. L'hôte de sauvegarde détient une copie complète du code et doit lui-même
+  être durci et contrôlé.
+audit:
+  manual: |
+    Utiliser un compte qui peut lire la configuration et l'historique des sauvegardes, et demander
+    le dernier rapport de test de restauration.
+
+    1. Vérifier le calendrier, la rétention et la destination des sauvegardes de chaque plate-forme
+       auto-hébergée, et la date de la dernière exécution réussie.
+    2. Vérifier que les clés sont dans une sauvegarde séparée, chiffrée et à accès restreint :
+       - **GitHub Enterprise Server** : le service de sauvegarde est configuré dans la **Management
+         Console** avec des sauvegardes planifiées, ou les anciens utilitaires de sauvegarde
+         (`ghe-backup`) tournent sur un hôte séparé et durci ; les instantanés sont copiés hors du
+         volume de sauvegarde.
+       - **GitLab (paquet Linux)** : `gitlab-backup create` est planifié, et
+         `/etc/gitlab/gitlab-secrets.json` et `/etc/gitlab/gitlab.rb` sont sauvegardés à part,
+         puisque la sauvegarde applicative ne les inclut pas.
+       - **Gitea / Forgejo** : `gitea dump` / `forgejo dump` (ou des sauvegardes équivalentes de la
+         base et des dépôts) est planifié, et `app.ini` et les fichiers de clés sont sauvegardés à
+         part.
+    3. Vérifier qu'au moins une copie est hors ligne ou immuable (verrouillage d'objet, stockage à
+       écriture unique, compte séparé) et ne peut pas être supprimée avec les identifiants de la
+       plate-forme.
+    4. Lire le dernier rapport de test de restauration et vérifier sa date et son périmètre.
+    5. Échec si une plate-forme n'a pas de sauvegarde planifiée, si les clés manquent aux sauvegardes
+       ou sont stockées avec les données sous le même accès, si aucune copie n'est protégée contre la
+       suppression par les administrateurs de la plate-forme, ou si aucune restauration n'a été
+       testée dans les 12 derniers mois.
+remediation:
+  manual: |
+    1. Mettre en place des sauvegardes planifiées pour chaque plate-forme :
+       - **GitHub Enterprise Server** : configurer le service de sauvegarde dans la **Management
+         Console** (ou les utilitaires de sauvegarde sur un hôte séparé) et copier les instantanés
+         sur un stockage séparé.
+       - **GitLab (paquet Linux)** : planifier `gitlab-backup create` et une copie chiffrée séparée
+         de `/etc/gitlab/gitlab-secrets.json` et `/etc/gitlab/gitlab.rb`.
+       - **Gitea / Forgejo** : planifier `gitea dump -c /chemin/vers/app.ini` / `forgejo dump`, et
+         sauvegarder à part `app.ini` et les fichiers de clés référencés par les `*_URI`.
+    2. Stocker une copie sur un stockage immuable ou hors ligne, sous un compte que les
+       administrateurs de la plate-forme ne contrôlent pas.
+    3. Restreindre l'accès à la sauvegarde des clés à un petit groupe, distinct des opérateurs de la
+       sauvegarde des données.
+    4. Restaurer sur une instance isolée au moins une fois par an et après les montées de version
+       majeures, vérifier que dépôts, réglages de pipeline et secrets stockés sont utilisables, et
+       consigner le résultat.

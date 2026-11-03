@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-009
+title: Allow only the release pipeline identity to publish to release registries
+finding:
+  title: Developers and other accounts can push directly to release registries, feeds or protected image tags
+  description: When people or unrelated pipelines can upload packages or overwrite release tags, a stolen developer token or a compromised side project is enough to replace a release, bypassing review and the build pipeline.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [registry, package-feed, publishing, least-privilege, container-registry]
+
+description: |
+  Registries, package feeds and container repositories that hold release artifacts are internal or
+  private registries under the organization's control, and they accept new versions and release
+  tags only from the CI/CD service identity of the source repository that builds them. Human
+  accounts and other pipelines have read access at most.
+
+  When an artifact must be uploaded by another account (for example a hotfix built outside CI),
+  the upload is reviewed and approved by a second person before it is used.
+
+  The same registry also stores the signatures and attestations of the artifacts (CB-CICD-ART-004).
+  Read-only credentials for consuming packages are covered by CB-DEP-CI-002; visibility of build
+  outputs by CB-CICD-ART-010.
+rationale: |
+  The release registry is the last hop before deployment. If publishing is open to every developer
+  or to every pipeline of the organization, any one stolen token, compromised laptop or malicious
+  merge in an unrelated repository can replace a release. Restricting publication to the release
+  identity of the owning repository makes the build pipeline, with its reviews and checks, the only
+  way in.
+impact: |
+  Teams that publish manually must move publishing into the pipeline. Some ecosystems need one feed
+  or repository per project to scope publishing rights. Emergency uploads need a documented,
+  reviewed procedure.
+notes: |
+  In Azure Artifacts, the project and organization build service identities get **Feed and Upstream
+  Reader (Collaborator)** by default; publishing needs **Feed Publisher (Contributor)**, which should
+  be granted to the build identity of the producing project only. GitLab package protection rules
+  block pushes with deploy tokens to protected packages; protected container tags are limited to 5
+  rules per project.
+
+audit:
+  manual: |
+    Use a role that can read registry, feed and package permissions.
+
+    1. List the registries, feeds and image repositories that hold release artifacts.
+    2. For each one, list who can publish, overwrite or delete versions and tags.
+    3. Check the platform settings:
+       - **Azure DevOps**: **Artifacts** > feed > **Feed settings** > **Permissions**: only the build
+         service identity of the producing project has **Feed Publisher (Contributor)** or above;
+         users and groups have **Feed Reader** or **Feed and Upstream Reader (Collaborator)**.
+       - **GitHub**: in the organization **Settings** > **Packages**, package creation is limited to
+         private or internal visibility; each release package has **Inherit access from repository**
+         enabled or, under **Manage Actions access**, only the source repository with write access;
+         no user has **Write** or **Admin** on the package outside the maintainers.
+       - **GitLab**: **Settings** > **Packages and registries** > **Container registry** >
+         **Protected container tags** protects release tag patterns (for example `^v.*`) with
+         **Minimum role allowed to push** and **to delete** set to Maintainer or higher; **Package
+         registry** > **Protected packages** has rules for release package names.
+    4. Review the registry audit log for recent publications by accounts other than the release
+       identity.
+    5. Fail if a human account or another pipeline can publish or overwrite a release version or tag
+       without a second-person review.
+
+remediation:
+  manual: |
+    1. Give each producing repository its own publishing identity and remove publish rights from
+       people and unrelated pipelines:
+       - **Azure DevOps**: in **Feed settings** > **Permissions**, set users and groups to **Feed
+         Reader**, and grant **Feed Publisher (Contributor)** only to the producing project's build
+         service identity.
+       - **GitHub**: enable **Inherit access from repository** on release packages (or set the
+         organization default under **Settings** > **Packages**), publish with `GITHUB_TOKEN` from the
+         source repository, and remove direct user write access.
+       - **GitLab**: add **Protected container tags** rules for release tags and **Protected
+         packages** rules for release packages, with Maintainer or higher as the minimum role to push
+         and delete, and publish from protected-branch pipelines.
+    2. Move manual publishing steps into the release pipeline.
+    3. Document the emergency upload procedure with a second-person approval and an audit trail.
+
+references:
+  - title: Manage permissions - Azure Artifacts
+    url: https://learn.microsoft.com/azure/devops/artifacts/feeds/feed-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuring a package's access control and visibility
+    url: https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected container tags
+    url: https://docs.gitlab.com/user/packages/container_registry/protected_container_tags/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected packages
+    url: https://docs.gitlab.com/user/packages/package_registry/package_protection_rules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers the publication of artifacts; other bypasses of the release flow are covered by SCM and DEPLOY controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.2.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1525
+related_controls:
+  - id: CB-CICD-ART-010
+    type: related
+  - id: CB-CICD-ART-012
+    type: related
+  - id: CB-CICD-IAM-027
+    type: related
+  - id: CB-DEP-CI-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

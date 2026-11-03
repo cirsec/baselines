@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre qui peut lancer, planifier ou annuler les exécutions de pipelines sensibles
+finding:
+  title: N'importe quel contributeur peut lancer, planifier ou annuler les pipelines de mise en production et de déploiement
+  description: L'accès en écriture à un dépôt suffit pour exécuter le pipeline de mise en production avec ses secrets, posséder une planification qui continue de tourner avec les droits de l'utilisateur après son départ, ou annuler un job de sécurité ; un compte de développeur volé peut donc déclencher des exécutions privilégiées.
+description: |
+  Les pipelines de mise en production et de déploiement ne peuvent être lancés que par des équipes
+  nommées ou des comptes de bot dédiés, indépendamment de qui peut contribuer au code. Les pipelines
+  planifiés appartiennent à un mainteneur actif ou à un compte de service et leurs variables sont
+  relues. L'annulation des pipelines et des jobs est limitée aux mainteneurs, pour qu'un
+  contributeur ne puisse pas arrêter un job de sécurité en cours.
+
+  L'approbation des déploiements en production relève de CB-CICD-DEPLOY-003 ; l'approbation des
+  contributeurs externes relève de CB-CICD-PIPE-009.
+rationale: |
+  Sur la plupart des plates-formes, le droit de pousser du code implique le droit d'exécuter tous les
+  workflows. Séparer « peut contribuer » de « peut exécuter le pipeline de mise en production »
+  signifie qu'un compte de contributeur compromis, ou un bot aux droits trop larges, ne peut pas à
+  lui seul lancer une exécution privilégiée. Les planifications s'exécutent avec les droits de leur
+  propriétaire et sont facilement oubliées quand celui-ci part.
+impact: |
+  Les équipes de mise en production doivent tenir la liste des acteurs autorisés, y compris les
+  identités d'automatisation comme `dependabot[bot]` quand des workflows en ont besoin. Les
+  protections d'exécution de workflow GitHub demandent GitHub Team ou Enterprise pour les dépôts
+  privés ; la restriction d'annulation GitLab demande Premium ou Ultimate.
+notes: |
+  Buildkite : `BUILDKITE_BUILD_CREATOR_TEAMS` n'est fiable que si Buildkite a authentifié le créateur
+  (`BUILDKITE_SOURCE` vaut `ui` ou `api`) ; pour les builds de webhook, le créateur vient de l'auteur
+  de commit non vérifié. Sur AWS CodeBuild, un build démarre si l'un des groupes de filtres
+  correspond : chaque groupe a donc besoin du filtre d'acteur.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les politiques de workflow, les planifications de pipeline et les
+    réglages des projets.
+
+    1. Lister les pipelines de mise en production et de déploiement et qui peut actuellement les
+       lancer.
+    2. Vérifier par plate-forme :
+       - **GitHub** : **Settings** > **Actions** > **Policies** : une politique d'exécution de
+         workflow avec **Restrict actors** cible les workflows de mise en production et de
+         déploiement (par dépôt, propriété personnalisée ou chemin de workflow) et n'autorise que
+         l'équipe de mise en production et des bots nommés.
+       - **GitLab** : **Build** > **Pipeline schedules** (ou `GET /projects/:id/pipeline_schedules`) :
+         chaque planification appartient à un mainteneur actif ou à un compte de service ;
+         **Settings** > **CI/CD** > **General pipelines** > **Minimum role required to cancel a
+         pipeline or job** vaut Maintainer ou plus.
+       - **AWS CodeBuild** : sur les projets qui construisent des dépôts publics, chaque groupe de
+         filtres du webhook contient un filtre `ACTOR_ACCOUNT_ID` listant les identifiants de compte
+         de confiance.
+       - **Buildkite** : un hook d'agent sur les files de production vérifie
+         `BUILDKITE_BUILD_CREATOR_TEAMS` pour les builds de l'interface et de l'API, et les
+         déploiements déclenchés par webhook passent par une block step vérifiée avec
+         `BUILDKITE_UNBLOCKER_TEAMS`.
+    3. Échec si un contributeur hors des équipes autorisées peut lancer un pipeline de mise en
+       production ou de déploiement, si une planification appartient à un utilisateur inactif ou
+       parti, ou si les développeurs peuvent annuler des pipelines.
+remediation:
+  manual: |
+    1. Définir les équipes et comptes de bot autorisés à exécuter chaque pipeline sensible.
+    2. L'appliquer par plate-forme :
+       - **GitHub** : créer une politique d'exécution de workflow avec **Restrict actors** pour les
+         workflows de mise en production et de déploiement ; ajouter explicitement les identités
+         d'automatisation.
+       - **GitLab** : reprendre les planifications orphelines avec un compte de service ou un
+         mainteneur (**Take ownership**), relire les variables de planification, et régler **Minimum
+         role required to cancel a pipeline or job** sur Maintainer.
+       - **AWS CodeBuild** : ajouter un filtre `ACTOR_ACCOUNT_ID` à chaque groupe de filtres du
+         webhook.
+       - **Buildkite** : ajouter sur les files de production un hook d'agent `environment` qui
+         refuse les builds dont le créateur vérifié n'appartient pas à une équipe autorisée, et
+         placer une block step devant les déploiements déclenchés par webhook.
+    3. Revoir les listes d'acteurs autorisés et les propriétaires de planifications lors des départs
+       ou changements de rôle.

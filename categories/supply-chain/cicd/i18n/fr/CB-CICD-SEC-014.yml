@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Lire le code source avec des identifiants machine en lecture seule limités aux dépôts nécessaires
+finding:
+  title: Les outils CI/CD et GitOps lisent les dépôts avec des identifiants larges ou en écriture
+  description: Un jeton personnel, une clé utilisateur ou une clé de déploiement en lecture-écriture utilisée pour la récupération du code permet à quiconque peut lancer un job ou atteindre l'outil de pousser du code ou de lire tous les dépôts visibles par cet identifiant.
+description: |
+  Les identifiants que les serveurs CI/CD, les runners et les contrôleurs GitOps utilisent pour
+  récupérer le code source sont des identifiants machine (jetons d'installation d'application,
+  clés de déploiement en lecture seule, connexions gérées par la plate-forme), pas des jetons
+  personnels ni des clés utilisateur. Ils sont en lecture seule sauf si l'outil doit écrire en
+  retour (automatisation des images, étiquetage de release), et n'atteignent que les dépôts que
+  l'outil construit ou déploie. Les jetons à courte durée de vie sont préférés aux clés stockées.
+
+  Quand `{{ scope }}` vaut `per-repository`, les outils qui découvrent et construisent de nombreux
+  dépôts à partir d'une même configuration (dossiers d'organisation et pipelines multibranches
+  Jenkins) utilisent un identifiant limité à chaque dépôt, et les agents récupèrent le code avec des
+  jetons d'application à courte durée de vie au lieu de clés SSH stockées sur chaque agent.
+
+  Les jetons que les jobs utilisent pour appeler la plate-forme relèvent de CB-CICD-SEC-002 ; les
+  intégrations entre plates-formes CI et SCM, de CB-CICD-COMP-007 ; la vérification des clés
+  d'hôte, de CB-CICD-SEC-019.
+parameters:
+  scope: read-only utilise des identifiants machine en lecture seule (clés de déploiement, jetons d'application) et aucun jeton personnel ; per-repository limite en plus les identifiants d'analyse multi-dépôts à un dépôt chacun et remplace les clés SSH des agents par des jetons d'application à courte durée de vie.
+rationale: |
+  Les identifiants de récupération du code sont présents sur chaque runner et dans chaque
+  contrôleur GitOps, souvent à des endroits que beaucoup de personnes peuvent atteindre. Un
+  identifiant capable d'écrire y permet à un job ou un contrôleur compromis de pousser des commits
+  malveillants ; un identifiant large lui permet de lire tous les dépôts privés du compte. Sur
+  Jenkins, quiconque peut modifier un `Jenkinsfile` construit par un dossier d'organisation peut
+  utiliser son identifiant d'analyse à sa guise : un identifiant large étend alors l'accès en
+  écriture à un dépôt à tous les autres.
+impact: |
+  Des clés ou installations d'application séparées par dépôt sont plus nombreuses à gérer ; les
+  GitHub Apps et les connexions de plate-forme réduisent ce travail. Les outils qui écrivent en
+  retour ont besoin d'un identifiant dédié, limité séparément.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les identifiants de source de chaque outil et les clés de
+    déploiement ou installations d'application sur la plate-forme Git.
+
+    1. Lister les identifiants que chaque outil utilise pour lire les dépôts et, pour chacun,
+       vérifier sur la plate-forme Git son type, son droit d'écriture et son périmètre de dépôts :
+       - **GitHub** (Actions) : les steps `actions/create-github-app-token` renseignent
+         `repositories:` (ou `owner:` avec des dépôts explicites) et des entrées
+         `permission-<nom>:` ; sans elles, le jeton couvre tous les dépôts de l'installation avec
+         toutes les permissions de l'application.
+       - **AWS CodeBuild** : `aws codebuild list-source-credentials` montre l'`authType` des
+         identifiants de source stockés ; les projets se connectent par CodeConnections ou OAuth,
+         pas `PERSONAL_ACCESS_TOKEN` ni `BASIC_AUTH`. Le contrôle Security Hub CodeBuild.1 signale
+         les jetons ou mots de passe dans les URL de source Bitbucket.
+       - **Argo CD** : les secrets étiquetés `argocd.argoproj.io/secret-type: repository` ou
+         `repo-creds` utilisent une GitHub App avec la permission **Contents** en lecture seule, une
+         clé de déploiement en lecture seule ou une identité de charge de travail, pas un jeton
+         personnel ; les modèles d'identifiants (`repo-creds`) utilisent un préfixe d'URL qui ne
+         correspond qu'aux dépôts visés.
+       - **Flux** : les objets `GitRepository` référencent par `spec.secretRef` une clé de
+         déploiement en lecture seule sur la plate-forme Git, sauf si l'automatisation des images
+         écrit dans ce dépôt ; `flux bootstrap` crée une clé en lecture seule sauf si
+         `--read-write-key=true` a été utilisé.
+       - **CircleCI** : les projets utilisent la clé de récupération que crée CircleCI (limitée à
+         un dépôt et en lecture seule) et des clés SSH supplémentaires ajoutées comme clés de
+         déploiement en lecture seule ; aucune **user key** n'est utilisée sans besoin revu.
+       - **Jenkins** : les identifiants Branch Source des dossiers d'organisation et des pipelines
+         multibranches sont une GitHub App ou un jeton restreint aux dépôts et permissions
+         nécessaires, pas le jeton personnel d'un administrateur.
+       - **TeamCity** : les racines VCS s'authentifient avec un compte en lecture seule, une clé de
+         déploiement ou une connexion d'application, pas un compte personnel avec accès en
+         écriture.
+       - **Buildkite** : les agents auto-hébergés ne détiennent pas de clés SSH avec accès en
+         écriture ; les clés de récupération viennent de `checkout.ssh_secret` ou de la
+         récupération par jeton GitHub App de la file d'attente.
+    2. Quand `{{ scope }}` vaut `per-repository`, vérifier aussi :
+       - **Jenkins** : chaque dossier d'organisation utilise une GitHub App dont la stratégie
+         d'accès aux dépôts limite le jeton au dépôt en cours de construction.
+       - **Buildkite** : les files utilisées pour les dépôts GitHub ont **GitHub App token
+         checkout** activé, qui donne à chaque job un jeton en lecture seule à courte durée de vie.
+    3. Échec si un identifiant de récupération appartient à une personne, peut écrire sans besoin
+       d'écriture documenté, ou atteint des dépôts que l'outil n'utilise pas.
+remediation:
+  manual: |
+    1. Remplacer les identifiants personnels et en écriture par des identifiants machine en
+       lecture seule :
+       - **GitHub** : ajouter `repositories:` et `permission-contents: read` (et d'autres entrées
+         `permission-<nom>:` minimales) aux steps `actions/create-github-app-token`.
+       - **AWS CodeBuild** : créer une connexion CodeConnections (ou se connecter par OAuth) et y
+         basculer les projets ; supprimer les jetons d'accès personnels stockés avec
+         `aws codebuild delete-source-credentials`.
+       - **Argo CD** : enregistrer les dépôts avec une GitHub App limitée à la lecture du contenu ou
+         une clé de déploiement en lecture seule ; resserrer les préfixes d'URL des modèles
+         d'identifiants.
+       - **Flux** : remplacer la clé de déploiement par une clé en lecture seule ; garder une clé
+         en lecture-écriture séparée pour les seuls dépôts mis à jour par l'automatisation des
+         images.
+       - **CircleCI** : retirer les user keys, ajouter des clés de déploiement en lecture seule pour
+         les dépôts supplémentaires.
+       - **Jenkins** : basculer les Branch Sources sur un identifiant GitHub App avec restrictions
+         de dépôts et de permissions.
+       - **TeamCity** : passer les racines VCS sur un compte en lecture seule ou une clé de
+         déploiement.
+    2. Quand `{{ scope }}` vaut `per-repository`, configurer les dossiers d'organisation Jenkins
+       pour émettre des jetons d'application limités au dépôt, et activer la récupération par jeton
+       GitHub App sur les files Buildkite, puis retirer les clés SSH des agents.
+    3. Révoquer les identifiants remplacés.

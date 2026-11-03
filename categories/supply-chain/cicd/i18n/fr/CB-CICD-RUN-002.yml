@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver l'enregistrement des runners aux administrateurs de la plate-forme
+finding:
+  title: Des administrateurs de projet ou de dépôt peuvent rattacher leurs propres runners
+  description: Un runner enregistré par n'importe quel mainteneur reçoit les jobs, secrets et jetons du projet, et sur les portées partagées peut récupérer les jobs d'autres équipes ; un seul compte de mainteneur compromis ou une machine pirate devient alors un point de collecte d'identifiants.
+parameters:
+  runner_registrars: Runners que seuls les administrateurs de la plate-forme peuvent enregistrer. shared-runners couvre les runners d'organisation, de groupe et d'instance ; all-runners supprime aussi l'auto-enregistrement des runners de dépôt et de projet.
+description: |
+  La création ou l'enregistrement de runners et d'agents est réservé à un petit groupe
+  d'administrateurs de la plate-forme. La portée couverte est fixée par `{{ runner_registrars }}` :
+
+  - `shared-runners` : les runners qui servent plusieurs dépôts ou projets (runners d'organisation, de
+    groupe, d'instance, d'entreprise et pools d'agents au niveau de l'organisation) ne sont enregistrés
+    que par ce groupe ;
+  - `all-runners` : les administrateurs de dépôt et de projet ne peuvent enregistrer aucun runner, et
+    chaque runner est créé de manière centralisée.
+
+  Les jetons d'enregistrement à courte durée de vie relèvent de CB-CICD-RUN-004 ; qui peut utiliser un
+  runner une fois créé relève de CB-CICD-RUN-010 et CB-CICD-RUN-011.
+rationale: |
+  Un runner reçoit tout ce qu'un job reçoit : code extrait, secrets, jetons de job et identifiants cloud.
+  Celui qui enregistre un runner choisit la machine qui les reçoit. Quand n'importe quel mainteneur peut
+  rattacher un runner, un seul compte compromis suffit pour router des jobs vers un hôte contrôlé par
+  l'attaquant et récolter les secrets, ou pour faire tourner des builds sur une machine non patchée et
+  non supervisée.
+impact: |
+  Les équipes qui exploitent leurs propres runners doivent demander à l'équipe plate-forme de les
+  enregistrer. Prévoir un circuit de demande et un inventaire des runners de projet existants avant de
+  restreindre l'enregistrement.
+notes: |
+  Sur Woodpecker, les administrateurs d'organisation, et chaque utilisateur pour ses propres dépôts,
+  peuvent ajouter des agents tant que l'option serveur ci-dessous n'est pas posée. Sur GitLab, désactiver
+  l'enregistrement par les membres du projet renouvelle le jeton d'enregistrement du projet.
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lire les réglages des runners et la sécurité des pools
+    d'agents (lecture administrateur ou rôle d'auditeur).
+
+    1. Lister qui peut créer ou enregistrer des runners à chaque niveau (entreprise, organisation, groupe,
+       projet, dépôt) et comparer avec le groupe des administrateurs de la plate-forme.
+    2. Lister les runners et agents existants avec le compte qui les a enregistrés ; chercher les runners
+       ajoutés par des mainteneurs de projet.
+    3. Vérifier les réglages de la plate-forme :
+       - **GitHub** : sur GitHub Enterprise Cloud, **Enterprise** > **Policies** > **Actions** >
+         **Runners** : les runners de dépôt sont désactivés (**Disable for all organizations**, et
+         **Disable in all Enterprise Managed User (EMU) repositories** le cas échéant). Sinon, vérifier
+         dans les réglages Actions de chaque organisation quels dépôts peuvent créer des runners
+         auto-hébergés de dépôt.
+       - **GitLab** : **Admin** > **Settings** > **CI/CD** > **Runners** > **Runner registration** :
+         **Members of the project can create runners** et **Members of the group can create runners**
+         (tous deux autorisés par défaut) ; par groupe, **Admin** > **Overview** > **Groups** > **Edit** >
+         **New group runners can be registered**.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Pools d'agents** > **Sécurité**, et
+         l'onglet **Sécurité** de chaque pool : le rôle **Administrateur** (nécessaire pour enregistrer
+         des agents) n'est détenu que par le groupe plate-forme. Par défaut, les administrateurs de projet,
+         de build, de release et le créateur du pool le détiennent.
+       - **Woodpecker** : réglage serveur `WOODPECKER_DISABLE_USER_AGENT_REGISTRATION` (défaut `false`).
+    4. Échec si, pour la portée fixée par `{{ runner_registrars }}`, une personne hors du groupe des
+       administrateurs de la plate-forme peut enregistrer un runner ou un agent.
+remediation:
+  manual: |
+    1. Inventorier les runners enregistrés par des mainteneurs de projet et décider lesquels sont
+       réenregistrés de manière centralisée.
+    2. Restreindre l'enregistrement :
+       - **GitHub** : en tant que propriétaire d'entreprise (GitHub Enterprise Cloud), dans **Policies** >
+         **Actions** > **Runners**, choisir **Disable for all organizations** ; sinon, en tant que
+         propriétaire d'organisation, limiter dans les réglages Actions de l'organisation les dépôts
+         autorisés à créer des runners de dépôt. Enregistrer les runners partagés dans des groupes de
+         runners.
+       - **GitLab** : en tant qu'administrateur, décocher **Members of the project can create runners**
+         et **Members of the group can create runners** ; pour les groupes sensibles, décocher aussi
+         **New group runners can be registered**.
+       - **Azure DevOps** : en tant qu'administrateur de collection de projets, ne laisser le rôle
+         **Administrateur** des pools d'agents qu'au groupe plate-forme et le retirer aux autres groupes.
+       - **Woodpecker** : poser `WOODPECKER_DISABLE_USER_AGENT_REGISTRATION=true` sur le serveur.
+    3. Réenregistrer sous gestion centrale les runners dont les équipes ont encore besoin et supprimer les
+       autres (CB-CICD-RUN-006).

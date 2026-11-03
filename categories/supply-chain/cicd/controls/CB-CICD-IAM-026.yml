@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-026
+title: Inventory and review human and programmatic identities across CI/CD systems
+finding:
+  title: Nobody knows which users, tokens, keys and apps have access to the CI/CD chain
+  description: Without an inventory, forgotten personal access tokens, deploy keys, service accounts and app installations keep their access, and excessive permissions are never noticed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [access-review, inventory, tokens, service-accounts, least-privilege]
+
+parameters:
+  - name: review_frequency
+    type: enum
+    description: How often identities and their permissions are reviewed.
+    default: quarterly
+    allowed: [monthly, quarterly]
+
+description: |
+  An inventory, kept up to date from the platforms' own listings, covers every identity that can act
+  on the SCM, CI, CD and registry platforms: users and their roles, service accounts, personal,
+  project and group access tokens, deploy keys and SSH keys, OAuth and app installations, and
+  cross-system trust (service connections, OIDC trust policies). Each entry has an owner. Every
+  `{{ review_frequency }}` review compares granted and used permissions and removes what is not
+  needed.
+
+  Credentials used by pipelines are covered by CB-CICD-SEC-001, third-party apps by CB-CICD-COMP-005,
+  periodic review of audit logs by CB-CICD-LOG-008.
+rationale: |
+  Access accumulates: tokens created for a one-off script, keys added for a migration, apps installed
+  for a trial. Each is a credential that can leak and that nobody will miss if it is abused. An
+  inventory with owners and a periodic review is the only way to find and remove them, and it gives
+  the incident response team the list of what to revoke.
+impact: |
+  The review takes time each cycle, mostly the first one. Platforms that do not expose token or key
+  listings to administrators need a request to each owner.
+
+audit:
+  manual: |
+    Use an administrator or auditor role on each platform.
+
+    1. Check that an inventory exists, with an owner per identity and credential, and that the last
+       review is within the period.
+    2. Compare it with the platform listings, for example:
+       - **Buildkite**: **Settings** > **API Access Audit** lists every API access token with access
+         to the organization, filterable by scope, IP address and admin privileges.
+       - **GitHub**: **Organization settings** > **Personal access tokens** > **Active tokens**
+         (fine-grained tokens), **GitHub Apps** and **OAuth app** installations, deploy keys per
+         repository. Classic tokens are not listed there.
+       - **GitLab**: **Admin** > **Access** > **Credentials** (credentials inventory, Ultimate) lists
+         personal, group and project access tokens and SSH keys.
+       - **Azure DevOps**: users and access levels, service connections and service principals per
+         project.
+    3. For a sample of entries, check that the permissions match their use (last use date, scopes).
+    4. Fail if there is no inventory, if the last review is older than the period, or if unused or
+       unowned identities are found.
+
+remediation:
+  manual: |
+    1. Build the inventory from the platform listings and assign an owner to each entry.
+    2. Remove or reduce identities without an owner or without recent use:
+       - **Buildkite**: in **API Access Audit**, remove the organization from stale tokens.
+       - **GitHub**: revoke fine-grained tokens in **Active tokens**, uninstall unused apps, delete
+         unused deploy keys.
+       - **GitLab**: revoke tokens and delete SSH keys from the credentials inventory.
+    3. Schedule the `{{ review_frequency }}` review and record its result.
+
+references:
+  - title: Managing API access tokens - auditing tokens (Buildkite)
+    url: https://buildkite.com/docs/apis/managing-api-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Reviewing and revoking personal access tokens in your organization
+    url: https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/reviewing-and-revoking-personal-access-tokens-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Credentials inventory (GitLab)
+    url: https://docs.gitlab.com/administration/credentials_inventory/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(7)
+    relation: related
+related_controls:
+  - id: CB-CICD-SEC-001
+    type: related
+  - id: CB-CICD-COMP-005
+    type: related
+  - id: CB-CICD-LOG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-024
+title: Run release compile and package steps without network access
+finding:
+  title: Release build steps can reach the network
+  description: When compile and package steps of a release can download at build time, a compromised dependency source, build script or tool can pull in code that is not recorded anywhere, or send the source and build secrets out.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [hermetic-builds, network, release, slsa, tekton]
+
+description: |
+  The steps of a release build that compile, link and package the artifact run hermetically: they have
+  no network access except to the storage that holds the source and the dependencies fetched and
+  verified in an earlier step. Fetching dependencies is a separate step, with its own controls
+  (pinning, verification, approved registries), and its output is the only input the build step gets.
+
+  Limiting dependency downloads to approved registries is covered by CB-DEP-CI-003; single-purpose,
+  hermetically fed build steps in the pipeline design by CB-CICD-PIPE-023.
+rationale: |
+  A build that downloads during compilation depends on whatever the network returns at that moment,
+  which defeats dependency pinning and makes the build impossible to reproduce or to describe fully in
+  provenance. Without network access, a malicious build step also cannot exfiltrate source code or
+  credentials.
+impact: |
+  Build tooling must be configured for offline use (vendored dependencies, pre-fetched caches, offline
+  flags for package managers). Some ecosystems and build tools need significant work before they build
+  offline.
+notes: |
+  Tekton's hermetic execution mode is an alpha feature: it needs `enable-api-fields: "alpha"` in the
+  `feature-flags` ConfigMap and does not apply to sidecar containers. SLSA v1.2 does not require
+  network isolation at the levels it defines; it is a common way to show that the list of build
+  inputs is complete.
+
+audit:
+  manual: |
+    Use read access to release pipeline definitions and runner network configuration.
+
+    1. For each release pipeline, identify the compile and package steps and the step that fetches
+       dependencies.
+    2. Check how network access is removed during the build steps (network-less container, network
+       policy, firewall, build tool sandbox).
+    3. **Tekton**: release `TaskRun` objects that compile or package carry the annotation
+       `experimental.tekton.dev/execution-mode: hermetic`, and `feature-flags` has
+       `enable-api-fields: "alpha"`.
+    4. Run a release build with a step that tries to reach an external host; it must fail.
+    5. Fail if release compile or package steps can reach the network beyond source and pre-fetched
+       dependency storage.
+remediation:
+  manual: |
+    1. Split release pipelines into a dependency fetch step and an offline build step.
+    2. Configure build tools for offline use and pass the fetched dependencies as a workspace or volume.
+    3. Remove network access from the build step:
+       - **Tekton**: enable alpha API fields and annotate the build `TaskRun` with
+         `experimental.tekton.dev/execution-mode: hermetic`; keep network-dependent work out of
+         sidecars.
+       - Other platforms: run the build container with networking disabled (for example
+         `--network none`) or in a namespace with a default-deny egress policy.
+    4. Record the fetched inputs in provenance (CB-CICD-ART-003).
+
+references:
+  - title: Tekton hermetic execution mode
+    url: https://tekton.dev/docs/pipelines/hermetic/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Producing artifacts (Isolation strength)
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1041
+related_controls:
+  - id: CB-DEP-CI-003
+    type: related
+  - id: CB-CICD-PIPE-023
+    type: related
+  - id: CB-CICD-ART-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

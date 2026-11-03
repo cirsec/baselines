@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Chiffrer les stockages d'artefacts au repos et en transit, avec des clés gérées par le client pour les stockages critiques
+finding:
+  title: Les stockages d'artefacts acceptent des écritures non chiffrées ou en HTTP simple, ou reposent sur des clés que l'organisation ne contrôle pas
+  description: Des artefacts écrits sans chiffrement ou en HTTP simple peuvent être lus ou modifiés par quiconque a accès au stockage ou au chemin réseau, et des clés gérées par le fournisseur ne peuvent être ni restreintes, ni renouvelées, ni révoquées par l'organisation quand un stockage est exposé.
+description: |
+  Chaque stockage qui contient des artefacts de build, des exports de tests ou de rapports, et des
+  paquets est chiffré au repos, et rejette les écritures non chiffrées ou non envoyées en TLS. La clé
+  utilisée est `{{ encryption_key }}` :
+
+  - `provider-managed` : la clé propre du service de stockage est acceptable, tant que le chiffrement
+    est imposé et que les requêtes non chiffrées ou hors TLS sont refusées.
+  - `customer-managed` : les stockages des pipelines critiques et des artefacts confidentiels
+    utilisent une clé gérée par le client dans le KMS de l'organisation, avec rotation automatique,
+    une politique de clé limitée aux rôles de pipeline et de déploiement, et un usage journalisé.
+
+  Les artefacts distribués hors de l'organisation qui doivent rester confidentiels sont chiffrés
+  avant diffusion, pas seulement au repos dans le stockage.
+
+  Le contrôle d'accès à ces mêmes stockages relève de CB-CICD-ART-010 ; la sécurité des transports de
+  la plate-forme elle-même de CB-CICD-PLAT-004.
+rationale: |
+  Le chiffrement au repos protège les artefacts dans les sauvegardes, instantanés et supports de
+  stockage ; imposer TLS les protège sur le réseau. Une clé gérée par le client ajoute un second
+  contrôle d'accès indépendant : un identifiant de stockage divulgué ne sert à rien sans le droit
+  d'utiliser la clé, et l'organisation peut désactiver la clé pour couper l'accès à un stockage
+  exposé, ce qui est impossible avec une clé gérée par le fournisseur.
+impact: |
+  Les clés gérées par le client ont un coût, demandent d'entretenir des politiques de clé, et une
+  politique erronée ou une clé désactivée rend les artefacts illisibles. Certaines clés ne peuvent pas
+  être changées après la création d'un stockage, ce qui impose de recréer le stockage et de migrer
+  les artefacts.
+notes: |
+  CodePipeline ne crée son bucket d'artefacts avec SSE-KMS et la clé gérée par AWS `aws/s3` que
+  lorsque le pipeline est créé avec l'assistant de la console ; les pipelines créés avec la CLI ou
+  CloudFormation doivent être configurés à la main. CodePipeline ne prend en charge que les clés KMS
+  symétriques, et une clé gérée par le client est obligatoire pour les pipelines inter-comptes. La clé
+  gérée par AWS ne peut être ni modifiée ni supprimée. La clé d'un domaine CodeArtifact est choisie à
+  la création du domaine.
+parameters:
+  encryption_key: Clé protégeant les stockages d'artefacts. provider-managed accepte la clé du service de stockage avec chiffrement et TLS imposés ; customer-managed exige une clé KMS gérée par le client et renouvelée pour les stockages critiques.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration du stockage, des pipelines et des clés KMS.
+
+    1. Lister les stockages qui contiennent artefacts, rapports et paquets pour chaque plate-forme.
+    2. Pour chaque stockage, vérifier que le chiffrement au repos est actif et que le stockage refuse
+       les requêtes non chiffrées et hors TLS.
+    3. AWS CodeSuite :
+       - **CodePipeline** : la politique du bucket d'artefacts contient un `Deny` sur `s3:PutObject`
+         quand `s3:x-amz-server-side-encryption` n'est pas `aws:kms`, et un `Deny` sur `s3:*` quand
+         `aws:SecureTransport` vaut `false` ; avec `customer-managed`, `aws codepipeline get-pipeline`
+         montre `artifactStore.encryptionKey` avec `type: KMS` et l'ARN d'une clé gérée par le client.
+       - **CodeBuild** : dans la section **Artifacts** du projet, **Remove artifacts encryption** n'est
+         pas coché ; avec `customer-managed`, **Encryption key** contient l'ARN d'une clé gérée par le
+         client.
+       - **CodeArtifact** : avec `customer-managed`, `aws codeartifact describe-domain` montre un
+         `encryptionKey` qui est une clé gérée par le client.
+    4. Autres plates-formes et stockages auto-hébergés : vérifier le réglage de chiffrement du bucket
+       ou du volume et l'exigence TLS du point d'accès du stockage objet.
+    5. Avec `customer-managed` : vérifier que la rotation automatique est active et que la politique de
+       clé n'autorise que les rôles de pipeline et de déploiement.
+    6. Échec si un stockage accepte des écritures non chiffrées ou hors TLS, ou, avec
+       `customer-managed`, si un stockage critique utilise une clé gérée par le fournisseur.
+remediation:
+  manual: |
+    1. Activer le chiffrement par défaut sur chaque bucket d'artefacts et ajouter à sa politique des
+       instructions qui refusent les téléversements non chiffrés et les requêtes sans TLS (pour
+       CodePipeline, les deux instructions `Deny` présentées dans sa documentation).
+    2. Pour `customer-managed` :
+       - créer une clé KMS symétrique gérée par le client par environnement ou groupe de pipelines,
+         avec rotation automatique et une politique de clé limitée aux rôles de pipeline et de
+         déploiement ;
+       - **CodePipeline** : régler `artifactStore.encryptionKey` (`id` = ARN de la clé, `type: KMS`)
+         avec `aws codepipeline update-pipeline` ;
+       - **CodeBuild** : renseigner **Encryption key** avec l'ARN de la clé dans les réglages
+         **Artifacts** du projet ;
+       - **CodeArtifact** : créer un nouveau domaine avec `aws codeartifact create-domain
+         --encryption-key <ARN de la clé>` et migrer les paquets, la clé étant choisie à la création.
+    3. Chiffrer les artefacts confidentiels avant de les distribuer hors de l'organisation.

@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-001
+title: Restrict repository and project creation to owners
+finding:
+  title: Any member can create repositories or projects
+  description: A member who creates a repository becomes its administrator and can attach self-hosted runners, secrets and webhooks to it, or publish code outside any review, without an owner noticing.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [repository-creation, project-creation, least-privilege, governance]
+
+applicability:
+  versions: [azure-devops, forgejo, gitea, github, gitlab]
+
+description: |
+  Creating repositories, projects and groups is reserved to organization owners, instance
+  administrators or a dedicated team that handles requests (a form, an IssueOps workflow or a
+  provisioning pipeline). The scope of the restriction is set by `{{ creation_scope }}`:
+
+  - `public`: members cannot create public repositories or projects; only owners can.
+  - `all`: members cannot create any repository, project or top-level group; creation goes
+    through owners or the dedicated team.
+
+  On self-managed instances the same restriction covers project deletion, which is reserved to
+  administrators with a deletion delay so a deleted project can be restored. Who may create new
+  organizations is covered by CB-CICD-IAM-013; default visibility of new repositories by
+  CB-CICD-SCM-002.
+rationale: |
+  The creator of a repository or project becomes its administrator. That role can register
+  runners, store secrets, add deploy keys and webhooks, and change visibility. Free creation
+  therefore lets any member build an unreviewed pipeline with its own credentials, or publish
+  internal code by creating a public copy. Restricting creation keeps every repository under an
+  owner who applies the organization's protections from day one.
+impact: |
+  Teams wait for an owner or the provisioning process to create repositories. Automate the
+  request path (template repository, IssueOps, Terraform) so the restriction does not slow
+  delivery. Existing repositories are not affected.
+notes: |
+  On Gitea and Forgejo a per-user repository limit is bypassable if regular users can create
+  organizations: set `DISABLE_REGULAR_ORG_CREATION = true` together with the limit. On GitLab
+  the instance setting only applies to new groups; existing groups keep their own value.
+
+parameters:
+  - name: creation_scope
+    type: enum
+    description: Which creation is reserved to owners or a dedicated team.
+    allowed: [public, all]
+    default: public
+    profile_defaults:
+      hardened: all
+
+audit:
+  manual: |
+    Use an owner or administrator role with read access to organization or instance settings.
+
+    1. Identify who can create repositories, projects and groups on each platform.
+    2. Check the platform setting:
+       - **GitHub**: **Enterprise** > **Policies** > **Repositories** > **Repository creation**,
+         and each organization's **Settings** > **Member privileges** > **Repository creation**.
+         With `public`, the **Public** type is not allowed for members; with `all`, members cannot
+         create any type (owners only, or a creation team / IssueOps).
+       - **GitLab**: **Admin** > **Settings** > **General** > **Visibility and access controls** >
+         **Default minimum role required to create projects** and **Allowed to delete projects**
+         (Administrators), and **Admin** > **Settings** > **General** > **Account and limit** >
+         **Allow new users to create top-level groups** and **Default projects limit**. For
+         `public`, the **Public** level is listed in **Restricted visibility levels** so only
+         administrators can create public projects.
+       - **Azure DevOps**: **Organization settings** > **Permissions**: the **Create new projects**
+         permission is only allowed for Project Collection Administrators.
+       - **Gitea / Forgejo**: `app.ini` `[repository] MAX_CREATION_LIMIT` (`0` with per-user
+         exceptions set by an administrator), `[admin] DISABLE_REGULAR_ORG_CREATION = true` and
+         `[service] DEFAULT_ALLOW_CREATE_ORGANIZATION = false`.
+    3. Fail if, for the configured `{{ creation_scope }}`, members without the owner or
+       administrator role can create the repositories or projects in scope.
+
+remediation:
+  manual: |
+    1. Set up a request path for new repositories (template repository, request form, IssueOps
+       workflow or infrastructure-as-code) handled by owners or a dedicated team.
+    2. Apply the restriction:
+       - **GitHub**: as enterprise owner, set **Repository creation** to restrict members (clear
+         **Public**, or disable member creation entirely for `all`); otherwise set it per
+         organization under **Member privileges**.
+       - **GitLab**: as administrator, set **Default minimum role required to create projects** to
+         **Owners** or **Administrators**, set **Allowed to delete projects** to **Administrators**,
+         clear **Allow new users to create top-level groups**, and restrict the **Public**
+         visibility level. Update the project-creation role of existing groups.
+       - **Azure DevOps**: as Project Collection Administrator, set **Create new projects** to
+         **Not set** or **Deny** for every group except Project Collection Administrators.
+       - **Gitea / Forgejo**: set `MAX_CREATION_LIMIT = 0`, `DISABLE_REGULAR_ORG_CREATION = true`
+         and `DEFAULT_ALLOW_CREATE_ORGANIZATION = false` in `app.ini`, restart the service, then
+         raise the limit per user only where needed.
+    3. Review repositories created by members in the past and assign each an owner.
+
+references:
+  - title: Enforcing repository management policies in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restricting repository creation in your organization
+    url: https://docs.github.com/en/organizations/managing-organization-settings/restricting-repository-creation-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Control access and visibility
+    url: https://docs.gitlab.com/administration/settings/visibility_and_access_controls/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Permissions and groups reference
+    url: https://learn.microsoft.com/en-us/azure/devops/organizations/security/permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.2"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-013
+    type: related
+  - id: CB-CICD-SCM-002
+    type: related
+  - id: CB-CICD-SCM-003
+    type: related
+  - id: CB-CICD-RUN-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

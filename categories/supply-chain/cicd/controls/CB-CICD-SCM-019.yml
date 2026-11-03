@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-019
+title: Require CI and security checks to pass before merging
+finding:
+  title: Pull requests can be merged without passing CI and security checks
+  description: When checks are optional, or any integration can report them, a change that breaks tests, introduces a vulnerability or disables a security scan can be merged, and a forged success status is enough to satisfy the rule.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [status-checks, merge-checks, ci, security-scanning, flow-control]
+
+description: |
+  A pull or merge request into a protected branch can only be merged after the required CI and
+  security checks (build, tests, static analysis, dependency and secret scans) have succeeded on
+  its latest commit. Skipped or missing pipelines do not count as success. The binding of checks is
+  set by `{{ check_binding }}`:
+
+  - `required`: the checks are listed as required on the protection rule.
+  - `bound-to-source`: in addition, each required check is accepted only from the expected CI
+    application or identity, so a status posted by another integration or a user cannot satisfy
+    it.
+
+  Which security scans are mandatory is covered by CB-CICD-TEST-001; blocking on new findings by
+  CB-CICD-TEST-003; testing of the exact merged result by CB-CICD-SCM-020.
+rationale: |
+  A check that is not required is advisory: under pressure it is ignored, and an attacker can
+  simply merge before it finishes. On platforms where commit statuses can be set by anyone with
+  write access, an attacker can also post a fake "success" for the check's name. Binding the check
+  to the CI application makes the result as trustworthy as the pipeline that produced it.
+impact: |
+  Merges wait for the pipelines to finish, and flaky checks block delivery until fixed. Renaming a
+  CI job requires updating the protection rule.
+notes: |
+  On GitLab, only pipelines that GitLab itself runs satisfy **Pipelines must succeed**, so the
+  binding is built in; keep **Skipped pipelines are considered successful** cleared. On Gitea and
+  Forgejo, status check patterns match context names and cannot be bound to a source, so
+  `bound-to-source` relies on restricting who can post statuses. On Azure DevOps, status check
+  policies accept an **Authorized identity**.
+
+parameters:
+  - name: check_binding
+    type: enum
+    description: Whether required checks are only listed, or also bound to the expected CI source.
+    allowed: [required, bound-to-source]
+    default: required
+    profile_defaults:
+      hardened: bound-to-source
+
+audit:
+  manual: |
+    Use a role that can read branch protection, merge request and branch policy settings.
+
+    1. List the CI and security checks expected on each repository.
+    2. Check that they are required on protected branches:
+       - **GitHub**: the ruleset rule **Require status checks to pass** (branch protection: **Require
+         status checks to pass before merging**) lists the CI and security checks. For
+         `bound-to-source`, each check has the CI app (for example GitHub Actions) as expected
+         source instead of **any source**. Scorecard `CI-Tests` helps at scale.
+       - **GitLab**: **Settings** > **Merge requests** > **Merge checks**: **Pipelines must
+         succeed** is selected and **Skipped pipelines are considered successful** is cleared; the
+         pipeline includes the security jobs.
+       - **Azure DevOps**: branch policies include **Build validation** set to **Required** for the
+         CI and security pipelines, with a build expiration, and **Status checks** set to
+         **Required** for external checks; for `bound-to-source`, each status check policy sets an
+         **Authorized identity**.
+       - **Gitea / Forgejo**: the branch rule enables **Enable status check** with patterns matching
+         the CI and security jobs.
+    3. Fail if a protected branch accepts merges without the expected checks passing, if skipped
+       pipelines count as success, or, with `bound-to-source`, if a required check can be satisfied
+       by any source.
+
+remediation:
+  manual: |
+    1. Make sure the pipelines report stable check names for build, tests and security scans.
+    2. Require them:
+       - **GitHub**: add the checks to **Require status checks to pass** in the ruleset; for
+         `bound-to-source`, select the CI app as source for each check.
+       - **GitLab**: select **Pipelines must succeed**, clear **Skipped pipelines are considered
+         successful**, and include the security jobs in the pipeline (CB-CICD-TEST-001).
+       - **Azure DevOps**: add **Build validation** policies (Required, automatic trigger, expiry
+         when the branch is updated) and **Status checks** policies with an **Authorized identity**.
+       - **Gitea / Forgejo**: select **Enable status check** and enter the status check patterns.
+    3. Fix or quarantine flaky checks rather than making them optional.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Auto-merge
+    url: https://docs.gitlab.com/user/project/merge_requests/auto_merge/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track - Continuous technical controls
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.9"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.11"
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers mandatory checks before merge; review and push restrictions are separate controls.
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-001
+    type: related
+  - id: CB-CICD-TEST-003
+    type: related
+  - id: CB-CICD-SCM-020
+    type: related
+  - id: CB-CICD-SCM-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

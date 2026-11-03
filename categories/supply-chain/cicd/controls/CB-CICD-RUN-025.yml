@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-025
+title: Disable interactive access into running builds
+finding:
+  title: Users can open shells into running builds
+  description: SSH reruns, web terminals and debug sessions give a person a live shell inside the build, where they can read secrets from memory and environment, use the runner's cloud identity and change what the build produces.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [interactive-access, ssh, debugging, secrets, slsa]
+
+parameters:
+  - name: interactive_access
+    type: enum
+    description: Where interactive access into builds is disabled. production-jobs means jobs that use production secrets, contexts or deployment credentials; all-jobs means every job.
+    allowed: [production-jobs, all-jobs]
+    default: production-jobs
+    profile_defaults:
+      hardened: all-jobs
+
+description: |
+  Features that open an interactive session in a running build (rerun with SSH, web terminals, remote
+  desktop, debug sessions through a cloud session manager) are disabled for the jobs set by
+  `{{ interactive_access }}`:
+
+  - `production-jobs`: jobs that receive production secrets, restricted contexts or deployment
+    credentials, and release builds;
+  - `all-jobs`: every job on the platform.
+
+  Where the feature stays available for other jobs, its use is logged and reviewed.
+rationale: |
+  An interactive session bypasses the pipeline definition, review and approval: the person in the shell
+  can run anything with the job's secrets and the runner's identity, and alter the artifact before it
+  is uploaded. SLSA Build L3 expects that a build cannot be influenced from outside its declared
+  parameters.
+impact: |
+  Developers lose the ability to debug failing production jobs in place; they debug with the same job in
+  a non-production context, or with more logging.
+notes: |
+  On CircleCI, anyone who can start a job can rerun it with SSH, and only the user who started the rerun
+  gets SSH access; OIDC tokens carry an `oidc.circleci.com/ssh-rerun` claim that cloud trust policies can
+  check. On Buildkite hosted agents, terminal access depends on the organization's remote access
+  setting; on the Enterprise plan, sessions appear in the audit log as `JOB_TERMINAL_SESSION_STARTED`.
+
+audit:
+  manual: |
+    Use an administrator read role on the platform and read access to build project settings.
+
+    1. List the interactive access features the platform offers and who can use them.
+    2. Per product:
+       - **CircleCI**: contexts used by production jobs have an expression restriction that includes
+         `not job.ssh.enabled`; cloud roles trusted through OIDC reject tokens whose
+         `oidc.circleci.com/ssh-rerun` claim is `true`.
+       - **Buildkite**: for hosted agents, remote access is turned off at organization level, or
+         `JOB_TERMINAL_SESSION_STARTED` events are reviewed.
+       - **AWS CodeBuild**: builds of release and deployment projects are not started with
+         **Enable session connection** (`debugSessionEnabled` in `StartBuild`), and their buildspecs do
+         not contain `codebuild-breakpoint`; the service roles of those projects have no
+         `ssmmessages:*` permissions.
+    3. Fail if a job in the scope set by `{{ interactive_access }}` can be opened interactively.
+remediation:
+  manual: |
+    1. Decide which jobs are in scope and give developers a non-production way to debug.
+    2. Per product:
+       - **CircleCI**: add `and not job.ssh.enabled` to the expression restriction of production
+         contexts; require `ssh-rerun` to be `false` in OIDC trust policies.
+       - **Buildkite**: deactivate remote access to hosted agents unless needed, and alert on
+         `JOB_TERMINAL_SESSION_STARTED`.
+       - **AWS CodeBuild**: remove `codebuild-breakpoint` from release buildspecs, remove the Session
+         Manager permissions from their service roles, and restrict who can call `StartBuild` with
+         overrides on those projects.
+    3. Monitor the remaining use of interactive sessions through audit logs.
+
+references:
+  - title: Using contexts (expression restrictions)
+    url: https://circleci.com/docs/guides/security/contexts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite hosted agents terminal access
+    url: https://buildkite.com/docs/agent/buildkite-hosted/terminal-access
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Debug builds with Session Manager
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/session-manager.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Producing artifacts (Isolation strength)
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L3
+    relation: partial
+    note: Removes one way to influence a build from outside its parameters; L3 has other isolation requirements.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1021.004
+related_controls:
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-PIPE-019
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne donner ni secret ni jeton en écriture aux pipelines des pull requests de forks
+finding:
+  title: Les pipelines des pull requests de forks reçoivent des secrets ou un jeton en écriture
+  description: L'auteur d'un fork contrôle le code et souvent le fichier de pipeline de l'exécution ; tout secret, identifiant de déploiement ou jeton en écriture qui lui est donné peut être affiché, envoyé à l'extérieur ou utilisé pour pousser dans le dépôt parent.
+description: |
+  Les pipelines lancés par des pull requests venant de forks s'exécutent sans secrets, sans
+  identifiants de déploiement, sans jetons OIDC pour des rôles cloud et sans jetons de job en
+  écriture, ou ne sont pas construits du tout. Le code d'un fork n'est jamais exécuté dans le
+  contexte du projet parent, avec les variables, les runners du parent et les droits du membre qui
+  déclenche, sans qu'un membre ait d'abord relu toute la modification, fichier de pipeline compris.
+
+  L'approbation avant l'exécution d'un pipeline de fork relève de CB-CICD-PIPE-009 ; les runners
+  auto-hébergés face au code public et de fork relèvent de CB-CICD-RUN-009.
+rationale: |
+  Pour une pull request de fork, la plate-forme exécute généralement le fichier de pipeline du fork :
+  tout secret mis à disposition de cette exécution est à disposition de l'auteur du fork. Retenir les
+  secrets et les jetons en écriture est la seule défense qui tient encore quand un approbateur rate
+  une ligne malveillante.
+impact: |
+  Les pull requests de forks ne peuvent pas exécuter les tests qui ont besoin de vrais identifiants
+  (tests d'intégration sur un compte cloud, builds signés). Ces tests s'exécutent après fusion ou sur
+  une branche poussée par un mainteneur.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de l'organisation, des projets et des pipelines.
+
+    1. Vérifier les réglages de forks par plate-forme :
+       - **GitHub** : **Enterprise**, **Organization** ou **Repository** > **Settings** > **Actions**
+         > **General** > **Fork pull request workflows in private repositories** : soit **Run
+         workflows from fork pull requests** est désactivé, soit il est activé avec **Require
+         approval for fork pull request workflows** et sans **Send write tokens to workflows from
+         pull requests** ni **Send secrets to workflows from pull requests**.
+       - **GitLab** : `GET /projects/:id` renvoie `ci_allow_fork_pipelines_to_run_in_parent_project:
+         false`, ou les membres ne choisissent **Run pipeline** pour une merge request de fork
+         qu'après avoir relu tout le diff, `.gitlab-ci.yml` compris.
+       - **Azure DevOps** : **Paramètres de l'organisation** et **Paramètres du projet** >
+         **Pipelines** > **Paramètres** > **Limiter la génération des pull requests à partir de
+         dépôts GitHub dupliqués** désactive les builds de forks ou vaut **Générer de manière
+         sécurisée les pull requests à partir de dépôts dupliqués** ; aucun pipeline n'active **Rendre
+         les secrets disponibles pour les builds des duplications** ni **Donner aux builds des
+         duplications les mêmes autorisations que les builds standard**.
+       - **CircleCI** : **Project Settings** > **Advanced** > **Build forked pull requests** est
+         désactivé, ou **Pass secrets to builds from forked pull requests** est désactivé là où il
+         est activé.
+       - **Buildkite** : **Pipeline Settings** > **GitHub** : la construction des pull requests venant
+         de forks tiers est désactivée sur chaque pipeline doté de secrets, ou les builds de forks
+         sont bloqués par une block step.
+       - **Woodpecker** : aucun secret de dépôt ou d'organisation n'a l'événement `pull_request` dans
+         son filtre d'événements (`woodpecker-cli repo secret ls`).
+       - **TeamCity** : les pull requests d'utilisateurs extérieurs à l'organisation ne sont pas
+         construites, ou s'exécutent uniquement sur des agents séparés et jetables sans secrets ; le
+         rapport de santé du serveur sur les builds de pull requests est examiné.
+    2. Échec si un pipeline déclenché par une pull request de fork peut lire un secret, un
+       identifiant de déploiement ou un jeton OIDC cloud, ou détient un jeton de job en écriture.
+remediation:
+  manual: |
+    1. Retirer secrets et jetons en écriture des exécutions de pull requests de forks :
+       - **GitHub** : en tant que propriétaire d'organisation, décocher **Send write tokens to
+         workflows from pull requests** et **Send secrets to workflows from pull requests**, et
+         garder **Require approval for fork pull request workflows**, ou désactiver les workflows de
+         forks.
+       - **GitLab** : en tant que Maintainer, appeler `PUT /projects/:id` avec
+         `ci_allow_fork_pipelines_to_run_in_parent_project=false`.
+       - **Azure DevOps** : régler **Limiter la génération des pull requests à partir de dépôts
+         GitHub dupliqués** sur **Générer de manière sécurisée les pull requests à partir de dépôts
+         dupliqués** au niveau de l'organisation, et décocher **Rendre les secrets disponibles pour
+         les builds des duplications** dans les déclencheurs des pipelines.
+       - **CircleCI** : désactiver **Pass secrets to builds from forked pull requests**, et **Build
+         forked pull requests** là où ce n'est pas nécessaire.
+       - **Buildkite** : désactiver les builds de forks tiers sur les pipelines dotés de secrets, ou
+         placer une block step avant toute étape qui les utilise.
+       - **Woodpecker** : recréer les secrets sans l'événement `pull_request`, et restreindre les
+         secrets de plugin à des images avec un tag exact.
+       - **TeamCity** : cesser de construire les pull requests publiques, ou les déplacer sur des
+         agents séparés et jetables sans secrets.
+    2. Déplacer les tests qui ont besoin d'identifiants dans des pipelines après fusion.

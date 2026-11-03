@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas exposer à internet les plates-formes CI/CD auto-hébergées ni leurs interfaces d'administration
+finding:
+  title: Une plate-forme CI/CD auto-hébergée ou son interface d'administration est joignable depuis internet
+  description: L'interface web, le port des agents, le SSH d'administration ou la console de gestion d'un serveur CI/CD répond depuis n'importe quel réseau ; n'importe qui peut essayer des identifiants volés, forcer les connexions ou exploiter la prochaine vulnérabilité non corrigée.
+description: |
+  Les plates-formes CI/CD auto-hébergées (SCM, serveurs de CI et de CD, registres d'artefacts,
+  tableaux de bord GitOps) ne sont joignables que depuis des réseaux approuvés : réseau interne,
+  VPN, ou proxy inverse qui exige une authentification auprès du fournisseur d'identité de
+  l'organisation avant de transmettre les requêtes. Les ports dont seuls les runners ou agents ont
+  besoin ne sont joignables que depuis les réseaux des runners.
+
+  Les interfaces d'administration (consoles de gestion, SSH d'administration, ports de base de
+  données et de cache, ports JMX ou de débogage) ne sont joignables que depuis un réseau
+  d'administration ou un bastion, et leurs comptes sont nominatifs.
+
+  Quand une plate-forme doit accepter du trafic depuis internet (par exemple des webhooks d'un SCM
+  SaaS), seuls le chemin et les plages sources nécessaires sont exposés. La restriction des réseaux
+  de connexion au niveau applicatif relève de CB-CICD-IAM-012 ; les postes d'administration dédiés
+  de CB-CICD-IAM-021.
+rationale: |
+  Les serveurs de CI exposés à internet sont scannés et exploités en permanence, souvent quelques
+  jours après une vulnérabilité publique. Les placer derrière un VPN ou un proxy à contrôle
+  d'identité oblige l'attaquant à disposer d'identifiants valides de l'organisation avant
+  d'atteindre le moindre code vulnérable, et isoler les interfaces d'administration empêche un mot
+  de passe utilisateur volé d'atteindre la configuration de plus haut niveau.
+impact: |
+  Les utilisateurs distants ont besoin du VPN ou du proxy à contrôle d'identité. Les webhooks et
+  intégrations des services SaaS ont besoin d'un point d'entrée dédié et filtré au plus juste.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration des pare-feu, répartiteurs de charge et
+    proxys inverses, et un hôte hors du réseau de l'organisation pour les tests externes.
+
+    1. Lister les noms DNS publics et adresses IP des plates-formes CI/CD et lancer un scan de
+       ports ou une requête HTTPS depuis l'extérieur du réseau de l'organisation.
+    2. Vérifier les règles de pare-feu et groupes de sécurité de chaque plate-forme et de ses ports
+       d'administration.
+    3. Vérifier les produits dont les interfaces d'administration sont documentées :
+       - **GitHub Enterprise Server** : les ports 8443 (Management Console) et 122 (SSH
+         d'administration) ne sont joignables que depuis le réseau d'administration ; le 8080 est
+         fermé. Dans la **Management Console**, les comptes listés dans la gestion des utilisateurs
+         sont des administrateurs nommés, et le mot de passe de l'administrateur racine est conservé
+         en bris de glace.
+       - **Jenkins** : le contrôleur (port HTTP 8080 par défaut) n'est joignable que par le réseau
+         interne ou un proxy inverse authentifiant ; le port TCP des agents entrants est désactivé
+         dans **Manage Jenkins** > **Security** quand les agents utilisent WebSocket, ou joignable
+         seulement depuis les réseaux des agents ; le serveur SSH (plugin sshd) est désactivé ou
+         restreint de la même façon.
+    4. Échec si une plate-forme CI/CD répond depuis internet sans authentification préalable par le
+       fournisseur d'identité ou le VPN de l'organisation, ou si une interface d'administration est
+       joignable depuis un autre réseau que le réseau d'administration.
+remediation:
+  manual: |
+    1. Placer les plates-formes derrière le VPN ou un proxy inverse à contrôle d'identité qui
+       authentifie les utilisateurs auprès du fournisseur d'identité de l'organisation.
+    2. Restreindre les ports d'administration au réseau d'administration ou au bastion par des
+       règles de pare-feu ou des groupes de sécurité :
+       - **GitHub Enterprise Server** : n'autoriser 8443 et 122 que depuis le réseau
+         d'administration ; créer des utilisateurs nominatifs de la **Management Console** au lieu
+         de partager le mot de passe de l'administrateur racine.
+       - **Jenkins** : lier le contrôleur à une adresse interne ou à un proxy ; dans **Manage
+         Jenkins** > **Security**, désactiver le port TCP des agents entrants si les agents peuvent
+         utiliser WebSocket, sinon utiliser un port fixe ouvert aux seuls réseaux des agents.
+    3. Pour les webhooks entrants des services SaaS, n'exposer que le chemin du webhook via un proxy
+       filtrant, limité aux plages sources publiées par le fournisseur quand elles existent, et
+       exiger des secrets de webhook (CB-CICD-PIPE-013).

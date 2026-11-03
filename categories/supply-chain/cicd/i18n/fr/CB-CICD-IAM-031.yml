@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-031
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Révoquer automatiquement les jetons divulgués et inutilisés
+finding:
+  title: Les jetons d'accès divulgués ou inutilisés depuis longtemps restent valides
+  description: Un jeton trouvé dans un dépôt public ou inutilisé depuis des mois reste un identifiant fonctionnel jusqu'à ce que quelqu'un le révoque à la main, ce qui n'arrive souvent jamais.
+parameters:
+  max_token_inactivity_days: Nombre de jours sans utilisation au terme duquel un jeton perd l'accès à l'organisation.
+description: |
+  La plate-forme révoque les jetons signalés comme divulgués (par exemple trouvés dans un dépôt public
+  par les partenaires de détection de secrets) sans attendre d'intervention humaine, et retire l'accès
+  à l'organisation des jetons inutilisés depuis {{ max_token_inactivity_days }} jours.
+
+  La détection de secrets dans les dépôts de l'organisation relève de CB-CICD-SEC-009, la rotation des
+  secrets de pipeline de CB-CICD-SEC-011.
+rationale: |
+  Les jetons divulgués sont exploités quelques minutes après leur publication dans un dépôt public ;
+  une notification qui attend les heures ouvrées est trop lente. Les jetons inutilisés ajoutent du
+  risque sans valeur : ils sont oubliés dans de vieux scripts et sauvegardes, et personne ne remarque
+  quand ils resservent.
+impact: |
+  Une intégration qui tourne moins souvent que la période d'inactivité perd l'accès et doit recevoir
+  un nouveau jeton. Un jeton légitime publié par erreur est révoqué et doit être remplacé.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur (rôle Azure DevOps Administrator dans Entra pour les stratégies
+    de locataire).
+
+    1. Vérifier les réglages de révocation :
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Microsoft Entra** > **Automatically
+         revoke leaked personal access tokens** est activé (activé par défaut ; désactivé, seul un
+         courriel est envoyé).
+       - **Buildkite** : les réglages de sécurité API de l'organisation définissent une durée maximale
+         au terme de laquelle les jetons d'accès API inactifs sont révoqués (offre Enterprise), d'au
+         plus {{ max_token_inactivity_days }} jours.
+    2. Échec si les jetons divulgués ne sont pas révoqués automatiquement, ou si des jetons
+       inutilisés gardent l'accès au-delà de la période.
+remediation:
+  manual: |
+    1. **Azure DevOps** : réactiver **Automatically revoke leaked personal access tokens** s'il a été
+       désactivé.
+    2. **Buildkite** : dans les réglages de sécurité API de l'organisation, définir la période de
+       révocation des jetons API inactifs.
+    3. Sur les plates-formes sans révocation automatique des jetons inutilisés, inclure les dates de
+       dernière utilisation des jetons dans la revue des identités (CB-CICD-IAM-026).

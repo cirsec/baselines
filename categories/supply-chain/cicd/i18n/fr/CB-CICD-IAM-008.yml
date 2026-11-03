@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Borner la durée de vie des sessions web sur les plates-formes CI/CD
+finding:
+  title: Les sessions web et les cookies « se souvenir de moi » restent valides des semaines
+  description: Un cookie de session volé dans un navigateur ou dans le journal d'un voleur d'informations continue de fonctionner sur la plate-forme tant que la session vit, sans demande de mot de passe ni de MFA.
+parameters:
+  max_session_hours: Durée de vie maximale d'une session web avant que l'utilisateur doive se reconnecter.
+  max_remember_me_days: Durée de vie maximale d'un cookie « se souvenir de moi ».
+  idle_timeout_minutes: Durée d'inactivité au terme de laquelle une session se termine, quand la plate-forme le permet.
+description: |
+  Les sessions web des plates-formes CI/CD se terminent après au plus {{ max_session_hours }} heures,
+  les cookies « se souvenir de moi » après au plus {{ max_remember_me_days }} jours, et les sessions
+  inactives après {{ idle_timeout_minutes }} minutes quand la plate-forme a un délai d'inactivité.
+  Quand la connexion passe par le SSO, la session du fournisseur d'identité et celle de la plate-forme
+  respectent toutes deux ces limites. Les déploiements renforcés lient aussi les sessions SSO à
+  l'adresse IP source quand la plate-forme le permet.
+
+  La durée de vie des jetons d'API relève de CB-CICD-IAM-028.
+rationale: |
+  Les cookies de session sont précisément ce que collectent les logiciels voleurs d'informations et
+  les kits d'hameçonnage de l'attaquant du milieu, parce qu'ils contournent le mot de passe et la MFA.
+  Plus la session est courte, plus la fenêtre pendant laquelle un cookie volé donne accès au code, aux
+  pipelines et aux secrets est courte.
+impact: |
+  Les utilisateurs se reconnectent plus souvent ; avec le SSO, c'est en général une redirection. Des
+  durées absolues très courtes peuvent interrompre de longues sessions de revue ou de débogage.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur qui peut lire les réglages d'authentification ou de session, ou
+    la configuration de la plate-forme.
+
+    1. Vérifier les réglages de session :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Account and limit** >
+         **Session duration (minutes)** (défaut 10080, 7 jours) vaut au plus
+         {{ max_session_hours }} heures, et l'option **Remember me** est décochée, car elle garde les
+         sessions actives indéfiniment ; sur les instances renforcées, **Set sessions to expire from
+         creation date** est coché.
+       - **Gitea / Forgejo** : `[security] LOGIN_REMEMBER_DAYS` (défaut 31) vaut au plus
+         {{ max_remember_me_days }}.
+       - **Buildkite** : **Organization Settings** > **SSO** > la durée de session est réglée (de
+         6 heures à un an) ; dans les organisations renforcées, **SSO session IP address pinning** est
+         activé (offre Enterprise).
+       - **Woodpecker** : `WOODPECKER_SESSION_EXPIRES` (défaut `72h`) vaut au plus
+         {{ max_session_hours }} heures.
+       - **Harness** : **Account Settings** > **Authentication** : **Session Inactivity Timeout (in
+         minutes)** (défaut 1440) vaut au plus {{ idle_timeout_minutes }}, et **Absolute Session
+         Timeout (in minutes)** (défaut 0, non réglé) vaut au plus {{ max_session_hours }} heures.
+    2. Pour les plates-formes en SSO, vérifier la durée de session du fournisseur d'identité pour ces
+       applications.
+    3. Échec si une session ou un cookie « se souvenir de moi » peut dépasser les limites ci-dessus.
+remediation:
+  manual: |
+    1. Appliquer les limites (rôle d'administrateur) :
+       - **GitLab auto-hébergé** : régler **Session duration (minutes)** à {{ max_session_hours }}
+         heures exprimées en minutes et décocher **Remember me** ; sur les instances renforcées, cocher
+         **Set sessions to expire from creation date**.
+       - **Gitea / Forgejo** : régler `LOGIN_REMEMBER_DAYS` dans `[security]` et redémarrer. Ne pas
+         suivre les recommandations de confort à un an.
+       - **Buildkite** : régler la durée de session SSO ; activer la liaison à l'adresse IP dans les
+         organisations renforcées.
+       - **Woodpecker** : régler `WOODPECKER_SESSION_EXPIRES`, par exemple `12h`, et redémarrer le
+         serveur.
+       - **Harness** : régler **Session Inactivity Timeout** et **Absolute Session Timeout**.
+    2. Aligner la politique de session du fournisseur d'identité pour les applications des
+       plates-formes.

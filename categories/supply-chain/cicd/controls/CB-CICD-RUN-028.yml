@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-028
+title: Verify the build provenance of runner images before use
+finding:
+  title: Runner images are used without verified provenance
+  description: When the VM or container images that runners boot from carry no signed provenance, or nobody checks it, a tampered image placed in the image store compromises every build that runs on it.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [runner-images, provenance, slsa, build-environment, signing]
+
+description: |
+  The images used to instantiate build environments (runner VM images, runner container images, job
+  base images maintained by the platform team) are themselves built by a pipeline that generates signed
+  SLSA build provenance (Build L2 or higher). Before a build environment is started from an image, the
+  provenance of that image is verified automatically against the expected source and builder, and the
+  result is recorded.
+
+  This is the BuildEnv L1 requirement of the SLSA build environment track (working draft, not yet in a released SLSA version). Provenance of release
+  artifacts is covered by CB-CICD-ART-001; pinning of job images by CB-CICD-COMP-013.
+rationale: |
+  Every build trusts the image it runs in. A modified runner image (backdoored agent, altered compiler,
+  extra CA certificate) taints all artifacts built on it, and nothing in the artifacts' own provenance
+  shows it. Signed provenance for the image, checked at instantiation, ties the build environment to a
+  reviewed source and build process.
+impact: |
+  Requires an image pipeline with provenance generation and a verification step in runner provisioning
+  (autoscaler hook, admission controller, launch template pipeline). Hosted runner images are out of the
+  organization's reach; the control applies to the images it builds.
+notes: |
+  The SLSA build environment track is a draft and is not part of SLSA v1.2. Tools such as cosign or the
+  GitHub attestation commands can generate and verify provenance for container images; for VM images,
+  record and verify the image digest against an attestation.
+
+audit:
+  manual: |
+    Use read access to the runner image pipelines, the image registry and runner provisioning code.
+
+    1. List the images runners boot or run jobs in that the organization produces.
+    2. For each, check that the image pipeline generates signed provenance and publishes it with the
+       image.
+    3. Check runner provisioning (autoscaler, admission policy, launch configuration) for a step that
+       verifies the provenance before the environment starts, and that a failed verification blocks it.
+    4. Fail if an organization-built runner image has no signed provenance, or if environments are
+       started without verifying it.
+remediation:
+  manual: |
+    1. Build runner images in a pipeline on the managed build platform with provenance generation
+       (CB-CICD-ART-001).
+    2. Publish the provenance with the image, signed by the build platform identity.
+    3. Add verification to provisioning: an admission policy that verifies attestations of runner pod
+       images, or a check in the autoscaler or launch template pipeline for VM images.
+    4. Record verification results so that build provenance can reference the verified image digest.
+
+references:
+  - title: SLSA build environment track (BuildEnv L1 - Signed build image provenance exists)
+    url: https://slsa.dev/spec/draft/attested-build-env-levels
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Build track basics
+    url: https://slsa.dev/spec/v1.2/build-track-basics
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1525
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-RUN-021
+    type: related
+  - id: CB-CICD-ART-001
+    type: related
+  - id: CB-CICD-COMP-013
+    type: related
+  - id: CB-CICD-RUN-029
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

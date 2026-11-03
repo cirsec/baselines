@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Servir et joindre les plates-formes CI/CD en TLS 1.2 ou plus avec des certificats vérifiés
+finding:
+  title: Le trafic CI/CD circule en HTTP clair ou en TLS non vérifié
+  description: L'interface web, l'API ou le point d'accès Git de la plate-forme accepte le HTTP clair, ou la plate-forme se connecte aux registres et clusters sans vérifier les certificats ; un attaquant sur le réseau lit les cookies de session, jetons et code source, ou substitue le contenu récupéré.
+description: |
+  Les plates-formes CI/CD auto-hébergées servent leur interface web, leur API et Git uniquement en
+  HTTPS, en TLS 1.2 ou plus, avec un certificat émis par une autorité reconnue par les clients. Le
+  HTTP clair est fermé ou se limite à une redirection vers HTTPS, et les cookies de session portent
+  l'attribut `Secure`. Le TLS peut être terminé sur un proxy inverse ou un ingress, à condition que
+  le tronçon du proxy à la plate-forme soit sur un réseau protégé.
+
+  Les connexions que la plate-forme ouvre elle-même, vers les dépôts Git, registres Helm et OCI,
+  clusters, et entre runners ou agents et le serveur, utilisent TLS et vérifient le certificat du
+  serveur. Les options qui désactivent la vérification ou autorisent le HTTP clair ne sont pas
+  utilisées en production.
+
+  Avec `tls_scope` à `all` (ici **{{ tls_scope }}**), les suites de chiffrement sont en plus
+  limitées aux suites AEAD modernes, et le trafic entre services internes de la plate-forme
+  (Redis, Consul, Gitaly, API internes entre microservices) est chiffré ou mutuellement
+  authentifié.
+
+  La vérification des certificats et clés d'hôte des connexions SCM des pipelines relève de
+  CB-CICD-SEC-019, et l'envoi des webhooks de CB-CICD-COMP-008.
+rationale: |
+  Le trafic CI/CD transporte des identifiants (cookies de session, jetons d'accès personnels,
+  jetons de runner, mots de passe de registre) ainsi que le code et les images qui finissent en
+  production. Le HTTP clair ou l'absence de vérification de certificat permet à quiconque sur le
+  chemin, y compris un voisin compromis dans un cluster, de capturer ces secrets ou de servir un
+  chart ou une image modifiés que la plate-forme déploiera.
+impact: |
+  Nécessite des certificats d'une autorité reconnue et leur renouvellement. Limiter les protocoles
+  à TLS 1.2 et plus peut bloquer de très anciens clients. Chiffrer le trafic interne ajoute de la
+  configuration et de la gestion de certificats sur les déploiements multi-nœuds.
+parameters:
+  tls_scope: Trafic concerné par l'exigence. `external` couvre les points d'accès utilisateur, API et Git et les connexions que la plate-forme ouvre vers les dépôts, registres, clusters et runners ; `all` exige en plus des suites de chiffrement restreintes et un trafic chiffré ou mutuellement authentifié entre les services internes de la plate-forme.
+audit:
+  manual: |
+    Utiliser un compte administrateur avec accès en lecture à la configuration de la plate-forme,
+    et un client capable de tester TLS (par exemple `openssl s_client`, `curl -v` ou `testssl.sh`).
+
+    1. Pour chaque URL de plate-forme (web, API, Git en HTTPS), vérifier que `http://` refuse la
+       connexion ou redirige vers `https://`, que TLS 1.0 et 1.1 sont refusés, et que le certificat
+       remonte à une autorité reconnue et correspond au nom d'hôte.
+    2. Vérifier les réglages du produit :
+       - **GitHub Enterprise Server** : **Site admin** > **Management Console** > **Privacy** :
+         **TLS only (recommended)** est sélectionné, **TLS Protocol support** exclut les versions
+         inférieures à TLS 1.2, et le certificat est émis par une autorité (téléversé ou Let's
+         Encrypt), pas le certificat autosigné créé au premier démarrage.
+       - **GitLab (paquet Linux)** : `/etc/gitlab/gitlab.rb` définit `external_url` en `https://`,
+         `nginx['ssl_protocols']` à `"TLSv1.2 TLSv1.3"` ou plus strict ; avec `all`, aussi
+         `nginx['ssl_ciphers']` limité aux suites ECDHE avec AES-GCM, et TLS ou chiffrement pour
+         Consul, Redis et Gitaly en installation multi-nœuds.
+       - **Gitea / Forgejo** : `app.ini` `[server] PROTOCOL = https` (ou un proxy inverse TLS),
+         `ROOT_URL` commençant par `https://`, et `[session] COOKIE_SECURE = true`.
+       - **Azure DevOps Server** : le site web utilise la liaison **HTTPS and HTTP (with
+         redirect)** ou une liaison HTTPS seule, pas la liaison HTTP par défaut sur le port 8080.
+       - **TeamCity** : l'interface web est servie en HTTPS (intégré ou proxy inverse) et le
+         serveur n'est pas joignable en HTTP clair.
+       - **Argo CD** : `argocd-cmd-params-cm` `server.insecure` vaut `"false"`, ou `"true"`
+         seulement quand un ingress termine le TLS ; `--tlsminversion` vaut `1.2` ou plus (défaut) ;
+         avec `all`, le repo-server et le contrôleur d'applications se connectent à Redis avec
+         `--redis-use-tls` et sans `--redis-insecure-skip-tls-verify`.
+       - **Argo Workflows** : `argo server` tourne avec `--secure` (`ARGO_SECURE=true`) et un
+         certificat émis par une autorité, pas le certificat autosigné par défaut ; la CLI et les
+         clients n'utilisent pas `--insecure-skip-verify`.
+       - **Flux** : aucun `HelmRepository` ni `OCIRepository` ne pose `spec.insecure: true` ; les
+         autorités privées sont fournies par `spec.certSecretRef` (`ca.crt`).
+       - **Tekton Chains** : `chains-config` `storage.oci.repository.insecure` vaut `"false"`.
+       - **Woodpecker** : les agents posent `WOODPECKER_GRPC_SECURE=true` et gardent la
+         vérification du certificat ; le point d'accès gRPC du serveur est derrière un proxy TLS.
+       - **Spinnaker** : l'interface (Deck) et l'API (Gate) sont servies en SSL ; avec `all`, les
+         services internes ne sont joignables qu'en TLS ou depuis un réseau isolé.
+    3. Échec si un point d'accès accepte le HTTP clair sans redirection, accepte un TLS inférieur à
+       1.2, présente un certificat autosigné ou ne correspondant pas, si une connexion sortante
+       ignore la vérification du certificat, ou (avec `all`) si des suites faibles sont proposées
+       ou si des services internes communiquent en clair sur un réseau partagé.
+remediation:
+  manual: |
+    1. Obtenir un certificat de l'autorité de l'organisation ou d'une autorité publique pour chaque
+       nom d'hôte de plate-forme, et planifier son renouvellement.
+    2. Activer HTTPS et désactiver le HTTP clair (ou le garder comme simple redirection) :
+       - **GitHub Enterprise Server** : dans **Management Console** > **Privacy**, sélectionner
+         **TLS only (recommended)**, choisir TLS 1.2 et 1.3 sous **TLS Protocol support**,
+         téléverser le certificat et la clé (ou activer Let's Encrypt), puis **Save settings**.
+       - **GitLab (paquet Linux)** : définir `external_url 'https://...'`,
+         `nginx['ssl_protocols'] = "TLSv1.2 TLSv1.3"` et, pour `all`, une liste
+         `nginx['ssl_ciphers']` restreinte ; lancer `gitlab-ctl reconfigure`.
+       - **Gitea / Forgejo** : définir `PROTOCOL = https` avec `CERT_FILE` et `KEY_FILE`, ou placer
+         un proxy inverse TLS devant ; définir `ROOT_URL` en `https://` et `COOKIE_SECURE = true`.
+       - **Azure DevOps Server** : passer les paramètres du site web sur une liaison HTTPS avec un
+         certificat émis par une autorité.
+       - **TeamCity** : activer HTTPS sur le serveur ou sur un proxy inverse (NGINX, Apache) et
+         fermer le port HTTP.
+       - **Argo CD** : garder `server.insecure: "false"` sauf si le TLS se termine sur l'ingress ;
+         pour `all`, activer le TLS Redis sur le contrôleur et le repo-server.
+       - **Argo Workflows** : démarrer `argo server --secure` avec un certificat d'une autorité
+         reconnue monté comme secret TLS.
+       - **Flux / Tekton Chains** : retirer `spec.insecure: true` et poser
+         `storage.oci.repository.insecure: "false"` ; distribuer les autorités privées par
+         `certSecretRef`.
+       - **Woodpecker** : poser `WOODPECKER_GRPC_SECURE=true` sur les agents et placer un proxy TLS
+         devant le port gRPC.
+    3. Pour `all`, activer le chiffrement ou le mTLS entre services internes et restreindre leurs
+       ports aux nœuds pairs par pare-feu.
+  rollback: |
+    Garder la redirection HTTP vers HTTPS pendant la transition pour que les favoris et anciennes
+    URL de clonage fonctionnent ; ne réactiver une ancienne version de protocole que pour un client
+    nommé et une durée fixée.

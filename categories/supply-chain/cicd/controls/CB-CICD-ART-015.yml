@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-015
+title: Build critical artifacts reproducibly and compare them across independent builders
+finding:
+  title: Critical artifacts cannot be rebuilt bit for bit, so a compromised build platform goes unnoticed
+  description: When the same source never produces the same output, nobody can check that a released binary matches its source, and malicious code injected by a compromised compiler, runner or build service ships without any difference being visible.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [reproducible-builds, verification, build-integrity, independent-builders]
+
+description: |
+  Artifacts that the organization considers critical (for example agents, installers, firmware,
+  base images, security tools) are built reproducibly: building the same source revision with the
+  same declared build environment yields bit-for-bit identical output.
+
+  The build environment is recorded (toolchain and base image digests, build flags, environment
+  variables, locale and time zone), and sources of non-determinism are removed (timestamps through
+  `SOURCE_DATE_EPOCH` or equivalent, file ordering, absolute paths, random identifiers, unpinned
+  downloads).
+
+  At least one independent rebuild, on separate infrastructure with separate credentials (another
+  CI platform, another cloud account, or an offline builder), is run for each release of a critical
+  artifact, and the digests are compared before release. A mismatch blocks the release until
+  explained.
+rationale: |
+  Signatures and provenance prove which pipeline built an artifact, not that the pipeline was
+  honest. If the build platform, a runner image or the compiler is compromised, the signed output can
+  contain code that is not in the source. Reproducible builds compared across independent
+  infrastructure make that kind of tampering detectable, because an attacker would have to
+  compromise every builder in the same way.
+impact: |
+  Making a build reproducible can take significant work on the toolchain and build scripts, and some
+  ecosystems or proprietary tools resist it. Running a second builder costs infrastructure and
+  maintenance. The control is therefore limited to critical artifacts.
+notes: |
+  None of the CI/CD platforms in scope provides a setting that makes builds reproducible; it is a
+  property of the build scripts and toolchain. Hermetic, pinned build steps (CB-CICD-PIPE-023,
+  CB-CICD-RUN-024) are prerequisites in practice.
+
+audit:
+  manual: |
+    Use a role that can read build definitions and release records.
+
+    1. Get the list of artifacts classified as critical.
+    2. For each one, check that the build environment is recorded (toolchain and image digests, flags,
+       environment) and that a reproducibility procedure exists.
+    3. Pick the last release and check that an independent rebuild was run on separate
+       infrastructure and that its output digest matches the released artifact.
+    4. Optionally rebuild a release yourself from the recorded environment and compare digests.
+    5. Fail if a critical artifact has no independent rebuild for its latest release, or if a digest
+       mismatch was released without explanation.
+
+remediation:
+  manual: |
+    1. Pin and record every input of the build: source revision, toolchain and base image digests,
+       dependencies by lock file, build flags.
+    2. Remove non-determinism: set `SOURCE_DATE_EPOCH` (or the ecosystem's equivalent), sort file
+       lists, strip absolute paths and build IDs, avoid network access during the build.
+    3. Rebuild twice on the same platform and compare outputs (for example with diffoscope) until they
+       match.
+    4. Set up an independent builder on separate infrastructure and credentials, run it for each
+       release, and add a release gate that compares the digests.
+
+references:
+  - title: Reproducible Builds - Definition
+    url: https://reproducible-builds.org/docs/definition/
+    publisher: Reproducible Builds project
+    kind: guide
+    accessed: 2026-11-03
+  - title: CNCF Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/tree/main/community/working-groups/supply-chain-security/supply-chain-security-paper
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: SLSA Build track requirements
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4(4)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-023
+    type: related
+  - id: CB-CICD-RUN-024
+    type: related
+  - id: CB-CICD-ART-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

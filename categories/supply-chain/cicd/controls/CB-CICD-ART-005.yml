@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-005
+title: Sign every release artifact and container image
+finding:
+  title: Release artifacts and images are published unsigned
+  description: Without a signature, a consumer has no way to tell a genuine release from a file or image swapped in the registry or on the download server, so an attacker with write access to the storage can ship malware under the project's name.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [signing, cosign, sigstore, keyless, release, container-images]
+
+description: |
+  Every release artifact (package, binary, archive) and every container image pushed for release is
+  signed in the release pipeline, and the digests (checksums) and signatures, with the certificate or
+  public key needed to verify them, are published for consumers.
+
+  Signing uses either a keyless identity (a short-lived certificate bound to the pipeline's OIDC
+  identity, for example Sigstore Fulcio) or a key held in a key management service; a long-lived
+  private key stored as a CI variable is not acceptable. Signatures cover the artifact digest, not a
+  mutable tag or file name.
+
+  Build provenance (CB-CICD-ART-001) can serve as the signature when it is signed and covers the
+  artifact digest. Key management for signing is detailed in CB-CICD-ART-007; distribution of the
+  signatures in CB-CICD-ART-004; verification in CB-CICD-ART-006.
+rationale: |
+  Registries, download servers and package feeds can be written to by more people and systems than
+  the release pipeline: a stolen token or a misconfigured bucket is enough to replace a file. A
+  signature tied to the pipeline identity lets consumers and deployment gates detect the swap. Keyless
+  or KMS signing avoids the opposite failure, where the signing key itself leaks from CI variables.
+impact: |
+  Release pipelines need a signing step and permission to request an OIDC token or use the KMS key.
+  Consumers must be told how to verify. Keyless signing with the public Sigstore service writes the
+  signing identity and digest to a public transparency log.
+notes: |
+  On GitLab, keyless signing with the public Sigstore service only trusts GitLab.com pipelines;
+  GitLab Self-Managed needs a self-hosted Sigstore stack or KMS-backed keys. GitHub artifact
+  attestations are signed Sigstore bundles and satisfy this control for the artifacts they cover.
+
+audit:
+  manual: |
+    Use a role that can read pipeline definitions, release pages and registries.
+
+    1. List the artifacts and images of the last few releases.
+    2. For each one, check that a signature exists and verifies against the expected identity or key
+       (for example `cosign verify <image>@sha256:<digest> --certificate-identity <pipeline identity>
+       --certificate-oidc-issuer <issuer>`, or `cosign verify-blob` for files).
+    3. Check that checksums and the verification material are published with the release.
+    4. Check how signing is done in the pipeline:
+       - **GitLab**: the release job declares `id_tokens: SIGSTORE_ID_TOKEN: aud: sigstore` and runs
+         `cosign sign` / `cosign sign-blob`; on GitLab Self-Managed it points to a self-hosted
+         Sigstore or uses a KMS key.
+       - **GitHub**: the release workflow uses `actions/attest` (artifact attestations) or cosign
+         keyless signing with `permissions: id-token: write` on the release job only.
+       - **Tekton**: `chains-config` signs OCI images (`artifacts.oci.signer` is `x509` with Fulcio or
+         `kms`, not `none`).
+       - Other platforms: the release step calls cosign or another signing tool with a keyless or
+         KMS identity.
+    5. Fail if a release artifact or image is unsigned, if the signature does not verify, or if the
+       signing key is stored as a plain CI variable or file in the repository.
+
+remediation:
+  manual: |
+    1. Add a signing step to every release pipeline, after the artifact digest is known:
+       - **GitLab**: add `id_tokens: SIGSTORE_ID_TOKEN: aud: sigstore` to the release job and run
+         `cosign sign <image>@<digest>` and `cosign sign-blob` for files (GitLab.com); on GitLab
+         Self-Managed, follow the self-hosted Sigstore setup or sign with a KMS key.
+       - **GitHub**: add `actions/attest` to the release job, or run cosign keyless with
+         `permissions: id-token: write` granted to that job only.
+       - **Tekton**: set `artifacts.oci.signer` to `kms` or enable `signers.x509.fulcio.enabled` in
+         `chains-config`.
+    2. Publish checksums, signatures and verification instructions (expected identity and issuer, or
+       public key) with each release.
+    3. Delete signing keys stored as CI variables once the new signing path is in place.
+
+references:
+  - title: Use Sigstore for keyless signing and verification
+    url: https://docs.gitlab.com/ci/yaml/signing_examples/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Artifact attestations
+    url: https://docs.github.com/en/actions/concepts/security/artifact-attestations
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton Chains signing
+    url: https://tekton.dev/docs/chains/signing/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Cosign key management overview
+    url: https://docs.sigstore.dev/cosign/key_management/overview/
+    publisher: Sigstore
+    kind: tool
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-9 Improper Artifact Integrity Validation
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-09-Improper-Artifact-Integrity-Validation
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: partial
+    note: Covers signing at release; verification before use is in CB-CICD-ART-006.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.2.1"
+    relation: equivalent
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(15)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-ART-001
+    type: related
+  - id: CB-CICD-ART-004
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+  - id: CB-CICD-ART-007
+    type: related
+  - id: CB-CICD-SEC-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

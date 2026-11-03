@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-005
+title: Keep all code, pipeline definitions and configuration in version control
+finding:
+  title: Code, pipeline definitions or deployment configuration live outside version control
+  description: Scripts kept on a build server, pipelines edited in a web form or configuration copied by hand change without review or history, so a malicious or mistaken change cannot be detected, attributed or rolled back.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [version-control, pipeline-as-code, infrastructure-as-code, change-history]
+
+description: |
+  Everything that determines what is built and deployed is stored in a version control system
+  managed by the organization: application source, pipeline definitions and shared templates,
+  build and deployment scripts, infrastructure as code, container and runner image definitions,
+  and the configuration of environments and GitOps applications. Each change has an author, a
+  timestamp and a reviewable diff.
+
+  Access is granted per kind of code: repositories holding pipeline templates, infrastructure or
+  deployment configuration have their own, narrower set of writers. Pipelines defined only in a
+  web interface are covered by CB-CICD-PIPE-001; platform configuration as code by
+  CB-CICD-PLAT-015.
+rationale: |
+  Version control is what makes every other source control in this standard possible: branch
+  protection, review, signed commits and audit only apply to what is in a repository. A script
+  stored on a runner or a pipeline edited in a form can be changed by anyone with access to that
+  server or screen, leaves no reviewable trace, and cannot be restored to a known good state after
+  an incident.
+impact: |
+  Moving scripts and configuration into repositories takes some effort, and secrets that were
+  embedded in them must be moved to a secrets store first (CB-CICD-SEC-021).
+
+audit:
+  manual: |
+    Use a role that can read repositories and pipeline configuration.
+
+    1. For a sample of applications, list what is needed to build and deploy them: source,
+       pipeline definition, included templates, build scripts, infrastructure, images and
+       environment configuration.
+    2. Check that each element is stored in a repository of the organization's version control
+       system, and that pipelines load scripts and templates from repositories rather than from
+       files on build servers, shared drives or inline settings.
+    3. Check that repositories holding templates, infrastructure or deployment configuration have
+       their own write access list, narrower than application repositories.
+    4. Fail if any element needed to build or deploy a production application is not under
+       version control, or is changed outside it.
+
+remediation:
+  manual: |
+    1. Import scripts, templates, infrastructure and configuration found outside version control
+       into repositories, removing any embedded secret first.
+    2. Change pipelines to load these files from the repositories, pinned to a reviewed revision.
+    3. Give template, infrastructure and deployment repositories a dedicated owner group and
+       apply branch protection and code owner review to them (CB-CICD-SCM-006,
+       CB-CICD-SCM-018).
+    4. Remove the copies from build servers and shared locations.
+
+references:
+  - title: SLSA Source Track - Level 1 Version controlled
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: SP 800-218 Secure Software Development Framework (SSDF) Version 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: partial
+    note: Covers storing all code and configuration in version control with access per kind of code; commit signing and review are separate controls.
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L1
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-10
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-001
+    type: related
+  - id: CB-CICD-PLAT-015
+    type: related
+  - id: CB-CICD-DEPLOY-011
+    type: related
+  - id: CB-CICD-SCM-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

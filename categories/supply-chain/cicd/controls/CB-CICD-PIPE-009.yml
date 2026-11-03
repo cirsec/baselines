@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-009
+title: Require maintainer approval before pipelines run for external contributions
+finding:
+  title: Pull requests from forks or non-members start pipelines automatically
+  description: Any outside user can open a pull request whose modified build scripts, tests or pipeline file run on the project's runners, to mine cryptocurrency, probe the network or steal whatever the run can reach.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [fork-pull-requests, approval, external-contributors, poisoned-pipeline-execution]
+
+description: |
+  Pipelines for pull requests from forks, outside collaborators and other non-members do not start
+  until a maintainer has looked at the change and approved that specific commit. A new push to the
+  pull request needs a new approval. Approval rights are limited to maintainers or the equivalent
+  role, and "always trust this user" options are not used for external contributors.
+
+  The expected scope is `{{ approval_scope }}`:
+
+  - `outside-contributors`: every pull request from a fork or a non-member needs approval, not
+    only those of first-time contributors;
+  - `all-pull-requests`: on sensitive pipelines, every pull request, including those from branches
+    of the same repository, needs approval before it runs.
+
+  What an approved fork pipeline may access is covered by CB-CICD-PIPE-010; privileged triggers
+  that run on the base branch by CB-CICD-PIPE-014.
+rationale: |
+  A pull request pipeline runs code chosen by its author. "First-time contributor" approval modes
+  are bypassed after one trivial merged change, such as a typo fix. Requiring a maintainer to look
+  at each external change before it runs keeps runners, caches and tokens out of reach of
+  anonymous users.
+impact: |
+  Maintainers must approve external pull requests, which slows down open source contribution
+  workflows. Bots acting on behalf of the project need to be members or explicitly trusted.
+notes: |
+  GitHub `pull_request_target` workflows always run regardless of the approval setting
+  (CB-CICD-PIPE-014). AWS CodeBuild projects created before the pull request build policy feature
+  may have no policy: check every webhook. Woodpecker gives approved pipelines the current secrets.
+  On Google Cloud Build, any user with read access to the repository can open a pull request that
+  starts a build.
+
+parameters:
+  - name: approval_scope
+    type: enum
+    description: outside-contributors requires approval for every fork or non-member pull request; all-pull-requests requires it for every pull request on sensitive pipelines.
+    allowed: [outside-contributors, all-pull-requests]
+    default: outside-contributors
+    profile_defaults:
+      hardened: all-pull-requests
+
+audit:
+  manual: |
+    Use a role that can read repository, organization and pipeline trigger settings.
+
+    1. For each platform, check the approval setting for pull request pipelines:
+       - **GitHub**: **Organization** or **Repository** > **Settings** > **Actions** > **General** >
+         **Approval for running fork pull request workflows from contributors** is **Require
+         approval for all outside collaborators** (enterprise policy under **Policies** >
+         **Actions**).
+       - **GitLab**: pipelines for merge requests from forks run in the fork by default; running them
+         in the parent project needs a member to select **Run pipeline** after reviewing the diff
+         (see CB-CICD-PIPE-010).
+       - **Azure DevOps**: pipeline **Triggers** > **Pull request validation** > **Require a team
+         member's comment before building a pull request** is on, set to **Only on pull requests
+         from non-team members** (or **On all pull requests** for `all-pull-requests`).
+       - **AWS CodeBuild**: each webhook has a pull request build policy with
+         `requiresCommentApproval` set to `ALL_PULL_REQUESTS` (at least `FORK_PULL_REQUESTS` on
+         public repositories), never `DISABLED`, and `approverRoles` limited to admin and maintain
+         roles (`GITHUB_ADMIN`, `GITHUB_MAINTAIN`; GitLab `OWNER`, `MAINTAINER`; Bitbucket `ADMIN`).
+       - **Google Cloud Build**: pull request triggers set **Comment control** to **Required except
+         for owners and collaborators**, or **Required** on public repositories with secrets or a
+         privileged service account.
+       - **Tekton Triggers**: the GitHub interceptor uses `githubOwners` (`enabled: true`,
+         `checkType` `orgMembers` or `repoMembers`) so non-owners need an `/ok-to-test` comment.
+       - **Gitea / Forgejo**: workflows of pull requests from users without write access wait for
+         approval; maintainers use **Approve once**, not **Approve always**, for external authors.
+       - **Woodpecker**: repository setting **Require approval for** is **forks** or stricter
+         (`pull_requests` or `all_events` for `all-pull-requests`); the server default is
+         `WOODPECKER_DEFAULT_APPROVAL_MODE`.
+       - **Jenkins**: multibranch and organization folders do not build new pull requests from
+         untrusted authors automatically; committers opt them in.
+    2. Fail if a pull request from a non-member can start a pipeline without approval, if only
+       first-time contributors need approval, or, for `{{ approval_scope }}` = `all-pull-requests`,
+       if a pull request on a sensitive pipeline runs without approval.
+
+remediation:
+  manual: |
+    1. Set the approval requirement:
+       - **GitHub**: select **Require approval for all outside collaborators** at enterprise,
+         organization or repository level.
+       - **Azure DevOps**: edit the pipeline, **Triggers** > **Pull request validation**, enable
+         **Require a team member's comment before building a pull request**.
+       - **AWS CodeBuild**: update each webhook (`UpdateWebhook` or console **Comment approval**)
+         with `requiresCommentApproval: ALL_PULL_REQUESTS` and `approverRoles` limited to admin and
+         maintain roles; approvals use a `/codebuild_run(<SHA>)` comment.
+       - **Google Cloud Build**: edit the trigger and set **Comment control**.
+       - **Tekton Triggers**: enable `githubOwners` on the GitHub interceptor with an owners file.
+       - **Woodpecker**: set **Require approval for** in the repository settings, and
+         `WOODPECKER_DEFAULT_APPROVAL_MODE` for new repositories.
+       - **Gitea / Forgejo**: revoke **Approve always** trust given to external authors.
+       - **Jenkins**: stop building new pull requests automatically and require an explicit opt-in,
+         for example a label.
+    2. Limit approval rights to maintainers and document what to look for before approving
+       (changes to pipeline files, build scripts, tests and dependency manifests).
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Build GitHub repositories (contributions from forks)
+    url: https://learn.microsoft.com/azure/devops/pipelines/repos/github
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pull request comment approval in AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/pull-request-build-policy.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Building repositories from GitHub
+    url: https://docs.cloud.google.com/build/docs/automating-builds/github/build-repos-from-github
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker project settings
+    url: https://woodpecker-ci.org/docs/usage/project-settings
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers pull request pipelines from external authors; other poisoned pipeline paths are covered by other PIPE controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1496
+related_controls:
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-PIPE-014
+    type: related
+  - id: CB-CICD-RUN-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

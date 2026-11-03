@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-021
+title: Never hard-code secrets in pipeline definitions, settings or URLs
+finding:
+  title: Credentials are written in pipeline files, project settings or repository URLs
+  description: A password or token written in a pipeline file, a plain environment variable of a build project or a clone URL is readable by everyone who can read the repository or the project settings, is copied into logs and history, and cannot be rotated without a code change.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, hard-coded-secrets, pipeline-as-code, versioned-settings]
+
+description: |
+  No credential value appears in pipeline files (`.github/workflows`, `.gitlab-ci.yml`,
+  `azure-pipelines.yml`, `.circleci/config.yml`, `pipeline.yml`, `cloudbuild.yaml`, buildspecs,
+  Jenkinsfiles), in versioned platform settings (TeamCity Kotlin DSL or XML), in plain job or
+  project variables, in action or task configuration, in substitutions or build meta-data, or in
+  repository and API URLs (`https://user:token@host`, `?job_token=`). Pipelines reference secrets
+  by name from the platform's secret store or a secrets manager, and tokens are sent in headers,
+  not in URLs.
+
+  Where the platform can refuse pipeline definitions that contain secret values, that check is on.
+
+  Secret-typed storage is covered by CB-CICD-SEC-003; scanning of all code for secrets by
+  CB-CICD-SEC-009; secrets in build outputs by CB-CICD-SEC-024.
+rationale: |
+  Pipeline files and project settings are read by many more people and systems than the secret
+  store: every developer, every fork and clone, the platform's UI and API, and its logs. A
+  credential written there is exposed to all of them and stays in history after it is removed.
+  URLs with embedded credentials end up in `.git/config`, proxy logs and process listings.
+impact: |
+  Existing pipelines that embed values need to be changed to reference secrets, and the embedded
+  values must be rotated.
+notes: |
+  On TeamCity, users who can read the settings repository can recover passwords stored in their
+  scrambled form; use tokens in versioned settings. AWS Security Hub control CodeBuild.2 only
+  detects `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in plaintext project variables; other
+  secret-looking names need a manual check.
+
+audit:
+  manual: |
+    Use read access to repositories and project settings.
+
+    1. Scan pipeline files and versioned settings for credential values (gitleaks, TruffleHog,
+       Checkov secrets checks, zizmor `hardcoded-container-credentials` for GitHub workflows).
+    2. Check each platform:
+       - **AWS CodeBuild / CodePipeline**: project environment variables of type `PLAINTEXT` hold no
+         secrets (secrets use `SECRETS_MANAGER` or `PARAMETER_STORE`, or `env.secrets-manager` /
+         `env.parameter-store` in the buildspec); project source locations (primary and secondary)
+         contain no token or password (Security Hub CodeBuild.1); pipeline action configuration and
+         default values of pipeline-level variables hold no secrets and reference Secrets Manager
+         instead.
+       - **Google Cloud Build**: secrets are read through `availableSecrets.secretManager` and step
+         `secretEnv`, referenced as `$$VAR` in `bash -c` steps; no substitution or step argument
+         carries a literal credential.
+       - **GitHub**: `jobs.<id>.container.credentials` and `services.<id>.credentials` use
+         `${{ secrets.NAME }}`, not literal passwords.
+       - **Azure DevOps**: no secret value appears in YAML variables or in
+         `##vso[task.setvariable ...]` commands with a literal; secrets come from secret variables,
+         variable groups or Key Vault.
+       - **TeamCity**: versioned settings (Kotlin DSL or XML) contain `credentialsJSON:` tokens,
+         not passwords.
+       - **CircleCI**: `.circleci/config.yml` contains no secret values; they come from contexts or
+         project environment variables.
+       - **Buildkite**: no secret in pipeline settings, `pipeline.yml`, step commands or build
+         meta-data; agents run `buildkite-agent pipeline upload --reject-secrets` (agent v3 does
+         not check by default) and nobody uses `--allow-secrets`.
+       - **GitLab**: scripts send `CI_JOB_TOKEN` or other tokens with `--header "JOB-TOKEN: ..."`
+         (or `PRIVATE-TOKEN`), not `?job_token=` or `https://token@host` URLs.
+    3. Fail if a credential value is found in any pipeline file, versioned setting, plain variable,
+       action configuration, substitution, meta-data or URL.
+
+remediation:
+  manual: |
+    1. Move every embedded value to the secret store (CB-CICD-SEC-003) and reference it by name,
+       then rotate the value, since it is in history.
+       - **AWS CodeBuild / CodePipeline**: change `PLAINTEXT` secrets to `SECRETS_MANAGER` or
+         `PARAMETER_STORE`; reconnect sources through CodeConnections or OAuth and keep only the
+         repository path in the source location; replace secrets in action configuration with
+         Secrets Manager references.
+       - **Google Cloud Build**: store the value in Secret Manager and read it with
+         `availableSecrets.secretManager`.
+       - **GitHub**: use `${{ secrets.NAME }}` for container and service credentials, or OIDC to
+         the registry.
+       - **Azure DevOps**: move values to secret variables or Key Vault-linked variable groups.
+       - **TeamCity**: generate tokens for the passwords used in versioned settings and replace
+         the scrambled values with `credentialsJSON:` references.
+       - **Buildkite**: use Buildkite secrets or an external store, and add `--reject-secrets` to
+         every `pipeline upload` on agent v3.
+       - **GitLab**: change scripts to send tokens in headers.
+    2. Add a secret scanner to pipeline-file reviews (CB-CICD-TEST-004) to stop regressions.
+
+references:
+  - title: Security Hub CSPM controls for CodeBuild
+    url: https://docs.aws.amazon.com/securityhub/latest/userguide/codebuild-controls.html
+    publisher: Amazon Web Services
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CodePipeline security best practices
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/security-best-practices.html
+    publisher: Amazon Web Services
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use secrets from Secret Manager
+    url: https://docs.cloud.google.com/build/docs/securing-builds/use-secrets
+    publisher: Google
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist - secrets management
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security notes - versioned settings
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab CI/CD job token - REST API authentication
+    url: https://docs.gitlab.com/ci/jobs/ci_job_token/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers secrets embedded in pipeline definitions, settings and URLs.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-003
+    type: related
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-CICD-SEC-010
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

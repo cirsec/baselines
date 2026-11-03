@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-011
+title: Make every production change go through the pipeline and detect drift
+finding:
+  title: People change production directly and nobody notices when it no longer matches its declared state
+  description: When engineers keep write access to production runtimes, changes bypass review, approval and the pipeline's checks, and an attacker with a stolen admin account can alter production and stay hidden because no drift is detected.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [gitops, drift-detection, production-access, change-control, immutable-infrastructure]
+
+description: |
+  Humans have no standing write access to production runtimes (clusters, cloud accounts, servers,
+  databases schemas managed as code). Every change to production is a change to code or
+  configuration in version control, reviewed and released by the pipeline or the GitOps controller.
+
+  The declared state is continuously compared with what runs in production. Drift is either reverted
+  automatically (self-healing reconciliation) or raised as an alert to the owning team, and
+  investigated as a possible incident.
+
+  Emergency access to production goes through a break-glass procedure (time-limited, logged and
+  reviewed), and any change made that way is written back to version control afterwards. Privileged
+  administrative access in general is covered by CB-CICD-IAM-020 and CB-CICD-IAM-021.
+rationale: |
+  If production can be changed by hand, the pipeline's protections (review, approval, scanning,
+  signatures) protect only one of several ways in. Removing direct write access makes the pipeline
+  the only path, and drift detection catches what slips through anyway: manual hotfixes, a
+  compromised administrator, or an attacker who modified a workload to persist. Reverting drift
+  automatically also removes changes an attacker made, which forces them to go through the
+  reviewed path.
+impact: |
+  Operators lose the habit of fixing production by hand; incident runbooks must use the pipeline or
+  the break-glass path. Resources that legitimately change at runtime (autoscaling, controllers that
+  mutate fields) need to be excluded from drift comparison.
+notes: |
+  In Argo CD, automated sync with `selfHeal` reverts changes made in the cluster; without it, Argo CD
+  only reports the application as out of sync. In Flux, Kustomizations reapply the declared state at
+  each interval, and HelmRelease drift detection is set with `spec.driftDetection.mode` (`warn` to
+  report, `enabled` to correct).
+
+audit:
+  manual: |
+    Use a role that can read access policies of production runtimes and the configuration of the
+    deployment tools.
+
+    1. List who has write access to production clusters, cloud accounts and servers (role bindings,
+       IAM policies, SSH or console access) and check that only deployment identities and the
+       break-glass group hold it.
+    2. Pick recent production changes from the audit log and check that each one came from a
+       pipeline or GitOps controller run tied to a reviewed commit.
+    3. Check drift detection:
+       - **Argo CD**: production applications use `spec.syncPolicy.automated` with `selfHeal: true`,
+         or out-of-sync status raises an alert.
+       - **Flux**: production `Kustomization` resources reconcile on a short `spec.interval`, and
+         `HelmRelease` resources set `spec.driftDetection.mode: enabled` (or `warn` with alerting).
+       - Pipeline-based deployments: a scheduled job compares the live state with the declared state
+         (for example `terraform plan` with detailed exit code, `kubectl diff`) and alerts on any
+         difference.
+    4. Check that break-glass sessions are logged and that their changes were written back to version
+       control.
+    5. Fail if people outside the break-glass group can change production directly, or if drift
+       between production and its declared state is neither corrected nor alerted.
+
+remediation:
+  manual: |
+    1. Remove standing human write access to production and give the deployment identities only what
+       they need (CB-CICD-DEPLOY-009); set up a time-limited, logged break-glass path.
+    2. Turn on drift handling:
+       - **Argo CD**: enable automated sync with `selfHeal: true` on production applications
+         (`argocd app set <app> --self-heal`), or alert on out-of-sync status.
+       - **Flux**: keep Kustomizations reconciling on a short interval and set
+         `spec.driftDetection.mode: enabled` on HelmReleases.
+       - Pipeline-based deployments: schedule a drift check against the declared state and send its
+         result to the alerting system.
+    3. Route drift alerts to the owning team and treat unexplained drift as a security event
+       (CB-CICD-LOG-006).
+
+references:
+  - title: Automated Sync Policy - Automatic Self-Healing
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Helm Releases - Drift detection
+    url: https://fluxcd.io/flux/components/helm/helmreleases/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Kustomizations
+    url: https://fluxcd.io/flux/components/kustomize/kustomizations/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenGitOps principles
+    url: https://opengitops.dev/
+    publisher: OpenGitOps
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers direct changes to production that bypass the pipeline; other flow control gaps are in the SCM and DEPLOY controls.
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-CICD-DEPLOY-009
+    type: related
+  - id: CB-CICD-IAM-020
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-LOG-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

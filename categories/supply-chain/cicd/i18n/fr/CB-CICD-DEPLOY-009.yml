@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer les déploiements avec des identités à moindre privilège limitées à chaque cible
+finding:
+  title: Les outils de déploiement appliquent chaque changement avec une seule identité partagée de niveau cluster-admin
+  description: Quand le contrôleur ou l'agent de déploiement utilise la même identité très privilégiée pour tous les pipelines et espaces de noms, toute équipe qui peut déployer quelque chose peut tout modifier sur la cible, y compris les charges de travail des autres équipes et le contrôleur lui-même.
+description: |
+  Les outils de déploiement appliquent les changements avec une identité limitée à la cible de chaque
+  pipeline ou application (un espace de noms, un compte, un ensemble de types de ressources), pas avec
+  une identité partagée qui détient des droits cluster-admin ou sur tout le compte. Niveau :
+  `{{ privilege }}`.
+
+  - `scoped-identities` : chaque pipeline ou projet obtient sa propre identité ou son propre
+    périmètre de déploiement : les pipelines Spinnaker s'exécutent sous des comptes de service gérés
+    portant uniquement les rôles du pipeline, et l'accès à l'agent GitLab est accordé à des projets ou
+    groupes nommés et, quand c'est possible, à des environnements précis, en empruntant l'identité du
+    job CI plutôt que celle de l'agent.
+  - `impersonation-enforced` : en plus, l'emprunt d'identité à la synchronisation d'Argo CD est activé
+    et imposé, chaque projet associe chaque destination à un compte de service à moindre privilège, et
+    les rôles de cluster des composants Argo CD sont réduits à la lecture à l'échelle du cluster plus
+    l'écriture sur les seuls espaces de noms et types gérés, les types sensibles étant exclus.
+
+  Les applications et destinations qu'un projet GitOps peut utiliser relèvent de CB-CICD-DEPLOY-008 ;
+  les identités des pipelines en général de CB-CICD-IAM-034 et CB-CICD-IAM-035.
+rationale: |
+  Une identité de déploiement partagée fait de l'outil de déploiement un passe-partout : quiconque
+  peut influencer les manifestes d'une application ou un pipeline peut utiliser tout le privilège du
+  contrôleur sur chaque cible. Limiter l'identité à la cible réduit les dégâts d'un dépôt, d'un
+  pipeline ou d'un compte d'équipe compromis à ce que cette équipe était censée gérer.
+impact: |
+  Chaque cible a besoin d'un compte de service ou d'un rôle et de ses liaisons, à entretenir au fil de
+  l'évolution des équipes et espaces de noms. Réduire les rôles de cluster du contrôleur peut casser
+  des applications qui gèrent des ressources à portée cluster, qui ont alors besoin d'un projet
+  privilégié dédié.
+notes: |
+  L'emprunt d'identité à la synchronisation d'Argo CD est une fonction bêta (depuis la v3.5),
+  désactivée par défaut ; sans elle, les synchronisations s'exécutent avec les privilèges du plan de
+  contrôle d'Argo CD. Une fois activée, l'imposition est active par défaut et une synchronisation
+  échoue si aucun compte de service ne correspond. Avec les comptes de service gérés de Spinnaker, un
+  pipeline à plusieurs déclencheurs qui utilisaient des valeurs `runAsUser` différentes obtient un
+  seul compte géré portant tous leurs rôles. L'emprunt d'identité de l'agent GitLab exige Premium ;
+  par défaut, l'identité propre de l'agent est utilisée. L'intégration Kubernetes de GitLab par
+  certificat est supprimée et ne doit pas être utilisée.
+parameters:
+  privilege: Modèle de privilège des identités de déploiement. scoped-identities donne à chaque pipeline ou projet sa propre identité limitée (comptes de service gérés Spinnaker, accès à l'agent GitLab par projet et environnement) ; impersonation-enforced exige en plus l'emprunt d'identité à la synchronisation d'Argo CD et des rôles de cluster du contrôleur réduits.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration de l'outil de déploiement et le RBAC du cluster
+    cible.
+
+    1. Pour chaque outil de déploiement, trouver l'identité qu'il utilise sur chaque cible et ses
+       permissions.
+    2. Vérifier le périmètre :
+       - **Spinnaker** : `orca-local.yml` pose `tasks.useManagedServiceAccounts: true` (et
+         `useSharedManagedServiceAccounts: true`), Deck pose
+         `window.spinnakerSettings.feature.managedServiceAccounts = true`, et les pipelines
+         s'exécutent sous leur compte de service géré avec uniquement les rôles nécessaires.
+       - **GitLab** : le fichier de configuration de l'agent `.gitlab/agents/<nom>/config.yaml` liste
+         explicitement les `projects` ou `groups` de `ci_access`, avec `environments` quand c'est
+         possible, et utilise `access_as: ci_job: {}` (Premium) plutôt que l'identité de l'agent ; le
+         compte de service de l'agent n'est pas cluster-admin.
+       - **Argo CD** (avec `impersonation-enforced`) : `argocd-cm` pose
+         `application.sync.impersonation.enabled: "true"` et ne pose pas
+         `application.sync.impersonation.enforced: "false"` ; chaque `AppProject` a des
+         `spec.destinationServiceAccounts` qui associent chaque destination à un compte de service
+         limité à l'espace de noms ; les rôles de cluster du contrôleur d'applications et du serveur
+         n'accordent l'écriture que sur les espaces de noms et types gérés, et `resource.exclusions`
+         masque les types sensibles.
+    3. Échec si une seule identité aux droits cluster-admin ou sur tout le compte applique les
+       changements de plusieurs pipelines ou projets sans rapport, ou (renforcé) si les
+       synchronisations Argo CD s'exécutent avec les privilèges propres du contrôleur.
+remediation:
+  manual: |
+    1. Créer une identité à moindre privilège par cible (espace de noms, compte) ou par pipeline.
+    2. Configurer les outils :
+       - **Spinnaker** : poser `tasks.useManagedServiceAccounts: true` et
+         `useSharedManagedServiceAccounts: true` dans `orca-local.yml`, activer
+         `feature.managedServiceAccounts` dans Deck, et ne donner à chaque pipeline que les rôles
+         nécessaires.
+       - **GitLab** : dans la configuration de l'agent, lister les `projects` ou `groups` autorisés
+         sous `ci_access` avec `environments`, et poser `access_as: ci_job: {}` ; lier les identités
+         empruntées à des rôles limités à l'espace de noms.
+       - **Argo CD** : poser `application.sync.impersonation.enabled: "true"` dans `argocd-cm`,
+         ajouter des `destinationServiceAccounts` à chaque `AppProject`, puis réduire les rôles de
+         cluster du contrôleur et ajouter des `resource.exclusions` pour les types sensibles.
+    3. Supprimer l'ancienne identité de déploiement partagée de niveau cluster-admin quand tous les
+       pipelines utilisent des identités limitées.

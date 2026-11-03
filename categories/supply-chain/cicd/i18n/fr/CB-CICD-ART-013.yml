@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Traiter les artefacts échangés entre pipelines et jobs comme des entrées non fiables
+finding:
+  title: Des jobs privilégiés exécutent ou décompressent des artefacts produits par des workflows moins fiables
+  description: Un artefact téléversé par le build d'une pull request peut contenir un script, un binaire modifié ou un fichier qui écrase le checkout ; quand un workflow privilégié le télécharge et l'exécute, l'attaquant obtient les secrets et le jeton en écriture de ce workflow.
+description: |
+  Les artefacts produits par un autre workflow, pipeline ou job, en particulier ceux déclenchés par du
+  code non fiable comme une pull request depuis un fork, sont traités comme des données non fiables par
+  le job qui les consomme. Niveau d'isolement : `{{ workspace_isolation }}`.
+
+  - `validate` : le job consommateur n'exécute jamais, ne source jamais, n'évalue jamais (`eval`) et
+    n'installe jamais le contenu de l'artefact ; il extrait l'artefact dans un répertoire dédié hors de
+    l'espace de travail et hors des chemins que les étapes suivantes exécutent (scripts, hooks, caches
+    d'outils), et valide le contenu (noms de fichiers attendus, taille, format, valeurs lues comme des
+    données) avant usage.
+  - `isolated-read-only` : en plus, chaque paire producteur et consommateur échange ses artefacts par
+    son propre emplacement de stockage ou espace de travail, que le consommateur ne peut que lire et
+    qu'aucun autre job ne peut écrire, de sorte qu'un job compromis ne peut pas empoisonner les
+    artefacts consommés par un autre.
+
+  Les règles de déclenchement qui tiennent le code non fiable hors des workflows privilégiés relèvent
+  de CB-CICD-PIPE-014 ; la vérification des artefacts publiés signés de CB-CICD-ART-006.
+rationale: |
+  Découper un pipeline en un build non privilégié pour les pull requests et une suite privilégiée qui
+  commente, étiquette ou déploie est le schéma recommandé, mais le passage de relais est un artefact
+  entièrement contrôlé par l'attaquant. Si la partie privilégiée le décompresse dans l'espace de travail
+  ou exécute un script qu'il contient, le découpage ne protège de rien : le code de l'attaquant
+  s'exécute avec les secrets et le jeton du job privilégié. Traiter l'artefact comme des données, et
+  isoler l'échange, ferme cette voie.
+impact: |
+  Les workflows qui exécutaient des scripts livrés dans des artefacts doivent être réécrits pour ne
+  recevoir que des données (par exemple un numéro de pull request ou un fichier de rapport) et
+  exécuter du code de confiance issu de la branche par défaut. L'isolement renforcé demande un stockage
+  par paire et davantage de configuration de pipeline.
+notes: |
+  Sur GitHub, `actions/download-artifact` extrait par défaut dans l'espace de travail ; poser `path`
+  sur un répertoire hors de `$GITHUB_WORKSPACE` (par exemple sous `${{ runner.temp }}`) dans les
+  workflows privilégiés déclenchés par `workflow_run` ou `pull_request_target`.
+parameters:
+  workspace_isolation: Manière dont les artefacts échangés entre jobs sont isolés. validate signifie que les consommateurs traitent les artefacts comme des données, les extraient hors de l'espace de travail et les valident ; isolated-read-only donne en plus à chaque paire producteur et consommateur son propre emplacement d'échange en lecture seule.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline.
+
+    1. Lister les pipelines et jobs qui consomment des artefacts produits par un autre workflow,
+       pipeline ou job, en commençant par les privilégiés (avec secrets, jetons en écriture ou droits
+       de déploiement) qui consomment des artefacts issus de builds de pull requests ou de forks.
+    2. Pour chacun, vérifier comment l'artefact est utilisé :
+       - **GitHub** : dans les workflows déclenchés par `workflow_run` ou `pull_request_target`,
+         l'étape `actions/download-artifact` pose `path` hors de `$GITHUB_WORKSPACE` ; aucune étape
+         suivante n'exécute un fichier de ce chemin, ne passe son contenu à un shell, ni ne l'utilise
+         dans des expressions `${{ }}` sans validation.
+       - Autres plates-formes : le job consommateur télécharge l'artefact dans un répertoire séparé et
+         n'exécute ni n'installe rien depuis celui-ci.
+    3. Avec `isolated-read-only` : vérifier que chaque paire producteur et consommateur utilise son
+       propre emplacement de stockage ou espace de travail, que le consommateur n'a qu'un accès en
+       lecture, et qu'aucun autre job ne peut y écrire.
+    4. Échec si un job plus privilégié que le producteur exécute, source ou installe le contenu de
+       l'artefact, l'extrait par-dessus l'espace de travail, ou (renforcé) partage un emplacement
+       d'échange modifiable avec d'autres jobs.
+remediation:
+  manual: |
+    1. Revoir la conception des jobs privilégiés de suite pour que l'artefact ne transporte que des
+       données, et que le code qui les traite vienne de la branche de confiance.
+    2. Extraire les artefacts hors de l'espace de travail :
+       - **GitHub** : dans `actions/download-artifact`, poser `path: ${{ runner.temp }}/artifacts` (ou
+         un autre répertoire hors de l'espace de travail) dans les workflows `workflow_run` et
+         `pull_request_target` ; lire les valeurs avec un format strict et les passer aux scripts par
+         des variables d'environnement, jamais par `${{ }}` dans `run:`.
+       - Autres plates-formes : télécharger dans un répertoire temporaire dédié et valider avant usage.
+    3. Valider le contenu : uniquement les noms de fichiers attendus, limites de taille, valeurs
+       vérifiées par un motif strict (par exemple un nombre pour un identifiant de pull request).
+    4. Pour `isolated-read-only` : donner à chaque paire producteur et consommateur son propre préfixe
+       de bucket, nom d'artefact ou volume d'espace de travail, monté en lecture seule chez le
+       consommateur.

@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-016
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ancrer les politiques de confiance cloud des jetons d'identité CI sur un dépôt et une référence protégée
+finding:
+  title: Des rôles cloud font confiance aux jetons d'identité CI de n'importe quel dépôt, branche ou projet de l'émetteur
+  description: Une politique de confiance qui ne vérifie que l'émetteur ou l'audience, ou qui utilise des jokers sur le propriétaire ou le dépôt, permet à n'importe quel pipeline de la plate-forme, y compris un fork ou le projet d'un autre client, d'endosser le rôle cloud.
+description: |
+  Chaque rôle cloud, pool d'identités de charge de travail, identifiant fédéré ou rôle de
+  gestionnaire de secrets qui accepte des jetons d'identité d'une plate-forme CI/CD vérifie
+  l'audience (`aud`) et un sujet (`sub` ou revendications équivalentes) lié à un dépôt ou projet
+  précis et à une branche, étiquette ou un environnement protégé. Aucune condition n'utilise de
+  joker sur le propriétaire, l'organisation, le dépôt ou le chemin du projet, et aucun rôle ne
+  repose sur la seule audience ou sur des revendications contrôlées par l'utilisateur comme le nom
+  d'utilisateur ou l'adresse e-mail.
+
+  Quand `{{ claim_binding }}` vaut `immutable-ids`, le sujet inclut aussi des identifiants
+  immuables du propriétaire et du dépôt ou projet (identifiants numériques) au lieu de noms qui
+  peuvent être réattribués, et les rôles de déploiement ajoutent des conditions sur le contexte
+  d'usage quand le fournisseur le permet (réseau source, étiquettes de session, identité qui
+  déploie).
+
+  L'usage d'identifiants fédérés au lieu de clés statiques relève de CB-CICD-SEC-015.
+parameters:
+  claim_binding: repo-and-ref vérifie aud et ancre sub sur un dépôt et une référence ou un environnement protégés ; immutable-ids exige en plus des identifiants immuables du propriétaire et du dépôt ou projet dans les revendications vérifiées, et des conditions d'usage supplémentaires sur les rôles de déploiement.
+rationale: |
+  L'émetteur OIDC de la plate-forme CI est partagé par tous les dépôts et tous les clients de cette
+  plate-forme. Une politique de confiance qui ne vérifie que l'émetteur accepte les jetons de tous.
+  Des jokers sur le dépôt ou la branche permettent à un fork, à un nouveau dépôt reprenant un nom
+  ou à une branche non revue d'endosser un rôle de production. Les noms peuvent être réattribués
+  après un renommage ou une suppression, ce que les identifiants immuables empêchent.
+impact: |
+  Chaque rôle a besoin d'une politique de confiance par dépôt et par environnement. Renommer ou
+  transférer un dépôt change les sujets fondés sur les noms et, sur GitHub, peut le faire passer au
+  format immuable, ce qui casse les politiques de confiance existantes jusqu'à leur mise à jour.
+notes: |
+  Les revendications de sujet immuables de GitHub sont le format par défaut des dépôts créés après
+  le 15 juillet 2026 et ne sont pas disponibles sur GitHub Enterprise Server. Sur AWS, les clés de
+  condition `project_id` et `namespace_id` de GitLab n'existent que pour le fournisseur d'identité
+  gitlab.com ; les instances auto-hébergées ne peuvent s'appuyer que sur `sub`. L'audience par
+  défaut de CircleCI est l'identifiant de l'organisation, qui à lui seul correspond à tous les
+  projets de l'organisation.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux politiques de confiance IAM cloud et aux réglages OIDC de la
+    plate-forme CI.
+
+    1. Lister les rôles cloud, fournisseurs d'identités de charge de travail, identifiants fédérés
+       et rôles de gestionnaire de secrets qui font confiance à un émetteur CI/CD (par exemple
+       `token.actions.githubusercontent.com`, `gitlab.com` ou l'URL de l'instance auto-hébergée,
+       `oidc.circleci.com/org/<id>`).
+    2. Pour chacun, lire les conditions :
+       - **GitHub** : `token.actions.githubusercontent.com:aud` est renseigné (par exemple
+         `sts.amazonaws.com`, `api://AzureADTokenExchange`) et `:sub` nomme un seul dépôt et un
+         environnement (`repo:ORG/DEPOT:environment:prod`) ou une référence protégée, sans `*` dans
+         le segment propriétaire ou dépôt. Vérifier le format de sujet du dépôt sous **Settings** >
+         **Actions** > **OIDC** ou avec `GET /repos/{owner}/{repo}/actions/oidc/customization/sub`.
+       - **GitLab** : la condition de confiance sur `sub` nomme le chemin du projet et une
+         référence protégée (`project_path:GROUPE/PROJET:ref_type:branch:ref:main`) ou un
+         environnement ; quand le fournisseur prend en charge d'autres revendications,
+         `ref_protected` ou `environment_protected` vaut `true` et `project_id` ou `namespace_id`
+         est vérifié. Sur les instances auto-hébergées, **Admin** > **Settings** > **CI/CD** >
+         **Continuous Integration and Deployment** > **Block JWT generation in reclaimed project
+         paths** reste coché.
+       - **CircleCI** : la politique de confiance vérifie le projet (clé de condition
+         `oidc.circleci.com/project-id` sur AWS, ou le projet dans `sub`) et une revendication de
+         branche ou `vcs-ref` quand le fournisseur le permet, pas seulement `aud` égal à
+         l'identifiant de l'organisation.
+       - **Buildkite** : les politiques de confiance vérifient des revendications immuables comme
+         `organization_id` et `pipeline_id` et la branche, plutôt que des identifiants textuels
+         modifiables.
+    3. Quand `{{ claim_binding }}` vaut `immutable-ids`, vérifier aussi :
+       - **GitHub** : l'organisation ou le dépôt utilise les revendications de sujet immuables ou un
+         modèle de sujet personnalisé avec `repository_owner_id` et `repository_id` (API :
+         `GET /orgs/{org}/actions/oidc/customization/sub` montre `include_claim_keys`), et les
+         politiques de confiance vérifient ces identifiants.
+       - **GitLab** : les politiques de confiance vérifient `project_id` ou `namespace_id` quand
+         c'est possible.
+       - Les rôles de déploiement portent des conditions supplémentaires (plages IP sources des
+         runners, étiquettes de session obligatoires) quand le fournisseur cloud les prend en
+         charge.
+    4. Échec si une politique de confiance ne vérifie pas l'audience, accepte n'importe quel
+       dépôt, projet ou branche de l'émetteur, utilise un joker sur le propriétaire ou le dépôt,
+       repose seulement sur des revendications contrôlées par l'utilisateur, ou, pour
+       `immutable-ids`, vérifie des noms plutôt que des identifiants immuables.
+remediation:
+  manual: |
+    1. Réécrire chaque politique de confiance avec des conditions exactes sur `aud` et `sub` pour
+       un dépôt et sa branche ou son environnement protégé. Utiliser un rôle par dépôt et par
+       environnement.
+    2. Par plate-forme :
+       - **GitHub** : déployer depuis des jobs qui déclarent `environment:` pour que le sujet
+         contienne le nom de l'environnement ; pour `immutable-ids`, activer les revendications de
+         sujet immuables au niveau organisation, ou définir un modèle personnalisé avec
+         `PUT /orgs/{org}/actions/oidc/customization/sub` et des `include_claim_keys` comme
+         `repository_owner_id`, `repository_id` et `environment`, puis mettre à jour les
+         politiques de confiance.
+       - **GitLab** : ajouter des conditions sur `ref_protected` / `environment_protected` et, sur
+         gitlab.com, sur `project_id` et `namespace_id` ; personnaliser la revendication `sub` du
+         projet avec l'API des projets si le fournisseur ne prend en charge que `sub`. Ne jamais
+         faire confiance à `user_login` ou `user_email` seuls.
+       - **CircleCI** : ajouter à chaque rôle la condition `oidc.circleci.com/project-id` (AWS) ou
+         la vérification de revendication équivalente, et une condition de branche.
+       - **Buildkite** : vérifier les revendications `organization_id` et `pipeline_id`.
+    3. Tester chaque pipeline après la modification et supprimer les anciennes politiques trop
+       permissives.
+  rollback: |
+    Garder l'ancienne déclaration de politique de confiance dans une copie désactivée du rôle
+    pendant la migration ; ne jamais rétablir de jokers sur des rôles de production.
