@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Utiliser des identifiants fédérés à courte durée de vie pour l'accès au cloud et aux registres
+finding:
+  title: Les pipelines s'authentifient auprès des comptes cloud ou des registres avec des clés longue durée
+  description: Une clé d'accès cloud ou un secret de principal de service stocké en variable CI reste valide après une fuite par un journal de job, un runner compromis ou une pull request malveillante, jusqu'à ce que quelqu'un s'en aperçoive et le renouvelle.
+description: |
+  Les pipelines, les contrôleurs GitOps et la plate-forme elle-même obtiennent leurs identifiants
+  cloud et registre à partir d'un jeton OpenID Connect (OIDC) ou d'une identité de charge de travail
+  émis pour l'exécution, échangé contre un rôle cloud limité à ce pipeline. Aucun identifiant cloud
+  longue durée n'est stocké en secret ou en variable CI : ni clé d'accès AWS, ni secret ou certificat
+  client Azure, ni clé JSON de compte de service Google, ni jeton de compte de service Kubernetes sans
+  expiration.
+
+  Le droit de demander un jeton d'identité n'est accordé qu'aux jobs qui appellent le cloud, pas à
+  tout le pipeline. Quand une plate-forme n'a pas d'émetteur OIDC, les identifiants viennent de
+  l'identité propre du runner (rôle d'instance, identité managée, identité de charge de travail
+  Kubernetes) ou sont récupérés au démarrage du job avec la durée de vie la plus courte possible.
+
+  L'ancrage de la politique de confiance cloud sur un dépôt, une branche ou un environnement relève
+  de CB-CICD-SEC-016.
+rationale: |
+  Le vol de secrets CI est la conséquence la plus fréquente d'une compromission de pipeline, et les
+  clés cloud longue durée en sont les plus précieuses : elles fonctionnent depuis n'importe où et
+  pendant des mois. Un jeton fédéré est émis pour une exécution, expire en quelques minutes à une
+  heure, et ne s'échange que contre un rôle dont la politique de confiance désigne le pipeline. Une
+  fuite ne donne alors qu'une courte fenêtre à l'attaquant au lieu d'un accès permanent au compte
+  cloud.
+impact: |
+  Chaque rôle cloud a besoin d'une relation de confiance fédérée avec l'émetteur OIDC de la
+  plate-forme CI/CD, et les pipelines d'une petite modification pour demander le jeton. Les clés
+  existantes doivent être révoquées une fois tous les pipelines migrés, ce qui suppose d'inventorier
+  où elles servent. Les plates-formes auto-hébergées dont l'émetteur n'est pas joignable depuis
+  internet doivent publier le document de découverte OIDC à un emplacement public pour le
+  fournisseur cloud.
+notes: |
+  Bitbucket Pipelines documente l'OIDC par step : vérifier que `oidc: true` n'est posé que sur les
+  steps qui déploient. AWS CodeBuild, Google Cloud Build et le délégué Harness s'exécutent sous un
+  rôle cloud ou un compte de service et n'ont besoin d'aucune clé stockée ; le contrôle n'y échoue
+  que si des clés ont quand même été ajoutées en variables d'environnement.
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lire les réglages des pipelines et les noms des
+    variables (les valeurs ne sont pas nécessaires).
+
+    1. Lister les secrets et variables au niveau organisation, groupe, projet et environnement et
+       chercher des identifiants cloud longue durée : noms ou valeurs du type `AWS_ACCESS_KEY_ID` /
+       `AWS_SECRET_ACCESS_KEY` (identifiants de clé commençant par `AKIA`), `AZURE_CLIENT_SECRET` ou
+       `ARM_CLIENT_SECRET`, `GOOGLE_CREDENTIALS` ou une clé JSON de compte de service, ou un jeton
+       bearer Kubernetes.
+    2. Côté cloud, lister les clés d'accès, secrets client et clés de compte de service qui
+       appartiennent à des identités CI/CD et vérifier leur date de dernière utilisation.
+    3. Vérifier comment chaque plate-forme en service obtient ses identifiants cloud :
+       - **GitHub** : les workflows de déploiement déclarent `permissions: id-token: write` sur le
+         seul job qui déploie, et utilisent l'action de connexion cloud avec un rôle (par exemple
+         `role-to-assume`, `client-id` sans `client-secret`, `workload_identity_provider`). Sur
+         GitHub Enterprise Server, **Management Console** > **Actions** > stockage des artefacts et
+         journaux utilise l'OIDC.
+       - **GitLab** : les jobs de déploiement déclarent `id_tokens:` avec un `aud` par cloud ; aucune
+         clé cloud n'est stockée dans les variables CI/CD. Les variables supprimées `CI_JOB_JWT` /
+         `CI_JOB_JWT_V2` ne sont pas utilisées.
+       - **Azure DevOps** : **Paramètres du projet** > **Connexions de service** : chaque connexion
+         Azure Resource Manager utilise la **fédération d'identité de charge de travail**, aucune
+         n'utilise de secret.
+       - **Bitbucket** : les steps de déploiement posent `oidc: true` ; **Repository settings** >
+         **OpenID Connect** donne l'émetteur et l'audience utilisés par la confiance cloud.
+       - **Buildkite** : les steps de déploiement appellent `buildkite-agent oidc request-token` avec
+         une audience.
+       - **Gitea / Forgejo** : les jobs Gitea déclarent `permissions: id-token: write` ; les jobs
+         Forgejo posent `enable-openid-connect: true`.
+       - **Argo CD** : les secrets de cluster (label `argocd.argoproj.io/secret-type: cluster`)
+         utilisent `awsAuthConfig`, `execProviderConfig` ou une identité de charge de travail, pas un
+         `bearerToken` statique.
+       - **Flux** : les sources `GitRepository`, `OCIRepository`, `HelmRepository` et `Bucket`
+         utilisent `spec.provider` (`aws`, `azure`, `gcp`) ou `serviceAccountName` avec une identité
+         de charge de travail au lieu d'un `secretRef` contenant des clés cloud.
+       - **AWS CodeArtifact** : le jeton est récupéré au démarrage du job avec
+         `aws codeartifact get-authorization-token --duration-seconds` réglé au plus court possible,
+         pas stocké.
+    4. Échec si un identifiant cloud longue durée est stocké dans la plate-forme pour un cloud qui
+       prend en charge la fédération, ou si le droit au jeton d'identité est accordé à tous les jobs
+       d'un pipeline qui comporte des jobs qui ne déploient pas.
+remediation:
+  manual: |
+    1. Déclarer l'émetteur OIDC de la plate-forme CI/CD comme fournisseur d'identité dans chaque
+       compte cloud (fournisseur OIDC AWS IAM, identifiant fédéré Microsoft Entra, pool Google
+       Workload Identity Federation).
+    2. Créer un rôle par pipeline ou par cible de déploiement, avec les seules permissions
+       nécessaires, et une politique de confiance ancrée sur le dépôt et la référence protégée ou
+       l'environnement (CB-CICD-SEC-016).
+    3. Modifier les jobs de déploiement pour qu'ils demandent un jeton et endossent le rôle :
+       - **GitHub** : ajouter `permissions: id-token: write` au job de déploiement et utiliser
+         l'action officielle de connexion cloud avec le rôle.
+       - **GitLab** : ajouter `id_tokens: <NOM>: aud: <audience>` au job de déploiement et passer le
+         jeton à la CLI cloud.
+       - **Azure DevOps** : ouvrir chaque connexion de service Azure Resource Manager et choisir
+         **Convertir** pour passer en fédération d'identité de charge de travail, ou en créer une
+         nouvelle avec **Fédération d'identité de charge de travail (automatique)**.
+       - **Bitbucket** : ajouter `oidc: true` au seul step de déploiement.
+       - **Buildkite** : demander un jeton avec `buildkite-agent oidc request-token --audience
+         <audience>` dans le step de déploiement.
+       - **Gitea / Forgejo** : ajouter `permissions: id-token: write` (Gitea) ou
+         `enable-openid-connect: true` (Forgejo) au job de déploiement.
+       - **Argo CD / Flux** : donner au contrôleur une identité de charge de travail cloud et y
+         basculer les secrets de cluster et les sources.
+    4. Exécuter les pipelines, puis supprimer les clés stockées dans la plate-forme et les révoquer
+       dans le compte cloud.
+  rollback: |
+    Garder l'ancienne clé désactivée, pas supprimée, jusqu'à ce que les pipelines fédérés aient
+    tourné une fois dans chaque environnement ; la réactiver si un déploiement est bloqué.

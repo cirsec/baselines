@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver les clés de signature des artefacts dans un KMS ou un HSM, avec rotation et révocation
+finding:
+  title: Les clés de signature des artefacts et attestations sont stockées en fichiers, variables CI ou secrets de cluster
+  description: Une clé de signature conservée dans un secret Kubernetes, une variable CI ou sur un hôte de build peut être copiée par quiconque atteint ce stockage, et tout artefact que l'attaquant signe ensuite est accepté par les consommateurs jusqu'à la révocation de la clé.
+description: |
+  Les clés qui signent artefacts, images et attestations n'existent jamais sous forme exportable dans
+  la plate-forme CI/CD. La signature utilise soit une identité sans clé (un certificat éphémère émis
+  pour l'identité de charge de travail du pipeline, par exemple par Sigstore Fulcio), soit une clé qui
+  reste dans un KMS cloud, un HSM ou le moteur transit de Vault, utilisée par appel d'API par une
+  identité aux droits restreints.
+
+  Pour la signature par clé, l'organisation dispose d'une procédure écrite pour renouveler les clés à
+  intervalle fixe et les révoquer en cas de compromission, les consommateurs apprennent l'existence
+  des nouvelles clés et des clés révoquées par un canal de confiance, et la racine de confiance (clés
+  racines, signature hors ligne de la liste de clés ou de la politique de confiance) est conservée
+  hors ligne et utilisée uniquement pour ces opérations.
+
+  La signature des artefacts elle-même relève de CB-CICD-ART-005.
+rationale: |
+  Une clé de signature volée permet à un attaquant de produire un logiciel malveillant qui passe
+  toutes les vérifications fondées sur cette clé. Les clés stockées en secrets de cluster ou de CI sont
+  exposées à chaque administrateur, sauvegarde et contrôleur compromis ayant accès à ce stockage. La
+  signature sans clé supprime la clé longue durée, et les clés KMS ou HSM ne peuvent pas être copiées,
+  seulement utilisées, chaque usage étant journalisé. La rotation et la révocation limitent la durée
+  d'exploitation d'une compromission.
+impact: |
+  Un KMS, un HSM ou un Vault doit être accessible au composant de signature, avec des politiques IAM
+  qui limitent qui peut signer. La rotation impose aux consommateurs d'accepter plusieurs clés valides
+  pendant la transition. Les clés racines hors ligne demandent une cérémonie et un stockage sûr.
+notes: |
+  Par défaut, Tekton Chains signe avec le signataire `x509` en utilisant une clé cosign stockée dans
+  le secret Kubernetes `signing-secrets` de l'espace de noms `tekton-chains`, lisible par toute
+  personne autorisée à lire les secrets de cet espace. La signature sans clé Fulcio
+  (`signers.x509.fulcio.enabled`) est désactivée par défaut.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration de signature, les politiques des clés KMS et les
+    noms des secrets CI.
+
+    1. Lister les identités et clés qui signent les artefacts publiés et les attestations.
+    2. Pour chaque clé, vérifier où elle se trouve : échec si la clé privée est stockée dans une
+       variable CI, un fichier sur un runner ou un hôte de build, ou un secret Kubernetes.
+    3. Réglages de la plate-forme :
+       - **Tekton** : dans `chains-config`, `artifacts.taskrun.signer`, `artifacts.pipelinerun.signer`
+         et `artifacts.oci.signer` valent `kms` avec `signers.kms.kmsref` réglé sur une URI
+         `gcpkms://`, `awskms://`, `azurekms://` ou `hashivault://`, ou `x509` avec
+         `signers.x509.fulcio.enabled: "true"` ; aucun ne vaut `none` ; le secret `signing-secrets` ne
+         contient aucune clé.
+       - **GitHub / GitLab** : la signature utilise les attestations d'artefacts ou cosign sans clé
+         avec le jeton OIDC du job, ou `cosign sign --key` avec une URI KMS.
+    4. Pour les clés KMS, vérifier la politique de la clé : seule l'identité de signature peut
+       l'utiliser, la rotation est configurée et l'usage de la clé est journalisé.
+    5. Vérifier qu'une procédure de rotation et de révocation existe et a été exercée, et que les clés
+       racines sont conservées hors ligne.
+    6. Échec si une clé de signature des versions peut être exportée depuis la plate-forme CI/CD, ou
+       s'il n'existe aucun moyen documenté de la révoquer.
+remediation:
+  manual: |
+    1. Passer chaque signataire en signature sans clé ou sur une clé détenue par un KMS :
+       - **Tekton** : régler `artifacts.taskrun.signer`, `artifacts.pipelinerun.signer` et
+         `artifacts.oci.signer` sur `kms` et `signers.kms.kmsref` sur l'URI de la clé KMS, ou garder
+         `x509` et poser `signers.x509.fulcio.enabled: "true"` ; supprimer ensuite la clé de
+         `signing-secrets`.
+       - **GitHub / GitLab / autres plates-formes** : utiliser les attestations d'artefacts ou cosign
+         sans clé avec le jeton OIDC du job ; quand une clé est nécessaire, utiliser
+         `cosign sign --key <uri-kms>`.
+    2. Restreindre la politique de la clé KMS à l'identité de signature, activer la rotation quand le
+       KMS la prend en charge, et envoyer les journaux d'usage de la clé au SIEM (CB-CICD-LOG-003).
+    3. Rédiger la procédure de rotation et de révocation, y compris la manière dont les consommateurs
+       obtiennent la nouvelle clé publique ou politique de confiance, et conserver les clés racines
+       hors ligne.
+    4. Révoquer et retirer les anciennes clés quand tous les consommateurs vérifient avec les
+       nouvelles.

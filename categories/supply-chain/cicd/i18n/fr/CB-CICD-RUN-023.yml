@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-023
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Isoler les runners des réseaux internes et des métadonnées d'instance
+finding:
+  title: Les runners peuvent atteindre les services internes et le point de métadonnées cloud
+  description: Un runner sur un réseau à plat donne à chaque job une tête de pont pour scanner et attaquer les systèmes internes, les autres runners et le contrôleur CI, et pour récupérer les identifiants cloud de l'hôte via le point de métadonnées d'instance.
+parameters:
+  network_perimeter: Isolation réseau des runners. segmented signifie un sous-réseau dédié sans route vers les services internes ou d'administration ni entre runners, et le point de métadonnées bloqué ; default-deny ajoute des politiques réseau en refus par défaut ou un périmètre de service où seuls des flux documentés sont autorisés.
+description: |
+  Les runners auto-hébergés sont placés dans un segment réseau dédié (VPC, sous-réseau, VLAN ou namespace
+  Kubernetes) sans accès entrant depuis internet, sans route vers les services internes ou
+  d'administration, sans trafic entre runners, et sans accès au point de métadonnées d'instance cloud
+  depuis les jobs. Le trafic sortant est limité au serveur CI et aux services dont les builds ont besoin.
+  Dans Kubernetes, les namespaces des contrôleurs CI sont protégés par des politiques réseau que le CNI du
+  cluster applique.
+
+  Avec `{{ network_perimeter }}` à `default-deny`, tous les namespaces de runners et de contrôleurs
+  utilisent des politiques réseau en refus par défaut avec des flux documentés, et les pools de build
+  gérés sont dans un périmètre de service (par exemple VPC Service Controls).
+
+  La liste blanche des registres de paquets pour le téléchargement des dépendances relève de
+  CB-DEP-CI-003.
+rationale: |
+  Les jobs exécutent du code issu de pull requests et de dépendances tierces. Sur un réseau à plat, ce
+  code peut atteindre bases de données, interfaces d'administration, autres runners et contrôleur CI. Le
+  point de métadonnées délivre les identifiants cloud de l'instance à tout processus qui les demande, ce
+  qui transforme un build en accès au cloud.
+impact: |
+  Les jobs qui appellent des services internes (tests d'intégration, déploiements) ont besoin de flux
+  explicites ou de runners dédiés dans le bon segment. Bloquer les métadonnées suppose que rien sur le
+  runner ne dépende du rôle d'instance, ou que l'agent du runner y soit autorisé et pas les jobs.
+notes: |
+  Flux installe des politiques réseau dans `flux-system` pour que seuls ses composants puissent récupérer
+  les artefacts de sources servis en HTTP dans le cluster ; elles ne protègent rien si le CNI n'applique
+  pas les politiques réseau. Sur Google Cloud Build, VPC Service Controls ne s'applique qu'aux pools
+  privés, les déclencheurs Pub/Sub ne sont pas pris en charge dans un périmètre, et les journaux doivent
+  aller dans Cloud Logging uniquement ou dans un bucket à l'intérieur du périmètre. Sur les runners
+  hébergés par GitHub, le trafic sortant peut être supervisé et bloqué avec des outils comme StepSecurity
+  Harden-Runner.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration réseau (VPC, pare-feu, groupes de sécurité, politiques
+    réseau) et aux manifestes de déploiement des runners.
+
+    1. Cartographier les réseaux des runners et les routes et règles de pare-feu depuis ces réseaux vers les
+       plages internes, les services d'administration, les autres runners et le contrôleur CI.
+    2. Depuis un job de test sur chaque type de runner, tenter d'atteindre un service interne et le point de
+       métadonnées (`169.254.169.254`) ; les deux doivent échouer.
+    3. Par produit :
+       - Runners auto-hébergés **GitHub / GitLab / Gitea / Forgejo / Buildkite** : les hôtes de runners sont
+         dans un sous-réseau dédié ; l'accès aux métadonnées depuis les jobs est bloqué (règle de pare-feu,
+         ou IMDSv2 avec une limite de sauts à `1` pour les jobs conteneurisés sur AWS) ; le rôle d'instance
+         est minimal. Les runners Docker de GitLab peuvent poser `FF_NETWORK_PER_BUILD` pour un réseau par
+         job.
+       - **Argo Workflows** : des objets `NetworkPolicy` dans le namespace Argo n'autorisent que les flux
+         documentés (entrée vers Argo Server, métriques depuis Prometheus, sortie vers la base de données et
+         le stockage d'artefacts).
+       - **Flux** : les politiques réseau installées dans `flux-system` existent et sont appliquées par le
+         CNI (validé avec un outil comme Cyclonus ou Sonobuoy).
+       - **Google Cloud Build** : avec `{{ network_perimeter }}` à `default-deny`, les pools privés sont
+         dans un périmètre VPC Service Controls qui restreint `cloudbuild.googleapis.com`, avec les projets
+         Artifact Registry et Cloud Storage de destination à l'intérieur, et les pools utilisent
+         `NO_PUBLIC_EGRESS` quand c'est possible.
+    4. Échec si un job peut atteindre des services internes ou d'administration, d'autres runners ou le
+       point de métadonnées ; avec `{{ network_perimeter }}` à `default-deny`, échec aussi si des namespaces
+       de runners ou de contrôleurs n'ont pas de politiques en refus par défaut ou si des pools gérés sont
+       hors périmètre.
+remediation:
+  manual: |
+    1. Placer les runners dans un segment réseau dédié sans accès entrant depuis internet et avec des
+       règles de pare-feu qui refusent le trafic vers les plages internes et entre runners.
+    2. Bloquer le point de métadonnées pour les jobs (pare-feu de l'hôte, limite de sauts IMDSv2 à `1`,
+       politique réseau Kubernetes), et réduire le rôle d'instance au minimum.
+    3. Par produit :
+       - **Argo Workflows / Flux** : ajouter ou conserver des politiques réseau sur les namespaces des
+         contrôleurs et utiliser un CNI qui les applique.
+       - **Google Cloud Build** : créer un périmètre VPC Service Controls autour du projet du pool privé,
+         restreindre l'API Cloud Build, et régler la journalisation des builds sur `CLOUD_LOGGING_ONLY`.
+    4. Relancer les tests d'accessibilité depuis un job sur chaque type de runner.

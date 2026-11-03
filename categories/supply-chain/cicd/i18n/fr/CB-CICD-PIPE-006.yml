@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Signer les définitions de pipeline et les vérifier avant exécution
+finding:
+  title: Les définitions de pipeline et les tâches résolues à distance s'exécutent sans vérification de signature
+  description: La plate-forme exécute les définitions d'étapes qu'elle reçoit, quelles qu'elles soient ; une définition modifiée après revue, en transit ou dans un catalogue distant est exécutée avec les identifiants du pipeline.
+description: |
+  Les définitions de pipeline, et les tâches ou pipelines résolus depuis des sources distantes
+  (bundles, Git, catalogues hub), portent une signature faite avec une clé détenue par les
+  propriétaires du pipeline. La plate-forme ou l'agent vérifie cette signature avant d'exécuter les
+  étapes, en mode bloquant : une définition non signée ou modifiée ne s'exécute pas, et une
+  définition qu'aucune politique de vérification ne couvre est refusée.
+
+  Les clés de signature sont conservées dans un KMS ou un HSM, et les agents qui exécutent les jobs
+  ne détiennent que la clé de vérification.
+
+  La signature des produits du build eux-mêmes relève de CB-CICD-ART-005 ; les sources relues des
+  définitions relèvent de CB-CICD-PIPE-005.
+rationale: |
+  La revue et la protection de branche garantissent ce qui a été fusionné, pas ce que reçoit
+  l'exécutant. Un plan de contrôle, un catalogue ou un résolveur compromis, ou une étape d'upload qui
+  réécrit le pipeline, peut transmettre des étapes modifiées aux agents. La vérification au moment
+  de l'exécution rattache ce qui s'exécute à une clé que l'attaquant ne détient pas.
+impact: |
+  Seuls Tekton (trusted resources) et Buildkite (signed pipelines, agents auto-hébergés) offrent une
+  vérification native ; ailleurs le contrôle demande un outillage spécifique (par exemple des layouts
+  in-toto). La gestion et la rotation des clés doivent être organisées. Les étapes signées Buildkite
+  ne sont pas utilisables avec les pipeline templates.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration du cluster ou des agents.
+
+    1. Identifier les pipelines et sources de tâches distantes concernés et la façon dont leurs
+       définitions sont signées.
+    2. Vérifier la vérification par plate-forme :
+       - **Tekton** : des ressources `VerificationPolicy` couvrent chaque source de résolveur utilisée
+         (`spec.resources[].pattern`) avec `mode: enforce` et des autorités clé ou KMS, et la
+         ConfigMap `feature-flags` définit `trusted-resources-verification-no-match-policy: fail`.
+       - **Buildkite** (agents auto-hébergés) : les agents qui exécutent les jobs définissent
+         `verification-jwks-file` et gardent `verification-failure-behavior` à `block` ; les clés de
+         signature sont dans AWS ou GCP KMS ou détenues uniquement par des agents de signature
+         séparés.
+       - **Autres plates-formes** : un contrôle de signature équivalent de la définition s'exécute
+         hors du pipeline avant toute étape privilégiée.
+    3. Échec si un pipeline privilégié peut exécuter une définition non signée ou modifiée, si la
+       vérification est en mode avertissement, ou si les agents de job détiennent la clé de
+       signature.
+remediation:
+  manual: |
+    1. Créer une clé de signature dans un KMS ou un HSM, détenue par les mainteneurs du pipeline.
+    2. Activer la vérification :
+       - **Tekton** : signer tâches et pipelines avec `tkn` ou cosign, créer des objets
+         `VerificationPolicy` pour chaque source avec `mode: warn`, vérifier les résultats, les
+         passer en `mode: enforce`, puis régler `trusted-resources-verification-no-match-policy` sur
+         `fail`.
+       - **Buildkite** : générer une paire de clés JWKS (ou utiliser un KMS), signer les étapes à
+         l'upload sur des agents de signature dédiés, ne donner aux agents de job que
+         `verification-jwks-file`, tester avec `verification-failure-behavior=warn`, puis le
+         remettre à `block`.
+    3. Documenter la rotation et la révocation des clés.

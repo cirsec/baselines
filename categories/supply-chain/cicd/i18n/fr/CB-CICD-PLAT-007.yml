@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver au service la lecture des clés maîtresses et des répertoires de données de la plate-forme
+finding:
+  title: Les clés maîtresses et répertoires de données de la plate-forme sont lisibles par d'autres utilisateurs
+  description: Les clés secrètes de l'instance se trouvent dans un fichier de configuration largement lisible, ou les répertoires de données et de journaux sont lisibles par d'autres comptes de l'hôte ; quiconque les lit peut déchiffrer les secrets stockés, forger des jetons internes ou se connecter en administrateur.
+description: |
+  Les secrets propres à l'instance (clés de chiffrement des secrets stockés et des graines 2FA,
+  jetons d'API internes, secrets de signature JWT) sont uniques à chaque instance, générés à
+  l'installation, et tenus hors du fichier de configuration principal, dans des fichiers que seul le
+  compte de service peut lire :
+
+  - Gitea et Forgejo : `app.ini` référence les secrets par fichier au lieu de les inclure, avec
+    `[security] SECRET_KEY_URI` et `INTERNAL_TOKEN_URI`, `[server] LFS_JWT_SECRET_URI` et
+    `[oauth2] JWT_SECRET_URI` (la documentation de Forgejo cite `SECRET_KEY_URI`,
+    `LFS_JWT_SECRET_URI` et `JWT_SECRET_URI`, mais pas `INTERNAL_TOKEN_URI`) ; chaque fichier est en mode `0600` et appartient à l'utilisateur du service.
+  - TeamCity : le Data Directory et le répertoire `logs` du serveur ne sont lisibles que par le
+    compte de service et les administrateurs de la plate-forme.
+
+  Les répertoires de données, de dépôts et de journaux des trois produits appartiennent au compte de
+  service et ne sont pas lisibles par les autres utilisateurs locaux. Le chiffrement des secrets de
+  pipeline stockés relève de CB-CICD-SEC-005 ; la sauvegarde des fichiers de clés de
+  CB-CICD-PLAT-008.
+rationale: |
+  Ces fichiers sont la racine de confiance de la plate-forme. Avec `SECRET_KEY`, les secrets stockés
+  et les secrets 2FA se déchiffrent ; avec le jeton interne ou les secrets JWT, on forge des
+  requêtes. TeamCity indique que l'accès en lecture aux journaux du serveur permet de s'élever en
+  administrateur (le jeton de super-utilisateur y est écrit) et que l'accès en lecture au Data
+  Directory expose tous les réglages, mots de passe configurés compris. Garder les clés dans des
+  fichiers séparés et restreints les tient aussi hors des dépôts de configuration et des paquets
+  de support.
+impact: |
+  Les fichiers de clés doivent être déployés avec le bon propriétaire et le bon mode, et sauvegardés
+  à part. Changer une valeur `SECRET_KEY` existante n'est pas possible sans perdre les données
+  qu'elle chiffre ; déplacer la valeur existante dans le fichier au lieu d'en générer une nouvelle.
+notes: |
+  Sur Gitea et Forgejo, perdre `SECRET_KEY` rend indéchiffrables les secrets 2FA et les secrets
+  Actions : le fichier de clé doit figurer dans le plan de sauvegarde. Sur TeamCity, envisager aussi
+  la propriété interne `teamcity.superUser.disable` quand les journaux sont envoyés hors du serveur.
+audit:
+  manual: |
+    Utiliser un compte shell sur le serveur (ou un accès en lecture à la définition du déploiement)
+    qui peut lister propriétaires et modes des fichiers.
+
+    1. Identifier le compte de service et les répertoires de configuration, de données et de
+       journaux.
+    2. Vérifier les produits :
+       - **Gitea / Forgejo** : `app.ini` ne contient aucune valeur en clair pour `SECRET_KEY`,
+         `LFS_JWT_SECRET` ou `[oauth2] JWT_SECRET` (ni `INTERNAL_TOKEN` sur Gitea) ; il utilise les clés `*_URI`
+         correspondantes pointant vers des chemins `file:`. `ls -l` montre les fichiers de clés en
+         `-rw-------` appartenant à l'utilisateur du service, et ni le répertoire de données ni
+         `app.ini` ne sont lisibles par les autres.
+       - **TeamCity** : `ls -ld <TeamCity Data Directory> <TeamCity Home>/logs` montre le compte de
+         service comme propriétaire et aucun droit de lecture pour les autres ; vérifier les ACL sous
+         Windows.
+    3. Vérifier que les valeurs des clés diffèrent entre instances (production, préproduction, test),
+       par exemple en comparant les empreintes des fichiers de clés.
+    4. Échec si une clé maîtresse est en clair dans un fichier de configuration partagé, lisible par
+       un compte autre que le compte de service et les administrateurs, identique entre instances,
+       ou si les répertoires de données ou de journaux sont lisibles par d'autres utilisateurs.
+remediation:
+  manual: |
+    Utiliser un compte administrateur sur le serveur et prévoir un redémarrage du service.
+
+    1. **Gitea / Forgejo** : copier chaque valeur secrète existante de `app.ini` dans son propre
+       fichier (par exemple `/etc/gitea/secret_key`, `/etc/gitea/internal_token`), lui donner pour
+       propriétaire l'utilisateur du service et le mode `0600`, remplacer les clés en clair par
+       `SECRET_KEY_URI = file:/etc/gitea/secret_key`, `INTERNAL_TOKEN_URI = file:...` (Gitea),
+       `LFS_JWT_SECRET_URI = file:...` et `JWT_SECRET_URI = file:...`, puis redémarrer.
+    2. **TeamCity** : `chown -R` du Data Directory et de `logs` vers le compte de service et retrait
+       de la lecture pour les autres (`chmod -R o-rwx`) ; sous Windows, retirer le groupe Users des
+       ACL.
+    3. Restreindre de la même façon les répertoires de données et de dépôts de tous les produits.
+    4. Ajouter les fichiers de clés à la sauvegarde séparée des clés (CB-CICD-PLAT-008).

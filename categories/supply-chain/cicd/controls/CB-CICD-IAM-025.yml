@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-025
+title: Deprovision leavers automatically from the identity provider
+finding:
+  title: Removing a user from the identity provider does not remove their platform access
+  description: Without SCIM deprovisioning, a leaver keeps their organization membership, team access and personal tokens on the SCM or CI platform until someone removes them by hand.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [scim, deprovisioning, leavers, identity-provider]
+
+applicability:
+  versions: [github, buildkite]
+
+description: |
+  Platform accounts and memberships are provisioned and deprovisioned from the identity provider
+  through SCIM. When a person leaves or is unassigned from the platform application, their membership
+  is removed automatically, with no manual step. Users who joined before SCIM was set up are linked to
+  their identity so that deprovisioning also applies to them.
+
+  Single sign-on is covered by CB-CICD-IAM-001; inactive accounts by CB-CICD-IAM-024.
+rationale: |
+  SSO alone blocks new web sign-ins of a leaver, but does not remove what the account already has:
+  organization membership, team permissions, personal access tokens and SSH keys that keep working
+  until revoked. Manual offboarding of each platform is the step that gets forgotten.
+impact: |
+  Needs an enterprise plan on SaaS platforms and a SCIM integration in the identity provider. Wrong
+  group assignments in the identity provider remove legitimate users, so test with a pilot group.
+
+audit:
+  manual: |
+    Use an enterprise owner or organization administrator role.
+
+    1. Check that SCIM is configured and active:
+       - **GitHub Enterprise Cloud**: with Enterprise Managed Users, SCIM is mandatory and every
+         account comes from the identity provider. With personal accounts, SCIM is configured for the
+         organizations, and **Enterprise settings** > **Policies** > **Member privileges** >
+         **Unaffiliated user** is set to remove users who no longer belong to any organization (by
+         default they stay in the enterprise with their enterprise roles, teams and licences).
+       - **Buildkite**: SCIM is enabled for the Okta or Microsoft Entra ID SSO provider (Enterprise
+         plan), and users who joined before SCIM have been synced.
+    2. Take a sample of recent leavers from HR or the identity provider and check that they are no
+       longer members of the platform.
+    3. Fail if SCIM deprovisioning is not configured, or if a leaver still has access.
+
+remediation:
+  manual: |
+    1. Configure the SCIM application in the identity provider with a token for the platform.
+    2. **GitHub Enterprise Cloud**: enable SCIM for each organization (or use Enterprise Managed
+       Users), then set the **Unaffiliated user** policy to remove users from the enterprise.
+       Enterprise owners and billing managers are not covered: remove them by hand.
+    3. **Buildkite**: enable SCIM in the SSO provider settings and sync existing users.
+    4. Remove the accounts of past leavers found during the audit and revoke their tokens.
+
+references:
+  - title: Controlling user offboarding with the unaffiliated users policy
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/control-offboarding
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: About SCIM for organizations
+    url: https://docs.github.com/en/enterprise-cloud@latest/organizations/managing-saml-single-sign-on-for-your-organization/about-scim-for-organizations
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite SSO with Okta - SCIM provisioning
+    url: https://buildkite.com/docs/platform/sso/okta
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite SSO with Microsoft Entra ID
+    url: https://buildkite.com/docs/platform/sso/azure-ad
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: PS-4
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: partial
+    note: Covers automated removal of leavers only.
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

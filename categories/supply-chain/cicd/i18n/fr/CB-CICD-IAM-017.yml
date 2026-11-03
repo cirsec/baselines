@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les opérations sensibles de la plate-forme aux administrateurs
+finding:
+  title: De simples utilisateurs peuvent gérer clusters, identifiants, clés de confiance ou jetons d'agents
+  description: Les utilisateurs qui peuvent ajouter un cluster, un identifiant de dépôt, une clé GPG ou un jeton d'agent peuvent rediriger les déploiements, contourner la vérification des signatures ou rattacher leurs propres agents de build, sans toucher à aucun pipeline.
+parameters:
+  admin_only_scope: Opérations réservées aux administrateurs. `platform-objects` couvre clusters, identifiants de dépôts, certificats, clés GPG, comptes, jetons d'agents, suppression et visibilité des pipelines ; `platform-objects-and-execution` couvre aussi la création d'applications et l'exécution de pipelines sans droit d'écriture.
+description: |
+  Les opérations qui changent ce à quoi la plate-forme fait confiance ou l'endroit où elle déploie
+  sont réservées aux administrateurs de la plate-forme : gestion des clusters, identifiants de dépôts,
+  certificats TLS et clés GPG, comptes locaux, projets, jetons d'enregistrement d'agents, arrêt
+  d'agents, suppression de pipelines et changement de leur visibilité. Avec `{{ admin_only_scope }}`
+  réglé sur `platform-objects-and-execution`, créer des applications et exécuter des pipelines
+  exige aussi plus qu'un accès en lecture.
+
+  Le droit de modifier les définitions de pipelines et la configuration de build relève de
+  CB-CICD-IAM-036, l'enregistrement des runners de CB-CICD-RUN-002.
+rationale: |
+  Ces objets sont sous les pipelines : qui gère les clés GPG ou les certificats dans Argo CD peut lui
+  faire accepter des commits non signés ou un faux serveur Git, qui ajoute un cluster ou un
+  identifiant de dépôt peut pointer les applications ailleurs, et qui détient un jeton d'agent peut
+  rattacher une machine qui reçoit les jobs et leurs secrets. Sur Spinnaker, l'accès en lecture à une
+  application permet aussi d'exécuter ses pipelines tant que le comportement par défaut n'est pas
+  changé.
+impact: |
+  Les équipes qui géraient leurs propres clusters, dépôts ou jetons d'agents doivent passer par les
+  administrateurs de la plate-forme. Restreindre l'exécution sur Spinnaker exige des rôles `EXECUTE`
+  explicites sur chaque application dont les pipelines sont lancés par des personnes sans droit
+  d'écriture.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou un accès en lecture à la configuration de la plate-forme.
+
+    1. Vérifier qui détient les permissions sensibles :
+       - **Argo CD** : dans `argocd-rbac-cm` (et les rôles d'AppProject), `clusters`, `repositories`,
+         `write-repositories`, `certificates`, `gpgkeys`, `accounts` et `projects` avec `create`,
+         `update` ou `delete`, ainsi que `exec` `create`, ne sont accordés qu'au groupe des
+         administrateurs. Avec `platform-objects-and-execution`, `applications` `create` est limité
+         aux mainteneurs du projet.
+       - **Buildkite** : **Settings** > **Security** (offre Enterprise) : **Delete pipelines**,
+         **Change Pipeline Visibility**, **Manage Agent Registration Tokens**, **Stop Agents** et
+         **Manage Notification Services** sont réservés aux administrateurs.
+       - **Spinnaker** : avec `platform-objects-and-execution`, `fiat-local.yml` pose
+         `fiat.executeFallback: 'WRITE'` et les applications déclarent des rôles `EXECUTE` explicites.
+    2. Échec si des non-administrateurs peuvent gérer les objets du périmètre.
+remediation:
+  manual: |
+    1. **Argo CD** : retirer ces ressources des rôles non administrateurs dans `policy.csv`, les
+       accorder au seul groupe SSO des administrateurs, et donner aux équipes des rôles de projet pour
+       leurs applications.
+    2. **Buildkite** : sur la page **Security**, retirer aux membres les permissions de niveau
+       organisation et les garder pour les administrateurs (offre Enterprise).
+    3. **Spinnaker** (renforcé) : ajouter `fiat: executeFallback: 'WRITE'` dans `fiat-local.yml`,
+       ajouter des rôles `EXECUTE` là où des personnes doivent lancer des pipelines sans droit
+       d'écriture, et redémarrer Fiat.

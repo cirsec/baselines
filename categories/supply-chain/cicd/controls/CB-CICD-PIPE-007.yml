@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-007
+title: Review pipeline definitions and build scripts periodically
+finding:
+  title: Pipeline definitions and release build scripts are never reviewed after they are written
+  description: Steps added months ago, by people who have since left or by a compromised account, keep running with production credentials because nobody looks at the pipeline as a whole.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [pipeline-review, periodic-review, build-scripts]
+
+description: |
+  Pipeline repositories, shared templates and the scripts that release builds call are reviewed as
+  a whole on a fixed schedule (for example quarterly) and whenever the pipeline changes owner or
+  gains new credentials. The review looks for unexpected or unexplained steps, downloads from
+  unknown hosts, steps that print or send variables, disabled security checks, unused credentials
+  and steps whose purpose nobody can explain. Findings are tracked to closure.
+
+  Review of each individual change is covered by CB-CICD-SCM-012 and CB-CICD-SCM-018; automated
+  linting of pipeline files by CB-CICD-TEST-004.
+rationale: |
+  Change review only sees one diff at a time. Malicious steps are often introduced in small,
+  plausible pieces or survive after the reason for them is forgotten. A periodic end-to-end read of
+  what the release pipeline actually does catches drift, dead credentials and slow-building
+  backdoors that per-change review misses.
+impact: |
+  Takes reviewer time each cycle; prioritize pipelines that publish releases or deploy to
+  production.
+
+audit:
+  manual: |
+    Use a role that can read the pipeline repositories and their history.
+
+    1. Check that an inventory of release and deploy pipelines exists, with an owner for each.
+    2. Check the evidence of the last review of each pipeline (date, reviewer, findings, closure).
+    3. Optionally run a pipeline linter (zizmor, poutine, Checkov) and compare its findings with
+       the review record.
+    4. Fail if a release or deploy pipeline has not been reviewed within the defined period, or
+       if review findings stay open without a decision.
+
+remediation:
+  manual: |
+    1. Define the review period and the trigger events (new credentials, owner change, incident).
+    2. For each release and deploy pipeline, read the full definition, included templates and
+       called scripts, and record a short justification for every step that uses a credential or
+       network access.
+    3. Remove unexplained steps and unused credentials; open tickets for the rest.
+    4. Keep the review record with the pipeline repository.
+
+references:
+  - title: SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: Secure Software Factory
+    url: https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/secure-software-factory/secure-software-factory.md
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-10
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-004
+    type: related
+  - id: CB-CICD-SCM-018
+    type: related
+  - id: CB-CICD-LOG-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

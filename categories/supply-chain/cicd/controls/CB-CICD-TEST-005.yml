@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-005
+title: Scan container images before they are pushed to a registry
+finding:
+  title: Images built by pipelines are pushed without a vulnerability scan
+  description: Images with critical, known-exploitable vulnerabilities reach the registry and are pulled into environments before anyone looks at them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, container-scanning, images, vulnerability-management]
+
+parameters:
+  - name: blocking_severity
+    type: enum
+    description: Lowest vulnerability severity that fails the build before the push.
+    default: critical
+    allowed: [critical, high]
+
+description: |
+  Each container image built by a pipeline is scanned for known vulnerabilities right after the
+  build step and before it is pushed to a shared registry. The build fails when the scan finds a
+  vulnerability of severity `{{ blocking_severity }}` or above that has a fix available, unless a
+  recorded exception exists. Scan results are kept with the build.
+
+  Dependency scanning and SBOM production for the application are covered by CB-DEP-VULN-001 and
+  CB-DEP-INV-001; checks at deployment admission by CB-CICD-ART-006.
+rationale: |
+  A vulnerable image in a registry is soon running somewhere. Scanning before the push keeps
+  known critical flaws from being published at all, and gives the team the result while the
+  change is fresh. Registry-side scanning alone reports after the image is already available to
+  every consumer.
+impact: |
+  Builds fail when new critical vulnerabilities appear in base images, sometimes without a code
+  change; teams need a way to rebuild on an updated base image or record an exception.
+
+audit:
+  manual: |
+    Use read access to the pipeline definitions and recent build logs.
+
+    1. For each pipeline that builds images, check the order of steps: build, scan, then push.
+       - **Google Cloud Build**: `cloudbuild.yaml` runs `gcloud artifacts docker images scan`
+         (On-Demand Scanning), reads the results with `list-vulnerabilities` and fails on the
+         chosen severity before the push step.
+       - **Buildkite**: a scanning step or plugin (for example Trivy or Snyk) runs before the push.
+       - **Other platforms**: a scanner job (for example GitLab container scanning, Trivy, Grype)
+         runs on the built image before it is pushed to the shared registry.
+    2. Check in recent build logs that the scan ran and that a finding at the threshold failed
+       the build.
+    3. Fail if an image can be pushed without a scan, or if findings of severity
+       `{{ blocking_severity }}` or above do not fail the build.
+
+remediation:
+  manual: |
+    1. Add a scan step between build and push in each image pipeline, ideally from a shared
+       template:
+       - **Google Cloud Build**: enable the On-Demand Scanning API, add a step that scans the
+         locally built image and a step that fails when the severity is reached, before `docker
+         push`.
+       - **Buildkite**: add a scanner plugin step before the push.
+       - **Other platforms**: run the scanner on the local image and push only on success.
+    2. Define how exceptions are recorded and reviewed.
+
+references:
+  - title: Use On-Demand Scanning in your Cloud Build pipeline
+    url: https://cloud.google.com/artifact-analysis/docs/ods-cloudbuild
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Container scanning
+    url: https://docs.gitlab.com/user/application_security/container_scanning/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.4.6"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.2.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: RA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+related_controls:
+  - id: CB-DEP-VULN-001
+    type: related
+  - id: CB-DEP-INV-001
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+  - id: CB-CICD-TEST-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-005
+title: Run privileged pipelines only from reviewed pipeline definitions
+finding:
+  title: A pipeline with secrets runs whatever pipeline file is on the pushed branch
+  description: Anyone who can push a branch can edit the pipeline file on it and have the platform run the modified steps with the pipeline's secrets and deploy rights, without any review (poisoned pipeline execution).
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [poisoned-pipeline-execution, pipeline-definition, protected-branches, ci-config-path]
+
+description: |
+  A pipeline that holds secrets, write tokens or deployment rights only executes a definition that
+  has been reviewed. The expected level is `{{ definition_source }}`:
+
+  - `protected-refs`: privileged pipelines and their secrets are bound to protected branches or
+    tags, so the definition they run has been merged through review; runs from other branches get
+    no secrets;
+  - `restricted-source`: in addition, the definition of privileged pipelines is kept outside the
+    application repository (a separate restricted repository, an inline or object-store
+    definition, a versioned-settings repository), or file-path rules block direct changes to the
+    workflow directories.
+
+  Code owner review of pipeline files is covered by CB-CICD-SCM-018; restricting secrets to
+  protected branches and environments by CB-CICD-SEC-008.
+rationale: |
+  In most platforms the pipeline definition is read from the commit being built. A user who can
+  push a branch, but cannot merge, can still change that file and make the platform run arbitrary
+  steps with the credentials attached to the pipeline. Binding privileged pipelines to reviewed
+  definitions closes this path for insiders and for stolen developer credentials.
+impact: |
+  Developers can no longer test changes to privileged pipeline steps on their own branches with
+  real credentials; a non-privileged copy or a staging environment is needed. Moving the
+  definition to a separate repository adds a second place to change.
+notes: |
+  Branch rules alone do not stop a new branch from running a modified workflow on `push`; the
+  secrets and deploy rights must also be limited to protected refs. On AWS CodeBuild, the
+  `FILE_PATH` webhook filter only looks at the first 100 changed files and is not supported for
+  GitHub Enterprise Server pull request events, so an inline or S3-stored buildspec is safer. On
+  GitLab, do not point the CI/CD configuration file to an external URL.
+
+parameters:
+  - name: definition_source
+    type: enum
+    description: protected-refs binds privileged pipelines to reviewed protected refs; restricted-source also keeps their definition outside the application repository or behind file-path rules.
+    allowed: [protected-refs, restricted-source]
+    default: protected-refs
+    profile_defaults:
+      hardened: restricted-source
+
+audit:
+  manual: |
+    Use a role that can read pipeline settings, secret scopes and repository rules.
+
+    1. List the pipelines that hold secrets, write tokens or deployment rights.
+    2. For each, find where its definition is read from and on which refs its secrets are
+       available. Fail if a run on an unprotected branch gets those secrets.
+    3. For `restricted-source`, check per platform:
+       - **GitLab**: **Settings** > **CI/CD** > **General pipelines** > **CI/CD configuration file**
+         points to a file in a restricted project (`path/.gitlab-ci.yml@group/ci-config-project`).
+       - **GitHub**: an organization or repository push ruleset with **Restrict file paths** covers
+         `.github/workflows/**`, with bypass only for the CI owners (private and internal
+         repositories need GitHub Team or Enterprise).
+       - **Gitea**: the branch protection rule lists `.gitea/workflows/**;.github/workflows/**` in
+         **Protected file patterns**.
+       - **AWS CodeBuild**: projects that build untrusted pull requests use an inline buildspec or
+         one stored in S3 (`source.buildspec`), not `buildspec.yml` from the repository.
+       - **TeamCity**: **Versioned Settings** of the project use a dedicated VCS root with
+         restricted committers, not the application repository.
+    4. Fail if a privileged pipeline can run a definition that has not been reviewed, or, for
+       `{{ definition_source }}` = `restricted-source`, if its definition can be changed in the
+       application repository without a protected path rule.
+
+remediation:
+  manual: |
+    1. Limit secrets, deployment credentials and environments of privileged pipelines to protected
+       branches and tags (CB-CICD-SEC-008) and require review on those refs.
+    2. For `restricted-source`:
+       - **GitLab**: move the pipeline definition to a restricted project and set
+         **CI/CD configuration file** to `<path>@<group>/<project>[:<ref>]` (Maintainer role).
+       - **GitHub**: create a push ruleset with **Restrict file paths** on `.github/workflows/**`
+         and give the bypass only to the CI team.
+       - **Gitea**: add the workflow directories to **Protected file patterns** in the branch
+         protection rule, and limit who can push new branches.
+       - **AWS CodeBuild**: set the project buildspec inline or to an S3 object instead of reading
+         it from the source.
+       - **TeamCity**: store versioned settings in a dedicated repository writable only by the
+         build engineers.
+    3. Re-run the privileged pipelines and check that a modified definition on a feature branch
+       gets no secrets.
+
+references:
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: Customize pipeline configuration
+    url: https://docs.gitlab.com/ci/pipelines/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Webhooks in AWS CodeBuild - best practices
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/webhooks.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Storing project settings in version control
+    url: https://www.jetbrains.com/help/teamcity/storing-project-settings-in-version-control.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers direct poisoned pipeline execution by users with push access; fork and pull request paths are covered by PIPE-009, PIPE-010 and PIPE-014.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SCM-018
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-PIPE-008
+    type: related
+  - id: CB-CICD-RUN-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

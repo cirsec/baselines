@@ -1,0 +1,155 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-002
+title: Restrict production deployments to protected release refs and a named deployer group
+finding:
+  title: Any branch, any pipeline run or any developer can deploy to production
+  description: When production environments accept deployments from unprotected branches, personal builds or any user with write access, an unreviewed change or a compromised developer account reaches production directly.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [deployment, environments, protected-environments, branch-restrictions, production]
+
+description: |
+  Production environments, and the resources that deployments use (service connections, cloud
+  credentials, clusters), accept deployments only when all of the following hold:
+
+  - the run comes from a protected release branch or protected tag (for example `main`,
+    `release/*`, `v*`), not from feature branches, forks or personal builds;
+  - the change is applied by a deployment job bound to the environment, so that the environment's
+    checks and approvals apply;
+  - the run is started or approved by a member of a named deployer group, not by any user with write
+    access to the repository.
+
+  Approvals before deployment are covered by CB-CICD-DEPLOY-003; separation of deployment pipelines
+  from build pipelines by CB-CICD-DEPLOY-001; secrets scoped to protected environments by
+  CB-CICD-SEC-008.
+rationale: |
+  Deployment credentials are among the most powerful secrets in CI/CD. If any branch can target the
+  production environment, branch protection and code review are bypassed: a developer, or an
+  attacker with a developer's token, pushes a branch with a modified pipeline and deploys it. Tying
+  production to protected refs and a deployer group makes review and release management the only
+  route to production.
+impact: |
+  Hotfixes must go through a protected branch. Teams need a named deployer group and must keep it
+  small. On some platforms the feature requires a paid tier.
+notes: |
+  GitHub's **Protected branches only** option allows every branch to deploy if no branch protection
+  rule exists in the repository; prefer **Selected branches and tags**. On GitHub Pro and Team,
+  deployment branch rules for private repositories are available; on Free only public repositories.
+  GitLab protected environments need Premium; GitLab administrators can always deploy. Bitbucket
+  deployment restrictions need Premium. Azure DevOps branch control needs fully qualified names
+  (`refs/heads/main`). Woodpecker's **Allow deployments** lets anyone with push access trigger
+  `deploy` events and read deployment-only secrets.
+
+audit:
+  manual: |
+    Use a role that can read environment, repository and pipeline settings.
+
+    1. List the production environments and the resources deployments use.
+    2. Check which refs and people can deploy:
+       - **GitHub**: **Settings** > **Environments** > production > **Deployment branches and tags**
+         is **Selected branches and tags** with only release branches and tags (or **Protected
+         branches only** when every listed branch is protected).
+       - **GitLab**: **Settings** > **CI/CD** > **Protected environments** lists production with
+         **Allowed to deploy** set to a named group or users (API:
+         `GET /projects/:id/protected_environments`, `deploy_access_levels`); at group level,
+         production-tier environments are protected for all projects. Deployment jobs only run from
+         protected branches or tags.
+       - **Bitbucket**: **Repository settings** > **Deployments** > production: deployment
+         restrictions limit deploying branches (for example `main`, `release/*`) and who can deploy.
+       - **Azure DevOps**: on the environment (and production service connections), **Approvals and
+         checks** has a **Branch control** check whose allowed branches are protected release refs,
+         with branch protection verification on; production stages use `deployment` jobs bound to
+         the environment.
+       - **Woodpecker**: repository settings have **Allow deployments** off, or deployment secrets are
+         limited to `deploy` events in repositories where all pushers are trusted.
+       - **TeamCity**: deployment build configurations have **Allow triggering personal builds**
+         cleared and run on a dedicated agent pool; only a small group has permission to run them.
+    3. Fail if production can be deployed from an unprotected branch, a fork, a personal build, or by
+       any user with write access outside the deployer group.
+
+remediation:
+  manual: |
+    1. Create a deployer group and protect the release branches and tags.
+    2. Restrict the production environment:
+       - **GitHub**: in **Settings** > **Environments** > production, set **Deployment branches and
+         tags** to **Selected branches and tags** and add the release patterns.
+       - **GitLab**: in **Settings** > **CI/CD** > **Protected environments**, protect production and
+         set **Allowed to deploy** to the deployer group (deployment-only access can be given to a
+         group invited with the Reporter role); protect the production tier at group level.
+       - **Bitbucket**: in the production deployment environment, restrict deploying branches and
+         deployment permissions to the deployer group (Premium).
+       - **Azure DevOps**: add a **Branch control** check with `refs/heads/main` (and release
+         branches), enable **Verify branch protection**, and convert production jobs to `deployment`
+         jobs targeting the environment.
+       - **Woodpecker**: turn off **Allow deployments** unless every user with push access is trusted.
+       - **TeamCity**: clear **Allow triggering personal builds** on deployment configurations, move
+         them to a clean agent pool and limit who can run them.
+    3. Test that a deployment from a feature branch is rejected.
+
+references:
+  - title: Deployments and environments
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected environments
+    url: https://docs.gitlab.com/ci/environments/protected_environments/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Define approvals and checks
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set up and monitor deployments
+    url: https://support.atlassian.com/bitbucket-cloud/docs/set-up-and-monitor-deployments/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Project settings - Allow deployments
+    url: https://woodpecker-ci.org/docs/usage/project-settings
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity security notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers who and which refs can deploy; approvals and other flow controls are separate controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-DEPLOY-001
+    type: related
+  - id: CB-CICD-DEPLOY-003
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-SCM-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

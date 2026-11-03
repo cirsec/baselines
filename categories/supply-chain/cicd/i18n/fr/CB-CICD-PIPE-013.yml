@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Authentifier les webhooks et événements qui lancent les pipelines
+finding:
+  title: Des récepteurs de webhooks et d'événements lancent des pipelines sans vérifier l'émetteur
+  description: Un listener d'événements, un récepteur ou un déclencheur de webhook qui accepte des requêtes non signées permet à quiconque peut l'atteindre de lancer des builds ou des réconciliations avec des charges utiles forgées, en choisissant branches, révisions ou paramètres.
+description: |
+  Chaque point d'entrée qui peut lancer un pipeline, un workflow ou une réconciliation GitOps
+  vérifie que la requête vient de l'émetteur attendu : signature de webhook (HMAC) ou secret partagé
+  vérifié à chaque requête, ou éditeur authentifié (par exemple droits de publication restreints sur
+  un sujet de messagerie). Les filtres de charge utile s'ajoutent à ce contrôle, sans jamais le
+  remplacer. Les URL de webhook qui contiennent un secret sont traitées comme des identifiants : pas
+  journalisées, pas partagées, renouvelées en cas d'exposition. L'identité qui traite l'événement ne
+  peut créer que les exécutions dont elle a besoin.
+
+  La signature des webhooks sortants émis par la plate-forme relève de CB-CICD-COMP-008.
+rationale: |
+  Un point d'entrée de webhook est une API non authentifiée tant qu'il ne vérifie pas de signature.
+  Sans elle, un attaquant qui trouve l'URL peut déclencher des builds de révisions choisies, saturer
+  les runners, ou injecter des champs de charge utile forgés dans les paramètres du pipeline. Une
+  vérification de signature limite les déclenchements au vrai système de gestion de sources.
+impact: |
+  Le secret partagé doit être configuré des deux côtés et renouvelé ensemble. Certaines sources ne
+  savent pas signer les requêtes (par exemple Bitbucket Cloud avec l'intercepteur Bitbucket de
+  Tekton) ; leurs récepteurs ont besoin de restrictions réseau à la place.
+notes: |
+  Tekton : l'intercepteur GitHub saute la validation quand `secretRef` est absent. Flux : le type de
+  récepteur `generic` ne fait aucune validation ; son chemin de webhook est dérivé du jeton, l'URL est
+  donc sensible. Spinnaker : les `payloadConstraints` de webhook ne font que filtrer les charges
+  utiles et n'authentifient pas l'émetteur. Argo CD : le secret de webhook est facultatif mais
+  recommandé pour éviter l'abus du point d'entrée de rafraîchissement.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration des déclencheurs, listeners et récepteurs.
+
+    1. Lister chaque point d'entrée qui peut lancer un pipeline ou une réconciliation et d'où il est
+       joignable.
+    2. Vérifier par plate-forme :
+       - **Tekton Triggers** : chaque déclencheur d'`EventListener` a un intercepteur `github`,
+         `gitlab` ou `bitbucket` (Server) avec un `secretRef` ; le compte de service de
+         l'EventListener ne peut créer que les exécutions nécessaires.
+       - **Argo Workflows** : le secret `argo-workflows-webhook-clients` définit, pour chaque client,
+         le type de fournisseur et le secret de webhook ; les comptes de service des clients ne
+         peuvent que lire les modèles et créer des workflows.
+       - **Argo CD** : le secret de webhook du fournisseur de sources est défini dans `argocd-secret`.
+       - **Flux** : les objets `Receiver` utilisent un type de fournisseur (`github`, `gitlab`,
+         `bitbucket`...) ou `generic-hmac`, pas `generic`, avec un jeton `secretRef`.
+       - **Google Cloud Build** : les déclencheurs de webhook utilisent un secret stocké dans Secret
+         Manager ; les sujets des déclencheurs Pub/Sub n'acceptent que les éditeurs attendus.
+       - **Spinnaker** : les déclencheurs de webhook GitHub sont configurés avec le secret du webhook.
+       - **Buildkite** : pour une gestion de sources auto-hébergée (par exemple GitHub Enterprise
+         Server), le webhook entrant du pipeline est filtré sur les adresses IP de la source.
+    3. Échec si un point d'entrée qui lance un pipeline accepte des requêtes sans vérification de
+       signature ou de secret, ou si une URL de webhook contenant un secret apparaît dans des
+       journaux, des tickets ou de la documentation.
+remediation:
+  manual: |
+    1. Générer un secret aléatoire par source et le configurer sur l'émetteur (webhook de dépôt ou
+       d'organisation) et sur le récepteur :
+       - **Tekton Triggers** : ajouter l'intercepteur du fournisseur avec `secretRef` à chaque
+         déclencheur.
+       - **Argo Workflows** : ajouter le client dans `argo-workflows-webhook-clients` avec son type et
+         son secret, lié à un compte de service limité à la soumission de workflows.
+       - **Argo CD** : définir la clé de secret de webhook du fournisseur dans `argocd-secret`.
+       - **Flux** : passer les récepteurs `generic` au type du fournisseur ou à `generic-hmac`.
+       - **Google Cloud Build** : stocker le secret de webhook dans Secret Manager ; restreindre qui
+         peut publier sur les sujets de déclenchement.
+       - **Spinnaker** : définir le secret sur le webhook GitHub et sur chaque déclencheur GitHub.
+       - **Buildkite** : saisir les adresses IP du système de gestion de sources dans le filtre du
+         webhook entrant.
+    2. Renouveler tout secret ou URL exposé, et retirer les récepteurs non authentifiés.

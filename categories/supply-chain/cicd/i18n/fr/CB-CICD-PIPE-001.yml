@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Définir chaque pipeline sous forme de code et désactiver les pipelines définis dans l'interface
+finding:
+  title: Des pipelines ou des étapes de build sont définis et modifiés dans l'interface web de la plate-forme CI
+  description: "Des étapes saisies dans un éditeur classique ou une page de réglages changent sans revue et hors gestion de version : un attaquant ou un initié disposant du droit de modification peut ajouter une étape qui affiche les secrets ou livre un artefact modifié sans laisser de commit."
+description: |
+  Chaque étape de build, de test, d'analyse, de publication et de déploiement est déclarée dans un
+  fichier de pipeline stocké en gestion de version et modifié avec la même revue que le code. La
+  plate-forme CI/CD est configurée pour qu'aucun pipeline ne puisse être défini dans son interface :
+  la création de pipelines classiques ou définis dans l'interface est désactivée, et un objet
+  pipeline de la plate-forme ne contient au plus qu'un pointeur vers son fichier dans le dépôt. La
+  même définition de pipeline construit chaque version d'un produit.
+
+  Le niveau attendu est `{{ ui_pipeline_editing }}` :
+
+  - `new-pipelines-as-code` : aucun nouveau pipeline ne peut être créé dans l'interface et les
+    pipelines existants définis dans l'interface sont en cours de migration ;
+  - `no-ui-edits` : en plus, les objets pipeline eux-mêmes (pipelines, équipes, droits, jetons) sont
+    gérés en infrastructure as code revue, et les équipes n'y ont qu'un accès en lecture dans
+    l'interface.
+
+  La conservation du code lui-même en gestion de version relève de CB-CICD-SCM-005 ; la gestion de
+  la configuration de la plate-forme sous forme de code relève de CB-CICD-PLAT-015.
+rationale: |
+  Un pipeline modifié dans un formulaire web n'a ni diff, ni relecteur, et souvent pas d'historique :
+  une étape malveillante ou erronée passe inaperçue et ne peut pas être rattachée à une demande de
+  changement. Quand le pipeline est un fichier, toute modification de ce qui s'exécute avec les
+  secrets du pipeline passe par la protection de branche et la revue, et la version peut être
+  reconstruite avec les mêmes étapes.
+impact: |
+  Les pipelines classiques ou définis dans l'interface doivent être migrés en YAML avant d'être
+  retirés. Sur Azure DevOps, désactiver à la fois les pipelines de build et de release classiques
+  empêche aussi de créer des groupes de tâches et des groupes de déploiement.
+notes: |
+  Harness : le réglage par défaut **Enforce Git Experience** (**Default Settings** > **Git
+  Experience**) désactive les pipelines en ligne pour que seuls des pipelines distants, stockés dans
+  Git, puissent être créés ; n'utiliser **Allow Overrides** que là où une portée doit différer.
+parameters:
+  ui_pipeline_editing: Degré de suppression de l'édition des pipelines dans l'interface. new-pipelines-as-code bloque la création de pipelines dans l'interface ; no-ui-edits place aussi les objets pipeline sous infrastructure as code revue.
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lire les réglages des pipelines au niveau
+    organisation et projet.
+
+    1. Lister les pipelines de chaque projet et vérifier que chacun lit ses étapes dans un fichier
+       d'un dépôt. Échec pour tout pipeline dont les étapes ne sont stockées que dans la plate-forme.
+    2. Vérifier les réglages de la plate-forme qui empêchent les pipelines définis dans l'interface :
+       - **Azure DevOps** : **Paramètres de l'organisation** et **Paramètres du projet** >
+         **Pipelines** > **Paramètres** : **Désactiver la création de pipelines de build classiques**
+         et **Désactiver la création de pipelines de mise en production classiques** sont tous deux
+         activés. Lister les pipelines de build et de release classiques restants.
+       - **Buildkite** : **Pipeline Settings** > **Steps** : l'éditeur d'étapes YAML ne contient que
+         l'étape `buildkite-agent pipeline upload` ; les autres étapes viennent de `pipeline.yml`
+         dans le dépôt.
+       - **Harness** : le réglage **Enforce Git Experience** est activé au niveau du compte et les
+         pipelines en ligne ne sont pas utilisés pour la production.
+    3. Pour `no-ui-edits`, vérifier que pipelines, équipes et jetons sont gérés par un dépôt
+       d'infrastructure as code avec revue obligatoire (par exemple le provider Terraform Buildkite),
+       et que les équipes ont un accès **Read Only** aux pipelines dans l'interface.
+    4. Échec si un pipeline peut être créé ou ses étapes modifiées dans l'interface, ou, pour
+       `{{ ui_pipeline_editing }}` = `no-ui-edits`, si des objets pipeline sont modifiés hors du flux
+       IaC revu.
+remediation:
+  manual: |
+    1. Exporter chaque pipeline défini dans l'interface vers un fichier de pipeline dans son dépôt,
+       le relire, et faire lire ce fichier par le pipeline.
+    2. Bloquer les nouveaux pipelines définis dans l'interface :
+       - **Azure DevOps** : en tant qu'administrateur de collection de projets, activer
+         **Désactiver la création de pipelines de build classiques** et **Désactiver la création de
+         pipelines de mise en production classiques** dans **Paramètres de l'organisation** >
+         **Pipelines** > **Paramètres** (ou par projet).
+       - **Buildkite** : remplacer les étapes de **Pipeline Settings** > **Steps** par une seule
+         étape `buildkite-agent pipeline upload` et déplacer les étapes dans `pipeline.yml` sous
+         protection de branche.
+       - **Harness** : activer **Enforce Git Experience** dans **Default Settings** > **Git
+         Experience** au niveau du compte et déplacer les pipelines en ligne dans Git.
+    3. Pour `no-ui-edits`, gérer pipelines, équipes et jetons depuis un dépôt IaC revu, appliqué par
+       un compte de service (par exemple le provider Terraform Buildkite avec deux relecteurs), et
+       réduire les droits des équipes sur les pipelines à la lecture.
+    4. Supprimer les pipelines classiques ou définis dans l'interface une fois migrés.

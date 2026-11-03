@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter le contournement de la protection de branche à un groupe de secours audité
+finding:
+  title: Des administrateurs ou des groupes larges peuvent contourner ou désactiver la protection de branche
+  description: Quand les administrateurs de dépôt contournent la protection par défaut, ou qu'on peut la couper pour un correctif rapide, chaque exigence de revue et de vérification dépend du bon vouloir de chaque compte administrateur, et un seul jeton administrateur volé les annule toutes.
+description: |
+  Les règles de protection des branches par défaut et de release s'appliquent aussi aux
+  administrateurs. Les listes et permissions de contournement sont vides, ou ne contiennent qu'un
+  groupe de secours dont l'usage est exceptionnel, approuvé et journalisé. La protection n'est
+  jamais désactivée « temporairement » pour pousser une modification : les changements urgents
+  passent par une pull request, et quand le groupe de secours est utilisé, le contournement est
+  revu après coup.
+
+  Le droit de modifier les règles elles-mêmes est fixé par `{{ rule_change_scope }}` :
+
+  - `repository-admins` : les administrateurs ou maintainers du dépôt peuvent modifier les règles,
+    mais pas les contourner.
+  - `owners` : seuls les propriétaires de l'organisation ou un groupe d'administrateurs nommé
+    peuvent modifier, déprotéger ou désactiver les règles (rulesets d'organisation ou
+    d'entreprise, permission de déprotection), et l'organisation conserve la preuve que chaque
+    règle a été appliquée en continu (journal d'audit des modifications de règles).
+
+  La purge d'historique est l'exception documentée qui relève de CB-CICD-SCM-009 ; le
+  contournement des protections de déploiement de CB-CICD-DEPLOY-004.
+rationale: |
+  Sur plusieurs plates-formes, les administrateurs contournent la protection de branche par
+  défaut. Les attaquants qui obtiennent un jeton administrateur, et les personnes internes pressées
+  par le temps, empruntent exactement ce chemin. La piste source de SLSA exige aussi la continuité :
+  affirmer qu'une branche est revue ne tient que si la protection n'a jamais été levée entre-temps,
+  ce que le journal d'audit de la plate-forme doit montrer.
+impact: |
+  Les administrateurs perdent la possibilité de pousser des correctifs urgents en passant outre les
+  règles ; la procédure de secours doit être documentée et assez rapide pour les incidents. Avec
+  `owners`, les équipes de dépôt demandent à un propriétaire de modifier leurs règles de
+  protection.
+parameters:
+  rule_change_scope: Qui peut modifier, déprotéger ou désactiver les règles de protection de branche.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les rulesets, la protection de branche, la sécurité des dépôts
+    et le journal d'audit.
+
+    1. Pour chaque règle de protection des branches par défaut et de release, lister qui peut la
+       contourner :
+       - **GitHub** : **Bypass list** du ruleset (rôles, équipes, applications ; **Always allow** ou
+         **For pull requests only**) ; dans les règles de protection de branche, **Do not allow
+         bypassing the above settings** est coché. legitify signale les utilisateurs autorisés à
+         contourner les rulesets.
+       - **GitLab** : les utilisateurs de **Allowed to push and merge** échappent aux règles des
+         merge requests ; avec `owners`, l'API des branches protégées montre des
+         `unprotect_access_levels` limités aux Owners ou à un groupe nommé (Premium, API seulement).
+       - **Azure DevOps** : **Paramètres du projet** > **Dépôts** > **Sécurité** : **Ignorer les
+         stratégies lors de l'exécution des demandes de tirage** et **Ignorer les stratégies lors de
+         l'envoi (push)** ne sont autorisés pour aucun groupe ni utilisateur hormis le groupe de
+         secours ; avec `owners`, **Modifier les stratégies** est limité aux Administrateurs de
+         projet.
+    2. Avec `owners`, vérifier que les règles sont définies au niveau de l'organisation ou de
+       l'entreprise (ou que les droits de déprotection et de modification sont restreints), pour que
+       les administrateurs de dépôt ne puissent pas les changer.
+    3. Rechercher dans le journal d'audit les contournements et les modifications, désactivations
+       ou suppressions de règles sur la dernière période, et confirmer que chacun correspond à un
+       usage de secours approuvé.
+    4. Échec si des administrateurs ou des groupes larges peuvent contourner les règles, si une
+       règle a été désactivée hors de la procédure de secours, ou, avec `owners`, si des
+       administrateurs de dépôt peuvent modifier ou supprimer les règles.
+remediation:
+  manual: |
+    1. Créer un petit groupe de secours, documenter quand il peut être utilisé, et exiger un ticket
+       d'incident ou de changement à chaque usage.
+    2. Retirer les autres droits de contournement :
+       - **GitHub** : vider les listes de contournement des rulesets ou n'y garder que l'équipe de
+         secours avec **For pull requests only** ; cocher **Do not allow bypassing the above
+         settings** dans les règles de protection de branche. Avec `owners`, déplacer les règles
+         vers des rulesets d'organisation ou d'entreprise.
+       - **GitLab** : garder **Allowed to push and merge** à **No one** ou à un bot ; avec `owners`,
+         régler `allowed_to_unprotect` sur les branches protégées via l'API pour les Owners ou le
+         groupe d'administrateurs, en gardant au moins un principal capable de déprotéger.
+       - **Azure DevOps** : mettre **Ignorer les stratégies lors de l'exécution des demandes de
+         tirage** et **Ignorer les stratégies lors de l'envoi (push)** à **Non défini** pour tous les
+         groupes sauf le groupe de secours ; avec `owners`, limiter **Modifier les stratégies**.
+    3. Alerter sur les contournements et les modifications de règles (CB-CICD-LOG-006) et les
+       revoir avec le journal d'audit (CB-CICD-LOG-008).

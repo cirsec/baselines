@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-019
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les administrateurs de dépôts et de projets à quelques propriétaires nommés
+finding:
+  title: De nombreux utilisateurs ont des droits d'admin ou de propriétaire sur des dépôts
+  description: Les admins de dépôts et propriétaires de projets peuvent retirer la protection des branches, changer les réglages de pipeline et lire ou remplacer les variables CI/CD ; chacun de plus est un compte de plus capable de contourner la revue.
+description: |
+  Chaque dépôt ou projet a un petit nombre d'administrateurs (deux à trois, pour qu'une absence ne
+  bloque pas les changements), nommés et responsables. Les autres contributeurs reçoivent l'accès en
+  écriture ou maintenance par des équipes ou groupes. Les rôles Owner et Maintainer de GitLab comptent
+  comme administrateurs ici, puisque les deux peuvent changer la protection et les réglages CI/CD.
+
+  Les administrateurs d'organisation et d'instance relèvent de CB-CICD-IAM-018.
+rationale: |
+  Les administrateurs de dépôt peuvent désactiver la protection des branches, pousser directement,
+  changer les approbateurs, ajouter des clés de déploiement et des webhooks ; sur GitLab, les
+  Maintainers peuvent lire les variables CI/CD non masquées et modifier les réglages des branches
+  protégées. Répartis sur de nombreux comptes, ces droits rendent les règles de revue et
+  d'approbation faciles à contourner.
+impact: |
+  Les utilisateurs qui perdent les droits d'admin ou de maintainer peuvent avoir besoin d'un
+  propriétaire d'équipe pour modifier des réglages à leur place.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire d'organisation ou de groupe.
+
+    1. Lister les administrateurs par dépôt ou projet :
+       - **GitHub** : **Repository settings** > **Collaborators and teams** filtré sur **Admin**, ou
+         `GET /repos/{owner}/{repo}/collaborators?permission=admin`. La politique admin d'Allstar
+         signale les dépôts sans administrateur équipe ou utilisateur.
+       - **GitLab** : projet **Manage** > **Members** filtré sur Owner et Maintainer, ou
+         `GET /projects/:id/members/all`.
+    2. Échec si un dépôt ou projet a plus d'administrateurs (Owner plus Maintainer sur GitLab) que le
+       maximum documenté, ou aucun.
+remediation:
+  manual: |
+    1. Pour chaque dépôt ou projet, nommer deux ou trois administrateurs.
+    2. Abaisser les autres en écriture ou maintenance (GitHub) ou Developer (GitLab), accordé par une
+       équipe ou un groupe.
+    3. Ajouter la liste à la revue des accès (CB-CICD-IAM-026).

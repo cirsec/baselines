@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-012
+title: Restrict access to SaaS CI/CD platforms to allowlisted networks
+finding:
+  title: SaaS SCM and CI/CD platforms accept sign-ins and tokens from any network
+  description: A stolen password, session cookie or access token works from the attacker's own infrastructure, because the platform does not check where the request comes from.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [ip-allowlist, network-restriction, conditional-access, saas]
+
+applicability:
+  versions: [github, gitlab, harness, bitbucket, buildkite, azure-devops]
+
+description: |
+  Web, Git and API access to the organization on SaaS SCM and CI/CD platforms is limited to known
+  networks: corporate egress addresses, VPN, self-hosted runner and integration ranges. The
+  restriction also applies to non-interactive flows (personal access tokens, OAuth, SSH), not only to
+  browser sign-in.
+
+  Exposure of self-managed platforms is covered by CB-CICD-PLAT-005.
+rationale: |
+  Credentials for CI/CD platforms are stolen from developer laptops, logs and pipelines. An IP
+  restriction turns a stolen credential into something the attacker can only use from inside the
+  corporate network, which is much harder and more visible than using it from anywhere on the
+  internet.
+impact: |
+  Hosted runners, third-party apps and remote workers outside the listed ranges are blocked. Plan for
+  them before enabling: self-hosted runners or larger runners with static IPs, apps that publish their
+  ranges, and a VPN for remote staff. Adding a wrong range can lock administrators out.
+
+audit:
+  manual: |
+    Use an owner or administrator role that can read security settings.
+
+    1. Check the allowlist:
+       - **GitHub**: **Organization settings** (or **Enterprise settings**) > **Authentication
+         security** > **IP allow list** is enabled with corporate ranges, and **Enable IP allow list
+         configuration for installed GitHub Apps** is selected (GitHub Enterprise Cloud). With
+         Enterprise Managed Users on Entra ID, the identity provider's Conditional Access policy can
+         be used instead.
+       - **GitLab**: top-level group **Settings** > **General** > **Permissions and group features**
+         > **Restrict access by IP address** lists the corporate and runner ranges (Premium). On
+         self-managed, **Admin** > **Settings** > **General** > **Visibility and access controls** >
+         **Globally-allowed IP ranges** contains only the platform's own components.
+       - **Azure DevOps**: an Entra Conditional Access policy restricts locations, and **Organization
+         settings** > **Policies** > **Enable IP Conditional Access policy validation on
+         non-interactive flows** is on.
+       - **Bitbucket Cloud**: **Workspace settings** > **Access controls** > **Restrict access to
+         users on certain IP addresses** is on (Premium).
+       - **Buildkite**: the organization API security settings contain an API IP address allowlist
+         (Enterprise plan).
+       - **Harness**: **Account Settings** > **Authentication** > **Allowlist** has an enabled list
+         with the corporate ranges.
+    2. Fail if the platform accepts web, Git or API access from any address, or if token-based flows
+       are not covered.
+
+remediation:
+  manual: |
+    1. Collect corporate egress, VPN, self-hosted runner and integration ranges; add your own address
+       first to avoid a lockout.
+    2. Configure the allowlist (owner or administrator):
+       - **GitHub**: add the ranges in **IP allow list**, enable it, and select the GitHub Apps option.
+       - **GitLab**: add each range in **Restrict access by IP address** on the top-level group.
+       - **Azure DevOps**: create a location-based Conditional Access policy, then enable **IP
+         Conditional Access policy validation on non-interactive flows**.
+       - **Bitbucket Cloud**: turn on the IP restriction in **Access controls** and add the ranges.
+       - **Buildkite**: set the API IP address allowlist in the organization API security settings.
+       - **Harness**: **Authentication** > **Allowlist** > **Add IP Addresses**.
+    3. Watch denied requests in the audit log for a few days and add missing legitimate ranges.
+  rollback: |
+    Disable the allowlist from an allowed address, or contact vendor support if every administrator is
+    locked out.
+
+references:
+  - title: Managing allowed IP addresses for your organization
+    url: https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-security-settings-for-your-organization/managing-allowed-ip-addresses-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restrict group access by IP address (GitLab)
+    url: https://docs.gitlab.com/user/group/access_and_permissions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change application connection and security policies for your organization
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/change-application-access-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Control access to your private content (Bitbucket Cloud)
+    url: https://support.atlassian.com/bitbucket-cloud/docs/control-access-to-your-private-content/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API access tokens - restricting API access by IP address
+    url: https://buildkite.com/docs/apis/managing-api-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Add and manage IP allowlists (Harness)
+    url: https://developer.harness.io/harness-platform/use-harness-platform/security/add-manage-ip-allowlist
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-PLAT-005
+    type: related
+  - id: CB-CICD-IAM-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

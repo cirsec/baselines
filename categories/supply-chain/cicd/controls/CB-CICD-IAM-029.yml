@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-029
+title: Scope access tokens to the minimum resources and permissions
+finding:
+  title: Users and integrations hold full-scope or cross-organization tokens
+  description: A full-scope token gives whoever obtains it every right of its owner across every organization the owner can reach, when the integration that uses it only needed to read a status.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [token-scope, least-privilege, personal-access-tokens, api-tokens]
+
+applicability:
+  versions: [azure-devops, circleci, buildkite]
+
+description: |
+  Access tokens are limited to what they are used for: one organization, the narrowest scope that
+  works (read-only or status where possible), and a restricted API surface for integrations. Platform
+  policies that forbid full-scope or all-organization tokens are turned on where they exist.
+
+  Token lifetime is covered by CB-CICD-IAM-028, pipeline job tokens by CB-CICD-SEC-012 and
+  CB-CICD-SEC-013.
+rationale: |
+  Tokens are often created with every scope because it is the quickest way to make a script work.
+  When such a token leaks, the attacker gets write and admin access everywhere the owner has it,
+  including organizations unrelated to the integration. Scoped tokens turn the same leak into a
+  limited incident.
+impact: |
+  Users must pick scopes when creating tokens, and some tools that request full scope need to be
+  configured or replaced. Existing full-scope tokens stay valid until they expire.
+
+audit:
+  manual: |
+    Use an administrator role (Azure DevOps Administrator role in Entra for tenant policies).
+
+    1. Check the scope restrictions:
+       - **Azure DevOps**: **Organization settings** > **Microsoft Entra**: **Restrict full-scoped
+         personal access token creation** and **Restrict global personal access token creation** are
+         on (exceptions only through the Entra allowlist).
+       - **CircleCI**: **Project Settings** > **API Permissions** lists only **Status** or **Read
+         Only** tokens; **Admin** project tokens have a documented reason. Personal API tokens created
+         in the web app have full read and write access, so they are not used by integrations.
+       - **Buildkite**: API access tokens use the narrowest REST scopes and are limited to one
+         organization; tokens with **Enable GraphQL API access** (full GraphQL access) are replaced by
+         GraphQL portals that expose only the operations an integration needs.
+    2. Fail if full-scope or all-organization tokens can be created where a policy exists, or if
+       integrations use tokens broader than their function.
+
+remediation:
+  manual: |
+    1. **Azure DevOps**: turn on **Restrict full-scoped personal access token creation** and
+       **Restrict global personal access token creation**; add only justified groups to the
+       allowlist.
+    2. **CircleCI**: replace **Admin** project tokens with **Status** or **Read Only** where the
+       integration only reads, and move integrations off personal tokens.
+    3. **Buildkite**: recreate tokens with minimal scopes for a single organization, and create a
+       portal for each GraphQL integration.
+    4. Revoke the broad tokens once replacements work.
+
+references:
+  - title: Manage personal access tokens using policies (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/manage-pats-with-policies-for-administrators
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API tokens (CircleCI)
+    url: https://circleci.com/docs/guides/toolkit/managing-api-tokens/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API access tokens (Buildkite)
+    url: https://buildkite.com/docs/apis/managing-api-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GraphQL portals (Buildkite)
+    url: https://buildkite.com/docs/apis/graphql/portals
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the scope of user-issued tokens only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-SEC-012
+    type: related
+  - id: CB-CICD-COMP-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

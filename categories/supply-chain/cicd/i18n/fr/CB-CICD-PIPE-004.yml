@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'admettre les exécutions de pipeline qu'après un contrôle de politique central
+finding:
+  title: La configuration des pipelines s'exécute sans aucun contrôle de politique hors du dépôt
+  description: "Tout ce que déclare un fichier de pipeline (images, composants, commandes, cibles de déploiement) est exécuté tel quel : un contributeur peut ajouter une image non approuvée, sauter une étape d'approbation ou modifier le comportement de l'agent depuis le dépôt lui-même."
+description: |
+  Avant l'exécution d'un pipeline, un moteur de politiques ou un hook côté agent que le dépôt ne
+  peut pas modifier vérifie sa configuration et refuse les exécutions non conformes. Les règles
+  typiques portent sur les images, composants et connecteurs autorisés, les dépôts et commandes
+  autorisés, les étapes d'approbation requises, et les contextes ou runners qu'un job peut utiliser.
+  Les politiques sont stockées et modifiées dans un dépôt séparé et relu, et s'exécutent en mode
+  bloquant une fois testées.
+
+  Les réglages côté agent qui permettent à un dépôt de modifier le comportement (hooks locaux,
+  options de checkout) sont désactivés ou maintenus dans leur mode le plus strict, pour que la
+  politique ne puisse pas être contournée depuis le fichier de pipeline.
+
+  Les contrôles de politique sur les déploiements en production relèvent de CB-CICD-DEPLOY-005 ; la
+  liste des composants tiers approuvés relève de CB-CICD-COMP-001.
+rationale: |
+  Les fichiers de pipeline sont écrits par les personnes que les contrôles doivent encadrer. Un
+  contrôle qui vit hors du dépôt et s'exécute avant le démarrage du job transforme des règles comme
+  « pas d'image de registre public » ou « les pipelines de mise en production comportent une étape
+  d'approbation » en conditions imposées plutôt qu'en conventions, et bloque une définition de
+  pipeline empoisonnée avant qu'elle n'obtienne des identifiants.
+impact: |
+  Les politiques doivent être écrites, testées en mode avertissement et maintenues ; une règle
+  erronée bloque des builds légitimes. Les politiques de configuration CircleCI demandent l'offre
+  Scale. Sur Buildkite, désactiver les hooks locaux désactive aussi les plugins sur l'agent.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration des politiques de la plate-forme ou la
+    configuration des agents.
+
+    1. Identifier le mécanisme de politique en place pour chaque plate-forme et l'emplacement de ses
+       règles.
+    2. Le vérifier par plate-forme :
+       - **Harness** : des **Policies** et **Policy Sets** existent pour l'entité **Pipeline**,
+         évaluées **On Run** (et **On Save**), avec la sévérité **Error and exit** pour les règles
+         bloquantes.
+       - **CircleCI** : `circleci policy settings --owner-id <org-id>` indique que l'évaluation des
+         politiques est activée, et le bundle de politiques est stocké dans un dépôt relu.
+       - **Buildkite** (agents auto-hébergés) : chaque agent exécute un hook `pre-bootstrap` qui
+         refuse les dépôts, commandes ou variables d'environnement inattendus ;
+         `buildkite-agent.cfg` définit `no-local-hooks=true` et le mode checkout-override est
+         `strict`.
+       - **Autres plates-formes** : une étape d'admission (OPA ou équivalent) s'exécute avant tout
+         job qui reçoit des identifiants et le pipeline ne peut pas la retirer.
+    3. Échec si aucun contrôle de politique ne s'exécute avant les jobs privilégiés, si les règles
+       bloquantes ne sont qu'en mode avertissement, ou si le dépôt peut désactiver ou contourner le
+       contrôle.
+remediation:
+  manual: |
+    1. Écrire les règles dans un dépôt de politiques dédié avec revue obligatoire.
+    2. Activer l'évaluation, d'abord en mode avertissement, puis bloquant :
+       - **Harness** : créer un policy set pour l'entité **Pipeline** sur **On Run**, tester avec
+         **Warn & continue**, puis passer les règles bloquantes en **Error and exit**.
+       - **CircleCI** : pousser le bundle avec `circleci policy push` et l'activer avec
+         `circleci policy settings --enabled=true --owner-id <org-id>` (offre Scale).
+       - **Buildkite** : déployer sur chaque agent auto-hébergé un hook `pre-bootstrap` qui valide le
+         job selon une liste d'autorisation, définir `no-local-hooks=true` et régler le mode
+         checkout-override de l'agent sur `strict`.
+    3. Revoir régulièrement les décisions de politique et les exécutions bloquées, et ajuster les
+       règles via le dépôt de politiques.

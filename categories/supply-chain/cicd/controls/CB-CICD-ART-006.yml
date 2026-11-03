@@ -1,0 +1,193 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-006
+title: Verify artifact signatures and provenance before promotion and production admission
+finding:
+  title: Pipelines and deployment targets accept artifacts without checking their signature or origin
+  description: When nothing checks the digest, signature and provenance of an artifact before it is promoted or admitted to production, a tampered or attacker-built artifact goes live as soon as it reaches the registry.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [verification, admission-control, provenance, signatures, binary-authorization, policy]
+
+description: |
+  Before an artifact is consumed by a later pipeline stage, promoted between registries or
+  environments, or admitted to a production runtime, its integrity and origin are verified, at
+  depth `{{ verification_depth }}`:
+
+  - `signature-and-provenance`: the checksum matches the recorded digest, the signature is valid, and
+    the provenance is checked against the expected builder and source, pinned to the expected
+    repository and workflow or build identity, not just "any valid signature".
+  - `all-steps-policy`: in addition, every step of the supply chain (source, build, test, scan,
+    package) produces a signed attestation, and the set of attestations is evaluated against a signed
+    supply-chain policy (for example an in-toto layout or an admission policy kept under change
+    control) before deployment.
+
+  Production runtimes enforce this with an admission controller or deployment gate that rejects
+  unverified artifacts, so that a manual `kubectl apply` or a direct push cannot bypass it. Artifacts
+  deployed to air-gapped environments are verified with the attestations copied alongside them.
+
+  Producing signatures and provenance is covered by CB-CICD-ART-001 and CB-CICD-ART-005.
+rationale: |
+  Signatures and provenance only stop an attack when someone checks them. Verifying at promotion and
+  at admission means an artifact pushed with stolen registry credentials, built from a fork, or
+  rebuilt outside the release pipeline is rejected before it runs. Pinning verification to the
+  expected identity matters: a check that accepts any Sigstore signature also accepts one made by the
+  attacker's own pipeline.
+impact: |
+  An admission controller or policy engine must be deployed and maintained on production clusters
+  and kept in dry-run first to find unsigned images, including third-party ones that need an
+  exception or their own trust policy. A broken signing path blocks deployments, so a documented
+  break-glass procedure is needed.
+notes: |
+  Binary Authorization's `built-by-cloud-build` attestor only covers images built by Cloud Build with
+  provenance (images listed in `images:`, not pushed by `docker push`). The GitHub Sigstore Policy
+  Controller setup needs attestations pushed to the registry (`push-to-registry: true`). Azure
+  Pipelines' **Evaluate artifact** check works with container images only.
+
+parameters:
+  - name: verification_depth
+    type: enum
+    description: How much is verified before promotion and admission. signature-and-provenance checks digest, signature and provenance pinned to the expected identity; all-steps-policy also requires a signed attestation for every supply-chain step, evaluated against a signed policy.
+    allowed: [signature-and-provenance, all-steps-policy]
+    default: signature-and-provenance
+    profile_defaults:
+      hardened: all-steps-policy
+
+audit:
+  manual: |
+    Use a role that can read pipeline definitions, deployment controllers and cluster admission
+    policies.
+
+    1. For each production deployment path (pipeline deploy job, GitOps controller, manual
+       procedure), find where the artifact is verified before it runs.
+    2. Check that verification pins the expected identity (repository, workflow, builder id or key),
+       not only the presence of a signature:
+       - **GitHub**: deploy jobs run `gh attestation verify <artifact> --owner <org>` (or `--repo`,
+         `--signer-workflow`); clusters run the Sigstore Policy Controller with the GitHub
+         `TrustRoot` and a `ClusterImagePolicy` that names the expected organization or repository.
+       - **Google Cloud Build**: the Binary Authorization policy for GKE or Cloud Run has
+         `evaluationMode: REQUIRE_ATTESTATION`, `enforcementMode: ENFORCED_BLOCK_AND_AUDIT_LOG` and
+         `requireAttestationsBy: projects/<project>/attestors/built-by-cloud-build`; or the deploy
+         step runs `slsa-verifier verify-image --builder-id https://cloudbuild.googleapis.com/GoogleHostedWorker --source-uri <repo>`.
+       - **Flux**: `OCIRepository` (and OCI `HelmChart`) sources set `spec.verify.provider: cosign`
+         (or `notation`) and, for keyless signatures, `spec.verify.matchOIDCIdentity` with `issuer`
+         and `subject` regular expressions matching the CI workflow identity.
+       - **Buildkite**: steps that consume artifacts from other steps check them with
+         `buildkite-agent artifact shasum` before use.
+       - **Tekton**: trusted pipelines only consume artifacts from a registry after a verification
+         task (for example cosign or the Chains attestations) between the untrusted and trusted
+         pipelines.
+    3. Check that the admission controller is in enforcing mode, not only audit or dry-run, on
+       production.
+    4. With `all-steps-policy`: check that each supply-chain step produces a signed attestation and
+       that the policy evaluating them is itself signed and change-controlled.
+    5. Fail if a production deployment path does not verify signature and provenance, if
+       verification accepts any signer, or if admission control is not enforcing.
+
+remediation:
+  manual: |
+    1. Decide the expected identity for each artifact (repository, workflow or builder, key) and
+       record it in the deployment configuration.
+    2. Add verification at each promotion and at admission:
+       - **GitHub**: add `gh attestation verify` to deploy jobs; on Kubernetes, install the Sigstore
+         Policy Controller, add the GitHub `TrustRoot` and a `ClusterImagePolicy` for your
+         organization, and label production namespaces for enforcement.
+       - **Google Cloud Build**: in **Binary Authorization** > **Policy** > **Edit Policy**, select
+         **Allow only images that have been approved by all of the following attestors** and add
+         `built-by-cloud-build`; start with `DRYRUN_AUDIT_LOG_ONLY`, then switch to
+         `ENFORCED_BLOCK_AND_AUDIT_LOG`.
+       - **Flux**: add `spec.verify` with `provider: cosign` and `matchOIDCIdentity` to every
+         production `OCIRepository` and `HelmChart`.
+       - **Buildkite**: call `buildkite-agent artifact shasum` and compare before using a downloaded
+         artifact.
+       - Other platforms: verify with cosign or slsa-verifier in the deploy step, and use an
+         admission controller (Sigstore Policy Controller, Kyverno) on the target cluster.
+    3. Run admission policies in audit mode first, fix or except unsigned images, then enforce.
+    4. For `all-steps-policy`, add attestations for the source, test and scan steps and evaluate them
+       with a signed policy before deployment.
+  rollback: |
+    Switch the admission policy back to audit or dry-run mode for the affected namespace while the
+    signing or verification problem is fixed, and record the exception.
+
+references:
+  - title: Enforcing artifact attestations with a Kubernetes admission controller
+    url: https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/enforce-artifact-attestations
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use provenance and Binary Authorization
+    url: https://docs.cloud.google.com/build/docs/securing-builds/use-provenance-and-binary-authorization
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OCI Repositories
+    url: https://fluxcd.io/flux/components/source/ocirepositories/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Verifying artifacts
+    url: https://slsa.dev/spec/v1.2/verifying-artifacts
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: partial
+    note: Covers verification before promotion and admission; generation and signing are separate controls.
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L2
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.2.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(15)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1525
+related_controls:
+  - id: CB-CICD-ART-001
+    type: requires
+  - id: CB-CICD-ART-005
+    type: requires
+  - id: CB-CICD-ART-004
+    type: related
+  - id: CB-CICD-DEPLOY-005
+    type: related
+  - id: CB-DEP-INV-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

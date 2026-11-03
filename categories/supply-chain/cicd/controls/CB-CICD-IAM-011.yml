@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-011
+title: Disable anonymous access to CI/CD platforms
+finding:
+  title: Unauthenticated users can browse projects, pipelines or executions
+  description: Anonymous access exposes source code, pipeline definitions, build logs and deployment history to anyone who reaches the platform, which helps an attacker find secrets and weak pipelines.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [anonymous-access, guest, public-access, visibility]
+
+applicability:
+  versions: [argo-cd, bitbucket, forgejo, gitea, github, gitlab, harness, teamcity]
+
+parameters:
+  - name: signin_required_for
+    type: enum
+    description: Which content requires sign-in. `private-content` blocks anonymous access to non-public projects, pipelines and executions; `everything` requires sign-in for every page and API call.
+    default: private-content
+    profile_defaults:
+      hardened: everything
+    allowed: [private-content, everything]
+
+description: |
+  Unauthenticated users cannot see private projects, pipelines, executions, logs or APIs of the
+  platform: guest and anonymous access is off, public access features are disabled, and new projects
+  and groups default to private. With `{{ signin_required_for }}` set to `everything`, internal
+  instances require sign-in for every page and API call, including explore pages and public
+  repositories.
+
+  Visibility of individual job logs to signed-in non-members is covered by CB-CICD-PIPE-022, public
+  build artifacts by CB-CICD-ART-010.
+rationale: |
+  Anonymous read access is enough to harvest secrets printed in logs, map the deployment targets and
+  find pipelines that run untrusted code. Platforms that allow it per project make accidental exposure
+  easy: one project switched to public, or one feature flag enabled, publishes its history. Requiring
+  sign-in everywhere removes the question on internal instances.
+impact: |
+  Public status badges, anonymous clone URLs and unauthenticated dashboards stop working. Open-source
+  projects hosted on the same instance need a separate public instance or an exception.
+
+audit:
+  manual: |
+    Use an administrator role or read access to the platform configuration.
+
+    1. Check anonymous and public access:
+       - **Argo CD**: `argocd-cm` does not set `users.anonymous.enabled: "true"`; if it does,
+         `policy.default` in `argocd-rbac-cm` grants nothing.
+       - **TeamCity**: **Administration** > **Authentication**: guest login is disabled.
+       - **Harness**: **Account Settings** > **Authentication** > **Allow public access to
+         resources** is off (the feature sits behind the `PL_ALLOW_TO_SET_PUBLIC_ACCESS` flag), and no
+         pipeline is marked public.
+       - **Gitea / Forgejo**: with `everything`, `[service] REQUIRE_SIGNIN_VIEW = true`.
+       - **Bitbucket Data Center**: `bitbucket.properties` sets `feature.public.access=false`, or no
+         project or repository has public access enabled.
+       - **GitHub Enterprise Server**: **Management Console** > **Private mode** is
+         enabled.
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **Visibility and access
+         controls**: **Default project visibility** and **Default group visibility** are Private, and
+         **Restricted visibility levels** includes Public (and Internal when `everything` applies).
+    2. From a browser without a session, open the platform URL, the explore page and an API listing
+       endpoint.
+    3. Fail if non-public content is reachable without signing in, or, with `everything`, if any page
+       or API call answers without authentication.
+
+remediation:
+  manual: |
+    1. List projects that rely on anonymous access and agree on exceptions.
+    2. Apply the setting (administrator role):
+       - **Argo CD**: remove `users.anonymous.enabled` or set it to `"false"`.
+       - **TeamCity**: disable guest login in **Administration** > **Authentication**.
+       - **Harness**: turn off **Allow public access to resources**.
+       - **Gitea / Forgejo**: set `REQUIRE_SIGNIN_VIEW = true` in `[service]` and restart.
+       - **Bitbucket Data Center**: set `feature.public.access=false` in `bitbucket.properties` and
+         restart.
+       - **GitHub Enterprise Server**: enable **Private mode** in the Management Console.
+       - **GitLab self-managed**: set default visibilities to Private and add Public to
+         **Restricted visibility levels**.
+    3. Change existing public projects to private or internal.
+
+references:
+  - title: Argo CD RBAC configuration
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity guest user access
+    url: https://www.jetbrains.com/help/teamcity/guest-user.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Bitbucket Data Center config properties
+    url: https://confluence.atlassian.com/bitbucketserver/bitbucket-config-properties-776640155.html
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enabling private mode (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/configuring-settings/hardening-security-for-your-enterprise/enabling-private-mode
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab visibility and access controls
+    url: https://docs.gitlab.com/administration/settings/visibility_and_access_controls/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Harness - allow public access to pipeline executions
+    url: https://developer.harness.io/harness-platform/use-harness-platform/pipelines/execution-history-and-logs/allow-public-access-to-pipeline-executions.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.2.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: partial
+    note: Covers unauthenticated access to the platform; access of signed-in users is covered by other IAM controls.
+related_controls:
+  - id: CB-CICD-PIPE-022
+    type: related
+  - id: CB-CICD-ART-010
+    type: related
+  - id: CB-CICD-PLAT-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

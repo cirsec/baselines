@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-003
+title: Verify signatures and provenance of platform releases before installing them
+finding:
+  title: GitOps controller images and CLIs are installed without signature verification
+  description: Argo CD or Flux images and binaries are pulled by tag and installed without checking the vendor signature, so a tampered image from a compromised mirror or registry runs with cluster-wide deployment rights.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [signature-verification, provenance, cosign, slsa, gitops, release-integrity]
+applicability:
+  versions: [argo-cd, flux]
+
+description: |
+  Container images, CLI binaries and manifests of the GitOps controllers are installed or upgraded
+  only after their vendor signature or provenance has been verified:
+
+  - Argo CD images are verified with `cosign verify` against the identity of the Argo CD release
+    workflow, and CLI binaries with `slsa-verifier` against the published provenance
+    (`argocd-cli.intoto.jsonl`).
+  - Flux controller images are verified with `cosign verify` against the Flux GitHub Actions
+    identity, and release artifacts with `slsa-verifier` against their SLSA provenance.
+
+  The verified digest is what is deployed: manifests reference images by digest, or an admission
+  policy re-verifies the signature in the cluster. Mirrors in internal registries keep the
+  signatures and are verified the same way.
+
+  Other self-managed platforms that publish only checksums or GPG signatures (for example Jenkins
+  WAR files and GitLab packages) should be checked the same way; this control is limited to the
+  products whose verification procedure is documented here.
+rationale: |
+  GitOps controllers hold credentials to every cluster they manage. An attacker who can substitute
+  an image (compromised mirror, typosquatted registry, poisoned cache) gets those credentials at
+  the next upgrade. Keyless signatures tied to the vendor's release workflow and SLSA provenance
+  make a substituted image fail verification.
+impact: |
+  Upgrades need cosign and slsa-verifier in the installation pipeline, and pinning by digest
+  changes how images are referenced in manifests or Helm values.
+
+audit:
+  manual: |
+    Use read access to the cluster where the controller runs and to the repository or pipeline that
+    installs it.
+
+    1. Find how the controller is installed and upgraded (manifests in Git, Helm chart, operator,
+       `flux bootstrap`) and check that images are referenced by digest or verified by an admission
+       policy.
+    2. Check the installation pipeline or runbook for a verification step:
+       - **Argo CD**: `cosign verify` with `--certificate-identity-regexp` matching the Argo CD
+         release workflow and `--certificate-oidc-issuer https://token.actions.githubusercontent.com`
+         for `quay.io/argoproj/argocd`; `slsa-verifier` for CLI binaries.
+       - **Flux**: `cosign verify ghcr.io/fluxcd/<controller>:<version>` with the Flux release
+         identity; `slsa-verifier verify-image` or `cosign verify-attestation --type slsaprovenance`
+         for provenance.
+    3. Re-run the verification on the digests currently running in the cluster
+       (`kubectl get pods -n argocd -o jsonpath='{..imageID}'`, same for `flux-system`).
+    4. Fail if the running images or installed CLIs were not verified, if verification fails, or if
+       images are deployed by mutable tag without an admission policy that verifies them.
+
+remediation:
+  manual: |
+    1. Install cosign and slsa-verifier in the pipeline or on the workstation that installs the
+       controllers.
+    2. Add a verification step before every install or upgrade, following the vendor procedure
+       (Argo CD "Verification of Argo CD Artifacts", Flux "Security" and "SLSA assessment" pages).
+    3. Reference the verified images by digest in manifests or Helm values, or enforce signature
+       verification in the cluster with an admission policy (for example Sigstore policy-controller
+       or Kyverno `verifyImages`).
+    4. When mirroring images to an internal registry, copy the signatures and attestations too
+       (`cosign copy`) and verify against the mirror.
+
+references:
+  - title: Verification of Argo CD Artifacts
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/signed-release-assets/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux Security
+    url: https://fluxcd.io/flux/security/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux SLSA assessment
+    url: https://fluxcd.io/flux/security/slsa-assessment/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(15)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.4.1"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1525
+related_controls:
+  - id: CB-CICD-PLAT-002
+    type: related
+  - id: CB-CICD-COMP-010
+    type: related
+  - id: CB-CICD-COMP-013
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

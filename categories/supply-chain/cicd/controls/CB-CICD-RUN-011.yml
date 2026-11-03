@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-011
+title: Run jobs on privileged runners only from protected refs or approved workflows
+finding:
+  title: Runners with deployment access accept jobs from any branch
+  description: A runner that holds deployment credentials or network access to production but runs jobs from any branch lets anyone who can push a branch execute code with that access, without review.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, protected-branches, deployment, least-privilege]
+
+description: |
+  Runners that hold deployment credentials, an instance role with write access, or network access to
+  production run only jobs from protected branches or tags, or only jobs defined in approved workflows
+  at a protected ref. They do not pick up untagged jobs, so a job lands on them only when it asks for
+  them explicitly and is allowed to.
+
+  Protection of the branches themselves is covered by CB-CICD-SCM-006 and CB-CICD-PIPE-008.
+rationale: |
+  Branch protection and review only protect production if the credentials used to deploy cannot be
+  reached from unreviewed code. When the deployment runner accepts any branch, a feature branch with a
+  modified pipeline file is enough to run arbitrary commands with production access.
+impact: |
+  Jobs that run on those runners from unprotected branches (for example test deployments) must move to
+  other runners. Merge request pipelines on GitLab can still use protected runners only if configured
+  to.
+notes: |
+  GitHub restricts runner groups to selected workflows only on GitHub Enterprise Cloud and GitHub
+  Enterprise Server. Workflow references must be pinned to a branch for ordinary workflows, and to a
+  branch, tag or full SHA for reusable workflows; only jobs defined directly in the listed workflows
+  get access.
+
+audit:
+  manual: |
+    Use an administrator or owner read role on runner settings.
+
+    1. Identify runners that hold deployment credentials, write-capable cloud roles or production
+       network access.
+    2. Per product:
+       - **GitLab**: each such runner (**Admin** > **CI/CD** > **Runners**, or group **Build** >
+         **Runners**, or project **Settings** > **CI/CD** > **Runners** > **Edit**) has **Protected**
+         selected and **Run untagged jobs** cleared, and deploying jobs select it with `tags:`.
+       - **GitHub** (GitHub Enterprise Cloud or Server): **Organization** > **Settings** >
+         **Actions** > **Runner groups** > the group: **Workflow access** is **Selected workflows**
+         listing release workflows as `owner/repo/.github/workflows/file.yml@refs/heads/main` (or a
+         tag or SHA for reusable workflows).
+    3. Fail if a privileged runner can run jobs from an unprotected branch, from any workflow, or
+       untagged jobs.
+remediation:
+  manual: |
+    1. Separate privileged runners from general-purpose ones (CB-CICD-RUN-010).
+    2. Restrict them:
+       - **GitLab**: edit each privileged runner, select **Protected**, clear **Run untagged jobs**,
+         and add tags that only deployment jobs request.
+       - **GitHub**: as an organization owner, set the runner group's **Workflow access** to
+         **Selected workflows** with fully qualified refs to the release workflows.
+    3. Run the deployment pipelines from the protected branch and check that other jobs no longer reach
+       the runner.
+
+references:
+  - title: Configuring runners (Prevent runners from revealing sensitive information)
+    url: https://docs.gitlab.com/ci/runners/configure_runners/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing access to self-hosted runners using groups (workflow access)
+    url: https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-PIPE-008
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-RUN-010
+    type: related
+  - id: CB-CICD-DEPLOY-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

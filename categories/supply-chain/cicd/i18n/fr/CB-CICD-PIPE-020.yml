@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-020
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Borner les exécutions de pipeline par des délais, des limites de ressources et de concurrence
+finding:
+  title: Les jobs de pipeline peuvent tourner pendant des heures sans limite de ressources ni de concurrence
+  description: Les jobs héritent du délai maximal de la plate-forme (souvent plusieurs heures) et les pipelines de pull request peuvent démarrer sans limite ; une modification malveillante ou défectueuse peut miner de la cryptomonnaie, épuiser les runners auto-hébergés ou consommer les crédits de build de l'organisation.
+description: |
+  Chaque job est borné dans le temps : le délai du projet, du dépôt ou de l'instance est d'au plus
+  `{{ job_timeout }}` minutes, ou plus court quand le job le permet. Les jobs exécutés sur des
+  runners auto-hébergés ont des limites de CPU et de mémoire, et les pipelines déclenchés par des
+  pull requests ou d'autres événements peu coûteux à émettre ne peuvent pas lancer un nombre illimité
+  d'exécutions en parallèle.
+
+  Le niveau attendu est `{{ run_limits }}` :
+
+  - `platform-default` : un délai de projet ou d'instance d'au plus `{{ job_timeout }}` minutes et
+    des limites de ressources sur les conteneurs des runners auto-hébergés ;
+  - `per-job` : en plus, chaque job déclare son propre délai dimensionné à son besoin, les pipelines
+    coûteux et déclenchés par des pull requests utilisent des groupes de concurrence qui annulent
+    les exécutions dépassées, et les builds déclenchés par des utilisateurs non enregistrés ne
+    peuvent pas consommer de crédits.
+
+  La protection de la plate-forme elle-même contre les afflux de requêtes relève de
+  CB-CICD-PLAT-009.
+rationale: |
+  La puissance de calcul des builds est une cible en soi : des runners détournés minent de la
+  cryptomonnaie, et une pull request qui boucle sans fin sur un runner auto-hébergé partagé bloque
+  les mises en production. Des délais courts limitent aussi la durée pendant laquelle du code
+  malveillant garde les identifiants d'un job. Les limites de concurrence empêchent un seul acteur
+  de saturer le parc de runners par des exécutions parallèles.
+impact: |
+  Les jobs légitimement longs (grandes suites de tests, builds d'images) ont besoin de délais
+  explicites au-dessus de la valeur par défaut. Annuler les exécutions dépassées peut masquer des
+  échecs intermittents sur des commits intermédiaires.
+notes: |
+  Le délai par défaut d'un job GitHub est de 360 minutes. Quand un délai de projet GitLab et un délai
+  maximal de runner sont tous deux définis, le plus faible s'applique. Buildkite n'a pas de délai au
+  niveau du build ; les délais s'appliquent par étape de commande, avec des valeurs par défaut et
+  maximales au niveau de l'organisation ou du pipeline. L'option CircleCI **Prevent unregistered
+  user spend** demande l'offre Performance ou Scale.
+parameters:
+  job_timeout: Durée maximale d'un job définie au niveau du projet, du dépôt ou de l'instance.
+  run_limits: platform-default s'appuie sur les délais de projet ou d'instance et les limites de ressources des runners ; per-job exige aussi des délais par job, des groupes de concurrence et le blocage de la consommation par les utilisateurs non enregistrés.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des projets, les fichiers de pipeline et la
+    configuration des runners.
+
+    1. Vérifier les délais :
+       - **GitLab** : **Settings** > **CI/CD** > **General pipelines** > **Timeout**, et le **Maximum
+         job timeout** des runners utilisés.
+       - **GitHub** : `timeout-minutes` sur les jobs (360 minutes par défaut en son absence).
+       - **Gitea / Forgejo** : `app.ini` `[actions] ENDLESS_TASK_TIMEOUT` (par défaut `3h`) et
+         `runner.timeout` dans le `config.yml` du runner.
+       - **Woodpecker** : `WOODPECKER_DEFAULT_PIPELINE_TIMEOUT` et `WOODPECKER_MAX_PIPELINE_TIMEOUT`
+         sur le serveur, et le réglage **Timeout** du dépôt.
+       - **Jenkins** : chaque Pipeline déclare `options { timeout(...) }`.
+       - **AWS CodeBuild** : **Timeout** du projet (`timeoutInMinutes`, 60 minutes par défaut).
+       - **Buildkite** : **Default** et **Maximum Command Step Timeout** au niveau de l'organisation
+         ou du pipeline, ou `timeout_in_minutes` sur les étapes de commande.
+    2. Vérifier les limites de ressources et de concurrence :
+       - Runners **Gitea / Forgejo** : `container.options` définit `--memory` et `--cpus` ;
+         `runner.capacity` est dimensionné à l'hôte.
+       - **AWS CodeBuild** : les projets qui construisent des pull requests activent **Restrict number
+         of concurrent builds this project can start** (`concurrentBuildLimit`).
+       - Pour `per-job` : les workflows **GitHub** déclenchés par des pull requests et coûteux
+         déclarent `concurrency:` avec `cancel-in-progress: true` ; les `workflow:rules` **GitLab**
+         évitent les pipelines de branche et de merge request en double ; **CircleCI** **Plan** >
+         **Usage Controls** > **Prevent unregistered user spend** est activé.
+    3. Échec si un délai de projet ou d'instance dépasse `{{ job_timeout }}` minutes sans exception
+       documentée, si les conteneurs des runners auto-hébergés n'ont pas de limite de ressources,
+       ou, pour `{{ run_limits }}` = `per-job`, si des jobs n'ont pas leur propre délai ou si les
+       pipelines de pull request n'ont pas de limite de concurrence.
+remediation:
+  manual: |
+    1. Régler le délai par défaut à `{{ job_timeout }}` minutes ou moins :
+       - **GitLab** : **Timeout** du projet, et un **Maximum job timeout** sur les runners partagés.
+       - **Gitea / Forgejo** : réduire `ENDLESS_TASK_TIMEOUT` et `runner.timeout`.
+       - **Woodpecker** : définir `WOODPECKER_DEFAULT_PIPELINE_TIMEOUT` et
+         `WOODPECKER_MAX_PIPELINE_TIMEOUT`.
+       - **AWS CodeBuild** : régler le **Timeout** du projet.
+       - **Buildkite** : régler les **Default** et **Maximum Command Step Timeout** de
+         l'organisation.
+       - **Jenkins** : ajouter `options { timeout(time: N, unit: 'MINUTES') }` aux Pipelines.
+    2. Ajouter `--memory` et `--cpus` aux options de conteneur des runners et dimensionner leur
+       capacité.
+    3. Pour `per-job` : ajouter `timeout-minutes` à chaque job GitHub et un groupe `concurrency:` avec
+       `cancel-in-progress: true` aux workflows de pull request ; ajouter des `workflow:rules` dans
+       GitLab pour n'exécuter qu'un pipeline par modification ; définir `concurrentBuildLimit` sur les
+       projets CodeBuild de pull request ; activer **Prevent unregistered user spend** sur CircleCI.

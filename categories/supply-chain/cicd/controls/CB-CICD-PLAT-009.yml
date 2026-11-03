@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-009
+title: Rate-limit requests to the platform and cap per-request resource use
+finding:
+  title: The CI/CD platform accepts unlimited requests and unbounded workloads
+  description: API, web and Git endpoints have no rate limit and some requests can consume unbounded memory; a script, a misbehaving integration or an attacker makes the platform unavailable and blocks releases and incident fixes.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [rate-limiting, availability, denial-of-service, resource-limits, self-managed]
+applicability:
+  versions: [github, gitlab, teamcity, argo-cd]
+
+description: |
+  Self-managed platforms limit the request rate on their API, web and Git endpoints, per user and
+  per source IP for unauthenticated traffic, either with the product's own rate limits or at the
+  reverse proxy when the product has none. Expensive per-request processing is capped where the
+  product offers a setting, so that one request or one application cannot exhaust the server.
+
+  - GitHub Enterprise Server: HTTP API, secondary and Git rate limits are enabled.
+  - GitLab self-managed: user and IP rate limits for unauthenticated and authenticated API and web
+    requests are enabled, together with the Git, files API and package registry limits.
+  - TeamCity: rate limiting is enforced at the reverse proxy, since the product has no built-in
+    protection.
+  - Argo CD: the repo-server limits the combined manifest size of directory applications.
+
+  Limits on pipeline runs themselves (timeouts, concurrency) are covered by CB-CICD-PIPE-020.
+rationale: |
+  A CI/CD platform that becomes unavailable stops releases and also stops the emergency fixes
+  needed during an incident. Rate limits contain brute-force and scraping attempts, runaway
+  automation and abusive integrations, and resource caps stop a crafted repository or manifest from
+  crashing a shared component for every team.
+impact: |
+  Limits that are too low can block heavy legitimate automation (CI bots, mirrors). Start with the
+  vendor defaults, use the dry-run mode where available, and add exceptions for named service
+  accounts rather than raising limits for everyone.
+
+audit:
+  manual: |
+    Use an administrator account with read access to the platform settings.
+
+    1. Check the rate limit settings of each platform:
+       - **GitHub Enterprise Server**: **Site admin** > **Management Console**, under **Rate
+         Limiting**: **Enable HTTP API Rate Limiting**, **Enable Secondary Rate Limiting** and
+         **Enable Git Rate Limiting** are selected with non-zero limits.
+       - **GitLab self-managed**: **Admin** > **Settings** > **Network** > **User and IP rate
+         limits**: the four checkboxes for unauthenticated API, unauthenticated web, authenticated
+         API and authenticated web requests are selected; the Git HTTP, files API and package
+         registry rate limit sections are enabled. The legitify policies
+         `throttle_unauthenticated_request_not_enabled` and `throttle_authenticated_api_not_enabled`
+         report missing limits.
+       - **TeamCity**: the reverse proxy in front of the server applies request rate limits.
+       - **Argo CD**: `argocd-cmd-params-cm` sets `reposerver.max.combined.directory.manifests.size`
+         to a value derived from the repo-server memory limit (memory / (300 x number of
+         directory applications)).
+    2. Fail if a platform has no request rate limit, either in the product or at the proxy, or if
+       Argo CD runs directory applications without a manifest size limit.
+
+remediation:
+  manual: |
+    Use an administrator account and announce the change to teams that run heavy automation.
+
+    1. Enable the limits, starting from the vendor's default values:
+       - **GitHub Enterprise Server**: in **Management Console** > **Rate Limiting**, select
+         **Enable HTTP API Rate Limiting**, **Enable Secondary Rate Limiting** and **Enable Git Rate
+         Limiting**, keep or adjust the prefilled values, and **Save settings**.
+       - **GitLab self-managed**: first set `GITLAB_THROTTLE_DRY_RUN='*'` in `gitlab_rails['env']`
+         to log what would be throttled, then select the four checkboxes in **Admin** > **Settings**
+         > **Network** > **User and IP rate limits** and remove the dry-run variable.
+       - **TeamCity**: configure request rate limits in the reverse proxy (for example NGINX
+         `limit_req`).
+       - **Argo CD**: set `reposerver.max.combined.directory.manifests.size` in
+         `argocd-cmd-params-cm` and restart the repo-server.
+    2. Add exceptions for named service accounts that need higher limits instead of raising the
+       global values.
+  rollback: |
+    Raise the specific limit that blocks legitimate traffic, or clear its checkbox, rather than
+    disabling all rate limits.
+
+references:
+  - title: Configuring rate limits (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/configuring-settings/configuring-user-applications-for-your-enterprise/configuring-rate-limits
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: User and IP rate limits
+    url: https://docs.gitlab.com/administration/settings/user_and_ip_rate_limits/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security (Argo CD operator manual)
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: legitify
+    url: https://github.com/Legit-Labs/legitify
+    publisher: Legit Security
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1499
+related_controls:
+  - id: CB-CICD-PIPE-020
+    type: related
+  - id: CB-CICD-PLAT-005
+    type: related
+  - id: CB-CICD-IAM-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

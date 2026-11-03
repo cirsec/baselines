@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-022
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver aux propriétaires les invitations et le partage hors de l'organisation
+finding:
+  title: Des admins de dépôts ou de projets peuvent inviter des personnes extérieures ou partager des projets hors de l'organisation
+  description: Quand n'importe quel admin de dépôt ou de projet peut inviter des utilisateurs externes ou partager un projet avec un autre groupe, l'accès au code et aux pipelines s'étend sans que les propriétaires ni le processus d'identité le sachent.
+parameters:
+  invitation_policy: Qui peut faire entrer des personnes. `owners-invite-outsiders` réserve aux propriétaires les invitations de collaborateurs externes et de nouveaux utilisateurs ; `owners-only` empêche aussi les administrateurs d'équipe et de projet d'inviter, désactive les demandes d'accès et bloque le partage hors de la hiérarchie de groupes.
+description: |
+  Seuls les propriétaires de l'organisation ou de l'entreprise peuvent inviter des collaborateurs
+  externes ou des utilisateurs qui ne sont pas encore membres. Avec `{{ invitation_policy }}` réglé sur
+  `owners-only`, les administrateurs d'équipe et de projet ne peuvent inviter personne, les
+  utilisateurs ne peuvent pas demander l'accès par un lien, et les projets ne peuvent pas être
+  partagés avec des groupes extérieurs à la hiérarchie de groupes de l'organisation.
+
+  Le moindre privilège et l'expiration pour les collaborateurs externes relèvent de CB-CICD-IAM-023.
+rationale: |
+  Les administrateurs de dépôts et de projets sont nombreux et décident des accès par commodité. Une
+  invitation hors de l'organisation ajoute une personne absente du fournisseur d'identité et du
+  processus de départ ; partager un projet avec un groupe externe fait de même pour tout un groupe.
+  Laisser ces décisions aux propriétaires les rend rares et revues.
+impact: |
+  Les propriétaires traitent les demandes d'invitation. Avec `owners-only`, les administrateurs de
+  projet doivent demander aux propriétaires d'ajouter même des utilisateurs internes, et le lien de
+  demande d'accès disparaît.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Vérifier les réglages d'invitation :
+       - **GitHub** : **Enterprise settings** > **Policies** > **Repositories** > **Repository outside
+         collaborators**, ou **Organization settings** > **Member privileges** > **Repository outside
+         collaborators**, réserve les invitations aux propriétaires de l'organisation ou de
+         l'entreprise.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Stratégies** > **Allow team and
+         project administrators to invite new users** est désactivé ; avec `owners-only`, la stratégie
+         **Request access** est aussi désactivée.
+       - **GitLab** : avec `owners-only`, le groupe racine **Settings** > **General** > **Permissions
+         and group features** a **Members cannot invite groups outside of <group_name> and its
+         subgroups** et **Projects in <group_name> cannot be shared with other groups** cochés ; en
+         auto-hébergé, **Admin** > **Settings** > **General** > **Visibility and access controls** >
+         **Prevent group member invitations** est coché (GitLab 18.0 et suivants).
+    2. Revoir les invitations et partages récents dans le journal d'audit.
+    3. Échec si des non-propriétaires peuvent inviter des utilisateurs externes, ou, avec
+       `owners-only`, si les demandes d'accès ou le partage hors de la hiérarchie sont permis.
+remediation:
+  manual: |
+    1. **GitHub** : régler **Repository outside collaborators** sur les propriétaires de
+       l'organisation (ou de l'entreprise) au niveau de l'entreprise, pour que les organisations ne
+       puissent pas le changer.
+    2. **Azure DevOps** : désactiver **Allow team and project administrators to invite new users** ;
+       avec `owners-only`, désactiver **Request access** (Project Collection Administrator).
+    3. **GitLab** (`owners-only`) : cocher les deux restrictions de partage de groupe sur le groupe
+       racine et, en auto-hébergé, **Prevent group member invitations**.
+    4. Publier la manière dont les équipes demandent un nouveau membre ou collaborateur.

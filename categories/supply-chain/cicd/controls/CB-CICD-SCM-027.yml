@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-027
+title: Keep executables and binary artifacts out of source repositories
+finding:
+  title: Source repositories contain committed executables or binary artifacts
+  description: A committed binary cannot be reviewed like source code, so a trojanized build tool, library or wrapper can enter the build through a normal-looking pull request and run in every pipeline.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [binary-artifacts, push-rules, code-review, build-integrity]
+
+description: |
+  Source repositories hold source code, not executables. Binaries (`.exe`, `.dll`, `.so`, `.jar`,
+  `.class`, `.pyc` and similar) are built by the CI pipeline from source, or fetched from an
+  approved registry with a pinned version and checksum. Push rules block such file types on
+  critical repositories, with documented exceptions for files that must be committed (test
+  fixtures, a verified build wrapper).
+
+  How tools and dependencies fetched by pipelines are pinned and verified is covered by
+  CB-CICD-COMP-014 and the dependency standard (CB-DEP-SRC-001).
+rationale: |
+  Reviewers cannot read a binary diff, and scanners see a binary as opaque. A pull request that
+  updates a committed `gradle-wrapper.jar` or a vendored tool can replace it with a malicious
+  version that executes in every build, with access to the pipeline's secrets. Building binaries
+  in CI from reviewed source, or fetching them with a checksum, keeps everything that runs in the
+  pipeline traceable to reviewed content.
+impact: |
+  Existing binaries must be removed and replaced by build steps or registry downloads. Repositories
+  that legitimately store binary test data need exceptions or a separate repository.
+notes: |
+  On GitHub, push rulesets on private and internal repositories need GitHub Team or Enterprise,
+  and their bypass list also applies to the repository's fork network. A file type that must be
+  allowed once can be handled with a **Restrict file paths** rule and an allowed exception.
+
+audit:
+  manual: |
+    Use a role that can read repository content and push rules.
+
+    1. Scan repositories for committed executables and binary artifacts; Scorecard's
+       `Binary-Artifacts` check lists them on GitHub and GitLab.
+    2. For each binary found, check that it is a documented exception.
+    3. Check that push rules block binary types on critical repositories:
+       - **GitHub**: a push ruleset with **Restrict file extensions** listing executable and archive
+         extensions is **Active**.
+       - **GitLab** (Premium): push rule **Prohibited filenames** with a regular expression matching
+         binary extensions.
+       - **Azure DevOps**: repository policy **File path validation** blocks the binary patterns
+         (**Project settings** > **Repositories** > **Policies** > **Repository Policies**).
+    4. Fail if a critical repository contains undocumented executables or binary artifacts, or
+       accepts new ones.
+
+remediation:
+  manual: |
+    1. Replace each committed binary with a CI build step, or with a download from an approved
+       registry pinned by version and checksum.
+    2. Remove the binaries from the default branch (history rewrite is only needed if a binary is
+       known to be malicious, through the expunging procedure of CB-CICD-SCM-009).
+    3. Block new binaries:
+       - **GitHub**: create a push ruleset with **Restrict file extensions** (for example `.exe`,
+         `.dll`, `.so`, `.jar`, `.class`).
+       - **GitLab**: set **Prohibited filenames** in the push rules at group or project level.
+       - **Azure DevOps**: turn on **File path validation** with the binary patterns.
+    4. Document allowed exceptions and review them with code owners (CB-CICD-SCM-018).
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Push rules
+    url: https://docs.gitlab.com/user/project/repository/push_rules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set Git repository settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/repository-settings
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenSSF Scorecard checks
+    url: https://github.com/ossf/scorecard/blob/main/docs/checks.md
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-014
+    type: related
+  - id: CB-DEP-SRC-001
+    type: related
+  - id: CB-CICD-SCM-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

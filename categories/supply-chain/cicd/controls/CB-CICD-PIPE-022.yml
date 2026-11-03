@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-022
+title: Restrict pipeline logs and job details to project members
+finding:
+  title: Pipelines, job logs and artifacts of public or internal projects are visible to non-members
+  description: Job logs and artifacts often contain internal hostnames, dependency versions, partially masked values or debug output, and in public or internal projects anyone, or any authenticated user, can read them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [pipeline-visibility, job-logs, artifacts, gitlab]
+applicability:
+  versions: [gitlab]
+
+description: |
+  In public and internal GitLab projects, pipelines, job logs and job artifacts are visible only to
+  project members. **Project-based pipeline visibility** is cleared, and for public projects the
+  **CI/CD** feature visibility is **Only project members**. Non-members can at most see the status
+  of pipelines on merge requests and commits.
+
+  Public access to artifacts in other platforms and stores is covered by CB-CICD-ART-010.
+rationale: |
+  Logs are written for the people debugging the build, not for the public. They expose the build
+  environment, internal endpoints and sometimes secrets that escaped masking, which helps an
+  attacker prepare a targeted attack on the pipeline.
+impact: |
+  Outside contributors to public projects can no longer read the logs of failed pipelines and need
+  a member to share the relevant part.
+notes: |
+  On GitHub, workflow logs of public repositories are always public; there is no equivalent
+  setting, which makes CB-CICD-PIPE-019 and CB-CICD-SEC-022 more important there.
+
+audit:
+  manual: |
+    Use a role that can read project settings (Maintainer).
+
+    1. List the public and internal projects.
+    2. For each, check **Settings** > **CI/CD** > **General pipelines** > **Project-based pipeline
+       visibility** (`public_builds` in `GET /projects/:id`) and, for public projects,
+       **Settings** > **General** > **Visibility, project features, permissions** > **CI/CD**
+       (`builds_access_level`).
+    3. Fail if `public_builds` is `true`, or if a public project has `builds_access_level` other
+       than `private` (**Only project members**).
+
+remediation:
+  manual: |
+    1. As a Maintainer, clear **Project-based pipeline visibility** in **Settings** > **CI/CD** >
+       **General pipelines**, or call `PUT /projects/:id` with `public_builds=false`.
+    2. For public projects, set **CI/CD** to **Only project members** in **Settings** > **General** >
+       **Visibility, project features, permissions** (`builds_access_level=private`).
+    3. Review existing public job logs for exposed values and rotate any secret found.
+  rollback: |
+    Select **Project-based pipeline visibility** again if a project must publish its logs.
+
+setting:
+  location: GitLab project > Settings > CI/CD > General pipelines > Project-based pipeline visibility
+  default_value: Selected (public_builds = true)
+  recommended_value: Cleared (public_builds = false); CI/CD visibility Only project members on public projects
+
+references:
+  - title: Customize pipeline configuration - change which users can view your pipelines
+    url: https://docs.gitlab.com/ci/pipelines/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.2.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+related_controls:
+  - id: CB-CICD-ART-010
+    type: related
+  - id: CB-CICD-PIPE-019
+    type: related
+  - id: CB-CICD-SEC-022
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-012
+title: Make the built-in job token read-only by default and grant write scopes per job
+finding:
+  title: The token injected into every job can write to the repository by default
+  description: Any step of any workflow, including third-party actions and test code, can push commits, create releases or approve changes with the job token, so one compromised dependency can tamper with the repository.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [job-token, github-token, least-privilege, permissions]
+applicability:
+  versions: [github, gitea, buildkite]
+
+description: |
+  The token that the platform injects into each job (`GITHUB_TOKEN`, `GITEA_TOKEN`, and the
+  workflow-scoped GitHub token Buildkite can mint) is read-only or restricted by default at
+  enterprise, organization and repository level. Jobs that need to write declare the specific
+  scopes in the pipeline file, at job level, and every workflow sets an explicit top-level
+  `permissions:` that grants nothing or read-only access.
+
+  Where the platform offers it, a configured maximum caps what pipeline files can request, so a
+  modified workflow cannot raise its own permissions beyond the owner's policy.
+
+  Cross-project use of job tokens is covered by CB-CICD-SEC-013; the choice of job token over
+  personal tokens by CB-CICD-SEC-002.
+rationale: |
+  Every action, script and dependency in a job can read the job token. With write permissions by
+  default, a single compromised action can push malicious code, alter releases or tags, or change
+  workflow files, turning a dependency compromise into a source compromise. Read-only defaults
+  limit that to reading what the job could already read, and per-job scopes make each write
+  permission visible in review.
+impact: |
+  Workflows that push, comment, publish packages or create releases fail until they declare the
+  needed `permissions:`. GitHub enterprises and organizations created before February 2023 still
+  default to read and write and need the change.
+notes: |
+  On GitHub, users with write access to a repository can still raise permissions in a workflow
+  file through `permissions:`; reviewing workflow changes (CB-CICD-SCM-018) and linting them
+  (CB-CICD-TEST-004) covers that. Gitea fork pull requests always get a read-only token without
+  OIDC, whatever the settings.
+
+audit:
+  manual: |
+    Use an owner or administrator role that can read Actions settings, and read access to workflow
+    files.
+
+    1. Check the default token permissions:
+       - **GitHub**: **Enterprise** > **Policies** > **Actions**, **Organization** > **Settings** >
+         **Actions** > **General** and each repository's **Settings** > **Actions** > **General** >
+         **Workflow permissions** are **Read repository contents and packages permissions** (API:
+         `GET /orgs/{org}/actions/permissions/workflow` returns `default_workflow_permissions: read`).
+       - **Gitea**: **Settings** > **Actions** > **General** of the user or organization and of
+         each repository that overrides it: the default permission mode is **Restricted**, and the
+         maximum token permissions are `read` (or none) for every unit and `id-token` except where a
+         repository needs more.
+       - **Buildkite**: the pipeline settings do not enable workflow-scoped GitHub access tokens,
+         unless everyone who can create a build at an arbitrary commit is trusted, since the token
+         permissions are read from the workflow file at that commit.
+    2. Review workflow files: each declares a top-level `permissions:` (`{}` or read-only) and
+       grants write scopes only on the jobs that need them. zizmor (`excessive-permissions`,
+       `undocumented-permissions`) and Scorecard's Token-Permissions check report missing or broad
+       permissions.
+    3. Fail if the default job token can write, if the Gitea maximum allows write on units no
+       workflow needs, or if a workflow grants write scopes at top level or to jobs that do not
+       use them.
+
+remediation:
+  manual: |
+    1. Set read-only defaults at the highest level, then at organization and repository level
+       where they are overridden:
+       - **GitHub**: select **Read repository contents and packages permissions** under
+         **Workflow permissions** (enterprise policy, organization, repositories), or call
+         `PUT /orgs/{org}/actions/permissions/workflow` with `default_workflow_permissions: read`.
+       - **Gitea**: set the default permission mode to **Restricted** and lower the maximum token
+         permissions for the owner; let repositories opt out with **Override owner-level
+         configuration** only when justified.
+       - **Buildkite**: leave workflow-scoped GitHub access tokens disabled.
+    2. Add `permissions: {}` (or `contents: read`) at the top of each workflow and declare the
+       needed write scopes on the jobs that use them, for example `contents: write` on the release
+       job only.
+    3. Lint workflows in CI with zizmor to keep new workflows compliant.
+
+references:
+  - title: GITHUB_TOKEN
+    url: https://docs.github.com/en/actions/concepts/security/github_token
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure use reference
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Token permissions
+    url: https://docs.gitea.com/usage/actions/token-permissions
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audits
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers the permissions of the built-in job token.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-SEC-013
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+  - id: CB-CICD-SCM-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

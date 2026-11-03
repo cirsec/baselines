@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-017
+title: Restrict sensitive platform operations to administrators
+finding:
+  title: Ordinary users can manage clusters, credentials, trust keys or agent tokens
+  description: Users who can add a cluster, a repository credential, a GPG key or an agent token can redirect deployments, defeat signature checks or attach their own build agents, without touching any pipeline.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [rbac, administration, least-privilege, gitops, agent-tokens]
+
+applicability:
+  versions: [argo-cd, buildkite, spinnaker]
+
+parameters:
+  - name: admin_only_scope
+    type: enum
+    description: Which operations are limited to administrators. `platform-objects` covers clusters, repository credentials, certificates, GPG keys, accounts, agent tokens, pipeline deletion and visibility; `platform-objects-and-execution` also covers application creation and running pipelines without write access.
+    default: platform-objects
+    profile_defaults:
+      hardened: platform-objects-and-execution
+    allowed: [platform-objects, platform-objects-and-execution]
+
+description: |
+  Operations that change what the platform trusts or where it deploys are limited to platform
+  administrators: managing clusters, repository credentials, TLS certificates and GPG keys, local
+  accounts, projects, agent registration tokens, stopping agents, deleting pipelines and changing
+  their visibility. With `{{ admin_only_scope }}` set to `platform-objects-and-execution`, creating
+  applications and executing pipelines also require more than read access.
+
+  Who can edit pipeline definitions and build configuration is covered by CB-CICD-IAM-036, runner
+  registration by CB-CICD-RUN-002.
+rationale: |
+  These objects sit below the pipelines: whoever manages GPG keys or certificates in Argo CD can make
+  it accept unsigned commits or a forged Git server, whoever adds a cluster or repository credential
+  can point applications elsewhere, and whoever holds an agent token can attach a machine that
+  receives jobs and their secrets. On Spinnaker, read access to an application also allows running
+  its pipelines unless the default is changed.
+impact: |
+  Teams that managed their own clusters, repositories or agent tokens must go through the platform
+  administrators. Restricting execution on Spinnaker requires explicit `EXECUTE` roles on every
+  application whose pipelines are run by non-writers.
+
+audit:
+  manual: |
+    Use an administrator role or read access to the platform configuration.
+
+    1. Check who holds the sensitive permissions:
+       - **Argo CD**: in `argocd-rbac-cm` (and AppProject roles), `clusters`, `repositories`,
+         `write-repositories`, `certificates`, `gpgkeys`, `accounts` and `projects` with `create`,
+         `update` or `delete`, and `exec` `create`, are granted only to the administrators group.
+         With `platform-objects-and-execution`, `applications` `create` is limited to project
+         maintainers.
+       - **Buildkite**: **Settings** > **Security** (Enterprise plan): **Delete pipelines**, **Change
+         Pipeline Visibility**, **Manage Agent Registration Tokens**, **Stop Agents** and **Manage
+         Notification Services** are restricted to administrators.
+       - **Spinnaker**: with `platform-objects-and-execution`, `fiat-local.yml` sets
+         `fiat.executeFallback: 'WRITE'` and applications declare explicit `EXECUTE` roles.
+    2. Fail if non-administrators can manage the objects in scope.
+
+remediation:
+  manual: |
+    1. **Argo CD**: remove these resources from non-admin roles in `policy.csv`, grant them to an
+       administrators SSO group only, and give teams project-scoped roles for their applications.
+    2. **Buildkite**: on the **Security** page, clear the organization-wide permissions for members
+       and keep them for administrators (Enterprise plan).
+    3. **Spinnaker** (hardened): add `fiat: executeFallback: 'WRITE'` to `fiat-local.yml`, add
+       `EXECUTE` roles where people need to run pipelines without write access, and restart Fiat.
+
+references:
+  - title: Argo CD RBAC configuration
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite pipeline permissions - manage organization security
+    url: https://buildkite.com/docs/pipelines/security/permissions
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Spinnaker authorization (RBAC)
+    url: https://spinnaker.io/docs/setup/other_config/security/authorization/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers platform-level objects (clusters, keys, credentials, agent tokens); permissions of pipeline runs are covered by other controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-036
+    type: related
+  - id: CB-CICD-RUN-002
+    type: related
+  - id: CB-CICD-DEPLOY-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

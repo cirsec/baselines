@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-004
+title: Lint pipeline definitions for security issues on every change
+finding:
+  title: Changes to pipeline files merge without a security linter
+  description: Injection-prone expressions, over-broad token permissions, dangerous triggers and unpinned components are introduced in pipeline files and only found after an attacker uses them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, pipeline-linting, zizmor, poutine, checkov, actionlint]
+
+description: |
+  Every change request that modifies pipeline definitions (workflow files, `.gitlab-ci.yml`,
+  `azure-pipelines.yml`, CircleCI and Bitbucket configuration, templates and composite actions) is
+  checked by a CI security linter, and the check is required before merge. Suitable tools include
+  zizmor and actionlint for GitHub Actions, poutine for GitHub, GitLab, Azure Pipelines and
+  Tekton, and Checkov for several CI formats.
+
+  Findings are reported in the change request; high-severity findings fail the check. The rules
+  checked by the linter support CB-CICD-PIPE-014, CB-CICD-PIPE-015, CB-CICD-COMP-011 and
+  CB-CICD-COMP-012; the periodic audit of existing pipeline definitions is CB-CICD-PIPE-007.
+rationale: |
+  Pipeline files are code that runs with secrets and write tokens, and their dangerous patterns
+  (untrusted input in shell commands, privileged triggers on fork code, unpinned components) are
+  well known and machine-detectable. Reviewers miss them easily because the syntax looks harmless.
+  A linter on every change catches them before merge at almost no cost.
+impact: |
+  Existing pipelines may produce many findings at first; fix them or record accepted exceptions
+  in the tool configuration before making the check required.
+
+audit:
+  manual: |
+    Use read access to the repositories and their branch protection or ruleset settings.
+
+    1. Check that a linter job runs on change requests touching pipeline files:
+       - **GitHub**: a workflow runs zizmor (for example with `--format sarif` uploaded to code
+         scanning), poutine or actionlint on pull requests that change `.github/**`, and the check
+         is required by a ruleset or branch protection rule on the default branch.
+       - **GitLab**: a merge request pipeline job runs poutine or Checkov (framework `gitlab_ci`)
+         on `.gitlab-ci.yml` and included files, and **Pipelines must succeed** is set for merges.
+       - **Other platforms**: an equivalent job runs on the pipeline files and blocks the merge.
+    2. Fail if pipeline changes can merge without a security linter result, or if the linter
+       reports high-severity findings that are neither fixed nor recorded as exceptions.
+
+remediation:
+  manual: |
+    1. Add a linter job to each repository, ideally from a shared template:
+       - **GitHub**: a workflow triggered on `pull_request` for `.github/**` that runs zizmor and
+         uploads SARIF to code scanning, or runs poutine or actionlint.
+       - **GitLab**: a job in merge request pipelines that runs poutine or `checkov --framework
+         gitlab_ci`.
+    2. Fix or record the existing findings, then make the check required (CB-CICD-SCM-019).
+
+references:
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: poutine
+    url: https://github.com/boostsecurityio/poutine
+    publisher: BoostSecurity
+    kind: tool
+    accessed: 2026-11-03
+  - title: actionlint
+    url: https://github.com/rhysd/actionlint
+    publisher: rhysd
+    kind: tool
+    accessed: 2026-11-03
+  - title: Checkov
+    url: https://www.checkov.io/
+    publisher: Prisma Cloud
+    kind: tool
+    accessed: 2026-11-03
+  - title: OpenSSF Scorecard
+    url: https://github.com/ossf/scorecard
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.7"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-007
+    type: related
+  - id: CB-CICD-PIPE-015
+    type: related
+  - id: CB-CICD-SCM-019
+    type: related
+  - id: CB-CICD-COMP-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

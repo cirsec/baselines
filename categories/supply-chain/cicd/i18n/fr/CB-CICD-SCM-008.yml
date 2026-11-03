@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la création de branches aux contributeurs de confiance dans les dépôts de pipelines
+finding:
+  title: N'importe quel contributeur peut créer des branches dans les dépôts qui contiennent des pipelines
+  description: Un utilisateur qui peut créer une branche peut y pousser une définition de pipeline modifiée et la faire exécuter avec les connexions de service et les secrets du pipeline, même sans permission de contribuer aux branches protégées.
+description: |
+  Dans les dépôts Azure Repos qui définissent des pipelines, la permission **Créer une branche**
+  n'est accordée qu'à un groupe de contributeurs de confiance. Les autres contributeurs travaillent
+  depuis des forks et soumettent des pull requests, si bien que leurs modifications de la
+  définition de pipeline ne s'exécutent pas avec les ressources du dépôt cible avant revue.
+
+  La protection des branches qui peuvent atteindre des secrets relève de CB-CICD-PIPE-008 ; les
+  pipelines sur pull requests venant de forks de CB-CICD-PIPE-010.
+rationale: |
+  Un pipeline YAML exécute la définition présente sur la branche qui l'a déclenché. Microsoft
+  indique qu'un utilisateur disposant de **Créer une branche** peut introduire du code dans le
+  dépôt même sans **Contribuer** : une nouvelle branche avec un fichier de pipeline modifié
+  s'exécute alors avec les mêmes pools d'agents, connexions de service et groupes de variables que
+  les branches protégées, sauf restriction supplémentaire de ces ressources. Limiter la création
+  de branches ferme ce chemin d'exécution de pipeline empoisonné.
+impact: |
+  Les contributeurs hors du groupe de confiance doivent utiliser des forks, ce qui change leur
+  façon de travailler et implique que les pipelines de pull requests venant de forks tournent sans
+  secrets. Les workflows fondés sur des branches pour tous (branches de fonctionnalité) ne sont pas
+  compatibles avec ce contrôle sur les dépôts concernés.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la sécurité des dépôts (Administrateurs de projet ou
+    **Gérer les autorisations** sur le dépôt).
+
+    1. Lister les dépôts Azure Repos qui contiennent des définitions de pipeline YAML utilisées par
+       des pipelines ayant accès à des connexions de service, des groupes de variables ou des
+       environnements.
+    2. Ouvrir **Paramètres du projet** > **Dépôts** > **Tous les dépôts** (ou le dépôt) >
+       **Sécurité** et examiner **Créer une branche** pour chaque groupe, Contributeurs compris.
+    3. Vérifier **Paramètres du projet** > **Dépôts** > **Paramètres** > **Autoriser les
+       utilisateurs à gérer les autorisations de leurs branches créées**.
+    4. Échec si **Créer une branche** est autorisé pour les Contributeurs ou d'autres groupes larges
+       sur ces dépôts.
+remediation:
+  manual: |
+    1. Créer un groupe de contributeurs de confiance pour chaque dépôt de pipeline.
+    2. Dans **Paramètres du projet** > **Dépôts** > le dépôt > **Sécurité**, mettre **Créer une
+       branche** à **Autoriser** pour ce groupe et à **Non défini** pour les Contributeurs (n'utiliser
+       **Refuser** que pour annuler un **Autoriser** hérité d'ailleurs).
+    3. Demander aux autres contributeurs de travailler depuis des forks du dépôt.
+    4. Restreindre les ressources de pipeline (connexions de service, pools d'agents,
+       environnements) aux branches protégées par des vérifications, pour qu'une branche créée plus
+       tard ne puisse pas les utiliser.
+  rollback: |
+    Remettre **Créer une branche** à **Autoriser** pour les Contributeurs sur le dépôt.

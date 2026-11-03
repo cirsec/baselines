@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-010
+title: Give fork pull request pipelines no secrets or write tokens
+finding:
+  title: Pipelines for fork pull requests receive secrets or a write-scoped token
+  description: A fork author controls the code and often the pipeline file of the run, so any secret, deployment credential or write token given to it can be printed, sent out or used to push to the parent repository.
+status: draft
+profiles: [baseline]
+risk:
+  severity: critical
+assessment: manual
+tags: [fork-pull-requests, secrets, job-token, poisoned-pipeline-execution]
+
+description: |
+  Pipelines started by pull requests from forks run without secrets, deployment credentials, OIDC
+  tokens for cloud roles, or write-scoped job tokens, or are not built at all. Fork code is never
+  run in the parent project's context, with the parent's variables, runners and the triggering
+  member's permissions, unless a member has reviewed the full change, including the pipeline file,
+  first.
+
+  Approval before a fork pipeline runs is covered by CB-CICD-PIPE-009; self-hosted runners for
+  public and fork code by CB-CICD-RUN-009.
+rationale: |
+  For a fork pull request the platform usually runs the pipeline file from the fork, so any secret
+  made available to that run is available to the fork author. Withholding secrets and write tokens
+  is the only defence that still holds when an approver misses a malicious line.
+impact: |
+  Fork pull requests cannot run tests that need real credentials (integration tests against a
+  cloud account, signed builds). Such tests run after merge or on a branch pushed by a maintainer.
+
+audit:
+  manual: |
+    Use a role that can read organization, project and pipeline settings.
+
+    1. Check the fork settings per platform:
+       - **GitHub**: **Enterprise**, **Organization** or **Repository** > **Settings** > **Actions** >
+         **General** > **Fork pull request workflows in private repositories**: either **Run
+         workflows from fork pull requests** is off, or it is on with **Require approval for fork
+         pull request workflows** and without **Send write tokens to workflows from pull requests**
+         and **Send secrets to workflows from pull requests**.
+       - **GitLab**: `GET /projects/:id` returns `ci_allow_fork_pipelines_to_run_in_parent_project:
+         false`, or members only select **Run pipeline** for a fork merge request after reviewing
+         the full diff including `.gitlab-ci.yml`.
+       - **Azure DevOps**: **Organization settings** and **Project settings** > **Pipelines** >
+         **Settings** > **Limit building pull requests from forked GitHub repositories** is set to
+         disable fork builds or to **Securely build pull requests from forked repositories**; no
+         pipeline enables **Make secrets available to builds of forks** or **Make fork builds have
+         the same permissions as regular builds**.
+       - **CircleCI**: **Project Settings** > **Advanced** > **Build forked pull requests** is off,
+         or **Pass secrets to builds from forked pull requests** is off where it is on.
+       - **Buildkite**: **Pipeline Settings** > **GitHub**: building pull requests from third-party
+         forked repositories is off on every pipeline with secrets, or fork builds are gated by a
+         block step.
+       - **Woodpecker**: no repository or organization secret has the `pull_request` event in its
+         event filter (`woodpecker-cli repo secret ls`).
+       - **TeamCity**: pull requests from users outside the organization are not built, or run only
+         on separate, throw-away agents without secrets; the server health report on pull request
+         builds is reviewed.
+    2. Fail if a pipeline triggered by a fork pull request can read a secret, a deployment
+       credential or a cloud OIDC token, or holds a job token with write scope.
+
+remediation:
+  manual: |
+    1. Remove secrets and write tokens from fork pull request runs:
+       - **GitHub**: as an organization owner, clear **Send write tokens to workflows from pull
+         requests** and **Send secrets to workflows from pull requests**, and keep **Require
+         approval for fork pull request workflows** on, or turn fork workflows off.
+       - **GitLab**: as a Maintainer, call `PUT /projects/:id` with
+         `ci_allow_fork_pipelines_to_run_in_parent_project=false`.
+       - **Azure DevOps**: set **Limit building pull requests from forked GitHub repositories** to
+         **Securely build pull requests from forked repositories** at organization level, and clear
+         **Make secrets available to builds of forks** in pipeline triggers.
+       - **CircleCI**: turn off **Pass secrets to builds from forked pull requests**, and **Build
+         forked pull requests** where not needed.
+       - **Buildkite**: turn off builds from third-party forks on pipelines with secrets, or put a
+         block step before any step that uses them.
+       - **Woodpecker**: recreate secrets without the `pull_request` event, and restrict plugin
+         secrets to images with exact tags.
+       - **TeamCity**: stop building public pull requests, or move them to separate, throw-away
+         agents without secrets.
+    2. Move tests that need credentials to post-merge pipelines.
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request pipelines - pipelines in the parent project
+    url: https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure agents, projects, and containers (forks)
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pull request build settings
+    url: https://circleci.com/docs/guides/integration/pull-request-build-settings/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker secrets
+    url: https://woodpecker-ci.org/docs/usage/secrets
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers credentials exposed to fork pipelines; other poisoned pipeline paths are covered by other PIPE controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-009
+    type: related
+  - id: CB-CICD-PIPE-014
+    type: related
+  - id: CB-CICD-RUN-009
+    type: related
+  - id: CB-CICD-SEC-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

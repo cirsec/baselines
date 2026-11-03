@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-006
+title: Lock the first-run installer once the platform is configured
+finding:
+  title: The platform installer can be run again by any visitor
+  description: The web installer or first-start wizard stays reachable, so after a database reset or on a fresh volume the first person to open the page sets the database and becomes administrator.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [installer, initial-setup, administrator-takeover, gitea, forgejo, teamcity]
+applicability:
+  versions: [gitea, forgejo, teamcity]
+
+description: |
+  Once a Gitea, Forgejo or TeamCity instance is configured, its web installer or first-run
+  wizard is locked in the configuration file, so that it cannot be used again even if the
+  database is empty, unreachable or restored from an old copy:
+
+  - Gitea and Forgejo: `app.ini` `[security] INSTALL_LOCK = true`.
+  - TeamCity: `teamcity.installation.completed=true` in
+    `<TeamCity Home>/conf/teamcity-startup.properties`, and the server database uses a dedicated
+    account with a strong password.
+
+  Initial installations are done on an isolated network, and the configuration file that holds
+  the lock is managed with the rest of the platform configuration (CB-CICD-PLAT-015).
+rationale: |
+  An unlocked installer lets the first visitor choose the database and create the administrator
+  account. This can happen long after setup: a container restarted on an empty volume, a database
+  that is briefly unreachable, or a restore. TeamCity documents that a server started with an
+  empty database grants access to the first user who connects. The attacker then controls every
+  repository, pipeline and stored secret.
+impact: |
+  None known. Reinstalling deliberately requires editing the configuration file first.
+
+audit:
+  manual: |
+    Use read access to the configuration files on the server or in the deployment repository
+    (Helm values, environment variables, configuration management).
+
+    1. Locate the effective configuration (for containers, also check environment variables such as
+       `GITEA__security__INSTALL_LOCK` or `FORGEJO__security__INSTALL_LOCK`).
+    2. Check the product setting:
+       - **Gitea / Forgejo**: `app.ini` `[security] INSTALL_LOCK = true` (default `false`); the
+         `/install` page is not served.
+       - **TeamCity**: `<TeamCity Home>/conf/teamcity-startup.properties` contains
+         `teamcity.installation.completed=true`; `<TeamCity Data Directory>/config/database.properties`
+         uses a dedicated database account.
+    3. Fail if the lock is absent or false, or if the installer page answers.
+
+remediation:
+  manual: |
+    Use an account that can edit the platform configuration and restart the service.
+
+    1. Set the lock in the configuration managed as code:
+       - **Gitea / Forgejo**: add `INSTALL_LOCK = true` under `[security]` in `app.ini` (or set
+         `GITEA__security__INSTALL_LOCK=true` / `FORGEJO__security__INSTALL_LOCK=true` in the
+         container environment).
+       - **TeamCity**: add `teamcity.installation.completed=true` to
+         `<TeamCity Home>/conf/teamcity-startup.properties`, and give the server a dedicated
+         database account with a strong password.
+    2. Restart the service and check that the installer page no longer answers.
+    3. For new instances, run the installer only on an isolated network and set the lock before
+       opening access.
+
+references:
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1190
+related_controls:
+  - id: CB-CICD-IAM-003
+    type: related
+  - id: CB-CICD-PLAT-007
+    type: related
+  - id: CB-CICD-PLAT-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

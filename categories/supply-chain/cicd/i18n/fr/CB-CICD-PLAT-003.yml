@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier la signature et la provenance des versions de la plate-forme avant de les installer
+finding:
+  title: Les images et CLI des contrôleurs GitOps sont installées sans vérification de signature
+  description: Les images et binaires Argo CD ou Flux sont récupérés par tag et installés sans contrôle de la signature de l'éditeur ; une image altérée provenant d'un miroir ou d'un registre compromis s'exécute avec des droits de déploiement sur tout le cluster.
+description: |
+  Les images de conteneur, binaires CLI et manifestes des contrôleurs GitOps ne sont installés ou
+  mis à jour qu'après vérification de la signature ou de la provenance de l'éditeur :
+
+  - les images Argo CD sont vérifiées avec `cosign verify` contre l'identité du workflow de
+    publication d'Argo CD, et les binaires CLI avec `slsa-verifier` contre la provenance publiée
+    (`argocd-cli.intoto.jsonl`) ;
+  - les images des contrôleurs Flux sont vérifiées avec `cosign verify` contre l'identité GitHub
+    Actions de Flux, et les artefacts de version avec `slsa-verifier` contre leur provenance SLSA.
+
+  C'est le condensé vérifié qui est déployé : les manifestes référencent les images par condensé,
+  ou une politique d'admission revérifie la signature dans le cluster. Les miroirs dans des
+  registres internes conservent les signatures et sont vérifiés de la même façon.
+
+  Les autres plates-formes auto-hébergées qui ne publient que des sommes de contrôle ou des
+  signatures GPG (par exemple les fichiers WAR de Jenkins et les paquets GitLab) devraient être
+  vérifiées de la même manière ; ce contrôle se limite aux produits dont la procédure est décrite
+  ici.
+rationale: |
+  Les contrôleurs GitOps détiennent des identifiants vers chaque cluster qu'ils gèrent. Un
+  attaquant capable de substituer une image (miroir compromis, registre usurpé, cache empoisonné)
+  obtient ces identifiants à la mise à jour suivante. Des signatures sans clé liées au workflow de
+  publication de l'éditeur et une provenance SLSA font échouer la vérification d'une image
+  substituée.
+impact: |
+  Les mises à jour nécessitent cosign et slsa-verifier dans le pipeline d'installation, et
+  l'épinglage par condensé change la façon dont les images sont référencées dans les manifestes ou
+  les valeurs Helm.
+audit:
+  manual: |
+    Utiliser un accès en lecture au cluster où tourne le contrôleur et au dépôt ou pipeline qui
+    l'installe.
+
+    1. Identifier comment le contrôleur est installé et mis à jour (manifestes dans Git, chart
+       Helm, opérateur, `flux bootstrap`) et vérifier que les images sont référencées par condensé
+       ou vérifiées par une politique d'admission.
+    2. Chercher une étape de vérification dans le pipeline ou la procédure d'installation :
+       - **Argo CD** : `cosign verify` avec un `--certificate-identity-regexp` correspondant au
+         workflow de publication d'Argo CD et `--certificate-oidc-issuer
+         https://token.actions.githubusercontent.com` pour `quay.io/argoproj/argocd` ;
+         `slsa-verifier` pour les binaires CLI.
+       - **Flux** : `cosign verify ghcr.io/fluxcd/<contrôleur>:<version>` avec l'identité de
+         publication de Flux ; `slsa-verifier verify-image` ou `cosign verify-attestation --type
+         slsaprovenance` pour la provenance.
+    3. Rejouer la vérification sur les condensés en cours d'exécution dans le cluster
+       (`kubectl get pods -n argocd -o jsonpath='{..imageID}'`, idem pour `flux-system`).
+    4. Échec si les images en service ou les CLI installées n'ont pas été vérifiées, si la
+       vérification échoue, ou si les images sont déployées par tag modifiable sans politique
+       d'admission qui les vérifie.
+remediation:
+  manual: |
+    1. Installer cosign et slsa-verifier dans le pipeline ou sur le poste qui installe les
+       contrôleurs.
+    2. Ajouter une étape de vérification avant chaque installation ou mise à jour, en suivant la
+       procédure de l'éditeur (pages « Verification of Argo CD Artifacts », « Security » et « SLSA
+       assessment » de Flux).
+    3. Référencer les images vérifiées par condensé dans les manifestes ou valeurs Helm, ou imposer
+       la vérification des signatures dans le cluster par une politique d'admission (par exemple
+       Sigstore policy-controller ou `verifyImages` de Kyverno).
+    4. Lors de la recopie des images dans un registre interne, copier aussi les signatures et
+       attestations (`cosign copy`) et vérifier contre le miroir.

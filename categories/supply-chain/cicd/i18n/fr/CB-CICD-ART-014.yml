@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Fixer délibérément la durée de conservation des artefacts, journaux et exécutions de build
+finding:
+  title: Les artefacts, journaux et l'historique des exécutions sont conservés pendant la durée par défaut de la plate-forme
+  description: La conservation par défaut laisse les artefacts et journaux, avec les secrets ou données internes qu'ils ont divulgués, accessibles pendant des mois sur les projets publics, tandis que les preuves d'audit des pipelines privés peuvent être supprimées avant qu'une enquête en ait besoin.
+description: |
+  Les durées de conservation des artefacts de build, journaux de job et exécutions de workflow sur la
+  plate-forme CI/CD sont fixées explicitement au niveau le plus élevé disponible (entreprise,
+  organisation ou instance) et surchargées par projet uniquement quand c'est justifié, selon une
+  politique écrite :
+
+  - les dépôts et projets publics conservent artefacts et journaux pendant une courte durée (par
+    exemple 30 jours ou moins), puisque tout le monde peut les lire ;
+  - les projets privés les conservent aussi longtemps que la politique d'audit l'exige et pas plus,
+    et les artefacts nécessaires plus longtemps (versions, preuves) sont copiés dans un stockage
+    maîtrisé au lieu de dépendre de la conservation de la plate-forme CI.
+
+  La conservation et la protection des journaux d'audit et des journaux de build dans un stockage
+  central relèvent de CB-CICD-LOG-004 et CB-CICD-LOG-005 ; l'archivage des versions de
+  CB-CICD-ART-012.
+rationale: |
+  Les artefacts et journaux sont un lieu fréquent de fuite de secrets et de données internes. Les
+  conserver plus longtemps que nécessaire, en particulier sur des projets publics, allonge la fenêtre
+  pendant laquelle un jeton ou un fichier divulgué peut être trouvé et utilisé. L'échec inverse compte
+  aussi : si la plate-forme supprime exécutions et journaux avant la fin de la période d'audit, une
+  enquête perd ses preuves. Un réglage délibéré, aligné sur une politique, couvre les deux.
+impact: |
+  Une conservation plus courte signifie que les anciens artefacts et journaux ne sont plus
+  disponibles dans l'interface de la plate-forme ; ce qui doit être gardé plus longtemps doit être
+  exporté avant. Sur certaines plates-formes, la modification ne s'applique qu'aux nouveaux artefacts
+  et journaux.
+notes: |
+  Sur GitHub, le réglage de conservation couvre les checks, exécutions de workflow et statuts de
+  commit en plus des artefacts et journaux ; depuis le 1er octobre 2026, la durée configurée
+  s'applique à tous. Les dépôts publics acceptent de 1 à 90 jours, les privés de 1 à 400 jours, avec
+  90 jours par défaut, et un dépôt ne peut pas dépasser la limite fixée par son organisation ou son
+  entreprise. Gitea conserve par défaut 365 jours de journaux, 90 jours d'artefacts et 400 jours
+  d'exécutions ; Forgejo 365 jours de journaux et 90 jours d'artefacts. Une valeur `0` conserve les
+  données indéfiniment sur Gitea.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages CI/CD de l'entreprise, de l'organisation ou de
+    l'instance.
+
+    1. Trouver la politique écrite de conservation des artefacts, journaux et exécutions CI/CD, et
+       les durées qu'elle fixe pour les projets publics et privés.
+    2. Vérifier les valeurs configurées :
+       - **GitHub** : **Settings** > **Actions** > **General** de l'organisation (et les politiques
+         **Actions** de l'entreprise), et **Settings** > **Actions** > **General** de chaque dépôt : la valeur **Check, workflow
+         run, status, artifact and log retention** correspond à la politique (courte pour les dépôts
+         publics).
+       - **Gitea** : dans `app.ini`, section `[actions]`, `LOG_RETENTION_DAYS`,
+         `ARTIFACT_RETENTION_DAYS` et `RUN_RETENTION_DAYS` sont réglés explicitement, aucun ne vaut
+         `0`, et `[cron.cleanup_action_runs]` est activé.
+       - **Forgejo** : dans `app.ini`, section `[actions]`, `LOG_RETENTION_DAYS` et
+         `ARTIFACT_RETENTION_DAYS` sont réglés explicitement.
+       - Autres plates-formes : vérifier l'expiration des artefacts de job (par exemple
+         `artifacts:expire_in` et la valeur par défaut de l'instance sur GitLab) et les réglages de
+         conservation des journaux.
+    3. Vérifier que les preuves nécessaires au-delà de la conservation de la plate-forme
+       (enregistrements de versions, journaux d'audit) sont exportées vers un stockage maîtrisé
+       (CB-CICD-ART-012, CB-CICD-LOG-004).
+    4. Échec si la conservation est laissée à la valeur par défaut sans décision consignée, si des
+       projets publics conservent artefacts et journaux plus longtemps que la politique ne le permet,
+       ou si des preuves requises expirent avant la fin de la période d'audit.
+remediation:
+  manual: |
+    1. Rédiger ou mettre à jour la politique de conservation des données CI/CD, avec des durées
+       distinctes pour les projets publics et privés.
+    2. L'appliquer au niveau le plus élevé :
+       - **GitHub** : régler la valeur de conservation dans les politiques **Actions** de
+         l'entreprise et dans **Settings** > **Actions** > **General** de l'organisation, puis la réduire sur les dépôts publics.
+       - **Gitea / Forgejo** : régler `LOG_RETENTION_DAYS`, `ARTIFACT_RETENTION_DAYS` (et sur Gitea
+         `RUN_RETENTION_DAYS`) dans la section `[actions]` de `app.ini` et redémarrer le service.
+       - Autres plates-formes : régler l'expiration par défaut des artefacts et la conservation des
+         journaux dans les réglages de l'instance ou de l'organisation.
+    3. Exporter ce qui doit être conservé plus longtemps vers un stockage maîtrisé avant expiration.
+    4. Revoir le réglage quand la politique d'audit change.

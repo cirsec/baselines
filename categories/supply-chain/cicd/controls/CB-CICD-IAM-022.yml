@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-022
+title: Limit invitations and sharing outside the organization to owners
+finding:
+  title: Repository or project admins can invite outsiders or share projects outside the organization
+  description: When any repository or project admin can invite external users or share a project with another group, access to code and pipelines grows without the owners or the identity process knowing.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [invitations, outside-collaborators, sharing, access-requests]
+
+applicability:
+  versions: [github, azure-devops, gitlab]
+
+parameters:
+  - name: invitation_policy
+    type: enum
+    description: Who can bring people in. `owners-invite-outsiders` limits invitations of outside collaborators and new users to owners; `owners-only` also stops team and project administrators from inviting, turns off access requests and blocks sharing outside the group hierarchy.
+    default: owners-invite-outsiders
+    profile_defaults:
+      hardened: owners-only
+    allowed: [owners-invite-outsiders, owners-only]
+
+description: |
+  Only organization or enterprise owners can invite outside collaborators or users who are not yet
+  members. With `{{ invitation_policy }}` set to `owners-only`, team and project administrators cannot
+  invite anyone, users cannot request access through a link, and projects cannot be shared with
+  groups outside the organization's group hierarchy.
+
+  Least privilege and expiry for external collaborators are covered by CB-CICD-IAM-023.
+rationale: |
+  Repository and project administrators are numerous and make access decisions for convenience. An
+  invitation outside the organization adds a person who is not in the identity provider and not in the
+  leaver process; sharing a project with an external group does the same for a whole group. Keeping
+  these decisions with owners makes them rare and reviewed.
+impact: |
+  Owners handle invitation requests. With `owners-only`, project administrators must ask owners to
+  add even internal users, and the access-request link disappears.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. Check the invitation settings:
+       - **GitHub**: **Enterprise settings** > **Policies** > **Repositories** > **Repository outside
+         collaborators**, or **Organization settings** > **Member privileges** > **Repository outside
+         collaborators**, restricts invitations to organization or enterprise owners.
+       - **Azure DevOps**: **Organization settings** > **Policies** > **Allow team and project
+         administrators to invite new users** is off; with `owners-only`, the **Request access**
+         policy is also off.
+       - **GitLab**: with `owners-only`, the top-level group **Settings** > **General** >
+         **Permissions and group features** has **Members cannot invite groups outside of
+         <group_name> and its subgroups** and **Projects in <group_name> cannot be shared with other
+         groups** selected; on self-managed, **Admin** > **Settings** > **General** > **Visibility and
+         access controls** > **Prevent group member invitations** is selected (GitLab 18.0 and
+         later).
+    2. Review recent invitations and shares in the audit log.
+    3. Fail if non-owners can invite outside users, or, with `owners-only`, if access requests or
+       sharing outside the hierarchy are allowed.
+
+remediation:
+  manual: |
+    1. **GitHub**: set **Repository outside collaborators** to organization owners (or enterprise
+       owners) at enterprise level so organizations cannot override it.
+    2. **Azure DevOps**: turn off **Allow team and project administrators to invite new users**; with
+       `owners-only`, turn off **Request access** (Project Collection Administrator).
+    3. **GitLab** (`owners-only`): select the two group sharing restrictions on the top-level group and,
+       on self-managed, **Prevent group member invitations**.
+    4. Publish how teams request a new member or collaborator.
+
+references:
+  - title: Enforcing repository management policies in your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restrict new user invitations from Project and Team Administrators
+    url: https://learn.microsoft.com/azure/devops/organizations/security/restrict-invitations
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Turn off Request access policy
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/disable-request-access-policy
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Sharing projects and groups (GitLab)
+    url: https://docs.gitlab.com/user/project/members/sharing_projects_groups/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab visibility and access controls
+    url: https://docs.gitlab.com/administration/settings/visibility_and_access_controls/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-023
+    type: related
+  - id: CB-CICD-IAM-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

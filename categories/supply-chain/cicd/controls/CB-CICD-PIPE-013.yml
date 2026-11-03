@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-013
+title: Authenticate the webhooks and events that start pipelines
+finding:
+  title: Webhook and event receivers start pipelines without verifying the sender
+  description: An event listener, receiver or webhook trigger that accepts unsigned requests lets anyone who can reach it start builds or reconciliations with forged payloads, choosing branches, revisions or parameters.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [webhooks, event-listeners, hmac, trigger-authentication]
+
+description: |
+  Every inbound endpoint that can start a pipeline, a workflow or a GitOps reconciliation checks
+  that the request comes from the expected sender: a webhook signature (HMAC) or shared secret
+  verified on each request, or an authenticated publisher (for example restricted publisher rights
+  on a message topic). Payload filters are used in addition, never instead. Webhook URLs that
+  embed a secret are treated as credentials: not logged, not shared, rotated when exposed. The
+  identity that processes the event can only create the runs it needs.
+
+  Signing of outbound webhooks sent by the platform is covered by CB-CICD-COMP-008.
+rationale: |
+  A webhook endpoint is an unauthenticated API unless it checks a signature. Without it, an
+  attacker who finds the URL can trigger builds of chosen revisions, flood runners, or feed crafted
+  payload fields into pipeline parameters. A signature check limits triggers to the real source
+  control system.
+impact: |
+  The shared secret must be configured on both sides and rotated together. Some sources cannot
+  sign requests (for example Bitbucket Cloud with the Tekton Bitbucket interceptor); their
+  receivers need network restrictions instead.
+notes: |
+  Tekton: the GitHub interceptor skips validation when `secretRef` is omitted. Flux: the `generic`
+  receiver type performs no validation; its webhook path is derived from the token, so the URL is
+  sensitive. Spinnaker: webhook `payloadConstraints` only filter payloads and do not authenticate
+  the sender. Argo CD: the webhook secret is optional but recommended to prevent abuse of the
+  refresh endpoint.
+
+audit:
+  manual: |
+    Use a role that can read the trigger, listener and receiver configuration.
+
+    1. List every inbound endpoint that can start a pipeline or reconciliation and where it is
+       reachable from.
+    2. Check per platform:
+       - **Tekton Triggers**: every `EventListener` trigger has a `github`, `gitlab` or
+         `bitbucket` (Server) interceptor with a `secretRef`; the EventListener service account
+         can only create the needed runs.
+       - **Argo Workflows**: the `argo-workflows-webhook-clients` secret defines, per client, the
+         provider type and the webhook secret; the client service accounts can only get templates
+         and create workflows.
+       - **Argo CD**: the webhook secret for the source control provider is set in `argocd-secret`.
+       - **Flux**: `Receiver` objects use a provider type (`github`, `gitlab`, `bitbucket`...) or
+         `generic-hmac`, not `generic`, with a `secretRef` token.
+       - **Google Cloud Build**: webhook triggers use a secret stored in Secret Manager; Pub/Sub
+         triggers' topics only accept the expected publishers.
+       - **Spinnaker**: GitHub webhook triggers are configured with the webhook secret.
+       - **Buildkite**: for self-hosted source control (for example GitHub Enterprise Server), the
+         pipeline's incoming webhook is filtered by the source IP addresses.
+    3. Fail if an endpoint that starts a pipeline accepts requests without a signature or secret
+       check, or if a webhook URL containing a secret appears in logs, tickets or documentation.
+
+remediation:
+  manual: |
+    1. Generate a random secret per source and configure it on the sender (repository or
+       organization webhook) and on the receiver:
+       - **Tekton Triggers**: add the provider interceptor with `secretRef` to each trigger.
+       - **Argo Workflows**: add the client to `argo-workflows-webhook-clients` with its type and
+         secret, bound to a service account limited to submitting workflows.
+       - **Argo CD**: set the provider webhook secret key in `argocd-secret`.
+       - **Flux**: switch `generic` receivers to the provider type or `generic-hmac`.
+       - **Google Cloud Build**: store the webhook secret in Secret Manager; restrict who can
+         publish to trigger topics.
+       - **Spinnaker**: set the secret on the GitHub webhook and on each GitHub trigger.
+       - **Buildkite**: enter the source control system's IP addresses in the incoming webhook
+         filter.
+    2. Rotate any secret or URL that was exposed, and remove unauthenticated receivers.
+
+references:
+  - title: Tekton Triggers interceptors
+    url: https://tekton.dev/docs/triggers/interceptors/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows webhooks
+    url: https://argo-workflows.readthedocs.io/en/latest/webhooks/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD Git webhook configuration
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux receivers
+    url: https://fluxcd.io/flux/components/notification/receivers/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Automate builds in response to webhook events
+    url: https://docs.cloud.google.com/build/docs/automate-builds-webhook-events
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuring GitHub webhooks for Spinnaker
+    url: https://spinnaker.io/docs/setup/other_config/triggers/github/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+related_controls:
+  - id: CB-CICD-COMP-008
+    type: related
+  - id: CB-CICD-PIPE-011
+    type: related
+  - id: CB-CICD-SEC-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

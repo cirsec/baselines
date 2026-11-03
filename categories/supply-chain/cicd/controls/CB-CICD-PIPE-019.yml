@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-019
+title: Keep pipeline debug logging off by default
+finding:
+  title: Debug or trace logging is permanently enabled in pipelines
+  description: Debug and trace modes print the job environment, inputs and sometimes masked secrets into job logs, which are read by everyone with access to the project and kept for months.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [debug-logging, job-logs, secret-exposure]
+
+description: |
+  Step, runner and system debug or trace modes are never set persistently in pipeline files,
+  project, group or organization variables, or runner configuration. When debug output is needed,
+  it is enabled for a single re-run, the resulting logs are reviewed for exposed values and deleted
+  afterwards, and any secret that appeared is rotated.
+
+  Masking of secrets in normal logs is covered by CB-CICD-SEC-022; job log retention by
+  CB-CICD-LOG-004.
+rationale: |
+  Debug logging exists to show what the job sees, which includes its environment and parameters.
+  On some platforms it prints masked variables in clear text. A debug flag left on turns every job
+  log into a copy of the pipeline's secrets, readable by anyone who can view the logs.
+impact: |
+  None known. Troubleshooting needs an explicit re-run with debug enabled.
+notes: |
+  GitLab: setting `CI_DEBUG_TRACE` in the runner configuration enables debug logs for every job on
+  that runner and bypasses the role checks that normally apply to debug logging.
+
+audit:
+  manual: |
+    Use a role that can read pipeline files, CI/CD variables and runner configuration (values are
+    not needed). poutine (`debug_enabled`) detects the pipeline-file cases.
+
+    1. Search pipeline files and variables at every level:
+       - **GitHub**: repository, environment and organization secrets or variables named
+         `ACTIONS_STEP_DEBUG` or `ACTIONS_RUNNER_DEBUG` set to `true`.
+       - **GitLab**: `CI_DEBUG_TRACE` or `CI_DEBUG_SERVICES` set to `true` in `.gitlab-ci.yml`
+         `variables:`, in project, group or instance CI/CD variables, or in the runner
+         `config.toml` `environment`.
+       - **Azure DevOps**: a pipeline or variable group variable `system.debug` set to `true`.
+    2. Fail if any debug or trace variable is set to `true` outside a single troubleshooting run.
+
+remediation:
+  manual: |
+    1. Remove the persistent debug variables (`ACTIONS_STEP_DEBUG`, `ACTIONS_RUNNER_DEBUG`,
+       `CI_DEBUG_TRACE`, `CI_DEBUG_SERVICES`, `system.debug`) from pipeline files, variables and
+       runner configuration.
+    2. When debugging is needed, use the platform's one-off option (GitHub **Re-run jobs** >
+       **Enable debug logging**, Azure DevOps **Run pipeline** > **Enable system diagnostics**) or
+       a variable set for one manual run only.
+    3. Delete the debug job logs after use and rotate any secret that appeared in them.
+
+references:
+  - title: Enabling debug logging
+    url: https://docs.github.com/en/actions/how-tos/monitor-workflows/enable-debug-logging
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Troubleshooting CI/CD variables (debug logging)
+    url: https://docs.gitlab.com/ci/variables/variables_troubleshooting/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Review logs to diagnose pipeline issues
+    url: https://learn.microsoft.com/azure/devops/pipelines/troubleshooting/review-logs
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: poutine
+    url: https://github.com/boostsecurityio/poutine
+    publisher: BoostSecurity
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-022
+    type: related
+  - id: CB-CICD-LOG-004
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

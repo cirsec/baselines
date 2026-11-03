@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver la création de dépôts et de projets aux propriétaires
+finding:
+  title: N'importe quel membre peut créer des dépôts ou des projets
+  description: Un membre qui crée un dépôt en devient administrateur et peut y rattacher des runners auto-hébergés, des secrets et des webhooks, ou publier du code hors de toute revue, sans qu'un propriétaire s'en aperçoive.
+description: |
+  La création de dépôts, de projets et de groupes est réservée aux propriétaires de
+  l'organisation, aux administrateurs de l'instance ou à une équipe dédiée qui traite les demandes
+  (formulaire, workflow IssueOps ou pipeline de provisionnement). L'étendue de la restriction est
+  fixée par `{{ creation_scope }}` :
+
+  - `public` : les membres ne peuvent pas créer de dépôts ou projets publics ; seuls les
+    propriétaires le peuvent.
+  - `all` : les membres ne peuvent créer aucun dépôt, projet ou groupe de premier niveau ; la
+    création passe par les propriétaires ou l'équipe dédiée.
+
+  Sur les instances auto-hébergées, la même restriction couvre la suppression de projets,
+  réservée aux administrateurs avec un délai de suppression qui permet de restaurer un projet
+  supprimé. Le droit de créer de nouvelles organisations relève de CB-CICD-IAM-013 ; la visibilité
+  par défaut des nouveaux dépôts de CB-CICD-SCM-002.
+rationale: |
+  Le créateur d'un dépôt ou d'un projet en devient administrateur. Ce rôle peut enregistrer des
+  runners, stocker des secrets, ajouter des clés de déploiement et des webhooks, et changer la
+  visibilité. Une création libre permet donc à n'importe quel membre de monter un pipeline non
+  revu avec ses propres identifiants, ou de publier du code interne en créant une copie publique.
+  Restreindre la création garde chaque dépôt sous un propriétaire qui applique les protections de
+  l'organisation dès le premier jour.
+impact: |
+  Les équipes attendent qu'un propriétaire ou le processus de provisionnement crée les dépôts.
+  Automatiser le circuit de demande (dépôt modèle, IssueOps, Terraform) pour que la restriction ne
+  ralentisse pas les livraisons. Les dépôts existants ne sont pas touchés.
+notes: |
+  Sur Gitea et Forgejo, une limite de dépôts par utilisateur se contourne si les utilisateurs
+  ordinaires peuvent créer des organisations : poser `DISABLE_REGULAR_ORG_CREATION = true` en même
+  temps que la limite. Sur GitLab, le réglage d'instance ne s'applique qu'aux nouveaux groupes ;
+  les groupes existants gardent leur propre valeur.
+parameters:
+  creation_scope: Création réservée aux propriétaires ou à une équipe dédiée.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur qui peut lire les réglages de
+    l'organisation ou de l'instance.
+
+    1. Identifier qui peut créer des dépôts, des projets et des groupes sur chaque plate-forme.
+    2. Vérifier le réglage de la plate-forme :
+       - **GitHub** : **Enterprise** > **Policies** > **Repositories** > **Repository creation**,
+         et dans chaque organisation **Settings** > **Member privileges** > **Repository creation**.
+         Avec `public`, le type **Public** n'est pas autorisé aux membres ; avec `all`, les membres
+         ne peuvent créer aucun type (propriétaires seuls, ou équipe de création / IssueOps).
+       - **GitLab** : **Admin** > **Settings** > **General** > **Visibility and access controls** >
+         **Default minimum role required to create projects** et **Allowed to delete projects**
+         (Administrators), et **Admin** > **Settings** > **General** > **Account and limit** >
+         **Allow new users to create top-level groups** et **Default projects limit**. Pour
+         `public`, le niveau **Public** figure dans **Restricted visibility levels** afin que seuls
+         les administrateurs puissent créer des projets publics.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Autorisations** : la permission
+         **Créer des projets** n'est accordée qu'aux Administrateurs de collection de projets.
+       - **Gitea / Forgejo** : `app.ini` `[repository] MAX_CREATION_LIMIT` (`0` avec des exceptions
+         par utilisateur posées par un administrateur), `[admin] DISABLE_REGULAR_ORG_CREATION = true`
+         et `[service] DEFAULT_ALLOW_CREATE_ORGANIZATION = false`.
+    3. Échec si, pour la valeur `{{ creation_scope }}`, des membres sans rôle de propriétaire ou
+       d'administrateur peuvent créer les dépôts ou projets concernés.
+remediation:
+  manual: |
+    1. Mettre en place un circuit de demande pour les nouveaux dépôts (dépôt modèle, formulaire,
+       workflow IssueOps ou infrastructure as code) traité par les propriétaires ou une équipe
+       dédiée.
+    2. Appliquer la restriction :
+       - **GitHub** : en tant que propriétaire d'entreprise, régler **Repository creation** pour
+         restreindre les membres (décocher **Public**, ou désactiver toute création par les membres
+         pour `all`) ; sinon le régler par organisation dans **Member privileges**.
+       - **GitLab** : en tant qu'administrateur, régler **Default minimum role required to create
+         projects** sur **Owners** ou **Administrators**, **Allowed to delete projects** sur
+         **Administrators**, décocher **Allow new users to create top-level groups** et
+         restreindre le niveau de visibilité **Public**. Mettre à jour le rôle de création de
+         projets des groupes existants.
+       - **Azure DevOps** : en tant qu'Administrateur de collection de projets, mettre **Créer des
+         projets** à **Non défini** ou **Refuser** pour tous les groupes sauf les Administrateurs de
+         collection de projets.
+       - **Gitea / Forgejo** : poser `MAX_CREATION_LIMIT = 0`, `DISABLE_REGULAR_ORG_CREATION = true`
+         et `DEFAULT_ALLOW_CREATE_ORGANIZATION = false` dans `app.ini`, redémarrer le service, puis
+         relever la limite par utilisateur seulement là où c'est nécessaire.
+    3. Passer en revue les dépôts créés par des membres par le passé et attribuer un propriétaire à
+       chacun.

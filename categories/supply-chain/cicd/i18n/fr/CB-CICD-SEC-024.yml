@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-024
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les identifiants hors des livrables de build et des espaces de travail
+finding:
+  title: Des livrables publiés ou des espaces de travail téléversés contiennent des identifiants
+  description: Les jetons laissés dans la configuration d'un dépôt récupéré, dans des fichiers d'environnement ou dans des couches d'image sont livrés avec le livrable, où chaque consommateur de l'image, du paquet ou du résultat de build peut les extraire.
+description: |
+  Les sorties de build qui quittent le job (images de conteneur, paquets, binaires, charts Helm,
+  espaces de travail et artefacts téléversés, caches) ne contiennent aucun identifiant : pas
+  d'identifiants Git issus de la récupération du code, pas de fichiers `.env` ou de configuration
+  avec des secrets, pas d'identifiants de registre ou cloud dans les couches d'image ou les
+  arguments de build, pas de valeurs de paramètres secrets écrites dans des fichiers. Chaque
+  sortie est analysée à la recherche de secrets avant sa publication.
+
+  Les steps de récupération du code ne conservent pas le jeton de job dans l'espace de travail
+  quand les steps suivants n'ont pas besoin d'opérations Git authentifiées.
+
+  Les secrets en dur dans les définitions de pipeline relèvent de CB-CICD-SEC-021 ; l'accès aux
+  artefacts, de CB-CICD-ART-010 ; le nettoyage des espaces de travail sur les runners persistants,
+  de CB-CICD-RUN-013.
+rationale: |
+  Les livrables voyagent bien plus loin que les journaux : les images sont tirées par tous les
+  environnements et parfois publiées, les paquets sont copiés en miroir, et les espaces de travail
+  téléversés sont téléchargeables par quiconque voit l'exécution. Un identifiant intégré à l'un
+  d'eux est exposé à tous ces lecteurs pendant toute la vie du livrable. Les jetons de
+  récupération conservés sont une voie courante par laquelle un jeton de job finit dans un espace
+  de travail téléversé.
+impact: |
+  Les steps qui poussent avec Git après la récupération du code doivent s'authentifier
+  explicitement. Ajouter une analyse des secrets avant publication allonge le pipeline.
+notes: |
+  `actions/checkout` conserve le jeton de job par défaut ; depuis la version 6, l'identifiant est
+  stocké dans un fichier séparé sous `$RUNNER_TEMP` au lieu de `.git/config`, mais il reste sur
+  disque pour le reste du job. Sur TeamCity, les utilisateurs qui peuvent lire les artefacts de
+  build dans le répertoire de données ont le même accès que ceux qui peuvent voir les paramètres
+  d'exécution du build, valeurs des paramètres mot de passe comprises.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline et aux magasins d'artefacts.
+
+    1. Revoir les fichiers de pipeline :
+       - **GitHub** : les steps `actions/checkout` définissent `persist-credentials: false` sauf si
+         un step ultérieur pousse ; `actions/upload-artifact` ne téléverse pas tout l'espace de
+         travail ni `.git`. L'audit zizmor `artipacked` signale les deux cas.
+       - **TeamCity** : les chemins d'artefacts des configurations de build n'incluent pas de
+         fichiers où des steps écrivent des paramètres mot de passe ou des identifiants, et les
+         steps de build n'écrivent pas ces valeurs dans le répertoire de récupération.
+       - Toutes plates-formes : les Dockerfiles et constructions d'images utilisent les secrets de
+         build (par exemple `RUN --mount=type=secret`) plutôt que `ARG`, `ENV` ou des fichiers
+         copiés pour les identifiants.
+    2. Analyser un échantillon de livrables et d'images récemment publiés (y compris toutes les
+       couches des images) avec un outil d'analyse des secrets.
+    3. Échec si un livrable, une couche d'image, un cache ou un espace de travail téléversé contient
+       un identifiant, ou si une récupération conserve le jeton de job sans step qui en ait besoin.
+remediation:
+  manual: |
+    1. Retirer les identifiants des sorties de build :
+       - **GitHub** : ajouter `persist-credentials: false` à `actions/checkout` ; restreindre les
+         chemins d'`actions/upload-artifact` aux fichiers nécessaires.
+       - **TeamCity** : restreindre les chemins d'artefacts et modifier les steps de build pour que
+         les valeurs secrètes ne soient pas écrites dans des fichiers publiés.
+       - Images de conteneur : passer les identifiants en secrets de build et utiliser des builds
+         multi-étapes pour qu'aucune couche de l'image finale ne les contienne.
+    2. Ajouter au pipeline une analyse des secrets des livrables et images avant publication, qui
+       fait échouer le job en cas de détection.
+    3. Supprimer les livrables publiés qui contenaient des identifiants et renouveler ces
+       identifiants.

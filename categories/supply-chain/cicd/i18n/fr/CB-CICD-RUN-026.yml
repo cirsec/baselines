@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-026
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne jamais considérer les plages IP partagées des runners hébergés comme une identité
+finding:
+  title: Des systèmes cibles font confiance aux jobs CI sur l'adresse IP des runners hébergés
+  description: Les plages de sortie des runners hébergés sont partagées par tous les clients du service CI ; un pare-feu ou une API qui les admet laisse le job de n'importe quel autre client atteindre le système comme s'il s'agissait du pipeline de l'organisation.
+description: |
+  Les systèmes appelés par les jobs CI (comptes cloud, registres, API internes, bases de données)
+  authentifient le job avec des identifiants ou un jeton d'identité fédérée (CB-CICD-SEC-015), jamais par
+  les seules plages IP source des runners hébergés du service CI. Quand une liste d'adresses autorisées
+  est aussi nécessaire, elle s'ajoute à l'authentification, et la fonctionnalité de la plate-forme qui fait
+  sortir les jobs par des plages IP publiées n'est activée que sur les jobs qui en ont besoin.
+rationale: |
+  Les plages IP publiées des runners hébergés identifient l'éditeur CI, pas l'organisation : les jobs de
+  tous les clients sortent par les mêmes adresses. Une liste d'autorisation qui les admet sans
+  authentification est ouverte à quiconque a un compte sur ce service CI.
+impact: |
+  Les systèmes protégés uniquement par des listes d'adresses IP ont besoin d'une authentification avant de
+  pouvoir assouplir la liste. Les fonctionnalités d'IP statiques coûtent souvent plus cher et ralentissent
+  les jobs : les limiter aux jobs qui en ont besoin réduit aussi le coût.
+notes: |
+  La fonctionnalité de plages IP de CircleCI s'active par job (`circleci_ip_ranges: true`) ; les plages
+  sont partagées par tous les clients CircleCI qui utilisent la fonctionnalité, et les jobs macOS y sont
+  toujours restreints. Les plages IP des agents hébergés Buildkite sont partagées entre clients
+  Buildkite ; Buildkite recommande OIDC pour authentifier les jobs hébergés et la Meta API pour les
+  adresses propres de la plate-forme.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux politiques de pare-feu et de réseau des systèmes cibles, et aux
+    définitions de pipeline.
+
+    1. Lister les règles de pare-feu, groupes de sécurité et listes d'autorisation d'API qui incluent les
+       plages IP publiées de l'éditeur CI.
+    2. Pour chacune, vérifier que le système cible exige aussi un identifiant ou un jeton du job.
+    3. Par produit :
+       - **CircleCI** : lister les jobs avec `circleci_ip_ranges: true` et vérifier que chacun appelle un
+         système restreint par IP.
+       - **Buildkite** : les services appelés depuis les agents hébergés les authentifient avec des jetons
+         OIDC, pas par les plages IP des agents hébergés.
+    4. Échec si un système admet des jobs CI sur la base des plages IP partagées des runners hébergés sans
+       autre authentification, ou si la fonctionnalité de plages IP est activée sur des jobs qui n'en ont
+       pas besoin.
+remediation:
+  manual: |
+    1. Ajouter une authentification au système cible (fédération OIDC, identifiants à portée limitée),
+       puis ne garder la liste d'adresses IP que comme couche supplémentaire.
+    2. **CircleCI** : retirer `circleci_ip_ranges: true` des jobs qui n'atteignent pas de système restreint
+       par IP.
+    3. **Buildkite** : configurer les services cibles pour valider les jetons OIDC Buildkite des jobs
+       hébergés.
+    4. Préférer des runners auto-hébergés avec des adresses de sortie appartenant à l'organisation pour les
+       systèmes qui doivent rester restreints par IP.

@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-003
+title: Reserve repository visibility changes, deletion and transfer to owners
+finding:
+  title: Repository administrators can make repositories public, delete or transfer them
+  description: Any repository administrator can publish private code by switching it to public, or delete or transfer a repository whose name is still referenced by workflows, letting an attacker re-register the name and serve malicious code.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [visibility, repository-deletion, repo-jacking, governance]
+
+applicability:
+  versions: [github]
+
+description: |
+  Only organization or enterprise owners can change a repository's visibility, delete or transfer
+  a repository, and delete issues. Repository administrators keep day-to-day administration but
+  cannot take these irreversible or exposing actions on their own.
+
+  Default visibility of new repositories is covered by CB-CICD-SCM-002; who can create
+  repositories by CB-CICD-SCM-001.
+rationale: |
+  Making a private repository public exposes its whole history and changes how GitHub Actions
+  treats it: fork pull requests from anyone, and self-hosted runners reachable from public code.
+  Deleting or transferring a repository frees its name; when other workflows still reference
+  `owner/name@ref`, an attacker who re-creates that name serves code to them (repo-jacking).
+  Deleting issues removes the record of reported problems. Owner-only control keeps these
+  actions rare and visible.
+impact: |
+  Repository administrators ask an owner to publish, archive instead of delete, or transfer a
+  repository. Owners should handle these requests quickly and record them.
+
+audit:
+  manual: |
+    Use an organization owner role (or enterprise owner for enterprise policies).
+
+    1. Check the enterprise policies in **Enterprise** > **Policies** > **Repositories** (shown as
+       **Member privileges** on recent GitHub Enterprise Cloud): **Repository visibility change**,
+       **Repository deletion and transfer** and **Repository issue deletion** are restricted to
+       owners, or delegated to organizations.
+    2. Where delegated, check each organization's **Settings** > **Member privileges** >
+       **Admin repository permissions**: the options allowing members to change repository
+       visibility, to delete or transfer repositories, and to delete issues are cleared.
+    3. Review the audit log for `repo.access` (visibility), `repo.destroy` and `repo.transfer`
+       events made by non-owners.
+    4. Fail if a member with only repository admin permission can change visibility, delete or
+       transfer a repository, or delete issues.
+
+remediation:
+  manual: |
+    1. As enterprise owner, set **Repository visibility change**, **Repository deletion and
+       transfer** and **Repository issue deletion** to the owner-only policy; otherwise, as
+       organization owner, clear the matching options under **Member privileges** >
+       **Admin repository permissions**.
+    2. Document how teams request publication, deletion or transfer, and prefer archiving to
+       deletion.
+    3. Before deleting or transferring a repository whose name may be referenced by workflows or
+       package manifests, keep a placeholder or redirect so the name cannot be re-registered.
+
+references:
+  - title: Enforcing repository management policies in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restricting repository visibility changes in your organization
+    url: https://docs.github.com/en/organizations/managing-organization-settings/restricting-repository-visibility-changes-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Setting permissions for deleting or transferring repositories
+    url: https://docs.github.com/en/organizations/managing-organization-settings/setting-permissions-for-deleting-or-transferring-repositories
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Allowing people to delete issues in your organization
+    url: https://docs.github.com/en/organizations/managing-organization-settings/allowing-people-to-delete-issues-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.3"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.4"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-001
+    type: related
+  - id: CB-CICD-SCM-002
+    type: related
+  - id: CB-CICD-COMP-012
+    type: related
+  - id: CB-CICD-IAM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

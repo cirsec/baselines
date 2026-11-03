@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les branches par défaut et de release de chaque dépôt
+finding:
+  title: Des branches par défaut ou de release n'ont aucune règle de protection
+  description: Sans règle de protection, quiconque a un accès en écriture peut pousser, réécrire ou supprimer la branche à partir de laquelle les releases sont construites, et la modification s'exécute dans des pipelines qui détiennent des secrets de production.
+description: |
+  Chaque dépôt a une règle de protection active (ruleset, branche protégée, stratégie de branche
+  ou restriction de branche) sur sa branche par défaut et sur ses branches de release (par exemple
+  `release/*`). Les règles sont définies au niveau de l'organisation, du groupe, du projet ou de
+  l'instance chaque fois que la plate-forme le permet, pour que les nouveaux dépôts soient protégés
+  dès leur création et que les administrateurs de dépôt ne puissent pas retirer la protection.
+
+  Ce contrôle vérifie que la protection existe et qu'elle est active. Le contenu attendu de la
+  règle relève des contrôles dédiés : modifications uniquement par pull request
+  (CB-CICD-SCM-007), ni push forcé ni suppression (CB-CICD-SCM-009), revue (CB-CICD-SCM-012) et
+  vérifications de statut (CB-CICD-SCM-019). La protection de toute branche capable de déclencher un
+  pipeline porteur de secrets relève de CB-CICD-PIPE-008.
+rationale: |
+  Les branches par défaut et de release sont celles que les pipelines construisent et déploient,
+  et sur plusieurs plates-formes c'est le statut « protégé » qui donne accès aux variables
+  protégées, aux runners protégés et aux environnements de déploiement. Une branche par défaut non
+  protégée permet à un seul compte développeur compromis de pousser une définition de pipeline
+  modifiée qui exfiltre ces secrets, ou de réécrire l'historique pour masquer la modification.
+impact: |
+  Les développeurs ne peuvent plus pousser directement sur les branches protégées une fois les
+  règles dédiées appliquées. L'automatisation qui y poussait a besoin d'un circuit revu ou d'une
+  exemption à portée étroite.
+notes: |
+  Sur GitHub, les rulesets de dépôt sur des dépôts privés nécessitent GitHub Team ou Enterprise, et
+  les rulesets d'organisation qui ciblent de nombreux dépôts nécessitent GitHub Enterprise. Rulesets
+  et règles de protection de branche se cumulent : la version la plus restrictive de chaque règle
+  s'applique. Sur GitLab, un administrateur d'instance (Premium) peut empêcher les propriétaires de
+  groupe de modifier la protection de la branche par défaut. Sur Gitea, ne pas ajouter
+  l'utilisateur système **Gitea Actions** aux listes d'autorisation de push, de push forcé ou de
+  suppression sauf si un workflow de release en a besoin.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de protection de branche (administrateur de dépôt,
+    maintainer ou propriétaire d'organisation).
+
+    1. Lister les dépôts et, pour chacun, sa branche par défaut et ses motifs de branches de
+       release.
+    2. Vérifier qu'une règle active les cible :
+       - **GitHub** : **Organization** > **Settings** > **Rules** > **Rulesets** et dans chaque dépôt
+         **Settings** > **Rules** / **Branches** : un ruleset **Active** cible `~DEFAULT_BRANCH` et
+         les motifs de release (API : `GET /repos/{owner}/{repo}/rules/branches/{branch}` renvoie des
+         règles). Le check `Branch-Protection` de Scorecard et legitify aident à grande échelle.
+       - **GitLab** : **Admin** > **Settings** > **Repository** > **Default branch** > **Initial
+         default branch protection** et **Settings** > **Repository** > **Default branch** de chaque
+         groupe valent **Fully protected** ; **Settings** > **Repository** > **Protected branches**
+         de chaque projet liste la branche par défaut et les motifs de release.
+       - **Azure DevOps** : **Paramètres du projet** > **Dépôts** > **Tous les dépôts** >
+         **Stratégies** > **Stratégies de branche** contient **Protéger la branche par défaut de
+         chaque dépôt** (et les motifs de release), ou la branche par défaut de chaque dépôt porte
+         l'icône de stratégie dans **Repos** > **Branches**.
+       - **Bitbucket Cloud** : **Settings** > **Workflow** > **Branch restrictions** du dépôt
+         contient une restriction sur les branches principale et de release.
+       - **Bitbucket Data Center** : **Project settings** > **Branch permissions** (ou **Repository
+         settings** > **Branch permissions**) couvre les branches par défaut et de release.
+       - **Gitea / Forgejo** : **Settings** > **Branches** du dépôt contient une règle de protection
+         dont le motif correspond aux branches par défaut et de release.
+    3. Échec si la branche par défaut ou de release d'un dépôt n'est couverte par aucune règle
+       active, ou si une règle est désactivée ou seulement en mode évaluation.
+remediation:
+  manual: |
+    1. Définir la protection de façon centralisée quand c'est possible :
+       - **GitHub** : créer un ruleset d'organisation ou d'entreprise ciblant `~DEFAULT_BRANCH` et
+         `release/*` sur tous les dépôts (commencer en mode **Evaluate** sur GitHub Enterprise Cloud
+         pour voir ce qui serait bloqué), puis le passer en **Active**.
+       - **GitLab** : régler **Initial default branch protection** sur **Fully protected** pour
+         l'instance et les groupes, décocher **Allow owners to manage default branch protection per
+         group** (Premium), et ajouter des règles de branche protégée pour les motifs de release.
+       - **Azure DevOps** : dans **Paramètres du projet** > **Dépôts** > **Tous les dépôts** >
+         **Stratégies**, ajouter une stratégie de branche inter-dépôts avec **Protéger la branche par
+         défaut de chaque dépôt** et une autre pour les motifs de release.
+       - **Bitbucket** : ajouter des restrictions de branche (Cloud) ou des permissions de branche au
+         niveau du projet (Data Center) sur les branches principale et de release.
+       - **Gitea / Forgejo** : ajouter dans chaque dépôt une règle de protection pour les motifs des
+         branches par défaut et de release.
+    2. Compléter chaque règle avec les réglages exigés par CB-CICD-SCM-007, CB-CICD-SCM-009,
+       CB-CICD-SCM-012 et CB-CICD-SCM-019.
+    3. Intégrer la vérification aux modèles de création de dépôt pour que les nouveaux dépôts
+       démarrent protégés.

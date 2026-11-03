@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les envois qui contiennent des secrets sur tous les dépôts
+finding:
+  title: Le serveur Git accepte des commits qui contiennent des identifiants
+  description: Sans protection à l'envoi, un jeton versionné par erreur atteint le serveur, ses forks et tous les clones avant qu'une analyse ne lève une alerte, et doit alors être traité comme divulgué.
+description: |
+  La protection des secrets à l'envoi (push protection) est activée sur tous les dépôts, y compris
+  les nouveaux : le serveur Git rejette les envois, modifications web et commits par API qui
+  contiennent des secrets détectés. Un contributeur qui pense qu'une détection est un faux positif
+  ne peut la contourner qu'en enregistrant une justification, et chaque contournement crée une
+  alerte qui est revue.
+
+  Quand `{{ bypass }}` vaut `delegated`, les contributeurs ne peuvent pas contourner seuls : une
+  demande de contournement est approuvée par une équipe de relecteurs nommée, et les pull requests
+  ne peuvent pas être fusionnées dans les branches par défaut tant qu'elles introduisent des alertes
+  de secrets ouvertes.
+
+  La détection sur le contenu existant et le traitement des alertes relèvent de CB-CICD-SEC-009.
+parameters:
+  bypass: reason-required active la protection à l'envoi sur tous les dépôts et permet aux contributeurs de la contourner avec une justification enregistrée ; delegated impose l'approbation de chaque contournement par une équipe de relecteurs et bloque les fusions tant que des alertes de secrets sont ouvertes.
+rationale: |
+  Une fois un secret envoyé, il doit être révoqué, car des copies existent hors du contrôle de
+  l'organisation. Bloquer l'envoi est le seul moment où une erreur ne coûte qu'un commit modifié.
+  Réserver le contournement à des relecteurs empêche un contributeur pressé de faire passer un vrai
+  identifiant.
+impact: |
+  Les développeurs doivent parfois réécrire des commits locaux qui contiennent des valeurs de test
+  ressemblant à des secrets. Le contournement délégué ajoute une étape de revue. La protection à
+  l'envoi sur les dépôts privés nécessite un produit payant de protection des secrets sur GitHub et
+  Azure DevOps, et GitLab Ultimate.
+notes: |
+  La protection à l'envoi ne couvre que les motifs à haute confiance pris en charge par chaque
+  produit et peut ne pas bloquer les anciens formats de jetons ; elle complète l'analyse
+  (CB-CICD-SEC-009) sans la remplacer. La règle de push GitLab **Prevent pushing secret files**
+  (Premium) ne bloque que des fichiers par leur nom, comme les fichiers de clé privée, pas les
+  valeurs secrètes dans d'autres fichiers.
+audit:
+  manual: |
+    Utiliser un rôle de responsable sécurité ou d'auditeur qui peut lire les réglages de sécurité
+    du code.
+
+    1. Vérifier que la protection à l'envoi est activée sur chaque dépôt et pour les nouveaux :
+       - **GitHub** : la configuration de sécurité du code attachée à tous les dépôts active **Push
+         protection** sous **Secret Protection** (REST :
+         `security_and_analysis.secret_scanning_push_protection.status` vaut `enabled` sur chaque
+         dépôt).
+       - **GitLab** (Ultimate) : sur les instances auto-hébergées, **Admin** > **Settings** >
+         **Security and compliance** > **Secret detection** > **Allow secret push protection** est
+         coché, et chaque projet a **Secure** > **Security configuration** > **Secret push
+         protection** activé.
+       - **Azure DevOps** : **Advanced Security** ou **Secret Protection** est activé sur chaque
+         dépôt (la protection à l'envoi est activée avec) et elle n'a pas été désactivée dans les
+         paramètres du dépôt.
+    2. Revoir les contournements sur la dernière période : alertes de contournement de GitHub,
+       événements d'audit GitLab de protection à l'envoi ignorée, alertes Azure DevOps créées par
+       des envois utilisant `skip-secret-scanning:true`. Vérifier que chaque contournement a une
+       justification et a été revu.
+    3. Quand `{{ bypass }}` vaut `delegated`, vérifier aussi :
+       - **GitHub** : dans la configuration, **Push protection** > **Bypass privileges** désigne
+         des rôles ou équipes précis ; et un ensemble de règles sur les branches par défaut inclut
+         **Require secret scanning alerts are resolved**.
+    4. Échec si un dépôt n'a pas de protection à l'envoi, si les contournements ne sont pas revus,
+       ou, pour `delegated`, si n'importe quel contributeur peut contourner sans approbation.
+remediation:
+  manual: |
+    1. Activer la protection à l'envoi partout :
+       - **GitHub** : modifier la configuration de sécurité du code de l'organisation ou de
+         l'entreprise, activer **Push protection**, l'appliquer à tous les dépôts et la définir par
+         défaut pour les nouveaux.
+       - **GitLab** : les administrateurs cochent **Allow secret push protection** ; activer ensuite
+         **Secret push protection** par projet ou pour tous les projets d'un groupe via l'API.
+       - **Azure DevOps** : activer **Secret Protection** au niveau organisation ou projet avec
+         l'activation automatique pour les nouveaux dépôts.
+    2. Publier la procédure de contournement : GitHub demande une justification dans l'interface ;
+       les utilisateurs GitLab contournent avec `git push -o secret_push_protection.skip_all` ou
+       `[skip secret push protection]` dans un message de commit ; les utilisateurs Azure DevOps
+       ajoutent `skip-secret-scanning:true` au message de commit. Revoir chaque semaine les alertes
+       ou événements d'audit qui en résultent.
+    3. Quand `{{ bypass }}` vaut `delegated` sur GitHub (avec GitHub Secret Protection) : régler
+       **Bypass privileges** sur une équipe de relecteurs, et ajouter la règle **Require secret
+       scanning alerts are resolved** (préversion publique) à un ensemble de règles ciblant les
+       branches par défaut.

@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-019
+title: Verify TLS certificates and SSH host keys on repository connections
+finding:
+  title: CI/CD or GitOps tools connect to Git servers without verifying their identity
+  description: With certificate or host key checks skipped, an attacker on the network path can impersonate the Git server, serve modified code or manifests to the build or the cluster, and capture the credentials used to connect.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [tls, ssh, known-hosts, gitops, source-access]
+applicability:
+  versions: [argo-cd, tekton, teamcity, flux]
+
+description: |
+  CI/CD servers, pipeline engines and GitOps controllers that fetch from Git servers verify the
+  server's identity on every connection: TLS certificates are validated against public or
+  declared private certificate authorities, and SSH connections check the server's host key
+  against a pinned `known_hosts` entry. Options that skip TLS or host key verification are not
+  used, and private keys stored on the server for SSH access are protected with a passphrase.
+
+  TLS versions and ciphers of the platform itself are covered by CB-CICD-PLAT-004; read-only scope
+  of the credentials by CB-CICD-SEC-014.
+rationale: |
+  Repository connections carry the code that will be built or deployed and the credentials that
+  authenticate the tool. If the tool trusts any certificate or any host key, a DNS or network
+  attacker can feed it altered sources, which become build output or cluster state, and harvest
+  its credentials. Pinning known hosts and validating certificates closes that path at low cost.
+impact: |
+  Private Git servers need their CA certificate or host keys declared in each tool, and these must
+  be updated when the server's certificate authority or host key changes.
+notes: |
+  TeamCity stores uploaded SSH private keys on disk without extra encryption, which is why the
+  keys themselves must carry a passphrase. Flux requires a `known_hosts` entry in SSH secrets used
+  by `GitRepository` objects and has no option to skip TLS verification.
+
+audit:
+  manual: |
+    Use read access to the tools' repository configuration.
+
+    1. List the repository connections of each tool and check:
+       - **Argo CD**: repository secrets (`argocd.argoproj.io/secret-type: repository` or
+         `repo-creds`) do not set `insecure: "true"`; `argocd repo list` shows no repository added
+         with `--insecure-skip-server-verification`; private CAs are declared in the
+         `argocd-tls-certs-cm` ConfigMap and SSH host keys of every SSH repository in
+         `argocd-ssh-known-hosts-cm`.
+       - **Tekton**: the `feature-flags` ConfigMap in the `tekton-pipelines` namespace sets
+         `require-git-ssh-secret-known-hosts: "true"`, and Git SSH secrets include `known_hosts`.
+       - **TeamCity**: **Project** > **SSH Keys** holds only passphrase-protected keys; the server
+         and agents keep an `.ssh/known_hosts` file for every Git host and host key checking is not
+         disabled in VCS roots.
+       - **Flux**: secrets referenced by `GitRepository.spec.secretRef` for SSH contain
+         `known_hosts`; HTTPS repositories with a private CA reference it through `ca.crt`.
+    2. Fail if any connection skips TLS or SSH host key verification, if an SSH Git secret has no
+       `known_hosts` entry where the tool supports one, or if an SSH private key stored on the
+       server has no passphrase.
+
+remediation:
+  manual: |
+    1. Collect the CA certificates and SSH host keys of the Git servers from a trusted channel
+       (the server administrators or the provider's published fingerprints).
+    2. Configure each tool:
+       - **Argo CD**: add CAs with `argocd cert add-tls` or the `argocd-tls-certs-cm` ConfigMap and
+         host keys with `argocd cert add-ssh` or `argocd-ssh-known-hosts-cm`, then remove
+         `insecure` from repository secrets.
+       - **Tekton**: add `known_hosts` to Git SSH secrets, then set
+         `require-git-ssh-secret-known-hosts: "true"` in `feature-flags`.
+       - **TeamCity**: replace uploaded SSH keys with passphrase-protected ones and maintain
+         `.ssh/known_hosts` on the server and agents.
+       - **Flux**: recreate SSH secrets with `flux create secret git`, which records `known_hosts`,
+         and add `ca.crt` for private CAs.
+  rollback: |
+    If a connection fails after enabling verification, fix the declared CA or host key; do not
+    re-enable the skip options.
+
+references:
+  - title: Private repositories
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Authentication at run time
+    url: https://tekton.dev/docs/pipelines/auth/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Additional configuration options
+    url: https://tekton.dev/docs/pipelines/additional-configs/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Git repositories
+    url: https://fluxcd.io/flux/components/source/gitrepositories/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-23
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-CICD-SEC-014
+    type: related
+  - id: CB-CICD-PLAT-004
+    type: related
+  - id: CB-CICD-RUN-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

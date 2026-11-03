@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rechercher les secrets dans tous les dépôts et traiter chaque détection comme une fuite d'identifiant
+finding:
+  title: Les dépôts ne sont pas analysés pour y trouver des secrets, ou les alertes de secrets restent ouvertes
+  description: Les jetons et clés versionnés dans le code source ou son historique restent utilisables tant que personne ne regarde, et quiconque a un accès en lecture au dépôt, à un fork ou à un clone peut les trouver.
+description: |
+  L'analyse des secrets s'exécute sur tous les dépôts de l'organisation, y compris les nouveaux dès
+  leur création, et couvre tout l'historique Git, pas seulement les nouveaux commits. Les alertes
+  sont adressées à un propriétaire nommé (l'équipe du dépôt ou l'équipe sécurité), et chaque
+  détection confirmée est traitée comme une fuite d'identifiant : il est d'abord révoqué ou
+  renouvelé chez l'émetteur, puis retiré du code, et l'alerte est close avec l'action menée.
+
+  Quand `{{ detection_depth }}` vaut `extended`, l'analyse utilise aussi les vérifications de
+  validité pour prioriser les secrets actifs, des motifs génériques (non liés à un fournisseur) et
+  personnalisés pour les formats d'identifiants internes, et le préfixe de jeton propre à
+  l'organisation quand la plate-forme permet aux administrateurs de le changer, déclaré dans tous
+  les outils d'analyse utilisés.
+
+  Le blocage des secrets avant leur envoi relève de CB-CICD-SEC-010 ; les secrets dans les
+  définitions et réglages de pipeline, de CB-CICD-SEC-021.
+parameters:
+  detection_depth: provider analyse tous les dépôts et leur historique avec les motifs fournisseurs de la plate-forme et adresse les alertes ; extended ajoute les vérifications de validité, des motifs génériques et personnalisés, et un préfixe de jeton propre à l'organisation déclaré dans les outils d'analyse.
+rationale: |
+  Les secrets versionnés sont l'une des sources les plus courantes de fuite d'identifiants, et
+  l'historique Git les conserve après la correction du fichier. Les attaquants analysent
+  automatiquement les dépôts publics et divulgués et utilisent les identifiants valides en quelques
+  minutes. Tout analyser et traiter chaque détection comme un incident, en révoquant avant de
+  nettoyer, ferme la fenêtre entre la fuite et son exploitation.
+impact: |
+  La première analyse des dépôts existants peut lever de nombreuses alertes à trier. L'analyse des
+  dépôts privés sur GitHub et Azure DevOps nécessite une licence payante de protection des
+  secrets ; certaines fonctions GitLab nécessitent Ultimate.
+notes: |
+  Sur GitLab, changer le préfixe des jetons d'accès personnels fait manquer aux détecteurs intégrés
+  les jetons portant le nouveau préfixe tant que le jeu de règles de la détection de secrets en
+  pipeline n'est pas personnalisé. Sur Bitbucket Data Center, l'analyse des secrets est activée par
+  défaut ; les forks utilisent leurs propres règles et n'héritent pas de celles du parent.
+audit:
+  manual: |
+    Utiliser un rôle de responsable sécurité ou d'auditeur qui peut lire les réglages de sécurité
+    du code et les alertes d'analyse des secrets.
+
+    1. Vérifier que l'analyse est activée sur tous les dépôts et appliquée aux nouveaux :
+       - **GitHub** : **Settings** de l'**Organization** (ou de l'**Enterprise**) > **Advanced
+         Security** > **Configurations** : la configuration attachée active **Secret scanning**
+         (GitHub Secret Protection pour les dépôts privés et internes), est appliquée à tous les
+         dépôts et définie par défaut pour les nouveaux (**Use as default for newly created
+         repositories** = **All repositories**).
+       - **GitLab** : chaque projet exécute la détection de secrets en pipeline
+         (`include: template: Jobs/Secret-Detection.gitlab-ci.yml`, une politique de sécurité ou une
+         politique d'exécution d'analyse), et un pipeline par projet a tourné avec
+         `SECRET_DETECTION_HISTORIC_SCAN: "true"`. La détection en pipeline fonctionne sur toutes
+         les offres ; les résultats dans le rapport de vulnérabilités et l'application par
+         politique nécessitent Ultimate.
+       - **Azure DevOps** : **Paramètres du projet** > **Repos** > **Dépôts** : **Advanced
+         Security** ou **Secret Protection** (payant) est activé sur chaque dépôt, et sous
+         **Paramètres**, **Activer automatiquement Advanced Security pour les nouveaux dépôts** est
+         activé (ou **Paramètres de l'organisation** > **Dépôts** > activation automatique pour les
+         nouveaux projets). L'activation analyse tout l'historique.
+       - **Bitbucket Data Center** : l'analyse des secrets n'est pas désactivée dans
+         `bitbucket.properties`, aucun projet ni dépôt n'est listé sous **Secret scanning** >
+         **Excluded repositories** sans justification, et les règles d'autorisation (allowlist)
+         sont revues.
+       - Autres plates-formes : un outil comme gitleaks ou TruffleHog s'exécute sur chaque dépôt,
+         en CI et sur tout l'historique.
+    2. Revoir les alertes ouvertes : chacune a un propriétaire, et les alertes plus anciennes que le
+       délai de réponse de l'organisation ont une action enregistrée (révoqué, faux positif
+       justifié).
+    3. Quand `{{ detection_depth }}` vaut `extended`, vérifier aussi :
+       - **GitHub** : la configuration active **Validity checks** et les motifs non-fournisseurs,
+         et des motifs personnalisés existent au niveau organisation ou entreprise pour les
+         formats de jetons internes.
+       - **GitLab** : sur les instances auto-hébergées, **Admin** > **Settings** > **General** >
+         **Account and limit** > **Personal access token prefix** est réglé sur une valeur propre à
+         l'organisation, et le jeu de règles de la détection de secrets en pipeline inclut ce
+         préfixe.
+       - **Azure DevOps** : les vérifications de validité font partie de Secret Protection ;
+         vérifier que les alertes sont triées en commençant par le statut **Active**.
+    4. Échec si un dépôt n'est pas analysé, si l'historique n'a jamais été analysé, si des alertes
+       n'ont pas de propriétaire, ou si un secret confirmé a été retiré du code sans être révoqué.
+remediation:
+  manual: |
+    1. Activer l'analyse sur tous les dépôts et pour les nouveaux :
+       - **GitHub** : créer ou modifier une configuration de sécurité du code avec **Secret
+         scanning** activé, l'appliquer à tous les dépôts et la définir par défaut pour les
+         nouveaux.
+       - **GitLab** : ajouter le modèle `Jobs/Secret-Detection.gitlab-ci.yml`, ou l'imposer par une
+         politique d'exécution d'analyse sur les groupes ; lancer une analyse historique par
+         projet.
+       - **Azure DevOps** : dans **Paramètres de l'organisation** > **Dépôts** (ou **Paramètres du
+         projet** > **Repos** > **Paramètres**), choisir **Tout activer**, activer **Secret
+         Protection** et l'activation automatique pour les nouveaux projets ou dépôts.
+       - **Bitbucket Data Center** : garder l'analyse des secrets activée et retirer les exclusions
+         injustifiées.
+    2. Adresser les alertes : désigner des propriétaires par dépôt et envoyer les notifications à
+       l'équipe propriétaire et à l'équipe sécurité.
+    3. Pour chaque détection : révoquer ou renouveler chez l'émetteur, vérifier dans les journaux
+       de l'émetteur s'il a été utilisé, puis retirer le secret du code et clore l'alerte avec
+       l'action menée.
+    4. Quand `{{ detection_depth }}` vaut `extended`, activer les vérifications de validité et les
+       motifs non-fournisseurs, définir des motifs personnalisés pour les jetons internes, et sur
+       GitLab auto-hébergé, définir un préfixe de jeton d'accès personnel propre à l'organisation
+       et l'ajouter au jeu de règles de détection.

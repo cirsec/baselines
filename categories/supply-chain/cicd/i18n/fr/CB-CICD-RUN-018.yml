@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-018
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter agents et conteneurs de job sous des utilisateurs non root au moindre privilège
+finding:
+  title: Des agents ou conteneurs de job tournent en root ou sous des identités privilégiées
+  description: Un agent qui tourne en root ou sous une identité ayant des droits sur la plate-forme CI, ou des conteneurs de job en root avec les capacités par défaut, permettent à n'importe quel job d'élever ses privilèges sur l'hôte du runner ou d'appeler la plate-forme avec plus de droits que le jeton du job.
+parameters:
+  runtime_profile: Restrictions d'exécution des agents et conteneurs de job. non-root signifie des utilisateurs non root dédiés sans sudo et sans capacités ajoutées (Pod Security Admission restricted, ou baseline quand les builds ont besoin de root) ; locked-down ajoute un système de fichiers racine en lecture seule ou des dossiers d'agent en lecture seule et des profils seccomp et AppArmor ou SELinux imposés.
+description: |
+  Les processus d'agent et de runner tournent sous un compte de service local dédié, non root, sans droits
+  sudo, incapable de lire les données du contrôleur, et qui n'est pas une identité connue de la
+  plate-forme CI ou de l'annuaire. Les conteneurs de job tournent sous un utilisateur non root avec les
+  capacités Linux retirées et l'élévation de privilèges désactivée ; sur Kubernetes, les namespaces qui
+  exécutent des builds imposent Pod Security Admission `restricted` (ou `baseline` pour les builds qui
+  ont réellement besoin de root) par une politique d'admission, pas seulement par des valeurs par défaut.
+
+  Avec `{{ runtime_profile }}` à `locked-down`, les conteneurs utilisent aussi un système de fichiers
+  racine en lecture seule (ou des montages en lecture seule pour les outils et tâches de l'agent) et des
+  profils seccomp et AppArmor ou SELinux imposés.
+
+  Le mode privilégié relève de CB-CICD-RUN-016, les montages de l'hôte de CB-CICD-RUN-017, les comptes de
+  service Kubernetes de CB-CICD-RUN-019.
+rationale: |
+  Le job hérite de tout ce que l'agent peut faire. Un agent qui tourne sous un compte adossé à Entra ID
+  peut appeler directement les API Azure DevOps et prendre le contrôle de l'organisation ; un agent qui
+  tourne en root permet à n'importe quel job d'installer une persistance sur l'hôte. Root dans un
+  conteneur avec les capacités par défaut facilite les évasions.
+impact: |
+  Certaines étapes de build supposent root (installation de paquets, écriture dans les chemins système).
+  Les images doivent être adaptées, ou ces étapes déplacées au moment de la construction des images. Un
+  système de fichiers racine en lecture seule nécessite des volumes `emptyDir` ou temporaires
+  inscriptibles pour les sorties de build.
+notes: |
+  Les pods Argo Workflows tournent en root par défaut ; une image d'exécuteur non root
+  (`argoexec:<version>-nonroot`, UID 8737) existe mais n'est pas celle par défaut. Le réglage
+  `set-security-context` de Tekton (défaut `true`) ne s'applique qu'aux conteneurs injectés par Tekton,
+  pas aux Steps et Sidecars de l'utilisateur, et Tekton considère l'élévation de privilèges via
+  `podTemplate` comme de la responsabilité du cluster. Les contrôleurs Flux sont livrés avec un contexte
+  de sécurité restreint ; vérifier que les patchs ne l'assouplissent pas.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux hôtes ou manifestes des runners, et aux namespaces et réglages
+    d'admission du cluster quand les builds tournent sur Kubernetes.
+
+    1. Pour chaque type de runner, vérifier le compte système du processus d'agent, ses groupes et ses
+       droits sudo.
+    2. Vérifier l'utilisateur, les capacités et le contexte de sécurité des conteneurs de job.
+    3. Par produit :
+       - **Azure DevOps** : les agents Windows tournent sous `NT AUTHORITY\NETWORK SERVICE`, Local Service
+         ou un gMSA ; les agents Linux et macOS tournent sous un utilisateur non root dédié sans sudo.
+         L'identité de l'agent n'est pas un compte Entra ID et n'est pas membre de **Project Collection
+         Service Accounts**. Les jobs conteneur posent `resources.containers[].mountReadOnly` avec
+         `externals`, `tasks` et `tools` à `true` quand `{{ runtime_profile }}` vaut `locked-down`.
+       - **GitLab** : `config.toml` `[runners.docker]` pose `user` sur un utilisateur non root et
+         `cap_drop` (par exemple `["ALL"]` avec un `cap_add` minimal) ; les runners Kubernetes posent un
+         contexte de sécurité non root.
+       - **Jenkins** : les agents tournent sous un utilisateur non root sans sudo et sans accès au
+         répertoire du contrôleur.
+       - **Argo Workflows** : les workflows ou les valeurs par défaut des workflows
+         (`workflow-controller-configmap`) posent `securityContext.runAsNonRoot: true` et l'image
+         d'exécuteur non root.
+       - **Tekton** : les namespaces de build portent `pod-security.kubernetes.io/enforce: restricted` (ou
+         `baseline`), ou une politique d'admission bloque les steps privilégiés et l'élévation via
+         `podTemplate` ; `feature-flags` garde `set-security-context: "true"` et, pour `locked-down`,
+         `set-security-context-read-only-root-filesystem: "true"`.
+       - **Flux** : les déploiements des contrôleurs gardent leur contexte de sécurité par défaut (toutes
+         les capacités retirées, système de fichiers racine en lecture seule, seccomp `RuntimeDefault`,
+         exécution non root).
+    4. Échec si un agent tourne en root, avec sudo, ou sous une identité de la plate-forme ou de
+       l'annuaire, ou si des conteneurs de job tournent en root avec les capacités par défaut là où une
+       politique d'admission pourrait l'empêcher ; avec `{{ runtime_profile }}` à `locked-down`, échec aussi
+       si les systèmes de fichiers racine ou dossiers d'agent sont inscriptibles ou si les profils seccomp
+       et AppArmor ou SELinux ne sont pas imposés.
+remediation:
+  manual: |
+    1. Réinstaller les agents sous un compte de service local dédié sans sudo, et retirer toute identité de
+       la plate-forme ou de l'annuaire de l'hôte de l'agent.
+    2. Par produit :
+       - **Azure DevOps** : reconfigurer les agents pour tourner sous Network Service, un gMSA ou un
+         utilisateur non root dédié ; ajouter `mountReadOnly` pour `externals`, `tasks` et `tools` aux
+         ressources conteneur.
+       - **GitLab** : poser `user`, `cap_drop = ["ALL"]` et le `cap_add` minimal dans `[runners.docker]`,
+         et un contexte de sécurité non root pour les runners Kubernetes.
+       - **Argo Workflows** : poser `runAsNonRoot` et `runAsUser` dans les valeurs par défaut des
+         workflows et passer à la variante non root de l'image d'exécuteur.
+       - **Tekton** : étiqueter les namespaces de build avec Pod Security Admission `restricted` et ajouter
+         une politique d'admission pour `podTemplate` ; activer
+         `set-security-context-read-only-root-filesystem` en profil durci.
+       - **Jenkins** : exécuter les processus d'agent et conteneurs d'agent sous un utilisateur non root.
+    3. Corriger les images et étapes qui échouent en non root, puis imposer la politique.

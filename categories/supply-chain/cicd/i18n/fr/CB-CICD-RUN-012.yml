@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Utiliser des runners auto-hébergés éphémères qui exécutent un seul job chacun
+finding:
+  title: Des runners auto-hébergés persistent entre les jobs
+  description: Un runner qui enchaîne les jobs garde fichiers, processus, caches et identifiants des exécutions précédentes ; un seul job malveillant peut voler les données des jobs suivants ou installer une porte dérobée qui survit jusqu'à la reconstruction de l'hôte.
+parameters:
+  ephemeral_scope: Runners auto-hébergés qui doivent être éphémères. untrusted-or-shared couvre les runners qui exécutent du code de pull request ou de fork, ou qui servent plusieurs projets ; all couvre tous les runners auto-hébergés.
+description: |
+  Les runners auto-hébergés de la portée fixée par `{{ ephemeral_scope }}` sont éphémères : chaque job
+  tourne dans une machine virtuelle ou un conteneur créé pour lui à partir d'une image propre, et
+  l'environnement est détruit à la fin du job. Le runner s'enregistre pour un seul job (enregistrement
+  éphémère ou just-in-time, mode un job, instances autoscalées à usage unique), de sorte que la
+  plate-forme ne peut pas lui en envoyer un second.
+
+  - `untrusted-or-shared` : runners qui exécutent du code de pull requests, de forks ou d'autres sources
+    non fiables, et runners partagés par plusieurs projets ;
+  - `all` : tous les runners auto-hébergés, y compris ceux dédiés à un seul projet de confiance.
+
+  Les runners persistants restants relèvent de CB-CICD-RUN-013 (espace de travail propre).
+rationale: |
+  Les builds sur une même machine ne sont pas isolés les uns des autres. Les secrets passés en ligne de
+  commande sont visibles des autres processus, les fichiers survivent dans les espaces de travail et les
+  caches, et un job compromis peut modifier le logiciel du runner lui-même. Rendre chaque environnement à
+  usage unique supprime la persistance qui transforme un mauvais job en compromission durable, et
+  correspond à ce que SLSA Build L3 attend d'un environnement de build isolé.
+impact: |
+  Provisionner un environnement neuf par job allonge le démarrage et exige de l'autoscaling (Actions
+  Runner Controller, docker-autoscaler, profils d'agents cloud, exécuteurs Kubernetes). Les caches doivent
+  passer sur un stockage partagé prévu pour cela (CB-DEP-CI-004). Les journaux des runners doivent être
+  expédiés hors de l'hôte avant la destruction de l'environnement (CB-CICD-RUN-027).
+notes: |
+  GitHub déconseille l'autoscaling avec des runners persistants, car des jobs peuvent arriver sur un
+  runner en cours d'arrêt ; les jetons d'enregistrement expirent au bout d'une heure et ne doivent pas
+  être intégrés aux images. Avec l'exécution `host` de Forgejo, le fichier d'état du runner est lisible par
+  les jobs : le mode éphémère est alors la seule protection contre l'usurpation du runner. Réutiliser le
+  matériel pour des runners just-in-time demande toujours une automatisation qui l'efface. Les services de
+  build cloud à capacité réservée ou préchauffée qui gardent les instances entre les builds comptent comme
+  des runners persistants pour ce contrôle.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur en lecture sur les réglages des runners et un accès en lecture au code
+    de provisionnement des runners.
+
+    1. Lister les runners auto-hébergés de la portée avec leur mode de provisionnement et le nombre de jobs
+       que chaque instance exécute avant d'être détruite.
+    2. Par produit :
+       - **GitHub** : les runners sont enregistrés avec `config.sh --ephemeral`, avec une configuration
+         just-in-time obtenue par l'API REST, ou via des runner scale sets d'Actions Runner Controller.
+       - **GitLab** : les runners autoscalés utilisent `MaxBuilds = 1` (Docker Machine) ou
+         `max_use_count = 1` (docker-autoscaler) ; les hôtes statiques n'exécutent que des jobs de
+         confiance et posent `FF_ENABLE_JOB_CLEANUP`.
+       - **Gitea** : les runners sont enregistrés avec `act_runner register --ephemeral`.
+       - **Forgejo** : les runners sont enregistrés avec `--ephemeral` et tournent avec
+         `forgejo-runner one-job`.
+       - **Woodpecker** : les agents autoscalés posent `WOODPECKER_AGENT_SINGLE_WORKFLOW=true` (défaut
+         `false`).
+       - **Azure DevOps** : les builds de pull requests et de forks utilisent des agents hébergés par
+         Microsoft ; les agents auto-hébergés ne gardent pas d'état entre les jobs.
+       - **Jenkins** : les jobs non fiables tournent sur des agents provisionnés par un cloud (Kubernetes,
+         EC2) pour un build, pas sur des agents statiques partagés.
+       - **TeamCity** : les builds non fiables tournent sur des agents cloud jetables.
+       - **Buildkite** : les agents tournent avec `--disconnect-after-job` sur une VM ou un conteneur créé
+         par job.
+       - **CircleCI** : le container runner crée un pod éphémère par job ; les machine runners de la portée
+         sont recréés après chaque job.
+       - **AWS CodeBuild** : les projets runner lancent un build par job sur du calcul à la demande.
+    3. Échec si un runner de la portée fixée par `{{ ephemeral_scope }}` peut exécuter plus d'un job dans
+       le même environnement.
+remediation:
+  manual: |
+    1. Construire une image de runner et un autoscaler qui crée un environnement par job et le supprime
+       après le job.
+    2. Par produit :
+       - **GitHub** : enregistrer les runners avec `--ephemeral` ou des configurations just-in-time, ou
+         déployer des runner scale sets d'Actions Runner Controller.
+       - **GitLab** : utiliser docker-autoscaler avec `max_use_count = 1` (ou Docker Machine avec
+         `MaxBuilds = 1`), ou l'exécuteur Kubernetes.
+       - **Gitea / Forgejo** : enregistrer avec `--ephemeral` et démarrer un runner par job
+         (`forgejo-runner one-job` sur Forgejo).
+       - **Woodpecker** : poser `WOODPECKER_AGENT_SINGLE_WORKFLOW=true` sur les agents autoscalés.
+       - **Azure DevOps** : déplacer les builds de pull requests vers des pools hébergés par Microsoft.
+       - **Jenkins / TeamCity** : configurer des agents cloud créés pour un build et arrêtés après lui.
+       - **Buildkite** : démarrer les agents avec `--disconnect-after-job` et détruire l'instance quand
+         l'agent s'arrête.
+    3. Supprimer les runners persistants une fois que les runners éphémères portent la charge.

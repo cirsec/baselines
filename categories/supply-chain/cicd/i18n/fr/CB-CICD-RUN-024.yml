@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-024
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter sans accès réseau les étapes de compilation et d'empaquetage des releases
+finding:
+  title: Les étapes de build de release peuvent accéder au réseau
+  description: Quand les étapes de compilation et d'empaquetage d'une release peuvent télécharger pendant le build, une source de dépendances, un script de build ou un outil compromis peut injecter du code qui n'est consigné nulle part, ou exfiltrer les sources et les secrets du build.
+description: |
+  Les étapes d'un build de release qui compilent, lient et empaquettent l'artefact tournent de manière
+  hermétique : elles n'ont aucun accès réseau, sauf au stockage qui contient les sources et les
+  dépendances récupérées et vérifiées lors d'une étape précédente. La récupération des dépendances est une
+  étape distincte, avec ses propres contrôles (épinglage, vérification, registres approuvés), et sa sortie
+  est la seule entrée de l'étape de build.
+
+  La limitation du téléchargement des dépendances aux registres approuvés relève de CB-DEP-CI-003 ; des
+  étapes de build à but unique alimentées de manière hermétique dans la conception du pipeline de
+  CB-CICD-PIPE-023.
+rationale: |
+  Un build qui télécharge pendant la compilation dépend de ce que le réseau renvoie à ce moment-là, ce qui
+  annule l'épinglage des dépendances et empêche de reproduire le build ou de le décrire complètement dans
+  la provenance. Sans accès réseau, une étape de build malveillante ne peut pas non plus exfiltrer le code
+  source ou les identifiants.
+impact: |
+  Les outils de build doivent être configurés pour un usage hors ligne (dépendances embarquées, caches
+  préremplis, options hors ligne des gestionnaires de paquets). Certains écosystèmes et outils de build
+  demandent un travail important avant de construire hors ligne.
+notes: |
+  Le mode d'exécution hermétique de Tekton est une fonctionnalité alpha : il exige
+  `enable-api-fields: "alpha"` dans la ConfigMap `feature-flags` et ne s'applique pas aux conteneurs
+  sidecar. SLSA v1.2 n'impose pas l'isolation réseau aux niveaux qu'il définit ; c'est un moyen courant de
+  montrer que la liste des entrées du build est complète.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux définitions des pipelines de release et à la configuration réseau des
+    runners.
+
+    1. Pour chaque pipeline de release, identifier les étapes de compilation et d'empaquetage et l'étape
+       qui récupère les dépendances.
+    2. Vérifier comment l'accès réseau est retiré pendant les étapes de build (conteneur sans réseau,
+       politique réseau, pare-feu, bac à sable de l'outil de build).
+    3. **Tekton** : les objets `TaskRun` de release qui compilent ou empaquettent portent l'annotation
+       `experimental.tekton.dev/execution-mode: hermetic`, et `feature-flags` a
+       `enable-api-fields: "alpha"`.
+    4. Lancer un build de release avec une étape qui tente de joindre un hôte externe ; elle doit échouer.
+    5. Échec si les étapes de compilation ou d'empaquetage d'une release peuvent atteindre le réseau
+       au-delà du stockage des sources et des dépendances préchargées.
+remediation:
+  manual: |
+    1. Découper les pipelines de release en une étape de récupération des dépendances et une étape de build
+       hors ligne.
+    2. Configurer les outils de build pour un usage hors ligne et passer les dépendances récupérées sous
+       forme de workspace ou de volume.
+    3. Retirer l'accès réseau de l'étape de build :
+       - **Tekton** : activer les champs d'API alpha et annoter le `TaskRun` de build avec
+         `experimental.tekton.dev/execution-mode: hermetic` ; garder le travail qui a besoin du réseau hors
+         des sidecars.
+       - Autres plates-formes : exécuter le conteneur de build sans réseau (par exemple `--network none`)
+         ou dans un namespace avec une politique de sortie en refus par défaut.
+    4. Consigner les entrées récupérées dans la provenance (CB-CICD-ART-003).

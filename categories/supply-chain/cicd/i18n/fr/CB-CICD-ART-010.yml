@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder privés les artefacts de build, les résultats de build et le stockage des artefacts
+finding:
+  title: Les artefacts de build, les journaux ou les buckets d'artefacts sont lisibles ou modifiables par tous
+  description: Des buckets d'artefacts publics, des projets de build publics ou des artefacts de job lisibles par tous exposent des binaires internes, des journaux et des secrets divulgués, et un bucket modifiable permet à un attaquant d'échanger des artefacts entre les étapes du pipeline sans toucher au code relu.
+description: |
+  Le stockage qui contient les artefacts de build et les sorties intermédiaires (buckets S3 ou autre
+  stockage objet, stockage d'artefacts intégré à la plate-forme, dépôts d'artefacts de workflow) est
+  privé : pas d'ACL publique, pas de politique de bucket publique, et seules les identités de pipeline
+  et de déploiement qui en ont besoin peuvent lire ou écrire. Les projets de build et pipelines dont
+  les journaux et artefacts seraient sinon publiés sont réglés en privé, sauf si le projet est
+  délibérément public et que ses builds ne contiennent rien de sensible.
+
+  L'accès aux artefacts des jobs sensibles (builds de publication, jobs qui manipulent des secrets)
+  est limité aux rôles qui en ont besoin, les artefacts expirent quand ils ne servent plus, et les
+  identifiants utilisés pour écrire dans le stockage d'artefacts sont limités à un espace de noms, un
+  projet ou un préfixe au lieu d'être partagés à l'échelle de la plate-forme.
+
+  La visibilité des journaux de job dans l'interface de la plate-forme relève de CB-CICD-PIPE-022 ; le
+  chiffrement du stockage des artefacts de CB-CICD-ART-011 ; qui peut publier dans les registres de
+  versions de CB-CICD-ART-009.
+rationale: |
+  Les sorties de build contiennent régulièrement des éléments qui n'auraient jamais dû quitter
+  l'organisation : binaires propriétaires, configuration, données de test et secrets affichés dans
+  les journaux ou empaquetés dans des archives. Un accès public en lecture les donne à n'importe qui.
+  L'accès en écriture est pire : des artefacts passés entre étapes par un bucket modifiable peuvent
+  être remplacés après la revue et avant le déploiement, et le code déployé ne correspond plus au code
+  relu.
+impact: |
+  Les consommateurs qui téléchargeaient des artefacts anonymement (par exemple les utilisateurs open
+  source d'un build public) ont besoin d'un autre canal, comme une page de version. Durcir les
+  politiques de bucket peut casser des pipelines qui reposaient sur des identifiants trop larges : il
+  faut tester.
+notes: |
+  L'agent Buildkite téléverse dans un bucket S3 du client avec l'ACL `public-read` par défaut
+  (`BUILDKITE_S3_ACL`) ; régler `private`, ou `bucket-owner-full-control` pour les buckets dont les
+  ACL sont désactivées. Restreindre qui peut changer la visibilité des pipelines Buildkite demande
+  l'offre Enterprise. Dans GitLab, `artifacts:access` ne contrôle que les téléchargements par
+  l'interface et l'API : les jobs utilisant un jeton de job peuvent toujours récupérer les artefacts
+  sauf si la visibilité CI/CD du projet est **Only project members**. Rendre public un projet AWS
+  CodeBuild expose tous ses résultats, journaux et artefacts passés, y compris ceux des builds exécutés
+  quand il était privé.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les politiques de stockage, les réglages des projets et les
+    définitions de pipeline.
+
+    1. Lister où les artefacts de build sont stockés : stockage intégré de la plate-forme et tout
+       bucket ou dépôt externe.
+    2. Pour chaque bucket externe, vérifier que l'accès public est bloqué, qu'aucune politique ni ACL
+       n'accorde la lecture ou l'écriture à tous ou à tous les utilisateurs authentifiés, et que seuls
+       les rôles de pipeline et de déploiement y ont accès.
+    3. Vérifier les réglages de la plate-forme :
+       - **Buildkite** : les agents posent `BUILDKITE_S3_ACL=private` (ou
+         `bucket-owner-full-control`) ; les pipelines ne sont pas publics sauf intention, et en
+         Enterprise la page **Security** de l'organisation restreint qui peut changer la visibilité
+         des pipelines.
+       - **AWS CodeBuild / CodePipeline** : les projets de build n'ont pas **Enable public build
+         access** coché ; le bucket d'artefacts CodePipeline a S3 Block Public Access activé et une
+         politique de bucket limitée aux rôles du pipeline et des actions.
+       - **GitLab** : les jobs qui produisent des artefacts sensibles posent `artifacts:access:
+         developer`, `maintainer` ou `none` et un `artifacts:expire_in` ; les projets publics avec
+         des pipelines sensibles règlent la visibilité CI/CD sur **Only project members**.
+       - **TeamCity** : **Project Settings** > **Artifacts Storage** pointe vers un bucket privé ou le
+         stockage intégré, et le répertoire d'artefacts du serveur n'est lisible que par le service.
+       - **Argo Workflows** : chaque espace de noms utilise son propre dépôt d'artefacts
+         (`artifactRepositoryRef` ou une ConfigMap `artifact-repositories` par espace de noms), les
+         identifiants viennent de l'identité de charge de travail (IRSA) plutôt que de clés
+         statiques, et `insecure` vaut `false`.
+    4. Échec si un stockage d'artefacts ou un projet de build est lisible ou modifiable publiquement
+       sans décision documentée, ou si un seul identifiant de stockage peut écrire les artefacts de
+       tous les projets.
+remediation:
+  manual: |
+    1. Bloquer l'accès public sur chaque bucket d'artefacts et réécrire sa politique pour n'autoriser
+       que les identités de pipeline et de déploiement qui en ont besoin.
+    2. Corriger les réglages de la plate-forme :
+       - **Buildkite** : exporter `BUILDKITE_S3_ACL=private` dans l'environnement de l'agent (ou
+         `bucket-owner-full-control` pour les buckets sans ACL) et rendre privés les pipelines qui ne
+         sont pas open source.
+       - **AWS CodeBuild** : dans **Build details** > **Project configuration** > **Edit**, décocher
+         **Enable public build access**.
+       - **GitLab** : ajouter `artifacts:access: developer` (ou plus strict) et un
+         `artifacts:expire_in` court aux jobs sensibles, et régler la visibilité CI/CD sur **Only
+         project members** quand c'est nécessaire.
+       - **TeamCity** : dans **Project Settings** > **Artifacts Storage**, utiliser un bucket privé
+         avec des identifiants limités.
+       - **Argo Workflows** : créer un dépôt d'artefacts par espace de noms et passer les identifiants
+         sur IRSA ou l'identité de charge de travail du cloud.
+    3. Renouveler tout secret présent dans des artefacts ou journaux auparavant publics.

@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-002
+title: Run static code analysis on every change request
+finding:
+  title: Code changes merge without static security analysis
+  description: Without static analysis on pull requests, injection flaws, unsafe deserialization and similar bugs reach the default branch unseen, where they are harder to find and fix.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, sast, code-scanning, pull-requests]
+
+description: |
+  Static application security testing (SAST) runs on every change request and on the default
+  branch of each repository that holds code, and:
+  - covers all the languages of the repository, including pipeline definition languages where the
+    tool supports them (for example GitHub Actions workflows in CodeQL);
+  - reports findings to the developer in the change request, not only in a separate dashboard;
+  - has its findings triaged by people: true positives are fixed or tracked, false positives are
+    dismissed with a reason.
+
+  Blocking merges on new high-severity findings is covered by CB-CICD-TEST-003, and central
+  enforcement of scans by CB-CICD-TEST-001.
+rationale: |
+  Static analysis finds classes of vulnerability that review often misses, at the moment the code
+  is written and cheapest to fix. Running it only on a schedule or on the default branch lets
+  flaws merge first. Findings that nobody triages pile up until the tool is ignored.
+impact: |
+  SAST adds pipeline time and produces false positives that need triage. Some engines are paid
+  (GitHub Code Security for private repositories, GitHub Code Security for Azure DevOps).
+notes: |
+  GitHub code scanning default setup needs GitHub Actions enabled on the repository. In Azure
+  DevOps, code scanning relies on Marketplace-distributed tasks: **Disable Marketplace tasks**
+  (CB-CICD-COMP-001) prevents default setup from running.
+
+audit:
+  manual: |
+    Use a role that can read security settings and alerts (security manager, project
+    administrator in read mode).
+
+    1. List repositories with code and check that SAST ran on recent change requests and on the
+       default branch, for all their languages (Scorecard `SAST` reports this for GitHub).
+    2. Check per platform:
+       - **GitHub**: repository **Settings** > **Advanced Security** > **Code scanning**: default
+         or advanced setup is enabled, with all detected languages including GitHub Actions;
+         alerts appear on pull requests.
+       - **Azure DevOps**: repository **Settings** > **GitHub Advanced Security**: **Code
+         scanning** is on (default setup) or pipelines run the `AdvancedSecurity-Codeql-Init`,
+         `AdvancedSecurity-Codeql-Analyze` tasks.
+       - **Other platforms**: a SAST job runs in change request pipelines (for example the GitLab
+         SAST template) and publishes its results where developers see them.
+    3. Look at a sample of findings older than 30 days and check they were triaged.
+    4. Fail if a repository with code has no SAST on change requests, if a language of the
+       repository is not covered, or if findings are not triaged.
+
+remediation:
+  manual: |
+    1. Enable SAST for every repository, ideally through the central configuration of
+       CB-CICD-TEST-001:
+       - **GitHub** (repository administrator or security manager): enable code scanning
+         **Default** setup, or advanced setup for compiled languages that need a custom build.
+       - **Azure DevOps** (Project Administrator, with the GitHub Code Security add-on): enable
+         **Code scanning** in the repository Advanced Security settings or add the CodeQL tasks to
+         a required template.
+       - **GitLab**: include the `Jobs/SAST.gitlab-ci.yml` template or the SAST component.
+    2. Assign triage of findings to the team that owns each repository and review the backlog
+       regularly.
+
+references:
+  - title: Configuring default setup for code scanning
+    url: https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configure-code-scanning
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set up code scanning for GitHub Advanced Security for Azure DevOps
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/security/github-advanced-security-code-scanning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Static application security testing (SAST)
+    url: https://docs.gitlab.com/user/application_security/sast/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-218, Secure Software Development Framework (SSDF) 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.7.2"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.7"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.2.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11(1)
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-001
+    type: related
+  - id: CB-CICD-TEST-003
+    type: related
+  - id: CB-CICD-SCM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

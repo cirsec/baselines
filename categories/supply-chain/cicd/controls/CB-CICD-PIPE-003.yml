@@ -1,0 +1,176 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-003
+title: Protect shared pipeline templates and enforce them on release pipelines
+finding:
+  title: Shared pipeline templates are writable by many users or not enforced on release pipelines
+  description: A template, library or central workflow that many pipelines include runs with each caller's secrets, so a single unreviewed change to it compromises every consuming pipeline; and teams that do not extend it can skip the required scan and provenance stages.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [pipeline-templates, shared-libraries, reusable-workflows, required-workflows, poisoned-pipeline-execution]
+
+description: |
+  Shared pipeline templates, shared libraries, reusable workflows and centrally injected workflows
+  live in dedicated repositories whose write access is limited to the team that owns them, with the
+  same branch protection and review as production code. They are shared only with the repositories
+  or projects that consume them, and consumers reference them at a pinned version.
+
+  The expected level is `{{ template_enforcement }}`:
+
+  - `protected-sources`: the sources of shared templates are write-restricted and shared only with
+    the consumers that need them;
+  - `mandatory-templates`: in addition, release and production pipelines must extend or include
+    the mandated templates through a platform mechanism (required workflows, pipeline execution
+    policies, required-template checks, workflow restrictions), so a team cannot remove the
+    required stages.
+
+  Pinning of third-party components is covered by CB-CICD-COMP-011; which scans the mandated
+  templates must run by CB-CICD-TEST-001.
+rationale: |
+  Templates multiply trust: their code runs inside every consuming pipeline with that pipeline's
+  secrets and permissions. Anyone who can push to the template repository can therefore act in all
+  of them at once. Conversely, if templates are optional, a team under pressure can drop the
+  security scan or the provenance step from its release pipeline and nothing stops the release.
+impact: |
+  Template owners become a dependency for every consuming team and need a release process.
+  Enforcement mechanisms differ per platform, and some need a higher edition (GitHub Enterprise
+  for ruleset workflows across an organization, GitLab Ultimate for pipeline execution policies).
+notes: |
+  Jenkins global trusted libraries run outside the Groovy sandbox with full controller rights;
+  folder-level libraries are always untrusted. On GitLab, compliance pipelines are deprecated in
+  favour of pipeline execution policies and the two should not be combined in the same project.
+  GitHub ruleset workflows cannot run most CodeQL actions (only `upload-sarif`).
+
+parameters:
+  - name: template_enforcement
+    type: enum
+    description: protected-sources requires write-restricted, narrowly shared template sources; mandatory-templates also forces release pipelines to use them.
+    allowed: [protected-sources, mandatory-templates]
+    default: protected-sources
+    profile_defaults:
+      hardened: mandatory-templates
+
+audit:
+  manual: |
+    Use a role that can read repository permissions, branch protection and pipeline policies.
+
+    1. List the shared template, library and reusable-workflow repositories and the people and
+       teams with write access to them. Check branch protection and required review on their
+       default and release branches.
+    2. Check how each platform shares and enforces them:
+       - **GitHub**: in the repository holding reusable workflows, **Settings** > **Actions** >
+         **General** > **Access** is **Not accessible** or limited to the organization that needs it.
+         For `mandatory-templates`, an organization or enterprise ruleset uses **Require workflows to
+         pass before merging** with the source repository, workflow path and a pinned ref
+         (GitHub Enterprise).
+       - **GitLab**: for `mandatory-templates`, the group has a pipeline execution policy in its
+         security policy project (**Secure** > **Policies**) that injects the required jobs into the
+         projects of the matching compliance framework (GitLab Ultimate).
+       - **Azure DevOps**: production pipelines use `extends: template: <file>@<repo>` pointing to
+         a central template repository, and for `mandatory-templates` the protected resources
+         (environments, service connections) have a **Required template** check.
+       - **Jenkins**: **Manage Jenkins** > **System** > **Global Trusted Pipeline Libraries** lists
+         only libraries whose repositories are protected like the controller configuration.
+       - **Gitea**: scoped workflow sources (**Site administration** or organization **Actions** >
+         scoped workflow sources) are limited to protected source repositories; instance-level
+         sources apply to every repository and cannot be opted out.
+       - **Argo Workflows**: for `mandatory-templates`, `workflow-controller-configmap` sets
+         `workflowRestrictions.templateReferencing: Secure`.
+    3. Fail if a shared template source is writable by users outside its owning team or shared more
+       widely than its consumers, or, for `{{ template_enforcement }}` = `mandatory-templates`, if
+       a release or production pipeline can run without the mandated template.
+
+remediation:
+  manual: |
+    1. Move shared templates, libraries and reusable workflows to dedicated repositories owned by
+       one team, with branch protection, required review and code owners.
+    2. Restrict sharing:
+       - **GitHub**: set **Access** to **Not accessible** or to the organization only in the
+         repository settings of the workflow source.
+       - **Jenkins**: keep only reviewed libraries in **Global Trusted Pipeline Libraries**; move
+         others to folder libraries, which run in the sandbox.
+       - **Gitea**: register scoped workflow sources at organization level rather than instance
+         level unless every repository must run them, and leave `SCOPED_WORKFLOW_DIRS` empty if
+         the feature is not used.
+    3. For `mandatory-templates`, enforce the templates:
+       - **GitHub**: add a ruleset with **Require workflows to pass before merging** on the default
+         branches of the target repositories (GitHub Enterprise), starting in **Evaluate** mode.
+       - **GitLab**: create a pipeline execution policy (`inject_policy` strategy) in the group's
+         security policy project, scoped to a compliance framework.
+       - **Azure DevOps**: make production pipelines extend the central template and add a
+         **Required template** check on production environments and service connections.
+       - **Argo Workflows**: set `workflowRestrictions.templateReferencing: Secure` so only
+         `workflowTemplateRef` workflows run and overrides of security fields are rejected.
+
+references:
+  - title: Secure use reference for GitHub Actions
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pipeline execution policies
+    url: https://docs.gitlab.com/user/application_security/policies/pipeline_execution_policies/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use templates for security in Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/templates
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Extending with Shared Libraries
+    url: https://www.jenkins.io/doc/book/pipeline/shared-libraries/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows - Workflow Restrictions
+    url: https://argo-workflows.readthedocs.io/en/latest/workflow-restrictions/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers poisoning through shared templates and skipping of required stages; other execution paths are covered by other PIPE controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.1"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-TEST-001
+    type: related
+  - id: CB-CICD-COMP-011
+    type: related
+  - id: CB-CICD-PIPE-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

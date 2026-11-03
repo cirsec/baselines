@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Générer sur la plate-forme de build une provenance signée pour chaque artefact publié
+finding:
+  title: Les artefacts publiés n'ont pas de provenance de build, ou une provenance écrite par le script de build lui-même
+  description: Sans provenance signée par la plate-forme, un consommateur ne peut pas savoir quel dépôt, quel commit et quel pipeline ont produit un artefact ; un binaire ou une image construits sur un poste de travail ou par un job altéré ressemblent alors à une vraie version.
+description: |
+  Chaque artefact publié (paquet, binaire, archive, image de conteneur) a une provenance de build au
+  format de provenance SLSA. Cette provenance identifie l'artefact par son empreinte et enregistre le
+  builder, la définition du build (dépôt, commit, fichier de pipeline ou de workflow) et les entrées
+  de premier niveau.
+
+  La provenance est générée et signée par la plate-forme de build, ou par un service de la
+  plate-forme comme une fonction d'attestation adossée à Sigstore, et non assemblée et signée par une
+  étape utilisateur avec une clé lisible par le job. Le niveau exigé est SLSA Build
+  {{ slsa_build_level }} : L2 signifie une provenance signée produite par la plate-forme hébergée ; L3
+  ajoute l'exigence que les étapes utilisateur ne puissent pas la falsifier, détaillée dans
+  CB-CICD-ART-002.
+
+  La diffusion de la provenance aux consommateurs relève de CB-CICD-ART-004, et sa vérification avant
+  déploiement de CB-CICD-ART-006. Les builds de test jamais publiés n'ont pas besoin de provenance.
+rationale: |
+  La provenance transforme « ce fichier vient de notre pipeline » en affirmation vérifiable. Sans
+  elle, un attaquant qui vole un identifiant de publication, ou un développeur qui construit et
+  téléverse à la main, peut diffuser un artefact que personne ne distingue d'une vraie version. Une
+  provenance signée par la plate-forme permet aux contrôles de déploiement et aux consommateurs de
+  rejeter les artefacts qui n'ont pas été construits depuis le dépôt et le pipeline attendus, et donne
+  aux équipes de réponse à incident les entrées exactes d'un build suspect.
+impact: |
+  Les pipelines de publication ont besoin d'une petite modification (une étape d'attestation, un
+  indicateur de configuration ou une autre méthode de push) et du droit d'obtenir un jeton OIDC. Les
+  dépôts privés exigent une offre payante sur certaines plates-formes. La provenance seule ne protège
+  de rien tant qu'elle n'est pas vérifiée (CB-CICD-ART-006).
+notes: |
+  Les métadonnées d'artefact générées par le runner GitLab (`RUNNER_GENERATE_ARTIFACTS_METADATA`) sont
+  produites par le runner et ne sont pas signées en elles-mêmes ; GitLab documente leur signature avec
+  son composant CI/CD SLSA. L'attestation SLSA niveau 3 de GitLab (`ATTEST_BUILD_ARTIFACTS`,
+  `ATTEST_CONTAINER_IMAGES`) est une expérimentation Ultimate derrière un feature flag, pas prête pour
+  la production. Google Cloud Build ne génère de provenance que pour les images listées dans le champ
+  `images` et stockées dans Artifact Registry, pas pour celles poussées par une étape `docker push`
+  explicite.
+parameters:
+  slsa_build_level: Niveau SLSA Build minimal de la provenance. L2 est une provenance signée par la plate-forme de build hébergée ; L3 exige en plus que les étapes de build ne puissent pas la falsifier.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline, les fichiers des versions publiées et
+    les métadonnées du registre.
+
+    1. Lister les artefacts publiés par les dernières versions (paquets, binaires, images).
+    2. Pour chacun, trouver sa provenance et vérifier qu'elle indique l'empreinte de l'artefact, le
+       builder, le dépôt et le commit source, et le fichier de pipeline ou de workflow.
+    3. Vérifier comment la provenance est produite :
+       - **GitHub** : le workflow de publication appelle `actions/attest` avec
+         `permissions: id-token: write` et `attestations: write` ; vérifier avec
+         `gh attestation verify <artefact> --owner <org>`. Les attestations d'artefacts sur les dépôts
+         privés et internes exigent GitHub Enterprise Cloud.
+       - **GitLab** : le job de build pose `RUNNER_GENERATE_ARTIFACTS_METADATA: "true"` et signe la
+         déclaration (composant CI/CD SLSA de GitLab), ou utilise `ATTEST_BUILD_ARTIFACTS` /
+         `ATTEST_CONTAINER_IMAGES` (Ultimate, expérimentation).
+       - **Google Cloud Build** : les builds de publication listent l'image dans `images:` (pas
+         d'étape `docker push`) et posent `options: requestedVerifyOption: VERIFIED` ; vérifier avec
+         `gcloud artifacts docker images describe <image>@sha256:<empreinte> --show-provenance`.
+       - **Tekton** : la ConfigMap `chains-config` règle `artifacts.taskrun.format` et
+         `artifacts.pipelinerun.format` sur `slsa/v2alpha4`, `artifacts.*.storage` contient `oci`, et
+         `artifacts.*.signer` n'est pas `none`.
+       - **Buildkite** : les paquets de Buildkite Package Registries sont publiés avec une provenance
+         SLSA (offre Enterprise), ou le pipeline produit et signe la provenance avec un outil externe.
+    4. Échec si un artefact publié n'a pas de provenance, si la provenance n'est pas signée, ou si elle
+       est signée avec une clé lisible par les étapes de build. En profil renforcé, échec aussi si la
+       provenance ne satisfait pas CB-CICD-ART-002.
+remediation:
+  manual: |
+    1. Choisir le mécanisme de provenance intégré à la plate-forme et l'activer dans chaque pipeline
+       de publication :
+       - **GitHub** : ajouter une étape `uses: actions/attest@<sha>` avec `subject-path` (ou
+         `subject-name` et `subject-digest` pour les images) et accorder `id-token: write`,
+         `attestations: write` (et `packages: write` pour les images) à ce seul job.
+       - **GitLab** : poser `RUNNER_GENERATE_ARTIFACTS_METADATA: "true"` sur le job de publication et
+         signer la déclaration avec le composant CI/CD SLSA de GitLab ; en Ultimate, évaluer
+         `ATTEST_BUILD_ARTIFACTS` quand il sortira du statut d'expérimentation.
+       - **Google Cloud Build** : remplacer les étapes `docker push` par le champ `images:` et poser
+         `options: requestedVerifyOption: VERIFIED` pour que le build échoue si la provenance ne peut
+         pas être générée.
+       - **Tekton** : modifier la ConfigMap `chains-config` de l'espace de noms `tekton-chains` et
+         poser `artifacts.taskrun.format: slsa/v2alpha4`, `artifacts.pipelinerun.format: slsa/v2alpha4`
+         et `artifacts.pipelinerun.storage: oci` (plus `tekton` si souhaité).
+       - **Buildkite** : activer la provenance SLSA de Package Registries (Enterprise), ou signer la
+         provenance avec cosign depuis une étape qui obtient une identité OIDC sans clé.
+    2. Supprimer toute étape utilisateur qui écrit et signe sa propre provenance avec une clé stockée.
+    3. Publier et vérifier la provenance (CB-CICD-ART-004, CB-CICD-ART-006).

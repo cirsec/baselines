@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-016
+title: Assess CI/CD security posture on a schedule with automated tools
+finding:
+  title: CI/CD platform and repository settings are never checked automatically
+  description: Branch protection, workflow permissions, tokens and organization settings drift after the initial setup, and nobody notices until an attacker uses a weakened setting.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [posture-management, scorecard, allstar, legitify, policy-as-code, continuous-assessment]
+
+description: |
+  The security-relevant settings of CI/CD platforms and repositories are checked on a schedule (at
+  least weekly) with an automated posture tool, for example OpenSSF Scorecard and Allstar on
+  GitHub, legitify on GitHub and GitLab, or policy-as-code rules run against the platform API.
+  Findings are recorded in a tracker with an owner and a due date, and their trend is reviewed.
+
+  With `posture_level` set to `enforced` (**{{ posture_level }}** here), the organization also sets
+  a minimum score for critical repositories (for example a Scorecard score of 7 or the threshold of
+  the Allstar Scorecard policy) and uses automatic remediation where the tool supports it (Allstar
+  `fix` action for policies that implement it).
+
+  Manual review of pipeline definitions is covered by CB-CICD-PIPE-007, and automated tests of
+  pipeline security controls by CB-CICD-TEST-009.
+rationale: |
+  Many CI/CD weaknesses are configuration that changes over time: a protection rule removed for an
+  urgent fix, a new repository created with defaults, an app granted broad access. One-time audits
+  miss these drifts. Scheduled automated checks catch them within days, and tracked findings make
+  sure they get fixed.
+impact: |
+  The scanners need read access to the organization (a GitHub App or token with read scopes), and
+  findings need an owner. Allstar issue or fix mode creates issues or changes settings in
+  repositories, which must be announced to repository owners.
+notes: |
+  The OpenSSF-hosted Allstar GitHub App has been retired; Allstar now runs as a GitHub Action from
+  the organization's `.allstar` repository, or as a self-hosted service.
+
+parameters:
+  - name: posture_level
+    type: enum
+    description: Required posture management. `scheduled-scan` requires scheduled automated scans with tracked findings; `enforced` also requires a minimum score for critical repositories and automatic remediation where supported.
+    allowed: [scheduled-scan, enforced]
+    default: scheduled-scan
+    profile_defaults:
+      hardened: enforced
+
+audit:
+  manual: |
+    Use read access to the scanner configuration, its results and the tracker.
+
+    1. Identify the posture tools in use, their scope (organizations, groups, repositories) and
+       their schedule.
+    2. **GitHub**: check that `ossf/scorecard-action` runs on a schedule in the repositories in
+       scope, or that Allstar runs from the organization `.allstar` repository (as a GitHub Action or
+       service) with the policies enabled; with `enforced`, check the `scorecard.yaml` `threshold`
+       and that the `action` is `issue` or `fix` where available. legitify reports the
+       `scorecard_score_too_low` policy for repositories under the threshold.
+    3. For other platforms, check that legitify or equivalent policy-as-code checks run on a schedule
+       against the platform API.
+    4. Take the last three reports and check that findings were recorded with an owner and that old
+       findings were closed or accepted.
+    5. Fail if no automated posture check runs on a schedule, if findings are not tracked, or (with
+       `enforced`) if critical repositories have no minimum score or score below it without an
+       accepted exception.
+
+remediation:
+  manual: |
+    1. Choose a posture tool for each platform and give it read-only access.
+    2. **GitHub**: add `ossf/scorecard-action` with a weekly `schedule` trigger to the repositories in
+       scope, or set up Allstar as a GitHub Action in a `.allstar` repository with the desired
+       policies; for `enforced`, set a `threshold` in `scorecard.yaml` and use `action: issue` or
+       `fix`.
+    3. For GitLab and other platforms, run legitify or policy-as-code checks from a scheduled
+       pipeline and export the results.
+    4. Send findings to the tracker with owners and due dates, and review the trend monthly.
+
+references:
+  - title: OpenSSF Scorecard
+    url: https://github.com/ossf/scorecard
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+  - title: Scorecard GitHub Action
+    url: https://github.com/ossf/scorecard-action
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+  - title: Allstar
+    url: https://github.com/ossf/allstar
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+  - title: legitify
+    url: https://github.com/Legit-Labs/legitify
+    publisher: Legit Security
+    kind: tool
+    accessed: 2026-11-03
+  - title: Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines (SP 800-204D)
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: partial
+    note: Detects insecure configuration on a schedule; fixing each weakness is covered by the specific controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.9.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CA-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+related_controls:
+  - id: CB-CICD-PLAT-015
+    type: related
+  - id: CB-CICD-PIPE-007
+    type: related
+  - id: CB-CICD-TEST-009
+    type: related
+  - id: CB-CICD-SCM-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

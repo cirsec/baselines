@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Publier la provenance et les signatures avec chaque version
+finding:
+  title: La provenance et les signatures existent mais les consommateurs ne peuvent pas les récupérer avec l'artefact
+  description: Des attestations qui restent dans la plate-forme de build, ou ne sont conservées que comme artefacts de job qui expirent, ne peuvent pas être vérifiées par les personnes et systèmes qui déploient la version ; la signature ne protège alors de rien en aval.
+description: |
+  Pour chaque version, la provenance et les signatures des artefacts sont diffusées aux
+  consommateurs à un endroit qu'ils retrouvent à partir de l'artefact lui-même : attachées à l'image
+  dans le registre OCI (comme référents ou tags `.sig` / `.att`), publiées à côté du paquet dans son
+  écosystème (par exemple les attestations npm ou PyPI), attachées à la version, ou disponibles via
+  l'API d'attestation de la plate-forme. Elles sont conservées aussi longtemps que l'artefact peut
+  être déployé.
+
+  La journalisation de transparence est réglée sur {{ transparency_log }}. Avec `required`, chaque
+  signature et attestation est aussi enregistrée dans un journal de transparence, pour que les
+  événements de signature puissent être audités et qu'une identité de signature compromise soit
+  repérée : le journal public Sigstore Rekor pour les artefacts publics, un journal privé pour les
+  artefacts privés, afin de ne pas divulguer les noms et empreintes internes.
+
+  La génération de la provenance relève de CB-CICD-ART-001, la signature de CB-CICD-ART-005 et la
+  vérification de CB-CICD-ART-006.
+rationale: |
+  La provenance ne protège une version que si celui qui déploie peut l'obtenir et la vérifier. Si les
+  attestations vivent dans un journal de build ou un artefact de job éphémère, le consommateur n'a
+  rien à vérifier et un attaquant qui remplace l'artefact dans le registre n'est pas détecté. Un
+  journal de transparence ajoute un enregistrement en ajout seul de chaque signature, ce qui rend
+  visible une identité de signature utilisée hors du pipeline normal.
+impact: |
+  Les registres doivent accepter les signatures et attestations attachées, et les politiques de
+  rétention ne doivent pas les supprimer avant l'artefact. Écrire dans le journal public Rekor
+  divulgue les noms d'artefacts, les empreintes et l'identité de signature ; les artefacts privés ont
+  besoin d'un journal de transparence privé, qui est un service de plus à exploiter.
+notes: |
+  GitHub écrit les attestations des dépôts publics dans l'instance publique Sigstore et son journal de
+  transparence, tandis que les dépôts privés utilisent l'instance Sigstore de GitHub, qui n'a pas de
+  journal de transparence. La méthode d'attestation `SIGSTORE` de GitLab enregistre les signatures
+  dans le journal public Rekor et n'est pas utilisée pour les projets privés ou internes. Dans Tekton
+  Chains, `transparency.enabled` vaut `false` par défaut et `transparency.url`
+  `https://rekor.sigstore.dev`.
+parameters:
+  transparency_log: Indique si les signatures et attestations doivent aussi être enregistrées dans un journal de transparence. optional laisse le choix à chaque pipeline ; required impose la journalisation de chaque version, dans un journal privé pour les artefacts privés.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les registres, les pages de versions et le magasin d'attestations.
+
+    1. Pour un échantillon de versions récentes, partir de l'artefact publié (empreinte d'image,
+       version de paquet, fichier de version) et essayer de récupérer sa provenance et sa signature
+       comme le ferait un consommateur.
+    2. Vérifier la rétention : attestations et signatures ne doivent pas être supprimées tant que
+       l'artefact peut encore être déployé.
+    3. Vérifier les réglages de la plate-forme :
+       - **GitHub** : `gh attestation verify <artefact> --owner <org>` trouve l'attestation ; pour les
+         images, les attestations sont poussées dans le registre quand l'étape `attest` pose
+         `push-to-registry: true`.
+       - **GitLab** : les signatures de conteneurs faites avec cosign sont stockées à côté de l'image
+         dans le registre de conteneurs ; les attestations SLSA niveau 3 (Ultimate, expérimentation)
+         sont listées sous **Build** > **Attestations**.
+       - **Google Cloud Build** :
+         `gcloud artifacts docker images describe <image>@sha256:<empreinte> --show-provenance`
+         renvoie la provenance stockée dans Artifact Registry.
+       - **Tekton** : `chains-config` stocke les attestations avec `artifacts.pipelinerun.storage` (ou
+         `artifacts.taskrun.storage`) incluant `oci` ; `transparency.enabled` vaut `true` quand le
+         paramètre est `required`, et `transparency.url` pointe vers un Rekor privé pour les
+         artefacts privés.
+    4. Échec si un consommateur ne peut pas récupérer la provenance et la signature d'une version à
+       partir de l'artefact, ou, quand le paramètre est `required`, si un événement de signature
+       d'une version manque dans le journal de transparence.
+remediation:
+  manual: |
+    1. Stocker attestations et signatures là où les consommateurs les cherchent :
+       - **GitHub** : garder l'étape `actions/attest` et poser `push-to-registry: true` pour les
+         images de conteneur afin que l'attestation soit stockée dans le registre à côté de l'image.
+       - **GitLab** : signer les images avec cosign dans le job de publication (sans clé, avec un
+         jeton `id_tokens`, CB-CICD-ART-005) pour que la signature soit poussée dans le registre de
+         conteneurs.
+       - **Tekton** : poser `artifacts.pipelinerun.storage: oci` (ou `tekton,oci`) dans
+         `chains-config`.
+       - Écosystèmes de paquets : publier avec la prise en charge des attestations de l'écosystème
+         (par exemple la provenance npm ou les attestations de publication de confiance PyPI) quand
+         elle existe.
+    2. Aligner les règles de nettoyage et de rétention du registre pour que les attestations vivent
+       aussi longtemps que leurs artefacts.
+    3. Quand le paramètre est `required` : activer la journalisation de transparence (Tekton :
+       `transparency.enabled: "true"`) et, pour les artefacts privés, exploiter une instance Rekor
+       privée et y faire pointer `transparency.url` (ou l'option cosign `--rekor-url`).
+    4. Documenter pour les consommateurs comment récupérer et vérifier les attestations
+       (CB-CICD-ART-006).

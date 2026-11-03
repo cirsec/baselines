@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les dépôts publics et les builds de forks à l'écart des runners auto-hébergés
+finding:
+  title: Des runners auto-hébergés acceptent des jobs de dépôts publics ou de pull requests de forks
+  description: Quiconque peut ouvrir une pull request sur un projet public peut exécuter du code sur un runner auto-hébergé qui lui est accessible, installer une persistance sur l'hôte, lire ce que les jobs précédents ont laissé et rebondir dans le réseau interne.
+description: |
+  Les runners et agents auto-hébergés ne sont accessibles ni aux dépôts publics, ni aux builds de pull
+  requests issues de forks. Les contributions non fiables tournent uniquement sur des runners hébergés par
+  la plate-forme, ou sur des runners dédiés créés pour un job puis détruits, dans un réseau isolé
+  (CB-CICD-RUN-012, CB-CICD-RUN-023).
+
+  Les secrets reçus par les builds de forks relèvent de CB-CICD-PIPE-010 ; l'approbation des pipelines
+  des contributeurs externes de CB-CICD-PIPE-009.
+rationale: |
+  Sur un projet public, l'auteur d'une pull request de fork est anonyme et la définition du workflow peut
+  être modifiée dans la pull request elle-même. Un runner auto-hébergé offre à ce code une machine dans le
+  réseau de l'organisation, souvent persistante et partagée avec d'autres jobs. La compromission de
+  runners auto-hébergés par des pull requests publiques est un chemin d'attaque documenté sur les projets
+  hébergés sur GitHub.
+impact: |
+  Les projets publics qui ont besoin de matériel spécifique ou d'accès réseau pour les builds de pull
+  requests doivent utiliser des runners éphémères isolés qui leur sont dédiés, ou exécuter ces
+  vérifications après la fusion.
+notes: |
+  Sur GitHub, les groupes de runners n'admettent que les dépôts privés par défaut ; le réglage peut être
+  changé par groupe, mais pas sur un groupe d'organisation partagé par une entreprise. CircleCI n'autorise
+  pas les runners auto-hébergés sur les projets publics qui construisent les pull requests de forks.
+  Outils d'audit : zizmor (`self-hosted-runner`), poutine (`pr_runs_on_self_hosted`), legitify et OpenSSF
+  Scorecard le vérifient sur GitHub.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire d'organisation ou d'administrateur en lecture.
+
+    1. Lister les dépôts et projets publics qui construisent des pull requests de forks.
+    2. Pour chacun, vérifier quels runners leurs jobs peuvent utiliser et si l'un d'eux est auto-hébergé.
+       - **GitHub** : **Organization** > **Settings** > **Actions** > **Runner groups** : la politique
+         d'accès aux dépôts d'aucun groupe n'admet les dépôts publics (champ d'API REST
+         `allows_public_repositories` à `false`) ; les dépôts publics n'ont pas de runners auto-hébergés de
+         dépôt. Les workflows des dépôts publics déclenchés par `pull_request` ou `pull_request_target`
+         n'utilisent pas de labels `runs-on: self-hosted`.
+       - **AWS CodeBuild** : les projets runner (runners GitHub Actions ou GitLab hébergés sur CodeBuild)
+         qui servent des dépôts publics exécutent chaque job dans un nouveau build (calcul à la demande),
+         pas sur une flotte à capacité réservée partagée avec des projets privés.
+       - **Azure DevOps** : les pipelines qui construisent des pull requests de forks utilisent des agents
+         hébergés par Microsoft.
+    3. Échec si un runner auto-hébergé qui persiste entre les jobs ou se trouve dans le réseau interne peut
+       exécuter des jobs d'un dépôt public ou d'une pull request de fork.
+remediation:
+  manual: |
+    1. Déplacer les jobs des dépôts publics vers des runners hébergés par la plate-forme, ou vers des
+       runners éphémères dans un réseau isolé qui leur est réservé.
+    2. Par produit :
+       - **GitHub** : en tant que propriétaire d'organisation, modifier la politique d'accès aux dépôts de
+         chaque groupe de runners pour qu'elle n'admette plus les dépôts publics ; retirer les runners
+         auto-hébergés de dépôt des dépôts publics.
+       - **AWS CodeBuild** : utiliser des projets runner séparés par niveau de confiance, du calcul à la
+         demande pour les dépôts publics, et des filtres de webhook qui limitent chaque projet aux dépôts
+         prévus.
+       - **Azure DevOps** : n'exécuter les builds de forks que sur des pools hébergés par Microsoft.
+    3. Réinstaller tout runner auto-hébergé qui a exécuté du code de fork avant le changement.

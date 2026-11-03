@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-007
+title: Restrict shared secrets to the projects and pipelines that need them
+finding:
+  title: Organization-wide secrets and service connections are available to every project
+  description: A secret shared at organization, folder or instance level without a project list reaches every repository's pipelines, so write access to any one repository is enough to read it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, shared-secrets, least-privilege, service-connections, contexts]
+
+description: |
+  Secrets, credentials and service connections defined above the project level (organization,
+  group, folder, workspace or instance) are granted to an explicit list of projects, repositories or
+  pipelines. None is available to all projects by default, and none is granted at creation time
+  to every pipeline for convenience.
+
+  The same rule applies to the identities that read secrets from a secrets manager on behalf of a
+  build: their policy names the specific secrets they need, not every secret in the account.
+
+  Group-based restriction of who can use secret containers is covered by CB-CICD-SEC-006; binding
+  secrets to protected branches and environments by CB-CICD-SEC-008.
+rationale: |
+  On most platforms anyone who can push a pipeline change to a repository can read every secret
+  that repository's pipelines can reach. A secret shared with all repositories is therefore exposed
+  to the least protected repository in the organization. An explicit list keeps each shared secret
+  within the projects that justify it and makes new repositories start with no shared secrets.
+impact: |
+  Each new project that needs a shared secret must be added to its list, which adds a small
+  administrative step. Pipelines that relied on open access fail until they are authorized.
+
+audit:
+  manual: |
+    Use a role that can read organization- and project-level secret settings and the IAM policies
+    of build identities (values are not needed).
+
+    1. List the secrets and service connections defined above the project level.
+    2. For each one, check which projects or pipelines can use it:
+       - **GitHub**: **Organization** > **Settings** > **Secrets and variables** > **Actions**: each
+         organization secret's **Repository access** is **Selected repositories**, not **All
+         repositories** or **Private repositories** (API: `visibility` of
+         `GET /orgs/{org}/actions/secrets` is `selected`).
+       - **CircleCI**: **Organization Settings** > **Contexts**: secrets are split into one context
+         per system or environment rather than one `org-global` context, and each context has
+         **Project restrictions** listing only the projects that use it.
+       - **Azure DevOps**: for each service connection, agent pool, variable group, secure file,
+         environment and repository, **Security** > **Pipeline permissions** lists specific
+         pipelines and **Open access** is off.
+       - **Jenkins**: credentials are stored in the folder of the jobs that use them, not in the
+         root (global) store, since global-scope credentials are visible to every job below their
+         store.
+       - **Woodpecker**: **Admin** > **Secrets** (global secrets) holds no high-value credential,
+         since global secrets reach every pipeline of the instance; organization secrets reach
+         every repository of the organization.
+       - **AWS CodeBuild**: the service role policy of each project allows
+         `secretsmanager:GetSecretValue`, `ssm:GetParameters` and `kms:Decrypt` only on the ARNs of
+         the secrets and parameters the project's buildspec reads, not `*`.
+       - **Google Cloud Build**: `roles/secretmanager.secretAccessor` is granted on each secret to
+         the dedicated service account of the trigger that uses it, not at project level and not
+         to the legacy Cloud Build service account.
+    3. Fail if a shared secret, credential or service connection is available to all projects,
+       repositories or pipelines, or if a build identity can read secrets it does not use.
+
+remediation:
+  manual: |
+    1. For each shared secret, list the projects that use it (from pipeline files and the
+       inventory, CB-CICD-SEC-001) and grant it only to them:
+       - **GitHub**: set **Repository access** to **Selected repositories** and add the
+         repositories (`gh secret set NAME --org ORG --repos repo1,repo2`). Move deploy credentials
+         to environment secrets where possible (CB-CICD-SEC-008).
+       - **CircleCI**: split `org-global` into one context per system or environment and add
+         **Project restrictions** to each.
+       - **Azure DevOps**: on each protected resource, turn off **Open access** and add the
+         pipelines under **Pipeline permissions**; do not select **Grant access permission to all
+         pipelines** when creating a service connection.
+       - **Jenkins**: move credentials from the global store into the folder that holds the jobs
+         that use them.
+       - **Woodpecker**: move high-value global secrets to the repositories that need them.
+       - **AWS CodeBuild**: replace wildcard `Resource` entries in the service role with the exact
+         ARNs, one role per project.
+       - **Google Cloud Build**: run builds with a dedicated service account per trigger and grant
+         it Secret Accessor on the specific secrets only.
+    2. Rotate secrets that were reachable from repositories outside the new list.
+
+references:
+  - title: Using secrets in GitHub Actions
+    url: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using contexts
+    url: https://circleci.com/docs/guides/security/contexts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage protected resources (approvals, checks and permissions)
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/resources
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secrets
+    url: https://woodpecker-ci.org/docs/usage/secrets
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use secrets from Secret Manager
+    url: https://docs.cloud.google.com/build/docs/securing-builds/use-secrets
+    publisher: Google
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing SCM credentials for Organization Folders and Multibranch Pipelines
+    url: https://www.jenkins.io/doc/book/security/securing-org-folders-and-multibranch-pipelines/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers which pipelines can reach shared secrets.
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-006
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-SEC-001
+    type: related
+  - id: CB-CICD-IAM-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

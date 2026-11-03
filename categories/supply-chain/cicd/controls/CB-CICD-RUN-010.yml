@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-010
+title: Separate runner pools by project and trust level
+finding:
+  title: Runners are shared across projects of different sensitivity
+  description: When one runner pool serves every repository, a job from a low-trust project can read the workspace, caches or credentials left by a production build on the same host, or tamper with them for the next one.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, agent-pools, isolation, multi-tenancy]
+
+parameters:
+  - name: runner_sharing
+    type: enum
+    description: How runner pools are shared. selected-projects means every shared pool is limited to the projects that need it and instance-wide runners are off for sensitive groups; dedicated means one pool per project and per environment, enforced by platform policy.
+    allowed: [selected-projects, dedicated]
+    default: selected-projects
+    profile_defaults:
+      hardened: dedicated
+
+description: |
+  Runner pools, groups, clusters and agent pools are granted only to the repositories or projects
+  that need them, and pools are separated by trust level: public and private code, development and
+  production, untrusted and release builds. Runners available to the whole instance are turned off
+  for groups that handle production secrets.
+
+  With `{{ runner_sharing }}` set to `dedicated`, each sensitive project and each environment has its
+  own pool, and platform policy prevents other projects from targeting it.
+
+  Who may register runners is covered by CB-CICD-RUN-002; restricting privileged runners to protected
+  refs by CB-CICD-RUN-011.
+rationale: |
+  Builds on the same runner are not isolated from each other unless the runner is ephemeral: a job can
+  read files, processes and credentials of the previous one, or leave something for the next. Shared
+  pools turn the least protected project into a way into the most protected one.
+impact: |
+  More pools mean more capacity to manage and lower utilization. Start with separating production and
+  untrusted workloads, then refine.
+notes: |
+  On Buildkite, queues route jobs inside a cluster but are not an isolation boundary: only clusters
+  isolate agents, pipelines and cluster secrets. On GitLab, instance runners are enabled for every
+  project on GitLab.com by default. On Woodpecker, instance-wide agents also pick up organization
+  workflows unless the organization allows only its own agents. On TeamCity, keep the **Default**
+  agent pool empty, as a project can fall back to it. CircleCI runner resource class restrictions
+  through config policies need the Scale plan.
+
+audit:
+  manual: |
+    Use an organization or instance administrator read role.
+
+    1. List runner pools with the projects allowed to use them and the trust level of each project.
+    2. Per product:
+       - **GitHub**: **Organization** > **Settings** > **Actions** > **Runner groups**: each group's
+         **Repository access** is **Selected repositories**, not **All repositories** (the default
+         group allows all repositories). Same check for enterprise groups and organization access.
+       - **GitLab**: runners serving sensitive projects are group or project runners with **Lock to
+         current projects** for project runners; sensitive groups have **Enable instance runners for
+         this group** turned off and do not allow projects to override it. **Admin** > **Settings** >
+         **CI/CD** > **Enable instance runners for new projects** reflects the policy.
+       - **Azure DevOps**: **Organization settings** > **Agent pools**: sensitive pools are
+         project-scoped or granted to one project; production agents sit in a separate pool.
+       - **TeamCity**: **Administration** > **Agent Pools**: one pool per trust boundary and the
+         **Default** pool has no agents.
+       - **Buildkite**: every pipeline and agent belongs to a cluster; production and untrusted
+         workloads are in separate clusters; cluster rules are reviewed.
+       - **CircleCI**: self-hosted runner resource classes are separated per team or environment; on
+         the Scale plan, a config policy limits sensitive resource classes to allowed projects.
+       - **Gitea / Forgejo**: sensitive repositories use runners registered at repository or
+         organization level, not global runners from site administration.
+       - **Woodpecker**: sensitive organizations enable **Organization settings** > **Agents** >
+         **Organization agents only**.
+       - **Flux**: in shared clusters, separate controller instances (sharding with unique
+         `--watch-label-selector` values) serve platform and tenant resources.
+    3. Fail if a pool is shared between projects of different trust levels, or a sensitive group can
+       use instance-wide runners; with `{{ runner_sharing }}` set to `dedicated`, also fail if a
+       sensitive project or environment has no pool of its own.
+remediation:
+  manual: |
+    1. Classify projects by trust level and decide the target pools.
+    2. Create the pools and restrict them:
+       - **GitHub**: set each runner group's **Repository access** to **Selected repositories** (or
+         `visibility: selected` through the REST API) and move runners out of the default group.
+       - **GitLab**: register group or project runners for sensitive groups, lock project runners to
+         their projects, and turn off instance runners on those groups.
+       - **Azure DevOps**: create a pool per project (or per environment) and remove other projects'
+         access.
+       - **TeamCity**: create agent pools per trust boundary, assign projects, and empty the
+         **Default** pool.
+       - **Buildkite**: migrate unclustered agents into clusters and put production and untrusted
+         pipelines in separate clusters.
+       - **CircleCI**: create resource classes per team or environment and add a config policy that
+         restricts them.
+       - **Gitea / Forgejo**: register runners at repository or organization level for sensitive code.
+       - **Woodpecker**: enable **Organization agents only** and give the organization its own agents.
+    3. Move jobs to the new pools, then remove the old shared runners (CB-CICD-RUN-006).
+
+references:
+  - title: Managing access to self-hosted runners using groups
+    url: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/manage-access
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage runners (instance, group and project runners)
+    url: https://docs.gitlab.com/ci/runners/runners_scope/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure your pipelines - other security considerations (agent pools)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite clusters
+    url: https://buildkite.com/docs/pipelines/security/clusters
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Config policies for self-hosted runners
+    url: https://circleci.com/docs/guides/config-policies/config-policies-for-self-hosted-runner/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Forgejo Actions deployments (Runner registration)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-RUN-002
+    type: related
+  - id: CB-CICD-RUN-011
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-RUN-003
+    type: related
+  - id: CB-DEP-CI-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

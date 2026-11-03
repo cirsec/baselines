@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-020
+title: Bound pipeline runs with timeouts, resource limits and concurrency limits
+finding:
+  title: Pipeline jobs can run for hours without resource or concurrency limits
+  description: Jobs inherit the platform's maximum timeout (often several hours) and pull request pipelines can start without limit, so a malicious or broken change can mine cryptocurrency, exhaust self-hosted runners or burn the organization's build credits.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [timeouts, concurrency, resource-limits, resource-abuse]
+
+description: |
+  Every job is bounded in time: the project, repository or instance timeout is at most
+  `{{ job_timeout }}` minutes, or shorter when the job allows it. Jobs running on self-hosted
+  runners have CPU and memory limits, and pipelines triggered by pull requests or other cheap
+  events cannot start unbounded parallel runs.
+
+  The expected level is `{{ run_limits }}`:
+
+  - `platform-default`: a project or instance timeout of at most `{{ job_timeout }}` minutes and
+    resource limits on self-hosted runner containers;
+  - `per-job`: in addition, every job declares its own timeout sized to its need, costly and
+    pull-request-triggered pipelines use concurrency groups that cancel superseded runs, and
+    builds triggered by unregistered users cannot spend credits.
+
+  Protecting the platform itself against request floods is covered by CB-CICD-PLAT-009.
+rationale: |
+  Build compute is a target in itself: hijacked runners mine cryptocurrency, and a pull request
+  that loops forever on a shared self-hosted runner blocks releases. Short timeouts also limit how
+  long malicious code keeps a job's credentials. Concurrency limits stop one actor from flooding the
+  runner pool with parallel runs.
+impact: |
+  Long legitimate jobs (large test suites, image builds) need explicit timeouts above the default.
+  Cancelling superseded runs can hide intermittent failures on intermediate commits.
+notes: |
+  GitHub's default job timeout is 360 minutes. When both a GitLab project timeout and a runner
+  maximum timeout are set, the lower one applies. Buildkite has no build-level timeout; timeouts
+  apply per command step, with default and maximum values at organization or pipeline level.
+  CircleCI **Prevent unregistered user spend** needs the Performance or Scale plan.
+
+parameters:
+  - name: job_timeout
+    type: integer
+    description: Maximum job duration set at project, repository or instance level.
+    unit: minutes
+    default: 60
+    minimum: 5
+    maximum: 360
+  - name: run_limits
+    type: enum
+    description: platform-default relies on project or instance timeouts and runner resource limits; per-job also requires per-job timeouts, concurrency groups and blocked spend by unregistered users.
+    allowed: [platform-default, per-job]
+    default: platform-default
+    profile_defaults:
+      hardened: per-job
+
+audit:
+  manual: |
+    Use a role that can read project settings, pipeline files and runner configuration.
+
+    1. Check the timeouts:
+       - **GitLab**: **Settings** > **CI/CD** > **General pipelines** > **Timeout**, and the
+         **Maximum job timeout** of the runners used.
+       - **GitHub**: `timeout-minutes` on jobs (default 360 minutes when absent).
+       - **Gitea / Forgejo**: `app.ini` `[actions] ENDLESS_TASK_TIMEOUT` (default `3h`) and the
+         runner `config.yml` `runner.timeout`.
+       - **Woodpecker**: `WOODPECKER_DEFAULT_PIPELINE_TIMEOUT` and `WOODPECKER_MAX_PIPELINE_TIMEOUT`
+         on the server, and the repository **Timeout** setting.
+       - **Jenkins**: each Pipeline declares `options { timeout(...) }`.
+       - **AWS CodeBuild**: project **Timeout** (`timeoutInMinutes`, default 60 minutes).
+       - **Buildkite**: **Default** and **Maximum Command Step Timeout** at organization or
+         pipeline level, or `timeout_in_minutes` on command steps.
+    2. Check resource and concurrency limits:
+       - **Gitea / Forgejo** runners: `container.options` sets `--memory` and `--cpus`;
+         `runner.capacity` is sized to the host.
+       - **AWS CodeBuild**: projects that build pull requests set **Restrict number of concurrent
+         builds this project can start** (`concurrentBuildLimit`).
+       - For `per-job`: **GitHub** pull-request-triggered and costly workflows declare
+         `concurrency:` with `cancel-in-progress: true`; **GitLab** `workflow:rules` avoid
+         duplicate branch and merge request pipelines; **CircleCI** **Plan** > **Usage Controls** >
+         **Prevent unregistered user spend** is on.
+    3. Fail if a project or instance timeout exceeds `{{ job_timeout }}` minutes without a
+       documented exception, if self-hosted runner containers have no resource limits, or, for
+       `{{ run_limits }}` = `per-job`, if jobs lack their own timeout or pull request pipelines
+       have no concurrency limit.
+
+remediation:
+  manual: |
+    1. Set the default timeout to `{{ job_timeout }}` minutes or less:
+       - **GitLab**: project **Timeout**, and a **Maximum job timeout** on shared runners.
+       - **Gitea / Forgejo**: lower `ENDLESS_TASK_TIMEOUT` and `runner.timeout`.
+       - **Woodpecker**: set `WOODPECKER_DEFAULT_PIPELINE_TIMEOUT` and
+         `WOODPECKER_MAX_PIPELINE_TIMEOUT`.
+       - **AWS CodeBuild**: set the project **Timeout**.
+       - **Buildkite**: set the organization **Default** and **Maximum Command Step Timeout**.
+       - **Jenkins**: add `options { timeout(time: N, unit: 'MINUTES') }` to Pipelines.
+    2. Add `--memory` and `--cpus` to the runner container options and size the runner capacity.
+    3. For `per-job`: add `timeout-minutes` to every GitHub job and a `concurrency:` group with
+       `cancel-in-progress: true` on pull request workflows; add `workflow:rules` in GitLab to run a
+       single pipeline per change; set `concurrentBuildLimit` on CodeBuild pull request projects;
+       turn on **Prevent unregistered user spend** on CircleCI.
+
+references:
+  - title: Customize pipeline configuration (job timeout)
+    url: https://docs.gitlab.com/ci/pipelines/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Workflow syntax for GitHub Actions
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change build project settings in AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/change-project.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite build timeouts
+    url: https://buildkite.com/docs/pipelines/configure/build-timeouts
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker server configuration
+    url: https://woodpecker-ci.org/docs/administration/configuration/server
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Prevent unregistered users from spending credits
+    url: https://circleci.com/docs/guides/plans-pricing/prevent-unregistered-users-from-spending-credits/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1496
+related_controls:
+  - id: CB-CICD-PLAT-009
+    type: related
+  - id: CB-CICD-PIPE-009
+    type: related
+  - id: CB-CICD-RUN-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

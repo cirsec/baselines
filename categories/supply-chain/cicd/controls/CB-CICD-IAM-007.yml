@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-007
+title: Accept only secure second factors, and phishing-resistant ones for administrators
+finding:
+  title: Platform users can rely on SMS as their second factor
+  description: SMS codes can be intercepted through SIM swapping or relayed by a phishing proxy, so an account protected only by SMS can still be taken over.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [mfa, phishing-resistant, passkeys, security-keys, sms]
+
+description: |
+  Second factors accepted for SCM and CI/CD platforms are passkeys, security keys, authenticator
+  applications or vendor push applications; SMS and voice codes are refused. Administrators and
+  owners use a phishing-resistant factor (passkey or FIDO2 security key).
+
+  Where users sign in through SSO, this is an authentication-strength rule of the identity provider
+  for the platform's application. GitHub is the only platform with its own setting.
+rationale: |
+  MFA by SMS stops password reuse but not targeted attacks: SIM swapping and real-time phishing
+  proxies capture SMS and one-time codes. Accounts that administer a CI/CD platform or own a
+  repository are worth that effort to an attacker; FIDO2 credentials are bound to the site and cannot
+  be relayed.
+impact: |
+  Users with only SMS configured lose access until they add a secure method. Administrators need
+  security keys or passkeys, which may require hardware.
+
+audit:
+  manual: |
+    Use an owner or auditor role on the platform, and read access to identity provider policies.
+
+    1. For SSO platforms, check the identity provider policy applied to each platform application:
+       allowed methods exclude SMS and voice; administrator groups require a phishing-resistant
+       authentication strength.
+    2. **GitHub** (GitHub Enterprise Cloud with personal accounts): **Enterprise settings** or
+       **Organization settings** > **Authentication security** has **Require two-factor
+       authentication** and the option to require secure methods of two-factor authentication
+       selected. The organization **People** page shows who has an insecure method.
+    3. Fail if SMS or voice is accepted as a second factor, or if administrators can sign in without
+       a phishing-resistant factor.
+
+remediation:
+  manual: |
+    1. Ask users to register an authenticator application, passkey or security key, and give security
+       keys to administrators.
+    2. In the identity provider, remove SMS and voice from allowed methods for the platform
+       applications and require phishing-resistant strength for administrator groups.
+    3. **GitHub**: in **Authentication security**, select the requirement for secure two-factor
+       methods (enterprise owner or organization owner). Not available with Enterprise Managed Users,
+       where the identity provider decides.
+  rollback: |
+    Clear the secure-methods requirement while users who were locked out add a secure method.
+
+references:
+  - title: Enforcing policies for security settings in your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-security-settings-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Requiring two-factor authentication in your organization
+    url: https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Recommandations relatives à l'authentification multifacteur et aux mots de passe
+    url: https://messervices.cyber.gouv.fr/documents-guides/anssi-guide-authentification_multifacteur_et_mots_de_passe.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(8)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R8"
+    relation: equivalent
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R2"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1111
+related_controls:
+  - id: CB-CICD-IAM-006
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

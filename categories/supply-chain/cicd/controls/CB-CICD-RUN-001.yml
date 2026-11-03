@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-001
+title: Build release artifacts on a managed build platform
+finding:
+  title: Release artifacts are built on developer workstations or unmanaged hosts
+  description: An artifact built on a laptop or an ad hoc server carries whatever that machine held at build time, with no platform record of how it was produced, so a compromised workstation can ship tampered releases unnoticed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [build-platform, release, slsa, provenance, runners]
+
+description: |
+  Every artifact that is released or deployed is built by the organization's CI/CD build platform
+  (hosted service or self-managed platform run by a platform team), from a pipeline definition kept
+  in version control. No release artifact is built on a developer workstation, an administrator's
+  server or a one-off virtual machine and then uploaded by hand.
+
+  The build platform is chosen for the SLSA Build level the organization targets: it runs builds on
+  infrastructure it controls, keeps a record of each run, and can generate provenance for the
+  artifact (CB-CICD-ART-001). Self-hosted runners attached to the platform are allowed; their
+  hardening is covered by the other RUN controls.
+rationale: |
+  A build on a personal machine depends on that machine's state: local tools, cached dependencies,
+  modified sources, malware. Nobody can tell afterwards what produced the artifact. A managed build
+  platform runs a known pipeline on controlled infrastructure and leaves a log and a provenance
+  record, which is the precondition for every later integrity check.
+impact: |
+  Teams that publish from workstations must move their release steps into a pipeline. Some
+  artifacts (signed mobile builds, firmware) may need dedicated runners with special hardware or
+  keys before the move.
+notes: |
+  SLSA treats self-hosted runners as outside the build platform's own trust boundary even at Build
+  L3: the platform vouches for the provenance, the organization vouches for the runner. This
+  control is about where release builds run, not a ban on self-hosted runners.
+
+audit:
+  manual: |
+    Use a role that can read release records, package registry metadata and pipeline run history.
+
+    1. List the artifacts released in the review period (packages, container images, binaries,
+       mobile builds) and, for each, find the pipeline run that produced it.
+    2. Check the uploader identity in the registry: it is a CI identity, not a person
+       (CB-CICD-ART-009).
+    3. Where provenance is published, check that the builder identity names the build platform.
+    4. Ask release owners how each product is built and released; look for manual upload steps in
+       release runbooks.
+    5. Fail if any released artifact has no matching pipeline run on the build platform, or was
+       uploaded by a person from a build made outside the platform.
+remediation:
+  manual: |
+    1. For each product released by hand, write the build and release steps as a pipeline in the
+       repository and run it on the organization's build platform.
+    2. Give the publishing step a CI identity and remove personal publishing rights from the
+       registry (CB-CICD-ART-009).
+    3. Enable provenance generation on the platform (CB-CICD-ART-001).
+    4. Update release runbooks to start the release pipeline instead of uploading files.
+
+references:
+  - title: SLSA v1.2 - Producing artifacts (Choose an appropriate build platform)
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Build track basics
+    url: https://slsa.dev/spec/v1.2/build-track-basics
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L2
+    relation: partial
+    note: Requires the hosted build platform that Build L2 assumes; provenance itself is covered by CB-CICD-ART-001.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-15
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-ART-001
+    type: related
+  - id: CB-CICD-ART-009
+    type: related
+  - id: CB-CICD-PIPE-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-027
+title: Monitor runner activity and outbound connections
+finding:
+  title: Runner activity is not monitored
+  description: Without runner logs kept off-host and without endpoint or egress monitoring, a job that steals secrets, opens a reverse shell or tampers with the runner leaves no trace once the runner is destroyed or cleaned.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [runners, monitoring, edr, egress, logging]
+
+description: |
+  Build infrastructure is monitored like other production hosts:
+
+  - runner and agent application logs (job assignment, connections, errors) are forwarded to central
+    log storage before ephemeral runners are destroyed;
+  - runner hosts or nodes run endpoint detection (EDR) or runtime security monitoring;
+  - outbound connections from runners go through a monitored proxy or egress monitoring that records
+    destinations, and unexpected destinations raise alerts.
+
+  Audit logs of the CI platform are covered by CB-CICD-LOG-001 and CB-CICD-LOG-003; network
+  segmentation of runners by CB-CICD-RUN-023.
+rationale: |
+  Most CI compromises end with data leaving the runner: secrets, source code, signing keys. Runners are
+  also short-lived, so evidence disappears with them unless it was shipped elsewhere. Monitoring
+  processes and egress on the runner is often the only way to see the attack while it happens.
+impact: |
+  EDR agents and proxies add cost and can slow builds. A proxy needs an allowlist maintained with the
+  build teams.
+notes: |
+  GitHub recommends forwarding runner application logs to external storage before deploying ephemeral
+  autoscaled runners. Buildkite notes that proxy environment variables alone do not force all build
+  traffic through the proxy: egress restrictions must be configured separately.
+
+audit:
+  manual: |
+    Use read access to the logging and monitoring platforms and to runner images.
+
+    1. Check that runner and agent logs from each runner type reach central storage, with a retention
+       that covers incident investigation.
+    2. Check that runner hosts or nodes run the organization's EDR or runtime monitoring agent and that
+       its alerts are routed to the security team.
+    3. Check how runner egress is monitored (proxy logs, flow logs, egress monitoring tool) and that
+       alerts exist for unexpected destinations.
+    4. Per product:
+       - **GitHub**: self-hosted runner `_diag` logs (`Runner_*.log`, `Worker_*.log`) are forwarded
+         before runners are destroyed; GitHub-hosted runners can use an egress monitoring tool such as
+         StepSecurity Harden-Runner.
+       - **Buildkite**: agents run behind a monitored proxy (`http_proxy`, `https_proxy`) combined with
+         network egress restrictions.
+    5. Fail if runner logs stay only on the runner, if runners have no endpoint monitoring, or if
+       outbound connections are neither logged nor alerted on.
+remediation:
+  manual: |
+    1. Add a log forwarder to runner images that ships runner and agent logs to the central platform.
+    2. Install the EDR or runtime monitoring agent on runner hosts and Kubernetes nodes, with rules
+       tuned for build workloads.
+    3. Route runner egress through a logging proxy or capture flow logs, and create alerts for
+       destinations outside the expected set.
+    4. **Buildkite**: set `http_proxy` and `https_proxy` for the agent service and block direct egress at
+       the network level.
+
+references:
+  - title: Monitoring and troubleshooting self-hosted runners (Reviewing the self-hosted runner application log files)
+    url: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/monitor-and-troubleshoot
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Self-hosted runners reference (Ephemeral runners for autoscaling)
+    url: https://docs.github.com/en/actions/reference/runners/self-hosted-runners
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite agent security (Run the agent behind a proxy)
+    url: https://buildkite.com/docs/agent/self-hosted/security
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: StepSecurity Harden-Runner
+    url: https://github.com/step-security/harden-runner
+    publisher: StepSecurity
+    kind: tool
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: partial
+    note: Covers monitoring of the runners; platform audit logging is covered by the LOG controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1041
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-LOG-003
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-RUN-023
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

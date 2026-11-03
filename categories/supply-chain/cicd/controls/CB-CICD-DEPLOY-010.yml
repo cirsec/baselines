@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-010
+title: Route automated Git write-back through a reviewed branch
+finding:
+  title: Image automation controllers push straight to the branch that production syncs from
+  description: When a controller commits new image tags directly to the production branch with a broadly scoped write key, anyone who can push a matching image tag, or who steals that key, changes production without a review.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [gitops, image-automation, write-back, flux, review]
+
+applicability:
+  versions: [flux, argo-cd]
+
+description: |
+  Controllers that write to the GitOps repository on their own (image update automation, tag
+  bumpers, other write-back features) push their commits to a separate branch, and the change reaches
+  the branch that production reconciles from only through a reviewed merge request or pull request,
+  under the same branch protection as human changes.
+
+  The credential the controller uses to push is limited to that one repository (a deploy key or
+  fine-grained token with write access to the automation repository only, ideally only to the
+  automation branch), not an account-wide token.
+
+  Branch protection on the production branch is covered by CB-CICD-SCM-006 and CB-CICD-SCM-007.
+rationale: |
+  Image automation is convenient but turns the container registry into a way to change production:
+  a new tag that matches the policy is committed and deployed with nobody looking. Sending the
+  commit to a branch that needs review restores the human check, and scoping the write key limits
+  what an attacker can do if the controller or its secret is compromised.
+impact: |
+  New image versions wait for a reviewer before they reach production, which slows automated
+  updates. Someone must review and merge the automation's merge requests.
+notes: |
+  In Flux, if `spec.git.push` is not set, `ImageUpdateAutomation` pushes to the checkout branch
+  (`spec.git.checkout`). Setting `spec.git.push.branch` sends commits to another branch, created from
+  the checkout branch if needed; `spec.git.push.refspec` with push options can open merge or pull
+  requests on GitLab, Gitea and Forgejo.
+
+audit:
+  manual: |
+    Use a role that can read GitOps controller resources and repository settings.
+
+    1. List the controllers that write to GitOps repositories (`kubectl get imageupdateautomations -A`
+       for Flux, and any other write-back tool).
+    2. For each Flux `ImageUpdateAutomation`, check that `spec.git.push.branch` (or
+       `spec.git.push.refspec`) is set to a branch different from `spec.git.checkout.ref.branch`, and
+       that the production `GitRepository` source tracks the protected branch, not the automation
+       branch.
+    3. Check that the production branch requires a reviewed merge for changes coming from the
+       automation branch, and that the automation identity cannot bypass it.
+    4. Check the credential in the secret referenced by the `GitRepository` used for write-back: it is
+       a deploy key or fine-grained token limited to that repository.
+    5. Fail if a controller pushes directly to a branch that production reconciles from, or if its
+       write credential reaches other repositories.
+
+remediation:
+  manual: |
+    1. Change each automation to push to its own branch:
+       - **Flux**: set `spec.git.push.branch: <automation-branch>` on the `ImageUpdateAutomation`
+         (or a `spec.git.push.refspec` with push options to open a merge or pull request where the Git
+         provider supports it).
+    2. Protect the production branch so the automation branch can only be merged through a reviewed
+       merge or pull request; automate the creation of that request if needed.
+    3. Replace the write credential with a deploy key or fine-grained token scoped to the GitOps
+       repository, and revoke the old one.
+
+references:
+  - title: Image Update Automations
+    url: https://fluxcd.io/flux/components/image/imageupdateautomations/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenGitOps principles
+    url: https://opengitops.dev/
+    publisher: OpenGitOps
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-SCM-007
+    type: related
+  - id: CB-CICD-SEC-014
+    type: related
+  - id: CB-CICD-DEPLOY-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

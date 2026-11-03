@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'accepter que des seconds facteurs sûrs, et résistants à l'hameçonnage pour les administrateurs
+finding:
+  title: Des utilisateurs des plates-formes peuvent utiliser le SMS comme second facteur
+  description: Les codes SMS peuvent être interceptés par échange de carte SIM ou relayés par un proxy d'hameçonnage ; un compte protégé seulement par SMS peut donc encore être pris.
+description: |
+  Les seconds facteurs acceptés pour les plates-formes SCM et CI/CD sont les clés d'accès (passkeys),
+  les clés de sécurité, les applications d'authentification ou les applications de notification de
+  l'éditeur ; les codes par SMS et par appel vocal sont refusés. Les administrateurs et propriétaires
+  utilisent un facteur résistant à l'hameçonnage (passkey ou clé de sécurité FIDO2).
+
+  Quand les utilisateurs se connectent par SSO, il s'agit d'une règle de force d'authentification du
+  fournisseur d'identité pour l'application de la plate-forme. GitHub est la seule plate-forme qui a
+  son propre réglage.
+rationale: |
+  La MFA par SMS arrête la réutilisation de mots de passe, pas les attaques ciblées : l'échange de
+  carte SIM et les proxys d'hameçonnage en temps réel capturent les SMS et les codes à usage unique.
+  Les comptes qui administrent une plate-forme CI/CD ou possèdent un dépôt valent cet effort pour un
+  attaquant ; les identifiants FIDO2 sont liés au site et ne peuvent pas être relayés.
+impact: |
+  Les utilisateurs qui n'ont que le SMS perdent l'accès jusqu'à l'ajout d'une méthode sûre. Les
+  administrateurs ont besoin de clés de sécurité ou de passkeys, ce qui peut demander du matériel.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'auditeur sur la plate-forme, et un accès en lecture aux
+    politiques du fournisseur d'identité.
+
+    1. Pour les plates-formes en SSO, vérifier la politique du fournisseur d'identité appliquée à
+       chaque application de plate-forme : les méthodes autorisées excluent SMS et appel vocal ; les
+       groupes d'administrateurs exigent une force d'authentification résistante à l'hameçonnage.
+    2. **GitHub** (GitHub Enterprise Cloud avec comptes personnels) : **Enterprise settings** ou
+       **Organization settings** > **Authentication security** a **Require two-factor
+       authentication** et l'option exigeant des méthodes 2FA sûres cochées. La page **People** de
+       l'organisation montre qui a une méthode non sûre.
+    3. Échec si le SMS ou l'appel vocal est accepté comme second facteur, ou si des administrateurs
+       peuvent se connecter sans facteur résistant à l'hameçonnage.
+remediation:
+  manual: |
+    1. Demander aux utilisateurs d'enregistrer une application d'authentification, une passkey ou une
+       clé de sécurité, et fournir des clés de sécurité aux administrateurs.
+    2. Dans le fournisseur d'identité, retirer SMS et appel vocal des méthodes autorisées pour les
+       applications des plates-formes et exiger une force résistante à l'hameçonnage pour les groupes
+       d'administrateurs.
+    3. **GitHub** : dans **Authentication security**, cocher l'exigence de méthodes 2FA sûres
+       (propriétaire de l'entreprise ou de l'organisation). Indisponible avec Enterprise Managed
+       Users, où le fournisseur d'identité décide.
+  rollback: |
+    Décocher l'exigence de méthodes sûres le temps que les utilisateurs bloqués ajoutent une méthode
+    sûre.

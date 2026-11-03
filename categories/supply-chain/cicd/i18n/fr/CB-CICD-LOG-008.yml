@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir les journaux d'audit et les accès CI/CD selon un calendrier fixe
+finding:
+  title: Personne ne revoit les journaux d'audit ni les accès API CI/CD
+  description: Les journaux d'audit et listes de jetons sont collectés mais jamais lus ; un abus lent et discret comme un jeton de trop, une intégration oubliée ou l'usage d'un jeton de job entre projets passe inaperçu faute de déclencher une alerte.
+description: |
+  Au moins tous les **{{ review_interval_days }}** jours, une personne nommée revoit pour chaque
+  plate-forme CI/CD :
+
+  - une synthèse des événements d'audit, centrée sur les changements d'administration, de
+    permissions, d'identifiants et de protections, à la recherche d'actions sans ticket de
+    changement correspondant ;
+  - les jetons d'accès API et intégrations ayant accès à l'organisation (propriétaire, portées,
+    expiration, dernière utilisation) ;
+  - l'activité d'authentification des jetons et identités programmatiques.
+
+  Avec `review_scope` à `include-job-token-logs` (ici **{{ review_scope }}**), la revue couvre aussi
+  les journaux d'authentification des jetons de job entre projets (par exemple le journal
+  d'authentification des jetons de job de GitLab) avant d'ajouter ou de conserver des entrées de
+  liste d'autorisation.
+
+  La revue est consignée (date, relecteur, constats, actions). L'alerte en temps réel relève de
+  CB-CICD-LOG-006 ; la revue périodique des identités et de leurs droits de CB-CICD-IAM-026.
+rationale: |
+  Les alertes repèrent des schémas connus ; une revue humaine périodique repère ce qui ne correspond
+  à aucune règle : un jeton utilisé depuis un lieu inhabituel, une application installée il y a des
+  mois et jamais utilisée, un projet qui se met à lire un autre projet avec son jeton de job.
+  Consigner la revue montre aussi aux auditeurs que les journaux sont réellement exploités.
+impact: |
+  Demande du temps de relecture à chaque période. Certaines sources exigent une édition supérieure
+  (par exemple le journal d'audit de Buildkite relève de l'offre Enterprise).
+parameters:
+  review_interval_days: Nombre maximal de jours entre deux revues des journaux d'audit et des accès API CI/CD.
+  review_scope: Périmètre de la revue périodique. `audit-and-api-access` couvre les événements d'audit, les jetons API et intégrations, et l'activité d'authentification des jetons ; `include-job-token-logs` couvre en plus les journaux d'authentification des jetons de job entre projets.
+audit:
+  manual: |
+    Demander les comptes rendus de revue des trois dernières périodes, et utiliser un accès en
+    lecture aux plates-formes.
+
+    1. Vérifier qu'une revue a été consignée pour chaque plate-forme au moins tous les
+       {{ review_interval_days }} jours, avec le relecteur, les sources consultées et les actions
+       décidées.
+    2. Vérifier que la revue couvre les sources de la plate-forme :
+       - **Buildkite** : **Organization Settings** > **Audit** > **Audit Log** (offre Enterprise ;
+         événements consultables 90 jours par la barre de recherche, exportables par l'onglet
+         **Query & Export**), et l'audit des accès API des jetons ayant accès à l'organisation.
+       - **GitLab** (avec `include-job-token-logs`) : pour les projets auxquels d'autres projets
+         accèdent avec des jetons de job, **Settings** > **CI/CD** > **Job token permissions** >
+         **Authentication log** (téléchargeable en CSV) est revu avant d'ajouter ou de conserver des
+         entrées de liste d'autorisation.
+       - Autres plates-formes : le journal d'audit dans le SIEM (CB-CICD-LOG-003) et la liste des
+         jetons, clés de déploiement et applications installées.
+    3. Prendre un constat d'une revue passée et vérifier que l'action a été menée.
+    4. Échec si une revue manque pour une période, ne couvre pas les accès API et les jetons, ou
+       (avec `include-job-token-logs`) ne couvre pas les journaux d'authentification des jetons de
+       job.
+remediation:
+  manual: |
+    1. Nommer un relecteur et un suppléant par plate-forme et inscrire la revue dans leurs tâches
+       récurrentes tous les {{ review_interval_days }} jours.
+    2. Préparer des recherches enregistrées ou rapports SIEM pour la revue : changements
+       d'administration et d'identifiants, nouveaux jetons et intégrations, usage de jetons depuis
+       de nouvelles adresses.
+    3. Inclure les sources propres aux plates-formes :
+       - **Buildkite** : exporter le journal d'audit par **Query & Export** et revoir l'audit des
+         accès API.
+       - **GitLab** (pour `include-job-token-logs`) : télécharger le CSV **Authentication log** des
+         jetons de job des projets ayant une liste d'autorisation et retirer les entrées qui ne
+         servent plus.
+    4. Consigner chaque revue et suivre ses actions jusqu'à leur clôture.

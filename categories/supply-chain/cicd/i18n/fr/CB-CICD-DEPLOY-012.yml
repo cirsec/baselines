@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Déployer progressivement les versions en production avec un retour arrière automatique et protégé
+finding:
+  title: Les versions partent sur toute la production d'un coup, et un retour arrière peut restaurer n'importe quelle ancienne version
+  description: Une mise en production d'un seul bloc expose tous les utilisateurs à un build défectueux ou malveillant avant que quiconque puisse réagir, et un retour arrière sans restriction permet à un opérateur ou à un attaquant de remettre en service une version aux vulnérabilités connues.
+description: |
+  Les mises en production des services critiques sont échelonnées : un canari, un pourcentage du
+  trafic ou un premier anneau d'utilisateurs ou de régions reçoit d'abord la nouvelle version, les
+  métriques de santé et d'erreurs sont évaluées automatiquement, et le déploiement ne continue que si
+  elles restent dans les seuils. Sinon, le déploiement est arrêté et annulé automatiquement.
+
+  Les cibles de retour arrière sont restreintes : avant de déployer une version antérieure, le
+  pipeline vérifie qu'elle n'est pas touchée par des vulnérabilités connues corrigées dans des
+  versions ultérieures (d'après l'état des vulnérabilités enregistré pour chaque version), et un
+  retour à une telle version exige une exception approuvée comme tout autre changement de production.
+
+  La sérialisation et les déploiements périmés relèvent de CB-CICD-DEPLOY-007 ; le traitement des
+  vulnérabilités des dépendances de CB-DEP-VULN-003.
+rationale: |
+  La livraison progressive limite le rayon d'impact d'une mauvaise version, qu'il s'agisse d'un bogue
+  ou d'une modification malveillante passée à travers le pipeline : seule une fraction des utilisateurs
+  est exposée, et l'analyse automatique arrête rapidement le déploiement. Protéger le retour arrière
+  ferme le chemin inverse, où un « retour rapide » pendant un incident, ou un attaquant disposant de
+  droits de déploiement, restaure une version dont les vulnérabilités étaient déjà publiques.
+impact: |
+  La livraison progressive demande une gestion du trafic (maillage de services, répartiteur de charge
+  ou feature flags), de bonnes métriques de santé et un contrôleur de déploiement. Les versions mettent
+  plus de temps à atteindre tous les utilisateurs. Les vérifications de retour arrière demandent un
+  enregistrement de l'état des vulnérabilités de chaque version.
+notes: |
+  Aucune des plates-formes CI/CD du périmètre n'impose seule un déploiement échelonné ou un retour
+  arrière protégé ; des contrôleurs de livraison progressive comme Argo Rollouts ou Flagger, ou des
+  services de déploiement cloud, fournissent la partie déploiement.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de déploiement et les enregistrements de versions.
+
+    1. Pour chaque service critique en production, vérifier comment les versions sont déployées :
+       échelonnées (canari, pourcentage, anneaux) avec analyse automatique, ou d'un seul bloc.
+    2. Vérifier qu'une analyse en échec arrête et annule automatiquement le déploiement, et relire un
+       déploiement récent en échec ou interrompu.
+    3. Vérifier la procédure de retour arrière : avant de déployer une version antérieure, ses
+       vulnérabilités connues sont vérifiées, et revenir à une version dont des vulnérabilités ont été
+       corrigées depuis exige une exception approuvée.
+    4. Échec si des services critiques sont mis en production d'un seul bloc, si un déploiement en
+       échec n'est pas annulé automatiquement, ou si un retour arrière peut déployer une version
+       vulnérable connue sans exception approuvée.
+remediation:
+  manual: |
+    1. Placer les services critiques derrière un mécanisme de livraison progressive (par exemple Argo
+       Rollouts, Flagger, ou la fonction de déploiement échelonné du fournisseur cloud) avec des
+       étapes canari ou par anneaux.
+    2. Définir des métriques et seuils d'analyse (taux d'erreurs, latence, saturation) et configurer
+       l'arrêt et le retour arrière automatiques.
+    3. Enregistrer l'état des vulnérabilités de chaque version (par exemple à partir du SBOM et des
+       analyses, CB-DEP-INV-001), et ajouter une vérification avant déploiement qui bloque le retour
+       aux versions touchées par des vulnérabilités corrigées, sauf exception approuvée.

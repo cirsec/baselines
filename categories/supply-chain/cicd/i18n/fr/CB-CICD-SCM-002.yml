@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rendre les nouveaux dépôts privés par défaut et bloquer la lecture anonyme
+finding:
+  title: Les nouveaux dépôts sont publics par défaut ou lisibles sans authentification
+  description: Un dépôt créé avec la visibilité par défaut, ou ouvert à la lecture Git anonyme, expose le code source, les définitions de pipeline, les journaux de build et parfois des secrets à quiconque peut joindre la plate-forme.
+description: |
+  Les nouveaux dépôts et projets sont créés privés (ou internes, visibles des seuls membres
+  authentifiés) sauf si un propriétaire en rend un public délibérément. Aucun dépôt n'est lisible
+  par Git, l'API ou l'interface web sans authentification, hormis ceux que l'organisation publie
+  volontairement.
+
+  L'étendue est fixée par `{{ visibility_scope }}` :
+
+  - `repositories` : la visibilité par défaut des dépôts et projets est privée, et la lecture Git
+    anonyme est désactivée.
+  - `repositories-and-accounts` : en plus, les nouveaux profils d'utilisateur et d'organisation
+    ont par défaut une visibilité limitée ou privée, et les instances Gitea ou Forgejo
+    auto-hébergées forcent tout nouveau dépôt en privé.
+
+  Sur les serveurs CI qui exposent les projets séparément de la forge (Woodpecker), la visibilité
+  d'un projet détermine aussi qui voit ses builds, journaux et artefacts ; elle suit la même règle.
+  L'accès anonyme à l'échelle de l'instance relève de CB-CICD-IAM-011 ; le droit de changer
+  ensuite la visibilité d'un dépôt de CB-CICD-SCM-003.
+rationale: |
+  La plupart des fuites accidentelles de code source viennent d'un dépôt créé public par défaut
+  ou rendu lisible sans connexion par commodité. Les définitions de pipeline révèlent des noms
+  d'hôtes internes, des labels de runners et des chemins de déploiement, et l'historique contient
+  souvent encore un identifiant « supprimé ». Un défaut privé fait de la publication une décision
+  explicite plutôt qu'un oubli.
+impact: |
+  Les équipes qui publient du logiciel libre doivent changer la visibilité explicitement, ce que
+  les propriétaires peuvent faire (CB-CICD-SCM-003). Les outils qui clonaient anonymement ont
+  besoin d'un jeton en lecture seule ou d'une clé de déploiement.
+notes: |
+  Azure DevOps a retiré les projets publics : on ne peut plus en créer et les existants sont
+  convertis en privés en 2027 ; la vérification consiste seulement à s'assurer qu'il n'en reste
+  aucun. La lecture Git anonyme n'existe que sur GitHub Enterprise Server avec le mode privé activé
+  et elle est désactivée par défaut.
+parameters:
+  visibility_scope: Restreindre seulement les défauts des dépôts, ou aussi ceux des profils d'utilisateur et d'organisation.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur qui peut lire les réglages de
+    l'organisation ou de l'instance.
+
+    1. Lister les dépôts et projets dont la visibilité est publique et confirmer que chacun est
+       destiné à être publié.
+    2. Vérifier les défauts sur chaque plate-forme :
+       - **GitHub** : sur GitHub Enterprise Server, **Policies** > **Options** > **Default
+         repository visibility** de l'entreprise vaut **Private** (ou **Internal**), et
+         **Anonymous Git read access** est désactivé avec **Prevent repository admins from changing
+         anonymous Git read access** coché. Sur GitHub.com, les membres ne peuvent pas créer de
+         dépôts publics (CB-CICD-SCM-001).
+       - **GitLab** : **Admin** > **Settings** > **General** > **Visibility and access controls** :
+         la visibilité par défaut des projets et **Default group visibility** valent **Private**
+         (ou **Internal**).
+       - **Azure DevOps** : aucun projet n'a une visibilité publique.
+       - **Gitea / Forgejo** : `app.ini` `[repository] DEFAULT_PRIVATE = private` ; pour
+         `repositories-and-accounts`, aussi `FORCE_PRIVATE = true` et
+         `[service] DEFAULT_USER_VISIBILITY` et `DEFAULT_ORG_VISIBILITY` à `limited` ou `private`.
+       - **Woodpecker** : **Settings** > **Project visibility** de chaque dépôt vaut **Private** ou
+         **Internal** sauf si le projet est publié volontairement.
+    3. Échec si un défaut autorise la création publique, si la lecture Git anonyme est activée, ou
+       si un dépôt ou projet public n'a pas de décision de publication enregistrée.
+remediation:
+  manual: |
+    1. Poser des défauts privés :
+       - **GitHub** : sur GitHub Enterprise Server, régler **Default repository visibility** sur
+         **Private** et désactiver **Anonymous Git read access** avec l'option de verrouillage
+         cochée ; sur toutes les éditions, réserver la création de dépôts publics aux propriétaires
+         (CB-CICD-SCM-001).
+       - **GitLab** : en tant qu'administrateur, régler la visibilité par défaut des projets et des
+         groupes sur **Private**, et ajouter **Public** aux **Restricted visibility levels** pour que
+         seuls les administrateurs puissent créer des projets publics.
+       - **Azure DevOps** : passer en **Privé** la visibilité de tout projet encore public dans
+         **Paramètres du projet** > **Vue d'ensemble**.
+       - **Gitea / Forgejo** : poser `DEFAULT_PRIVATE = private` (et `FORCE_PRIVATE = true`,
+         `DEFAULT_USER_VISIBILITY` et `DEFAULT_ORG_VISIBILITY` à `limited` ou `private` pour
+         `repositories-and-accounts`), puis redémarrer le service.
+       - **Woodpecker** : régler **Project visibility** sur **Private** ou **Internal**.
+    2. Rendre privés les dépôts publics qui ne sont pas destinés à être publiés, et chercher des
+       secrets dans leur historique (CB-CICD-SEC-009).
+    3. Donner aux outils qui lisaient anonymement un identifiant en lecture seule à portée limitée.

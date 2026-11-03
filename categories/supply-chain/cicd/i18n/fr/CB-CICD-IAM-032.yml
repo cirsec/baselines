@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-032
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les types d'identifiants hérités et sans portée
+finding:
+  title: Des types d'identifiants hérités ou larges sont encore acceptés par les plates-formes CI/CD
+  description: Mots de passe d'application, jetons d'API hérités, applications OAuth obsolètes et jetons passés dans les URL sont larges, durables et faciles à divulguer, et ils contournent les contrôles prévus pour les identifiants plus récents et restreints.
+parameters:
+  legacy_credentials: Types d'identifiants désactivés. `legacy-types` couvre les mots de passe d'application, jetons d'API hérités, applications OAuth obsolètes et jetons dans les chaînes de requête d'URL ; `legacy-and-broad-types` restreint aussi les jetons d'accès personnels classiques de GitHub et désactive les jetons de flux de GitLab.
+description: |
+  Les types d'identifiants que l'éditeur a rendus obsolètes, qui ne peuvent ni être restreints ni
+  expirer, ou qui fuient facilement sont désactivés, et les utilisateurs passent à leurs remplaçants
+  restreints. Avec `{{ legacy_credentials }}` réglé sur `legacy-and-broad-types`, les identifiants
+  encore pris en charge mais larges (jetons d'accès personnels classiques de GitHub, jetons de flux de
+  GitLab) sont aussi restreints.
+
+  L'authentification par mot de passe sur Git et l'API relève de CB-CICD-IAM-004.
+rationale: |
+  Les identifiants hérités datent d'avant les portées et l'expiration : un mot de passe
+  d'application Bitbucket ou un jeton d'API hérité de Jenkins est en pratique un second mot de passe,
+  un jeton classique GitHub atteint chaque dépôt accessible à son titulaire, et un jeton dans une
+  chaîne de requête d'URL finit dans les journaux des proxys et des serveurs. Leurs remplaçants sont
+  restreints, expirent et sont visibles des administrateurs.
+impact: |
+  Les scripts et intégrations qui utilisent ces identifiants cessent de fonctionner et doivent être
+  migrés. Restreindre les jetons classiques sur GitHub bloque aussi les outils qui ne prennent en
+  charge qu'eux ; les clés SSH créées par ces jetons continuent de fonctionner.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou de propriétaire, ou un accès en lecture à la configuration de
+    la plate-forme.
+
+    1. Vérifier chaque type d'identifiant :
+       - **Bitbucket Cloud** : les intégrations utilisent des jetons d'API avec portées et
+         expiration, pas des mots de passe d'application. Atlassian a arrêté la création de mots de
+         passe d'application le 9 septembre 2025 et annoncé que les existants cessent de fonctionner
+         le 9 juin 2026 ; lister ceux qui restent dans les réglages personnels.
+       - **Jenkins** : **Manage Jenkins** > **Security** > **API Token** : les options qui génèrent un
+         jeton d'API hérité pour les nouveaux utilisateurs et qui permettent aux utilisateurs d'en
+         créer un sont désactivées (valeur par défaut depuis Jenkins 2.129), et le moniteur des jetons
+         hérités ne montre aucun utilisateur qui en possède un.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Stratégies** > **Third-party
+         application access via OAuth** est désactivé (désactivé par défaut pour les nouvelles
+         organisations ; Azure DevOps OAuth n'accepte plus de nouvelles inscriptions, et la stratégie
+         n'affecte pas les applications OAuth Microsoft Entra).
+       - **Gitea / Forgejo** : `[security] DISABLE_QUERY_AUTH_TOKEN = true`.
+       - **GitHub** (`legacy-and-broad-types`) : **Enterprise settings** > **Policies** > **Personal
+         access tokens** > **Tokens (classic)** ou **Organization settings** > **Personal access
+         tokens** restreint l'accès par jetons d'accès personnels classiques.
+       - **GitLab auto-hébergé** (`legacy-and-broad-types`) : **Admin** > **Settings** > **General** >
+         **Visibility and access controls** > **Feed token** > **Disable feed token** est coché.
+    2. Échec si un type d'identifiant du périmètre est encore activé ou utilisé.
+remediation:
+  manual: |
+    1. Identifier les scripts et intégrations qui utilisent chaque type hérité (journaux d'audit,
+       listes de jetons).
+    2. Les migrer vers des identifiants restreints, puis désactiver le type hérité :
+       - **Bitbucket Cloud** : remplacer les mots de passe d'application par des jetons d'API avec
+         portées, ou par des jetons d'accès d'espace de travail, de projet ou de dépôt.
+       - **Jenkins** : désactiver les deux options de jetons hérités dans **Security** > **API
+         Token**, et révoquer les jetons hérités restants depuis le moniteur des jetons hérités.
+       - **Azure DevOps** : désactiver **Third-party application access via OAuth** et migrer les
+         intégrations vers OAuth Microsoft Entra.
+       - **Gitea / Forgejo** : poser `DISABLE_QUERY_AUTH_TOKEN = true` et passer les jetons dans
+         l'en-tête `Authorization`.
+       - **GitHub** (`legacy-and-broad-types`) : restreindre l'accès par jetons classiques au niveau
+         de l'entreprise ou de l'organisation ; utiliser des jetons fine-grained ou des GitHub Apps.
+       - **GitLab auto-hébergé** (`legacy-and-broad-types`) : cocher **Disable feed token**.

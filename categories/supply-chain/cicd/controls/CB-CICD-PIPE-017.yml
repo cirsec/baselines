@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-017
+title: Write pipeline conditions and commands with safe, unambiguous constructs
+finding:
+  title: Workflows use spoofable guards, always-true conditions or deprecated insecure commands
+  description: A condition such as `github.actor == 'dependabot[bot]'` can be satisfied by an attacker who triggers the run another way, a malformed `if:` is always true, and re-enabled `set-env` commands let any log line change the environment, so guards that look protective do not protect.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [workflow-conditions, insecure-commands, bot-conditions, obfuscation, github-actions]
+applicability:
+  versions: [azure-devops, github]
+
+description: |
+  Security-relevant conditions and commands in pipeline files are written so that they mean what
+  they appear to mean. The expected level is `{{ construct_strictness }}`:
+
+  - `sound`: deprecated insecure workflow commands stay disabled (`ACTIONS_ALLOW_UNSECURE_COMMANDS`
+    is never set); guards do not rely on the name of the actor who triggered the run but on the
+    event and the pull request author; `if:` conditions are a single expression and use exact
+    comparisons (no substring `contains()` on strings, no `a && b || c` ternary misuse);
+  - `strict`: in addition, workflow syntax is plain and auditable (no obfuscated expressions or
+    references, no misused features), local actions are called with the `$/` self-repository
+    syntax instead of `./`, and security-critical tools are called by absolute path.
+
+  Injection of untrusted values is covered by CB-CICD-PIPE-015.
+rationale: |
+  Reviewers trust what conditions say. An actor-name check is satisfied whenever the bot is the
+  one that triggered the run, including runs re-triggered by an attacker, which leads to confused
+  deputy auto-merges. A YAML block scalar around `${{ }}` produces a non-empty string that is
+  always true. A `./` local action runs whatever is in the workspace, possibly checked-out
+  untrusted code. Relying on `PATH` lets an earlier step substitute a tool.
+impact: |
+  Some workflows need rewriting; dependabot-specific logic should check the pull request author
+  and event type. The `$/` syntax is recent and must be supported by the runner in use.
+
+parameters:
+  - name: construct_strictness
+    type: enum
+    description: sound forbids insecure commands, spoofable actor checks and unsound conditions; strict also requires plain syntax, $/ local actions and absolute tool paths.
+    allowed: [sound, strict]
+    default: sound
+    profile_defaults:
+      hardened: strict
+
+audit:
+  manual: |
+    Use read access to the pipeline files. zizmor (`insecure-commands`, `bot-conditions`,
+    `unsound-condition`, `unsound-contains`, `self-repository`, `obfuscation`, `misfeature`),
+    poutine (`if_always_true`, `confused_deputy_auto_merge`) and Checkov (`CKV_GHA_1`) cover these
+    patterns.
+
+    1. **GitHub**:
+       - search for `ACTIONS_ALLOW_UNSECURE_COMMANDS` in `env:` at any level;
+       - search for conditions on `github.actor` or `github.triggering_actor` that gate privileged
+         steps (auto-merge, secrets, publishing);
+       - search for `if: |` or `if: >` wrapping `${{ }}`, `contains('...', github.*)` on strings,
+         and `cond && a || b` expressions;
+       - for `strict`, search for `uses: ./` local actions and obfuscated references.
+    2. **Azure DevOps** (for `strict`): security-critical scripts call tools by fully qualified
+       path rather than relying on the agent's `PATH`.
+    3. Fail if insecure commands are enabled, a privileged step is guarded by an actor-name check,
+       a condition is always true, or, for `{{ construct_strictness }}` = `strict`, if local
+       actions use `./` or security tools are resolved through `PATH`.
+
+remediation:
+  manual: |
+    1. Remove `ACTIONS_ALLOW_UNSECURE_COMMANDS` and use `$GITHUB_ENV` and `$GITHUB_PATH` files.
+    2. Replace actor-name guards with checks on the event and on
+       `github.event.pull_request.user.login`, or with Dependabot-specific secrets.
+    3. Write each `if:` as one bare expression or one `${{ }}` expression; use
+       `contains(fromJSON('["a","b"]'), value)` for list membership.
+    4. For `strict`, rewrite `uses: ./...` to `uses: $/...`, remove obfuscated expressions, and
+       call security tools in Azure Pipelines scripts by absolute path.
+
+references:
+  - title: Workflow commands for GitHub Actions
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Locking workflow dependencies (self-repository $/ references)
+    url: https://docs.github.com/en/actions/how-tos/secure-your-work/lock-workflow-dependencies
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure agents, projects, and containers (rely on PATH)
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: poutine
+    url: https://github.com/boostsecurityio/poutine
+    publisher: BoostSecurity
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-015
+    type: related
+  - id: CB-CICD-SCM-021
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

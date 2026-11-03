@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Contrôler l'infrastructure as code par rapport à la politique de l'organisation dans le pipeline
+finding:
+  title: Les modifications d'infrastructure as code sont appliquées sans analyse de mauvaise configuration
+  description: Des buckets de stockage publics, des groupes de sécurité ouverts ou des manifestes Kubernetes privilégiés écrits dans des fichiers d'infrastructure as code sont déployés tels quels, car rien ne les vérifie avant qu'ils n'atteignent le cloud ou le cluster.
+description: |
+  Les dépôts qui contiennent de l'infrastructure as code (Terraform, CloudFormation, ARM ou Bicep,
+  manifestes Kubernetes, charts Helm, Dockerfiles, Ansible) exécutent un analyseur de mauvaise
+  configuration dans leurs pipelines de demande de modification. L'analyseur utilise des règles qui
+  traduisent la politique de sécurité de l'organisation (par exemple Checkov, KICS, analyseurs
+  dérivés de tfsec ou policy-as-code avec Open Policy Agent), ses résultats apparaissent dans la
+  demande de modification, et les résultats de gravité élevée font échouer le contrôle sauf
+  exception consignée.
+
+  Les politiques d'admission au moment du déploiement relèvent de CB-CICD-DEPLOY-005.
+rationale: |
+  Les incidents cloud et cluster viennent souvent de la configuration, pas du code : un bucket
+  rendu public, une règle réseau trop large, un conteneur autorisé à tourner en privilégié. Quand
+  la configuration est écrite sous forme de code, ces erreurs peuvent être repérées en revue par un
+  analyseur avant leur application, là où elles sont peu coûteuses à corriger.
+impact: |
+  Les analyseurs remontent d'abord beaucoup de résultats sur le code existant ; ajuster le jeu de
+  règles à la politique de l'organisation et consigner les exceptions avant de rendre le contrôle
+  bloquant.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts et aux résultats de pipeline récents.
+
+    1. Lister les dépôts qui contiennent des fichiers d'infrastructure as code.
+    2. Vérifier que leurs pipelines de demande de modification exécutent un analyseur IaC (par
+       exemple le modèle d'analyse IaC de GitLab, des jobs Checkov ou KICS) avec un jeu de règles
+       rattaché à la politique de l'organisation, et que les résultats apparaissent dans la demande
+       de modification.
+    3. Échec si un dépôt avec de l'infrastructure as code n'a pas d'analyse dans son pipeline de
+       demande de modification, ou si les résultats de gravité élevée ne font pas échouer le
+       contrôle et ne sont pas consignés comme exceptions.
+remediation:
+  manual: |
+    1. Ajouter un job d'analyse IaC aux pipelines de ces dépôts, depuis un modèle commun si
+       possible (par exemple GitLab `Jobs/SAST-IaC.gitlab-ci.yml`, ou un job Checkov ou KICS).
+    2. Aligner le jeu de règles sur les politiques cloud et cluster de l'organisation et ajouter
+       des règles personnalisées pour les exigences locales.
+    3. Corriger ou consigner les résultats existants, puis rendre le contrôle bloquant pour la
+       gravité élevée.

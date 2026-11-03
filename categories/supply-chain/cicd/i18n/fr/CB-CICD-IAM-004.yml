@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'authentification par mot de passe pour Git et l'API
+finding:
+  title: Git en HTTPS et l'API acceptent le mot de passe du compte
+  description: Un mot de passe accepté sur les points d'accès Git et API peut être testé en masse ou rejoué sans MFA, et un seul mot de passe hameçonné donne l'accès en clonage et en push à tous les dépôts de l'utilisateur.
+description: |
+  Git en HTTPS et les appels d'API s'authentifient par jetons d'accès ou clés SSH, jamais par le mot
+  de passe du compte. Les utilisateurs qui se connectent par SSO n'ont pas non plus de mot de passe
+  local utilisable pour l'interface web. Un administrateur de secours peut garder un mot de passe web
+  (CB-CICD-IAM-003).
+
+  La durée de vie et la portée des jetons relèvent de CB-CICD-IAM-028 et CB-CICD-IAM-029.
+rationale: |
+  Les clients Git et les points d'accès API ne passent pas par le fournisseur d'identité : un mot de
+  passe accepté là contourne la MFA et l'accès conditionnel. L'accès Git par mot de passe est une
+  cible classique de la pulvérisation de mots de passe et du bourrage d'identifiants, et les mots de
+  passe stockés dans les gestionnaires d'identifiants Git ou les scripts CI n'ont ni portée ni
+  expiration.
+impact: |
+  Les utilisateurs et scripts qui clonent avec un mot de passe doivent passer à un jeton d'accès
+  personnel ou à une clé SSH ; les gestionnaires d'identifiants Git le font de façon transparente avec
+  OAuth. Sur Gitea et Forgejo, les clonages HTTPS par mot de passe cessent de fonctionner.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de l'instance, ou un accès en lecture à `app.ini`.
+
+    1. Vérifier les réglages de l'instance :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Sign-in restrictions** :
+         **Allow password authentication for Git over HTTP(S)** est décoché
+         (`password_authentication_enabled_for_git: false` dans l'API des réglages de l'application),
+         et **Disable password and passkey authentication for users with an SSO identity** est coché
+         quand le SSO est utilisé. Sur GitLab.com, le réglage SAML de groupe **Enforce SSO-only
+         authentication for Git and Dependency Proxy activity** donne le même résultat.
+       - **Gitea / Forgejo** : `[service] ENABLE_BASIC_AUTHENTICATION = false`.
+    2. Échec si Git en HTTPS ou l'API acceptent un mot de passe de compte.
+remediation:
+  manual: |
+    1. Annoncer le changement et fournir aux utilisateurs la procédure jeton ou clé SSH.
+    2. L'appliquer :
+       - **GitLab auto-hébergé** : dans **Sign-in restrictions**, décocher **Allow password
+         authentication for Git over HTTP(S)** et cocher **Disable password and passkey
+         authentication for users with an SSO identity** (administrateur de l'instance).
+       - **Gitea / Forgejo** : poser `ENABLE_BASIC_AUTHENTICATION = false` dans `[service]` et
+         redémarrer.
+    3. Changer les mots de passe qui étaient stockés dans des scripts ou des gestionnaires
+       d'identifiants.
+  rollback: |
+    Recocher le réglage (GitLab) ou poser `ENABLE_BASIC_AUTHENTICATION = true` (Gitea, Forgejo) le
+    temps de migrer les derniers scripts.

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Alerter sur les événements CI/CD sensibles pour la sécurité
+finding:
+  title: Les changements CI/CD sensibles ne déclenchent aucune alerte
+  description: Une protection de branche est retirée, un secret ou un runner ajouté, une protection contournée ou un paquet publié depuis une identité inattendue, et personne n'est prévenu ; l'attaquant dispose de jours ou de semaines avant que le changement soit remarqué par hasard.
+description: |
+  Le SIEM lève des alertes, traitées par l'équipe d'exploitation de la sécurité, sur les événements
+  d'audit CI/CD qui affaiblissent des protections ou créent de nouveaux accès, au moins :
+
+  - changements de protection de branche, de jeux de règles, de revues obligatoires et de
+    protections de déploiement, et chaque contournement de ceux-ci ;
+  - création ou modification de secrets et variables au niveau organisation, dépôt ou
+    environnement ;
+  - enregistrement de runners ou d'agents et changements de groupes de runners ;
+  - création de jetons, clés de déploiement, installations d'applications et webhooks ;
+  - attribution de droits d'administrateur ou de propriétaire, et changements des politiques de
+    sécurité CI/CD (par exemple actions autorisées, approbation des pull requests de forks) ;
+  - contournement de la protection de push de l'analyse de secrets ;
+  - modifications des définitions de pipeline ou de projet de build hors du circuit normal, et
+    approbations de déploiement en production rejetées ;
+  - publications de paquets et changements des permissions de registre ou des contrôles d'origine
+    des paquets.
+
+  Chaque alerte a une procédure de tri documentée et, quand le changement est attendu (par exemple
+  par une automatisation ou un ticket de changement), une exception précise plutôt qu'une règle
+  désactivée.
+
+  La surveillance du comportement des runners relève de CB-CICD-RUN-027 et les alertes de
+  réconciliation GitOps de CB-CICD-LOG-007.
+rationale: |
+  Les attaquants de la chaîne d'approvisionnement qui obtiennent un accès CI/CD commencent par
+  affaiblir les protections ou ajouter leurs propres accès : nouveau runner, jeton, exigence de revue
+  retirée, secret poussé. Ces étapes laissent des événements d'audit quelques minutes avant le build
+  malveillant. Alerter dessus fait du journal d'audit une source de détection précoce et non plus un
+  simple enregistrement d'enquête.
+impact: |
+  Nécessite des règles SIEM par plate-forme et un processus de tri. Les règles bruyantes doivent être
+  ajustées avec des exceptions pour les identités d'automatisation connues.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux règles du SIEM et à l'historique des alertes.
+
+    1. Lister les règles d'alerte sur les sources CI/CD et les rapprocher des familles d'événements
+       ci-dessus.
+    2. Vérifier les événements propres aux plates-formes :
+       - **GitHub** : des règles existent pour les événements du journal d'audit comme
+         `protected_branch.policy_override`, `protected_branch.destroy`,
+         `repository_ruleset.update` et `repository_ruleset.destroy`, `org.update_actions_secret`,
+         `repo.update_actions_secret` et `environment.update_actions_secret`,
+         `org.register_self_hosted_runner`, `repo.register_self_hosted_runner` et
+         `org.runner_group_created`, `org.update_actions_settings`,
+         `org.set_actions_fork_pr_approvals_policy`, `secret_scanning_push_protection.bypass`,
+         `personal_access_token.request_created`, `hook.create`, `integration_installation.create` et
+         `packages.package_version_published`.
+       - **AWS CodeBuild / CodePipeline / CodeArtifact** : des règles existent sur les événements
+         CloudTrail `codebuild:UpdateProject`, `CreateWebhook`, `UpdateWebhook` et
+         `ImportSourceCredentials` ; `codepipeline:UpdatePipeline` ; les événements EventBridge
+         `CodePipeline Action Execution State Change` où une action d'approbation est `FAILED`
+         (rejetée) ; et `codeartifact:PublishPackageVersion`, `PutPackageOriginConfiguration`,
+         `PutRepositoryPermissionsPolicy` et `PutDomainPermissionsPolicy`.
+    3. Déclencher un événement de test sans conséquence (par exemple créer puis supprimer un secret
+       de test) et vérifier que l'alerte parvient à l'équipe sécurité.
+    4. Échec si une des familles d'événements n'a pas de règle d'alerte pour une plate-forme en
+       service, ou si les alertes ne sont pas routées vers une équipe qui les trie.
+remediation:
+  manual: |
+    1. S'assurer que les événements d'audit arrivent dans le SIEM (CB-CICD-LOG-003) ; sur GitHub
+       Enterprise Cloud, activer les événements de requêtes API si l'activité des jetons doit être
+       alertée (CB-CICD-LOG-002).
+    2. Écrire une règle par famille d'événements et par plate-forme, en commençant par les événements
+       GitHub et AWS listés dans la procédure d'audit, puis les événements équivalents des autres
+       plates-formes en service.
+    3. Ajouter des exceptions pour les identités d'automatisation nommées et les fenêtres de
+       changement, pas des suppressions globales.
+    4. Rédiger les étapes de tri de chaque alerte (qui contacter, comment confirmer, comment revenir
+       en arrière) et les relier au guide de réponse à incident (CB-CICD-LOG-009).
+    5. Tester les règles après chaque changement de plate-forme et au moins une fois par an.

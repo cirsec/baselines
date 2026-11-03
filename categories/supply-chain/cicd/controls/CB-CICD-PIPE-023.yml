@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-023
+title: Keep build steps single-purpose and give them their environment from the pipeline
+finding:
+  title: Build steps combine many responsibilities and fetch their own commands and configuration
+  description: A step that compiles, tests, signs and publishes on one worker, and downloads its own scripts or settings at run time, gives any compromised tool in it access to every credential of the build and makes the result impossible to reproduce.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [segregation-of-duties, hermetic-build, build-workers, least-privilege]
+
+description: |
+  Critical pipelines are split into steps with one responsibility each (fetch, build, test, scan,
+  sign, publish), with declared inputs and outputs passed between them as artifacts. Each step runs
+  on its own worker or isolated environment and receives only the credentials of its own
+  responsibility: the build step never holds the signing key or the publishing token.
+
+  Steps receive their environment, parameters and commands from the pipeline definition. They do
+  not download scripts, configuration or tool versions chosen at run time from outside the
+  reviewed definition and its pinned dependencies.
+
+  Isolation of builds from each other is covered by CB-CICD-RUN-014; network-less release builds by
+  CB-CICD-RUN-024; pinning of tools by CB-CICD-COMP-014.
+rationale: |
+  When one step does everything, the least trustworthy tool in it (a test framework, a dependency
+  install script) runs next to the signing key and the publishing token. Splitting duties limits
+  what a compromised tool can reach, and a step whose environment is fully pushed in by the
+  pipeline produces the same output for the same inputs, which makes tampering visible.
+impact: |
+  More steps mean more artifacts to pass and some extra run time. Existing all-in-one scripts must
+  be split.
+
+audit:
+  manual: |
+    Use read access to the pipeline files of critical (release) pipelines.
+
+    1. Map each step to its responsibilities and the credentials it receives.
+    2. Check that signing and publishing credentials are only available to the signing and
+       publishing steps, and that those steps run on a separate worker from the build and test
+       steps.
+    3. Look for steps that fetch scripts, configuration or tool versions at run time from locations
+       outside the pipeline definition and its pinned dependencies (for example `curl ... | sh`,
+       downloading a config from a URL).
+    4. Fail if a release pipeline step both runs build or test code and holds signing or publishing
+       credentials, or if a step obtains its commands or configuration from outside the reviewed
+       definition.
+
+remediation:
+  manual: |
+    1. Split release pipelines into separate jobs for build, test, scan, sign and publish, passing
+       outputs as artifacts with checksums.
+    2. Scope credentials to the job that needs them (environments, job-level secrets) and run sign
+       and publish jobs on dedicated runners.
+    3. Replace run-time downloads of scripts and configuration with files in the repository or
+       pinned, verified dependencies, and pass parameters from the pipeline.
+
+references:
+  - title: Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/supply-chain-security-paper/sscsp.md
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: Secure Software Factory
+    url: https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/secure-software-factory/secure-software-factory.md
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Build track basics
+    url: https://slsa.dev/spec/v1.2/build-track-basics
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+related_controls:
+  - id: CB-CICD-RUN-014
+    type: related
+  - id: CB-CICD-RUN-024
+    type: related
+  - id: CB-CICD-COMP-014
+    type: related
+  - id: CB-CICD-ART-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

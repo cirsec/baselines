@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-005
+title: Expire and protect runner authentication credentials
+finding:
+  title: Runner credentials never expire and are readable by jobs
+  description: A runner or agent token with no expiry, shared by many hosts and stored where jobs can read it, lets anyone who runs one job clone the runner and keep receiving other jobs and their secrets from anywhere.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, agents, tokens, rotation, credentials]
+
+parameters:
+  - name: token_binding
+    type: enum
+    description: How far runner credentials are constrained. expiring means unique per runner or runner group, expiring within 90 days and unreadable by jobs; bound adds a restriction to the runner networks' source addresses and per-job acquisition tokens where the platform supports them.
+    allowed: [expiring, bound]
+    default: expiring
+    profile_defaults:
+      hardened: bound
+
+description: |
+  The credential a runner, agent or delegate uses to authenticate to the CI/CD platform after
+  registration:
+
+  - is unique to a runner or a runner group, never one token shared by the whole fleet;
+  - expires within 90 days and is rotated automatically or by a documented procedure, and is revoked
+    when the runner is decommissioned;
+  - is stored in a file or secret readable only by the runner service account (for example
+    `config.toml` mode `0600`, owned by the runner user), or fetched from a secrets manager, and
+    cannot be read by the jobs the runner executes.
+
+  With `{{ token_binding }}` set to `bound`, tokens are also limited to the source addresses of the
+  runner networks, and ephemeral runners receive a per-job credential instead of the long-lived one.
+  Registration tokens are covered by CB-CICD-RUN-004.
+rationale: |
+  The runner credential is what the platform uses to decide where to send jobs. A copy of it lets an
+  attacker run a clone that competes for jobs and receives their secrets, from any network and for as
+  long as the token lives. Jobs are the easiest place to steal it from when it sits in a file the job
+  user can read.
+impact: |
+  Rotation needs automation or a runbook; GitLab runners renew their token automatically before the
+  expiry interval ends. Revoking a shared token disconnects every runner using it, so split shared
+  tokens before rotating. Restricting tokens by IP address disconnects agents outside the allowed
+  ranges.
+notes: |
+  On GitLab, a cloned runner shares its authentication token; if a token leaks, delete and recreate
+  the runner. On Harness, all delegates of a new account share one default token until per-group
+  tokens are created; rotating a delegate token requires redeploying the delegate. On Buildkite,
+  agent tokens created in the web interface do not expire: create them through the API with an
+  expiry.
+
+audit:
+  manual: |
+    Use a platform administrator read role and read access to runner hosts or their deployment
+    manifests.
+
+    1. List runner credentials (tokens per runner, runner group, cluster or delegate group) with their
+       creation date, expiry and the runners using each one.
+    2. On a sample of runner hosts, check who can read the credential file and whether a job can read
+       it (for example from a job running as the runner user on a shell executor).
+    3. Check the platform settings:
+       - **GitLab**: **Admin** > **Settings** > **CI/CD** > **Continuous Integration and Deployment**
+         > **Runners expiration** is set (empty means no expiration); `config.toml` is readable only
+         by the runner service account.
+       - **Buildkite**: each cluster's **Agent Tokens** have an expiry (`expires_at`, settable only
+         through the REST or GraphQL API) and, with `{{ token_binding }}` set to `bound`,
+         **Allowed IP Addresses**; ephemeral agents use job acquisition tokens (default on Agent
+         Stack for Kubernetes).
+       - **Harness**: **Delegates** > **Tokens** at each scope: delegate groups do not all share the
+         default token, tokens are stored in a secret manager and revoked tokens are removed.
+    4. Fail if a runner credential has no expiry or is older than 90 days, is shared by runners of
+       different trust levels, or can be read by jobs; with `{{ token_binding }}` set to `bound`,
+       also fail if tokens accept connections from any address.
+remediation:
+  manual: |
+    1. Split shared credentials so that each runner group has its own.
+    2. Set expiry and rotation:
+       - **GitLab**: as an administrator, set **Runners expiration** (for example 30 to 90 days); keep
+         `config.toml` at mode `0600` owned by the runner user.
+       - **Buildkite**: create agent tokens through the API with `expires_at`, store them in a
+         secrets manager, add **Allowed IP Addresses** for the agent subnets when hardening, and use
+         job acquisition tokens for ephemeral agents.
+       - **Harness**: create one token per delegate group in **Delegates** > **Tokens**, store it in a
+         secret manager referenced by the delegate deployment, redeploy, then revoke the default
+         token.
+    3. Run jobs as a user that cannot read the runner credential (CB-CICD-RUN-018), or use ephemeral
+       runners whose credential is valid for one job (CB-CICD-RUN-012).
+    4. Add token rotation and revocation to the runner decommissioning procedure.
+
+references:
+  - title: Configuring runners (Automatically rotate runner authentication tokens)
+    url: https://docs.gitlab.com/ci/runners/configure_runners/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite agent tokens
+    url: https://buildkite.com/docs/agent/self-hosted/tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Job acquisition tokens
+    url: https://buildkite.com/docs/agent/self-hosted/job-acquisition-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure delegates with tokens
+    url: https://developer.harness.io/docs/platform/delegates/secure-delegates/secure-delegates-with-tokens/
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the credentials runners use to authenticate to the platform.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-RUN-004
+    type: related
+  - id: CB-CICD-RUN-006
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

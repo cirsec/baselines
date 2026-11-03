@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-025
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Archiver les dépôts non maintenus et supprimer les branches obsolètes
+finding:
+  title: Des dépôts non maintenus et des branches obsolètes restent actifs
+  description: Les dépôts oubliés gardent leurs runners, secrets, webhooks et accès en écriture, et les vieilles branches gardent des définitions de pipeline encore déclenchables, offrant aux attaquants des cibles que personne ne surveille ni ne corrige.
+description: |
+  Les dépôts sans activité depuis `{{ inactive_months }}` mois sont revus par leurs propriétaires
+  et soit confirmés comme maintenus, soit archivés (lecture seule). Les branches sources sont
+  supprimées une fois leur pull request ou merge request fusionnée, et les branches sans commit
+  depuis plusieurs mois sont revues et supprimées quand elles ne servent plus.
+
+  La suppression de dépôts, et le risque de réenregistrement de leur nom, relèvent de
+  CB-CICD-SCM-003 ; le retrait des runners et identifiants inutilisés de CB-CICD-RUN-006 et
+  CB-CICD-SEC-011.
+rationale: |
+  Un dépôt non maintenu conserve tout ce qui le rendait utile : pipelines avec secrets, clés de
+  déploiement, webhooks et membres ayant un accès en écriture. Personne ne suit ses alertes de
+  dépendances ni sa liste d'accès ; c'est donc un point d'entrée facile. Les branches obsolètes
+  gardent d'anciennes définitions de pipeline et du vieux code vulnérable qui peuvent encore
+  s'exécuter si quelqu'un y pousse. L'archivage rend le dépôt en lecture seule et arrête les
+  pipelines planifiés sur GitLab.
+impact: |
+  Les dépôts archivés doivent être désarchivés avant toute modification. Les équipes doivent
+  supprimer les branches fusionnées ou accepter leur suppression automatique, et garder les branches
+  de longue durée sous des noms explicites.
+parameters:
+  inactive_months: Nombre de mois sans activité après lequel un dépôt est examiné pour archivage.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire d'organisation ou de groupe, ou un jeton en lecture sur tous les
+    dépôts.
+
+    1. Lister les dépôts avec leur date de dernière activité et relever ceux sans commit, pull
+       request ni release depuis `{{ inactive_months }}` mois. Le check `Maintained` de Scorecard et
+       les politiques de legitify sur les dépôts non maintenus aident à grande échelle.
+    2. Vérifier l'hygiène des branches :
+       - **GitHub** : **Settings** > **General** > **Pull Requests** > **Automatically delete head
+         branches** est coché dans le dépôt ; la page **Branches** montre les branches obsolètes à
+         revoir.
+       - **GitLab** : **Code** > **Branches** montre les branches obsolètes (aucun commit depuis trois
+         mois), et les branches fusionnées sont supprimées (**Delete merged branches** ou l'option de
+         suppression de la branche source dans les merge requests).
+    3. Échec si des dépôts inactifs ne sont ni archivés ni confirmés comme maintenus par un
+       propriétaire, ou si les branches fusionnées et obsolètes s'accumulent sans revue.
+remediation:
+  manual: |
+    1. Demander aux propriétaires de chaque dépôt inactif de confirmer sa maintenance ou d'accepter
+       son archivage.
+    2. Archiver les dépôts qui ne sont plus maintenus :
+       - **GitHub** : **Settings** > **General** > **Danger Zone** > **Archive this repository**.
+       - **GitLab** : sur la page d'accueil du projet, menu **Actions** > **Archive** (Owner ou
+         administrateur).
+    3. Avant l'archivage, révoquer les clés de déploiement, jetons et webhooks du dépôt qui ne sont
+       plus nécessaires.
+    4. Activer **Automatically delete head branches** (GitHub) ou supprimer régulièrement les
+       branches fusionnées (GitLab), et revoir périodiquement les branches obsolètes.

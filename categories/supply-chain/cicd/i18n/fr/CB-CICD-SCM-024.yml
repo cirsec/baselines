@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-024
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier les signatures de la source avant le build et le déploiement
+finding:
+  title: Les pipelines et contrôleurs GitOps construisent ou synchronisent la source sans vérifier sa signature
+  description: Un contrôleur qui synchronise n'importe quelle révision qu'il trouve déploiera un commit poussé avec un jeton volé ou servi par un miroir altéré, même si l'organisation signe ses commits et ses tags.
+description: |
+  Avant de construire une release ou de synchroniser un déploiement, celui qui consomme la source
+  vérifie que la révision est signée par une clé de confiance :
+
+  - les contrôleurs GitOps vérifient la signature du commit ou du tag qu'ils synchronisent, contre
+    une liste explicite de clés de confiance, et refusent de synchroniser sinon ;
+  - les pipelines de release vérifient la signature du tag de release (et, quand tout l'historique
+    est signé, celle du commit) avant le build, ou contrôlent un résumé de vérification de la source
+    émis par la plate-forme source.
+
+  La signature sur la plate-forme source relève de CB-CICD-SCM-023 ; la vérification des artefacts
+  avant déploiement de CB-CICD-ART-006.
+rationale: |
+  Signer les commits n'aide que si quelqu'un vérifie les signatures là où la source est consommée.
+  Un contrôleur GitOps a un accès en écriture aux clusters de production : s'il fait confiance à
+  n'importe quelle révision de son dépôt source, un attaquant capable de pousser dans ce dépôt, ou
+  d'intercepter la connexion, contrôle la production. Vérifier les signatures chez le consommateur
+  déplace la confiance du contrôle d'accès du serveur Git vers les clés de signature de mainteneurs
+  connus.
+impact: |
+  Tous les commits ou tags consommés par le contrôleur doivent être signés par des clés enregistrées
+  dans sa configuration, et la rotation des clés doit être planifiée. Les synchronisations locales
+  et les commits d'automatisation non signés sont refusés.
+notes: |
+  Argo CD : `spec.sourceIntegrity` sur l'AppProject remplace `spec.signatureKeys`, déprécié, et ne
+  peut pas être combiné avec lui ; une fois la vérification imposée, `argocd app sync --local` ne
+  fonctionne plus, et la vérification n'est pas prise en charge pour les ApplicationSets générés par
+  le générateur git avec un `project` templatisé. En mode `strict`, Argo CD vérifie tout
+  l'historique, avec des commits de scellement pour accepter un historique ancien non signé. Flux
+  vérifie les signatures OpenPGP et SSH.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration des contrôleurs GitOps et les définitions de
+    pipeline.
+
+    1. Lister les applications GitOps et les pipelines de release qui déploient en production, et
+       les dépôts qu'ils consomment.
+    2. Vérifier le contrôle des signatures :
+       - **Argo CD** : chaque AppProject utilisé pour la production définit
+         `spec.sourceIntegrity.git.policies` correspondant à ses dépôts, avec `gpg.mode` à `head` ou
+         `strict` et une liste `keys` ; les clés sont présentes dans la ConfigMap
+         `argocd-gpg-keys-cm` (`argocd gpg list`).
+       - **Flux** : chaque `GitRepository` de production pose `spec.verify.mode` (`HEAD`, `Tag` ou
+         `TagAndHEAD`) et `spec.verify.secretRef` désignant un Secret qui contient les clés publiques
+         de confiance ; `kubectl get gitrepository` montre la condition `SourceVerified` à `True`.
+       - **Pipelines de release** : le job de build exécute `git verify-tag` (ou `git verify-commit`)
+         contre un trousseau de confiance, ou contrôle une attestation de vérification de la source,
+         avant le build.
+    3. Échec si un déploiement de production ou un build de release consomme une source sans
+       vérifier sa signature contre un ensemble défini de clés de confiance.
+remediation:
+  manual: |
+    1. S'assurer que les commits ou tags consommés sont signés (CB-CICD-SCM-023), et rassembler les
+       clés publiques des signataires autorisés.
+    2. Activer la vérification :
+       - **Argo CD** : importer les clés avec `argocd gpg add --from <fichier de clé>`, puis ajouter
+         `spec.sourceIntegrity.git.policies` à l'AppProject avec les motifs de dépôts,
+         `gpg.mode: head` (ou `strict` quand tout l'historique est signé) et les identifiants de
+         clés ; retirer `spec.signatureKeys`.
+       - **Flux** : créer un Secret avec les clés publiques (`.asc` pour OpenPGP, `.sshpub` pour SSH)
+         et poser `spec.verify.mode` et `spec.verify.secretRef` sur le `GitRepository`.
+       - **Pipelines de release** : ajouter une étape qui importe le trousseau de confiance et
+         exécute `git verify-tag` sur le tag de release avant le build.
+    3. Documenter la rotation des clés : ajouter la nouvelle clé, signer avec, puis retirer
+       l'ancienne.
+  rollback: |
+    Régler le `gpg.mode` de la politique Argo CD sur `none` ou retirer `spec.verify` du
+    `GitRepository` Flux si un déploiement légitime est bloqué, puis corriger le problème de
+    signature.

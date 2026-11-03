@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Appliquer une politique de mots de passe et de verrouillage aux comptes locaux restants
+finding:
+  title: Les comptes locaux de la plate-forme acceptent des mots de passe courts et un nombre illimité de tentatives
+  description: Sans règle de longueur, de vérification des fuites et de verrouillage, les comptes locaux d'une plate-forme CI/CD peuvent être devinés ou attaqués avec des mots de passe divulgués jusqu'à ce que l'un fonctionne.
+description: |
+  Là où une plate-forme garde des connexions locales (comptes de secours, petites instances sans
+  fournisseur d'identité), les mots de passe font au moins 12 caractères, sont comparés aux mots de
+  passe divulgués connus quand la plate-forme sait le faire, sont hachés avec un algorithme robuste, et
+  les échecs répétés verrouillent ou ralentissent le compte.
+
+  Le passage des utilisateurs au fournisseur d'identité relève de CB-CICD-IAM-001, ce qui limite ce
+  contrôle à très peu de comptes.
+rationale: |
+  Les plates-formes CI/CD sont souvent exposées au réseau de tous les développeurs, parfois à
+  internet. Un compte local avec un mot de passe faible et sans verrouillage est l'entrée la plus
+  facile, et les politiques par défaut des plates-formes (8 caractères, pas de complexité, pas de
+  vérification des fuites) sont en deçà des recommandations actuelles.
+impact: |
+  Les utilisateurs existants doivent choisir un mot de passe conforme au prochain changement. Le
+  verrouillage peut servir à bloquer un compte connu : préférer le ralentissement ou un verrouillage
+  court pour les administrateurs.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur qui peut lire les réglages d'authentification ou la
+    configuration de la plate-forme.
+
+    1. Vérifier la politique sur chaque plate-forme qui a des comptes locaux :
+       - **Harness** : **Account Settings** > **Authentication**, politique de mots de passe :
+         **Enforce password strength** et **Enforce lockout policy** sont activés.
+       - **Gitea / Forgejo** : `[security] MIN_PASSWORD_LENGTH` vaut 12 ou plus (défaut 8),
+         `PASSWORD_COMPLEXITY` liste les classes exigées (défaut `off`), `PASSWORD_CHECK_PWN = true`
+         (nécessite un accès sortant à l'API de plages Have I Been Pwned), et `PASSWORD_HASH_ALGO`
+         vaut `argon2` ou `pbkdf2_hi`.
+       - **Argo CD** : l'environnement d'`argocd-server` ne désactive pas le ralentissement des
+         connexions (`ARGOCD_SESSION_FAILURE_MAX_FAIL_COUNT`, défaut 5, et
+         `ARGOCD_SESSION_FAILURE_WINDOW_SECONDS`, défaut 300, non mis à 0), et `passwordPattern` dans
+         `argocd-cm` exige au moins 12 caractères (défaut `^.{8,32}$`).
+    2. Échec si des comptes locaux existent et que la plate-forme accepte des mots de passe de moins
+       de 12 caractères ou ne limite pas les tentatives de connexion échouées.
+remediation:
+  manual: |
+    1. **Harness** : dans **Authentication**, activer **Enforce password strength** (longueur minimale
+       12 et règles de caractères) et **Enforce lockout policy** (nombre d'échecs et durée de
+       verrouillage) ; il faut un administrateur du compte avec le droit de modifier les réglages
+       d'authentification.
+    2. **Gitea / Forgejo** : dans `app.ini` `[security]`, poser `MIN_PASSWORD_LENGTH = 12`,
+       `PASSWORD_COMPLEXITY = lower,upper,digit`, `PASSWORD_CHECK_PWN = true` et
+       `PASSWORD_HASH_ALGO = argon2` (ou `pbkdf2_hi`), puis redémarrer. Les nouveaux hachages
+       s'appliquent au prochain changement de mot de passe.
+    3. **Argo CD** : garder le nombre d'échecs et la fenêtre par défaut, et régler `passwordPattern`
+       dans `argocd-cm` pour exiger au moins 12 caractères, par exemple `"^.{12,64}$"`.

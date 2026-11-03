@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-014
+title: Never run pull request code in pipelines that hold secrets or write tokens
+finding:
+  title: A privileged workflow checks out and builds pull request code
+  description: A workflow started by `pull_request_target`, `workflow_run`, a comment or a PR build with credentials checks out the pull request head and runs its build scripts, so the pull request author executes code with the base repository's secrets and write token ("pwn request").
+status: draft
+profiles: [baseline]
+risk:
+  severity: critical
+assessment: manual
+tags: [pull-request-target, pwn-request, untrusted-checkout, poisoned-pipeline-execution]
+
+description: |
+  Workflows that run with secrets, a write-scoped token, an OIDC token or a cache write on behalf of
+  a pull request never check out, build, test or install the pull request's code, and never run
+  scripts or artifacts it produced. Such privileged triggers are used only for metadata tasks
+  (labelling, commenting) or consume the results of an unprivileged run as untrusted data.
+  Untrusted code is built in a separate, unprivileged pipeline. Credentials are never bound around
+  steps that execute code a contributor can change.
+
+  Fork pipeline secrets are covered by CB-CICD-PIPE-010; artifacts passed between pipelines by
+  CB-CICD-ART-013.
+rationale: |
+  These triggers exist precisely to give a workflow privileges a fork does not have. Checking out
+  the pull request head inside them hands those privileges to the pull request author: build
+  scripts, test files, package manifests and pre-commit hooks all run code under their control. It
+  is the most frequently exploited CI/CD misconfiguration in public repositories.
+impact: |
+  Workflows that combine building and commenting must be split into an unprivileged build and a
+  privileged reporter that treats the build output as data.
+notes: |
+  `actions/checkout` refuses fork head refs under `pull_request_target` unless
+  `allow-unsafe-pr-checkout: true` is set; that guard does not cover `git fetch`, `gh pr checkout`
+  or downloaded artifacts. The same risk applies to Gitea and Forgejo workflows; on Forgejo,
+  `pull_request_target` runs get a token with write permission.
+
+audit:
+  manual: |
+    Use read access to the pipeline files.
+
+    1. List workflows and pipelines that run with secrets or write tokens and are started by pull
+       request related events. Run zizmor (`dangerous-triggers`), poutine
+       (`untrusted_checkout_exec`) or Scorecard (`Dangerous-Workflow`) as a help.
+    2. Check per platform:
+       - **GitHub / Gitea / Forgejo**: workflows with `on: pull_request_target`, `workflow_run` or
+         `issue_comment` do not use `actions/checkout` with `ref:` set to the pull request head
+         (`github.event.pull_request.head.sha`, `head.ref`), `git fetch` of the pull request ref
+         or `gh pr checkout`, do not set `allow-unsafe-pr-checkout: true`, and do not execute
+         downloaded artifacts. On Forgejo, such workflows set `persist-credentials: false`, do not
+         set `enable-openid-connect` and do not write caches.
+       - **Azure DevOps**: pipelines with a `pr:` trigger that check out and build the code do not
+         use variable groups, secure files or service connections with production access.
+       - **Jenkins**: `withCredentials` blocks only wrap steps that run trusted code; pull request
+         builds from untrusted authors do not run inside them.
+    3. Fail if a privileged pipeline executes, installs or builds code or artifacts from a pull
+       request.
+
+remediation:
+  manual: |
+    1. Change privileged pull request workflows to work on metadata only, or replace them with an
+       unprivileged `pull_request` workflow.
+    2. Where results are needed in a privileged step, split the work: an unprivileged workflow
+       builds and uploads results, and a `workflow_run` workflow reads them as untrusted data
+       (no execution, validated content).
+    3. Remove `allow-unsafe-pr-checkout: true` and any manual fetch of pull request refs from
+       privileged workflows; on Forgejo set `persist-credentials: false`.
+    4. **Azure DevOps**: create a separate pull request validation pipeline without secrets or
+       service connections. **Jenkins**: move `withCredentials` to stages that only run on trusted
+       branches.
+
+references:
+  - title: Securely using pull_request_target
+    url: https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure use reference for GitHub Actions
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo Actions security
+    url: https://forgejo.org/docs/latest/user/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing organization folders and multibranch pipelines
+    url: https://www.jenkins.io/doc/book/security/securing-org-folders-and-multibranch-pipelines/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-4 Poisoned Pipeline Execution
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-04-Poisoned-Pipeline-Execution
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers indirect poisoned pipeline execution through privileged pull request triggers.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-ART-013
+    type: related
+  - id: CB-CICD-PIPE-015
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

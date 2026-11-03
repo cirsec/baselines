@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder actives les protections de l'interface web contre le CSRF et le cross-site scripting
+finding:
+  title: La protection CSRF, la politique de sécurité du contenu ou l'isolement du contenu utilisateur est affaibli
+  description: La plate-forme tourne sans protection CSRF, avec des descriptions en HTML brut, une politique de sécurité du contenu assouplie ou le contenu utilisateur sur le domaine principal ; un lien forgé ou un rapport publié exécute des actions ou des scripts avec la session de l'administrateur qui l'ouvre.
+description: |
+  Les protections côté navigateur de la plate-forme restent à leurs valeurs sûres par défaut ou plus
+  strictes :
+
+  - Jenkins : la protection CSRF est active (émetteur de crumb par défaut), la propriété système
+    `hudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION` n'est pas
+    définie ; le formateur de balisage est **Plain text** ou **Safe HTML**, jamais du HTML brut ; la
+    `Content-Security-Policy` par défaut des fichiers fournis par les utilisateurs
+    (`hudson.model.DirectoryBrowserSupport.CSP`) n'est pas assouplie, et quand des rapports plus
+    riches sont nécessaires ils sont servis depuis un nom d'hôte distinct de **Resource Root URL**.
+  - GitHub Enterprise Server : l'isolement par sous-domaine est activé, pour que fichiers bruts,
+    pages, ressources et contenu de paquets soient servis depuis des sous-domaines distincts.
+rationale: |
+  Les plates-formes CI/CD affichent du contenu écrit par de nombreux utilisateurs (descriptions de
+  jobs, rapports de test, HTML publié par les builds, fichiers bruts). Si ce contenu peut exécuter du
+  script dans l'origine de la plate-forme, ou si les requêtes qui modifient l'état n'exigent pas de
+  jeton CSRF, tout utilisateur capable de publier un rapport ou une description peut agir avec les
+  droits de l'administrateur qui le consulte : créer des identifiants, modifier des jobs, lancer la
+  console de script.
+impact: |
+  Certains anciens plugins ou scripts qui envoient des requêtes à Jenkins sans crumb cessent de
+  fonctionner et doivent être mis à jour. Servir les ressources depuis un autre domaine et activer
+  l'isolement par sous-domaine demandent un nom d'hôte supplémentaire, des enregistrements DNS et un
+  certificat correspondant (générique pour GitHub Enterprise Server).
+notes: |
+  Dans Jenkins, les URL de ressources servies depuis le domaine racine des ressources fonctionnent
+  sans authentification jusqu'à leur expiration (30 minutes par défaut). L'option de crumb **Enable
+  proxy compatibility** a été retirée dans Jenkins 2.543.
+audit:
+  manual: |
+    Utiliser un compte administrateur.
+
+    1. **Jenkins** :
+       - **Manage Jenkins** > **Security** > **CSRF Protection** affiche un émetteur de crumb, et
+         les options de démarrage du contrôleur (fichier de service, `JAVA_OPTS`, environnement du
+         conteneur) ne définissent pas
+         `hudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true` ;
+       - **Manage Jenkins** > **Security** > **Markup Formatter** vaut **Plain text** ou **Safe
+         HTML** (plugin OWASP Markup Formatter) ;
+       - les options de démarrage ne définissent pas `hudson.model.DirectoryBrowserSupport.CSP` à
+         une politique plus faible ; si des rapports riches sont nécessaires, **Manage Jenkins** >
+         **System** > **Serve resource files from another domain** contient une URL racine de
+         ressources sur un autre nom d'hôte.
+    2. **GitHub Enterprise Server** : **Site admin** > **Management Console** > **Hostname** :
+       **Subdomain isolation (recommended)** est sélectionné.
+    3. Échec si la protection CSRF est désactivée, si le balisage HTML brut est permis, si la CSP des
+       fichiers utilisateur est assouplie sans domaine de ressources distinct, ou si l'isolement par
+       sous-domaine est coupé.
+remediation:
+  manual: |
+    Utiliser un compte administrateur et prévoir un redémarrage quand les options de démarrage
+    changent.
+
+    1. **Jenkins** :
+       - retirer `DISABLE_CSRF_PROTECTION` des options de démarrage et choisir l'émetteur de crumb
+         par défaut dans **Manage Jenkins** > **Security** > **CSRF Protection** ; mettre à jour les
+         plugins ou scripts qui échouent sans crumb ;
+       - régler **Markup Formatter** sur **Plain text**, ou **Safe HTML** si une mise en forme est
+         nécessaire ;
+       - retirer toute valeur personnalisée de `hudson.model.DirectoryBrowserSupport.CSP` ; si des
+         rapports HTML doivent s'afficher, configurer **Serve resource files from another domain**
+         avec un nom d'hôte dédié.
+    2. **GitHub Enterprise Server** : créer un enregistrement DNS générique et un certificat couvrant
+       `HOSTNAME` et `*.HOSTNAME`, puis dans **Management Console** > **Hostname** sélectionner
+       **Subdomain isolation (recommended)** et **Save settings**.

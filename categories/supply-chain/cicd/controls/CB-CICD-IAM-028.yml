@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-028
+title: Enforce a maximum lifetime on personal and API access tokens
+finding:
+  title: Personal access tokens can be created without expiry or with a lifetime of a year or more
+  description: A token that never expires keeps working long after it leaks from a script, a laptop or a CI log, and is rarely revoked because nobody remembers it exists.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [personal-access-tokens, token-lifetime, api-tokens, credential-hygiene]
+
+applicability:
+  versions: [github, gitlab, azure-devops, buildkite, circleci]
+
+parameters:
+  - name: max_token_lifetime_days
+    type: integer
+    description: Maximum lifetime allowed for personal, group, project and API access tokens.
+    unit: days
+    default: 90
+    profile_defaults:
+      hardened: 30
+    minimum: 1
+    maximum: 366
+
+description: |
+  Personal access tokens and other user-issued API tokens must have an expiry date of at most
+  {{ max_token_lifetime_days }} days, enforced by platform policy where it exists. Where the platform
+  only lets the user pick an expiry, the organization's rule is the same and is checked during the
+  identity review. Tokens that cannot expire are not used for access to the organization.
+
+  Token scope is covered by CB-CICD-IAM-029, approval of tokens by CB-CICD-IAM-030, revocation of
+  leaked or unused tokens by CB-CICD-IAM-031.
+rationale: |
+  Tokens leak through shell history, CI logs, dotfiles and infostealers, and they bypass SSO and MFA.
+  An expiry date bounds the window during which a leaked token is useful and forces regular rotation,
+  which also removes tokens nobody uses any more.
+impact: |
+  Users and scripts must renew tokens regularly. Existing tokens that exceed the new limit are blocked
+  or must be regenerated depending on the platform; long-running automations should move to
+  non-human identities with short-lived credentials (CB-CICD-IAM-027).
+notes: |
+  On GitHub, non-compliant existing tokens are blocked when used against the organization, not
+  revoked. On Azure DevOps, the tenant policy applies when a PAT is created or renewed. On Buildkite,
+  tokens using the Public Key credential type never expire.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. Check the lifetime policy:
+       - **GitHub**: **Enterprise settings** or **Organization settings** > **Personal access tokens**
+         > **Set maximum lifetimes for personal access tokens**, on both the **Fine-grained tokens**
+         and **Tokens (classic)** tabs, is at most {{ max_token_lifetime_days }} days (default 366 days
+         for fine-grained tokens, no requirement for classic tokens).
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **Account and limit**:
+         **Require expiration date** is selected (on by default since GitLab 17.3), and **Limit the
+         lifetime of access tokens** is at most {{ max_token_lifetime_days }} days (Ultimate, default
+         365). For service accounts, the
+         `service_access_tokens_expiration_enforced` application setting is on.
+       - **Azure DevOps**: **Organization settings** > **Microsoft Entra** > **Enforce maximum personal
+         access token lifespan** is on with at most {{ max_token_lifetime_days }} days.
+       - **Buildkite**: tokens listed in **API Access Audit** use the Token credential type with a
+         **Token Expiry** within the limit (the default is seven days if left unset).
+       - **CircleCI**: personal API tokens are created with an expiry date within the limit.
+    2. List existing tokens with their expiry where the platform shows it.
+    3. Fail if the platform policy allows tokens longer than {{ max_token_lifetime_days }} days, or
+       if non-expiring tokens have access to the organization.
+
+remediation:
+  manual: |
+    1. Set the policy:
+       - **GitHub**: set the maximum lifetime on both tabs at enterprise level (organization owners
+         can only tighten it); do not exempt administrators unless an automation requires it.
+       - **GitLab self-managed**: keep **Require expiration date** selected and set
+         **Limit the lifetime of access tokens** (instance administrator).
+       - **Azure DevOps**: turn on **Enforce maximum personal access token lifespan** and enter the
+         number of days (Azure DevOps Administrator role in Entra).
+       - **Buildkite / CircleCI**: tell users the maximum expiry, and remove tokens that exceed it
+         during the identity review (CB-CICD-IAM-026).
+    2. Ask owners of non-compliant tokens to regenerate them, then revoke the old ones.
+
+references:
+  - title: Enforcing policies for personal access tokens in your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-personal-access-tokens-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab account and limit settings - access token expiration
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage personal access tokens using policies (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/manage-pats-with-policies-for-administrators
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API access tokens (Buildkite)
+    url: https://buildkite.com/docs/apis/managing-api-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API tokens (CircleCI)
+    url: https://circleci.com/docs/guides/toolkit/managing-api-tokens/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the lifetime of user-issued tokens; other credential hygiene topics are covered by SEC controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R15"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-IAM-029
+    type: related
+  - id: CB-CICD-IAM-031
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

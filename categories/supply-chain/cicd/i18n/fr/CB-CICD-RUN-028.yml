@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-028
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier la provenance de build des images de runners avant usage
+finding:
+  title: Des images de runners sont utilisées sans provenance vérifiée
+  description: Quand les images de VM ou de conteneur sur lesquelles démarrent les runners n'ont pas de provenance signée, ou que personne ne la vérifie, une image altérée déposée dans le magasin d'images compromet tous les builds qui tournent dessus.
+description: |
+  Les images utilisées pour instancier les environnements de build (images de VM de runners, images de
+  conteneur de runners, images de base des jobs maintenues par l'équipe plate-forme) sont elles-mêmes
+  construites par un pipeline qui génère une provenance de build SLSA signée (Build L2 ou plus). Avant de
+  démarrer un environnement de build depuis une image, la provenance de cette image est vérifiée
+  automatiquement contre la source et le builder attendus, et le résultat est consigné.
+
+  C'est l'exigence BuildEnv L1 de la piste environnement de build de SLSA (brouillon de travail, absent des versions publiées de SLSA). La provenance des artefacts de
+  release relève de CB-CICD-ART-001 ; l'épinglage des images de job de CB-CICD-COMP-013.
+rationale: |
+  Chaque build fait confiance à l'image dans laquelle il tourne. Une image de runner modifiée (agent avec
+  porte dérobée, compilateur altéré, certificat d'AC ajouté) contamine tous les artefacts construits
+  dessus, et rien dans la provenance des artefacts ne le montre. Une provenance signée de l'image,
+  vérifiée à l'instanciation, rattache l'environnement de build à une source et un processus de build
+  revus.
+impact: |
+  Nécessite un pipeline d'images avec génération de provenance et une étape de vérification dans le
+  provisionnement des runners (hook d'autoscaler, contrôleur d'admission, pipeline de modèles de
+  lancement). Les images des runners hébergés sont hors de portée de l'organisation ; le contrôle
+  s'applique aux images qu'elle construit.
+notes: |
+  La piste environnement de build de SLSA est un brouillon et ne fait pas partie de SLSA v1.2. Des outils
+  comme cosign ou les commandes d'attestation de GitHub peuvent générer et vérifier la provenance d'images
+  de conteneur ; pour les images de VM, consigner et vérifier l'empreinte de l'image contre une
+  attestation.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux pipelines d'images de runners, au registre d'images et au code de
+    provisionnement des runners.
+
+    1. Lister les images produites par l'organisation dans lesquelles les runners démarrent ou exécutent
+       des jobs.
+    2. Pour chacune, vérifier que le pipeline d'images génère une provenance signée et la publie avec
+       l'image.
+    3. Vérifier dans le provisionnement des runners (autoscaler, politique d'admission, configuration de
+       lancement) une étape qui vérifie la provenance avant le démarrage de l'environnement, et qu'un échec
+       de vérification le bloque.
+    4. Échec si une image de runner construite par l'organisation n'a pas de provenance signée, ou si des
+       environnements démarrent sans la vérifier.
+remediation:
+  manual: |
+    1. Construire les images de runners dans un pipeline sur la plate-forme de build gérée avec génération
+       de provenance (CB-CICD-ART-001).
+    2. Publier la provenance avec l'image, signée par l'identité de la plate-forme de build.
+    3. Ajouter la vérification au provisionnement : politique d'admission qui vérifie les attestations des
+       images de pods de runners, ou contrôle dans l'autoscaler ou le pipeline de modèles de lancement pour
+       les images de VM.
+    4. Consigner les résultats de vérification pour que la provenance des builds puisse référencer
+       l'empreinte de l'image vérifiée.

@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les points d'accès de diagnostic et d'information non authentifiés
+finding:
+  title: Des points d'accès de profilage, de métriques ou d'information répondent sans authentification
+  description: La plate-forme expose à tous des données de profilage, des métriques Prometheus, des explorateurs d'API, des badges d'état ou des traces de pile ; un attaquant apprend noms de dépôts et d'applications, versions et chemins internes, et les points de profilage peuvent aussi servir à épuiser le serveur.
+description: |
+  Les points d'accès de diagnostic ne sont jamais joignables sans authentification : le profilage
+  (pprof) est coupé ou lié à localhost, et les points de métriques exigent un jeton ou n'écoutent que
+  sur une interface privée collectée par la supervision.
+
+  Avec `exposure_scope` à `all` (ici **{{ exposure_scope }}**), les points d'information utiles mais
+  non authentifiés sont aussi coupés : explorateurs d'API (Swagger UI), badges d'état, et traces de
+  pile affichées sur les pages d'erreur.
+
+  L'accès anonyme à la plate-forme elle-même relève de CB-CICD-IAM-011, et la visibilité des
+  journaux de build de CB-CICD-PIPE-022.
+rationale: |
+  Les points de profilage et de métriques révèlent la structure interne (nombre et noms de dépôts,
+  noms d'applications, versions, organisation mémoire) et les gestionnaires de profilage peuvent
+  être appelés en boucle pour charger le serveur. Les badges d'état sont servis sans
+  authentification et divulguent les noms de projets et d'applications et leur état ; explorateurs
+  d'API et traces de pile aident l'attaquant à cartographier la plate-forme et ses dépendances avant
+  de choisir un exploit.
+impact: |
+  La supervision a besoin d'un jeton ou d'un chemin de collecte privé. Les équipes qui intègrent des
+  badges d'état dans leurs README ou tableaux de bord les perdent quand les badges sont coupés en
+  `all`.
+parameters:
+  exposure_scope: Points d'accès qui ne doivent pas être exposés sans authentification. `diagnostics` couvre profilage et métriques ; `all` couvre aussi les explorateurs d'API (Swagger UI), les badges d'état et les traces de pile sur les pages d'erreur.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration de la plate-forme, et un client hors du réseau
+    de supervision pour tester les points d'accès sans identifiants.
+
+    1. Interroger sans jeton les URL de métriques et de profilage (par exemple `/metrics`,
+       `/debug/pprof/`, port 6060) et vérifier qu'elles sont refusées ou injoignables.
+    2. Vérifier les réglages du produit :
+       - **Gitea / Forgejo** : `app.ini` `[server] ENABLE_PPROF = false` (défaut) ; `[metrics]` a
+         soit `ENABLED = false`, soit un `TOKEN` non vide. Avec `all` : `[api] ENABLE_SWAGGER =
+         false` (défaut `true`).
+       - **Woodpecker** : `WOODPECKER_METRICS_SERVER_ADDR` est vide (il ouvre un point de métriques
+         non protégé) ou lié à une adresse privée ; `/metrics` n'est activé qu'avec
+         `WOODPECKER_PROMETHEUS_AUTH_TOKEN` (ou `_FILE`).
+       - **Argo CD** (avec `all`) : `argocd-cmd-params-cm` `server.disable.swagger.ui: "true"` et
+         `argocd-cm` `statusbadge.enabled` absent ou à `"false"`.
+       - **TeamCity** (avec `all`) : la propriété interne
+         `teamcity.web.runtimeError.showStacktrace=false` est définie.
+       - **Buildkite** (avec `all`) : les badges d'état de build (**Settings** > **Build Badges** du
+         pipeline) ne sont pas publiés pour les pipelines dont le nom ou l'état est sensible, les
+         badges ne demandant aucune authentification.
+    3. Échec si profilage ou métriques répondent sans authentification hors du réseau de
+       supervision, ou (avec `all`) si Swagger UI, badges d'état ou traces de pile sont exposés.
+remediation:
+  manual: |
+    Utiliser un compte administrateur qui peut modifier la configuration et redémarrer le service.
+
+    1. **Gitea / Forgejo** : poser `ENABLE_PPROF = false` ; sous `[metrics]`, définir `TOKEN` à une
+       valeur aléatoire et configurer Prometheus avec `bearer_token`, ou poser `ENABLED = false`.
+       Pour `all`, poser `[api] ENABLE_SWAGGER = false`.
+    2. **Woodpecker** : retirer `WOODPECKER_METRICS_SERVER_ADDR` ou le lier à une adresse privée, et
+       définir `WOODPECKER_PROMETHEUS_AUTH_TOKEN_FILE` pour le point `/metrics` protégé.
+    3. **Argo CD** (pour `all`) : poser `server.disable.swagger.ui: "true"` dans
+       `argocd-cmd-params-cm` et `statusbadge.enabled: "false"` dans `argocd-cm`, puis redémarrer
+       `argocd-server`.
+    4. **TeamCity** (pour `all`) : ajouter `teamcity.web.runtimeError.showStacktrace=false` aux
+       propriétés internes.
+    5. **Buildkite** (pour `all`) : retirer des README et tableaux de bord les liens de badge des
+       pipelines sensibles.
+    6. Restreindre au niveau réseau les ports de métriques au système de supervision.

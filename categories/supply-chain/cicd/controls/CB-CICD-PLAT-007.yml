@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-007
+title: Keep platform master keys and data directories readable only by the service
+finding:
+  title: Platform master keys and data directories are readable by other users
+  description: Instance secret keys sit in a widely readable configuration file, or the data and log directories are readable by other accounts on the host; anyone who reads them can decrypt stored secrets, forge internal tokens or log in as administrator.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [key-management, file-permissions, secrets-at-rest, gitea, forgejo, teamcity]
+applicability:
+  versions: [gitea, forgejo, teamcity]
+
+description: |
+  Instance-level secrets (encryption keys for stored secrets and 2FA seeds, internal API tokens,
+  JWT signing secrets) are unique to each instance, generated at installation, and kept out of the
+  main configuration file in files that only the service account can read:
+
+  - Gitea and Forgejo: `app.ini` references the secrets by file instead of inlining them,
+    with `[security] SECRET_KEY_URI` and `INTERNAL_TOKEN_URI`, `[server] LFS_JWT_SECRET_URI` and
+    `[oauth2] JWT_SECRET_URI` (the Forgejo documentation lists `SECRET_KEY_URI`,
+    `LFS_JWT_SECRET_URI` and `JWT_SECRET_URI`, but not `INTERNAL_TOKEN_URI`); each file is mode `0600` and owned by the service user.
+  - TeamCity: the Data Directory and the server `logs` directory are readable only by the service
+    account and platform administrators.
+
+  The data, repository and log directories of all three products are owned by the service account
+  and not readable by other local users. Encryption of stored pipeline secrets is covered by
+  CB-CICD-SEC-005; backups of the key files by CB-CICD-PLAT-008.
+rationale: |
+  These files are the root of trust of the platform. With `SECRET_KEY`, stored secrets and 2FA
+  secrets can be decrypted; with the internal token or JWT secrets, requests can be forged. TeamCity
+  documents that read access to the server logs allows escalation to administrator (the super user
+  token is written there) and that read access to the Data Directory exposes all settings including
+  configured passwords. Keeping keys in separate restricted files also keeps them out of
+  configuration repositories and support bundles.
+impact: |
+  Key files must be deployed with the right owner and mode and backed up separately. Changing an
+  existing `SECRET_KEY` value is not possible without losing the data it encrypts; move the
+  existing value into the file instead of generating a new one.
+notes: |
+  On Gitea and Forgejo, losing `SECRET_KEY` makes 2FA secrets and Actions secrets undecryptable,
+  so the key file must be in the backup plan. On TeamCity, also consider the `teamcity.superUser.disable`
+  internal property when logs are shipped outside the server.
+
+audit:
+  manual: |
+    Use a shell account on the server (or read access to the deployment definition) that can list
+    file ownership and modes.
+
+    1. Identify the service account and the configuration, data and log directories.
+    2. Check the products:
+       - **Gitea / Forgejo**: `app.ini` has no inline `SECRET_KEY`, `LFS_JWT_SECRET` or
+         `[oauth2] JWT_SECRET` value (nor `INTERNAL_TOKEN` on Gitea); it uses the matching `*_URI` keys pointing
+         to `file:` paths. `ls -l` shows the key files as `-rw-------` owned by the service user, and
+         the data directory and `app.ini` not readable by others.
+       - **TeamCity**: `ls -ld <TeamCity Data Directory> <TeamCity Home>/logs` shows owner the
+         service account and no read permission for other users; check the ACLs on Windows.
+    3. Check that the key values differ between instances (production, staging, test), for
+       example by comparing hashes of the key files.
+    4. Fail if a master key is inline in a shared configuration file, readable by an account other
+       than the service account and administrators, identical across instances, or if the data or
+       log directories are readable by other users.
+
+remediation:
+  manual: |
+    Use an administrator account on the server and plan a service restart.
+
+    1. **Gitea / Forgejo**: copy each existing secret value from `app.ini` into its own file (for
+       example `/etc/gitea/secret_key`, `/etc/gitea/internal_token`), set owner to the service
+       user and mode `0600`, replace the inline keys by `SECRET_KEY_URI = file:/etc/gitea/secret_key`,
+       `INTERNAL_TOKEN_URI = file:...` (Gitea), `LFS_JWT_SECRET_URI = file:...` and
+       `JWT_SECRET_URI = file:...`, then restart.
+    2. **TeamCity**: `chown -R` the Data Directory and `logs` to the service account and remove read
+       access for other users (`chmod -R o-rwx`); on Windows, remove the Users group from the ACLs.
+    3. Restrict the data and repository directories of all products the same way.
+    4. Add the key files to the separate key backup (CB-CICD-PLAT-008).
+
+references:
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-005
+    type: related
+  - id: CB-CICD-PLAT-008
+    type: related
+  - id: CB-CICD-PLAT-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-024
+title: Keep credentials out of build artifacts and workspaces
+finding:
+  title: Published artifacts or uploaded workspaces contain credentials
+  description: Tokens left in a checked-out repository's configuration, in environment files or in image layers are shipped with the artifact, where every consumer of the image, package or build output can extract them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, artifacts, workspaces, container-images, checkout]
+
+description: |
+  Build outputs that leave the job (container images, packages, binaries, Helm charts, uploaded
+  workspaces and build artifacts, caches) contain no credentials: no Git credentials from the
+  checkout, no `.env` or configuration files with secrets, no registry or cloud credentials in
+  image layers or build arguments, no secret parameter values written to files. Each output is
+  scanned for secrets before it is published.
+
+  Checkout steps do not persist the job token in the workspace when later steps do not need
+  authenticated Git operations.
+
+  Hard-coded secrets in pipeline definitions are covered by CB-CICD-SEC-021; access to artifacts by
+  CB-CICD-ART-010; workspace cleanup on persistent runners by CB-CICD-RUN-013.
+rationale: |
+  Artifacts travel much further than logs: images are pulled by every environment and sometimes
+  published publicly, packages are mirrored, and uploaded workspaces are downloadable by anyone
+  who can see the run. A credential baked into any of them is exposed to all those readers for the
+  life of the artifact. Persisted checkout tokens are a common way for a job token to end up in an
+  uploaded workspace.
+impact: |
+  Steps that push with Git after checkout need to authenticate explicitly. Adding a secret scan
+  before publication adds time to the pipeline.
+notes: |
+  `actions/checkout` persists the job token by default; from version 6 the credential is stored in a
+  separate file under `$RUNNER_TEMP` instead of `.git/config`, but it remains on disk for the rest of
+  the job. On TeamCity, users who can read build artifacts in the data directory get the same
+  access as users who can view build runtime parameters, including password parameter values.
+
+audit:
+  manual: |
+    Use read access to pipeline files and to the artifact stores.
+
+    1. Review pipeline files:
+       - **GitHub**: `actions/checkout` steps set `persist-credentials: false` unless a later step
+         pushes; `actions/upload-artifact` does not upload the whole workspace or `.git`. zizmor's
+         `artipacked` audit reports both.
+       - **TeamCity**: artifact paths of build configurations do not include files where build
+         steps write password parameters or credentials, and build steps do not write such values
+         to the checkout directory.
+       - All platforms: Dockerfiles and image builds use build secrets (for example
+         `RUN --mount=type=secret`) rather than `ARG`, `ENV` or copied files for credentials.
+    2. Scan a sample of recent published artifacts and images (including all image layers) with a
+       secret scanner.
+    3. Fail if an artifact, image layer, cache or uploaded workspace contains a credential, or if a
+       checkout persists the job token without a step that needs it.
+
+remediation:
+  manual: |
+    1. Remove credentials from build outputs:
+       - **GitHub**: add `persist-credentials: false` to `actions/checkout`; narrow
+         `actions/upload-artifact` paths to the files that are needed.
+       - **TeamCity**: restrict artifact paths and change build steps so that secret values are not
+         written to files that are published.
+       - Container images: switch credentials to build secrets and use multi-stage builds so that
+         no layer of the final image holds them.
+    2. Add a secret scan of artifacts and images to the pipeline before publication, failing the
+       job on a finding.
+    3. Delete published artifacts that contained credentials and rotate those credentials.
+
+references:
+  - title: actions/checkout
+    url: https://github.com/actions/checkout
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audits - artipacked
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Security notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers credentials left in build outputs and workspaces.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-15
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1525
+related_controls:
+  - id: CB-CICD-SEC-021
+    type: related
+  - id: CB-CICD-ART-010
+    type: related
+  - id: CB-CICD-RUN-013
+    type: related
+  - id: CB-CICD-TEST-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

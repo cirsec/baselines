@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-014
+title: Set retention of build artifacts, logs and runs deliberately
+finding:
+  title: Build artifacts, logs and run history are kept for the platform's default period
+  description: Default retention keeps artifacts and logs, with any secrets or internal data they leaked, available for months on public projects, while audit evidence of private pipelines may be deleted before an investigation needs it.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [retention, artifacts, logs, data-minimization, audit]
+
+description: |
+  The retention periods of build artifacts, job logs and workflow runs on the CI/CD platform are set
+  explicitly at the highest level available (enterprise, organization or instance) and overridden
+  per project only where justified, according to a written policy:
+
+  - public repositories and projects keep artifacts and logs for a short period (for example 30
+    days or less), since anyone can read them;
+  - private projects keep them as long as the audit policy requires and no longer, and artifacts
+    needed for longer (releases, evidence) are copied to controlled storage instead of relying on the
+    CI platform's retention.
+
+  Retention and protection of audit logs and build logs in central storage are covered by
+  CB-CICD-LOG-004 and CB-CICD-LOG-005; release archives by CB-CICD-ART-012.
+rationale: |
+  Artifacts and logs are a common place for secrets and internal data to leak. Keeping them longer
+  than needed, especially on public projects, extends the window in which a leaked token or file can
+  be found and used. The opposite failure also matters: if the platform deletes runs and logs before
+  the audit period ends, an investigation loses its evidence. A deliberate setting, aligned with a
+  policy, handles both.
+impact: |
+  Shorter retention means old artifacts and logs are no longer available in the platform UI;
+  anything needed for longer must be exported first. Changing the setting only applies to new
+  artifacts and logs on some platforms.
+notes: |
+  On GitHub, the retention setting covers checks, workflow runs and commit statuses as well as
+  artifacts and logs; since 1 October 2026 the configured period applies to all of them. Public
+  repositories accept 1 to 90 days, private ones 1 to 400 days, with 90 days by default, and a
+  repository cannot exceed the limit set by its organization or enterprise. Gitea defaults to 365
+  days for logs, 90 for artifacts and 400 for runs; Forgejo to 365 days for logs and 90 for
+  artifacts. A value of `0` keeps data forever on Gitea.
+
+audit:
+  manual: |
+    Use a role that can read enterprise, organization or instance CI/CD settings.
+
+    1. Find the written retention policy for CI/CD artifacts, logs and runs, and the periods it sets
+       for public and private projects.
+    2. Check the configured values:
+       - **GitHub**: organization **Settings** > **Actions** > **General** (and the enterprise
+         **Actions** policies), and each repository **Settings** > **Actions** > **General**: the **Check, workflow run, status,
+         artifact and log retention** value matches the policy (public repositories short).
+       - **Gitea**: in `app.ini`, section `[actions]`, `LOG_RETENTION_DAYS`,
+         `ARTIFACT_RETENTION_DAYS` and `RUN_RETENTION_DAYS` are set explicitly, none is `0`, and
+         `[cron.cleanup_action_runs]` is enabled.
+       - **Forgejo**: in `app.ini`, section `[actions]`, `LOG_RETENTION_DAYS` and
+         `ARTIFACT_RETENTION_DAYS` are set explicitly.
+       - Other platforms: check the job artifact expiry (for example `artifacts:expire_in` and the
+         instance default on GitLab) and log retention settings.
+    3. Check that evidence needed beyond the platform retention (release records, audit logs) is
+       exported to controlled storage (CB-CICD-ART-012, CB-CICD-LOG-004).
+    4. Fail if retention is left at the platform default without a recorded decision, if public
+       projects keep artifacts and logs longer than the policy allows, or if required evidence
+       expires before the audit period ends.
+
+remediation:
+  manual: |
+    1. Write or update the retention policy for CI/CD data, with separate periods for public and
+       private projects.
+    2. Apply it at the highest level:
+       - **GitHub**: set the retention value in the enterprise **Actions** policies and in
+         organization **Settings** > **Actions** > **General**, then lower it on public repositories.
+       - **Gitea / Forgejo**: set `LOG_RETENTION_DAYS`, `ARTIFACT_RETENTION_DAYS` (and on Gitea
+         `RUN_RETENTION_DAYS`) in the `[actions]` section of `app.ini` and restart the service.
+       - Other platforms: set default artifact expiry and log retention in the instance or
+         organization settings.
+    3. Export what must be kept longer to controlled storage before it expires.
+    4. Review the setting when the audit policy changes.
+
+references:
+  - title: Managing GitHub Actions settings for a repository
+    url: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-12
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-LOG-004
+    type: related
+  - id: CB-CICD-LOG-005
+    type: related
+  - id: CB-CICD-ART-012
+    type: related
+  - id: CB-CICD-SEC-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

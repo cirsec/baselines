@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer l'authentification multifacteur à tous les utilisateurs des plates-formes
+finding:
+  title: Des membres des plates-formes SCM ou CI/CD peuvent se connecter sans second facteur
+  description: Un compte sans MFA tombe avec un seul mot de passe hameçonné ou réutilisé, et sur une plate-forme SCM ou CI/CD ce compte peut pousser du code, modifier des pipelines ou lire des secrets.
+description: |
+  Chaque membre, administrateur et collaborateur externe des plates-formes de gestion de sources, de
+  CI/CD et de registres utilise l'authentification multifacteur, imposée soit par la plate-forme, soit
+  par le fournisseur d'identité quand la connexion passe par le SSO. Les délais d'enrôlement sont
+  courts (quelques jours au plus), et une vérification périodique ne trouve aucun membre sans MFA.
+
+  Les facteurs acceptés relèvent de CB-CICD-IAM-007, le SSO de CB-CICD-IAM-001.
+rationale: |
+  Les comptes de développeurs et d'administrateurs sur les plates-formes SCM et CI/CD mènent
+  directement à la livraison : un push sur une branche qui déclenche un déploiement, une modification
+  de définition de pipeline ou la lecture d'un secret de projet. Les mots de passe fuient par
+  hameçonnage, réutilisation et voleurs d'informations ; la MFA arrête la plupart de ces prises de
+  contrôle. Le NCSC, l'ANSSI et le SSDF citent tous la MFA pour l'accès aux sources et aux pipelines
+  comme mesure de base.
+impact: |
+  Les utilisateurs sans MFA perdent l'accès au début de l'application (GitHub les retire de
+  l'organisation, Bitbucket masque le contenu privé, Buildkite les bloque). Annoncer une date, lister
+  les personnes non enrôlées et prévoir les comptes de robots partagés, qui doivent passer à des
+  identités non humaines (CB-CICD-IAM-027).
+notes: |
+  Quand la connexion passe par le SSO, le réglage 2FA de la plate-forme peut ne pas s'appliquer (Gitea
+  ignore `TWO_FACTOR_AUTH` pour les utilisateurs authentifiés par un fournisseur externe, GitHub
+  Enterprise Managed Users n'a pas d'exigence 2FA) : la MFA doit alors être imposée par le
+  fournisseur d'identité pour cette application. Sur Buildkite, imposer le SSO à toute l'organisation
+  exige que l'obligation 2FA soit désactivée.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire, d'administrateur ou d'auditeur qui voit l'état 2FA des membres.
+
+    1. Pour chaque plate-forme, trouver où la MFA est imposée (réglage de la plate-forme ou politique
+       du fournisseur d'identité pour cette application).
+    2. Vérifier le réglage :
+       - **GitHub** : **Organization settings** (ou **Enterprise settings**) > **Authentication
+         security** > **Require two-factor authentication** est coché ; `GET /orgs/{org}` renvoie
+         `two_factor_requirement_enabled: true`. Avec Enterprise Managed Users, vérifier le
+         fournisseur d'identité.
+       - **GitLab** : en auto-hébergé **Admin** > **Settings** > **General** > **Sign-in
+         restrictions** > **Enforce two-factor authentication**, ou sur GitLab.com le groupe racine
+         **Settings** > **General** > **Permissions and group features** > **All users in this group
+         must set up two-factor authentication** ; le délai de grâce (`two_factor_grace_period`,
+         défaut 48 heures) est court. **Admin** > **Users** filtré sur 2FA désactivée, ou l'API des
+         membres, ne montre aucun membre actif sans 2FA.
+       - **Azure DevOps** : une stratégie d'accès conditionnel Microsoft Entra exigeant la MFA couvre
+         Azure DevOps pour tous les utilisateurs (Entra ID P1).
+       - **Bitbucket Cloud** : **Workspace settings** > **Access controls** > **Require users to
+         enable two-step verification** est activé (Premium), ou la stratégie d'authentification
+         Atlassian Guard l'impose.
+       - **Buildkite** : **Settings** > **Security** a **Enforce Two-factor authentication**, ou le
+         SSO est imposé à l'organisation.
+       - **CircleCI** : SSO avec MFA chez le fournisseur d'identité, ou exigence 2FA de
+         l'organisation GitHub ou Bitbucket connectée.
+       - **Harness** : **Account Settings** > **Authentication** > **Enforce Two Factor
+         Authentication** est activé.
+       - **TeamCity** : **Administration** > **Authentication** > le mode d'authentification à deux
+         facteurs est **Mandatory**, ou au moins le groupe des administrateurs y est contraint par la
+         propriété interne `teamcity.2fa.mandatoryUserGroupKey`.
+       - **Gitea** : `[security] TWO_FACTOR_AUTH = enforced` (Gitea 1.24 et suivants).
+       - **Forgejo** : `[security] GLOBAL_TWO_FACTOR_REQUIREMENT = all` (ou `admin` au minimum).
+    3. Lister les membres sans MFA (liste des personnes de l'organisation, filtre des utilisateurs
+       d'administration, ou point d'accès TeamCity
+       `/app/rest/users?fields=user(id,username,enabled2FA)`).
+    4. Échec si la MFA n'est pas imposée à tous les utilisateurs d'une plate-forme, ou si des membres
+       actifs sans MFA restent après le délai de grâce.
+remediation:
+  manual: |
+    1. Publier la date, demander aux utilisateurs de s'enrôler et lister ceux qui ne le sont pas.
+    2. Imposer la MFA :
+       - **GitHub** : cocher **Require two-factor authentication** au niveau de l'entreprise (de
+         l'organisation s'il n'y a pas d'entreprise) ; réinviter les collaborateurs externes retirés
+         une fois enrôlés.
+       - **GitLab** : activer **Enforce two-factor authentication** pour l'instance ou le groupe
+         racine, avec un délai de grâce de 8 heures à quelques jours.
+       - **Azure DevOps** : créer une stratégie d'accès conditionnel qui cible Azure DevOps et exige
+         la MFA.
+       - **Bitbucket Cloud** : activer **Require users to enable two-step verification** dans
+         **Access controls**, ou l'imposer par une stratégie Atlassian Guard.
+       - **Buildkite** : cocher **Enforce Two-factor authentication** puis **Update Access Control**,
+         ou imposer le SSO avec un fournisseur d'identité qui exige la MFA.
+       - **Harness** : activer **Enforce Two Factor Authentication**.
+       - **TeamCity** : passer le mode deux facteurs à **Mandatory** (les utilisateurs ont une semaine
+         pour s'enrôler).
+       - **Gitea** : poser `TWO_FACTOR_AUTH = enforced` ; **Forgejo** : poser
+         `GLOBAL_TWO_FACTOR_REQUIREMENT = all` ; redémarrer.
+    3. Pour les plates-formes derrière le SSO, exiger la MFA dans la politique du fournisseur
+       d'identité pour chaque application.
+  rollback: |
+    Allonger le délai de grâce plutôt que désactiver l'obligation si beaucoup d'utilisateurs sont
+    bloqués.

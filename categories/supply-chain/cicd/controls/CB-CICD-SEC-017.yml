@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-017
+title: Control the forge's ID token signing key and the external issuers it trusts
+finding:
+  title: The self-hosted forge signs job ID tokens with an unmanaged key and trusts any external JWT issuer
+  description: Whoever reads the signing key can mint ID tokens that cloud providers accept as pipeline identities, and an open issuer list lets any user make the forge trust tokens from an issuer they control or fetch metadata from internal hosts.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [oidc, signing-keys, federation, forgejo, self-managed]
+applicability:
+  versions: [forgejo]
+
+description: |
+  A self-hosted forge that issues OpenID Connect ID tokens to its jobs signs them with an
+  asymmetric key that is readable only by the forge service, kept out of backups that leave the
+  platform's trust zone, and rotated on a schedule and after any suspected exposure. Tokens have
+  a short lifetime, no longer than one hour.
+
+  When the forge also accepts JWTs from external systems to authenticate API calls (Forgejo
+  Authorized Integrations), only issuers on an explicit allowlist can be registered, and issuers
+  on private networks are refused.
+
+  How cloud providers pin trust on the tokens' claims is covered by CB-CICD-SEC-016; protection of
+  other platform keys by CB-CICD-PLAT-007.
+setting:
+  location: Forgejo `app.ini` sections `[actions]` and `[authorized_integration]`
+  default_value: "ID_TOKEN_SIGNING_ALGORITHM = RS256, ID_TOKEN_SIGNING_PRIVATE_KEY_FILE = actions_id_token/private.pem, ID_TOKEN_EXPIRATION_TIME = 3600; ALLOWED_DOMAINS empty (all issuers), ALLOW_LOCALNETWORKS = false"
+  recommended_value: "Asymmetric algorithm, protected and rotated key file, ID_TOKEN_EXPIRATION_TIME <= 3600; ALLOWED_DOMAINS set to the trusted issuers, ALLOW_LOCALNETWORKS = false"
+rationale: |
+  Cloud roles trust the forge's ID tokens because they trust its signing key. A copied key lets an
+  attacker impersonate any repository and branch of the forge towards every cloud account that
+  federates with it, without running a job. With no issuer allowlist, any user can register an
+  Authorized Integration for an arbitrary issuer, which makes the forge fetch metadata from hosts
+  the user chooses and accept tokens that user can mint.
+impact: |
+  Rotating the signing key requires the new public key to be published before tokens signed with
+  it are used; cloud providers that cache the key set may reject new tokens briefly. An issuer
+  allowlist must be updated before users can integrate a new external system.
+
+audit:
+  manual: |
+    Use an account with read access to the Forgejo configuration and data directory.
+
+    1. In `app.ini`, section `[actions]`:
+       - `ID_TOKEN_SIGNING_ALGORITHM` is an asymmetric algorithm (Forgejo accepts only RS, ES or
+         EdDSA variants here).
+       - The file named by `ID_TOKEN_SIGNING_PRIVATE_KEY_FILE` (relative to `APP_DATA_PATH` when not
+         absolute) is readable only by the Forgejo service account, is not in a repository, and its
+         creation date is within the rotation period.
+       - `ID_TOKEN_EXPIRATION_TIME` is 3600 seconds or less.
+    2. In section `[authorized_integration]`:
+       - `ALLOWED_DOMAINS` lists only the issuers the organization trusts (for example
+         `token.actions.githubusercontent.com` or the forge's own host); it is not empty, since an
+         empty value allows all domains.
+       - `ALLOW_LOCALNETWORKS` is `false`.
+       - `REQUEST_TIMEOUT` keeps its short default unless there is a reason.
+    3. Fail if the algorithm is symmetric, the key file is readable by other accounts or older than
+       the rotation period, tokens live longer than one hour, `ALLOWED_DOMAINS` is empty, or local
+       networks are allowed.
+
+remediation:
+  manual: |
+    1. Restrict the signing key file to the Forgejo service account and exclude it from
+       configuration repositories.
+    2. Set in `app.ini`:
+       ```
+       [actions]
+       ID_TOKEN_SIGNING_ALGORITHM = RS256
+       ID_TOKEN_EXPIRATION_TIME = 3600
+
+       [authorized_integration]
+       ALLOWED_DOMAINS = token.actions.githubusercontent.com, forge.example.com
+       ALLOW_LOCALNETWORKS = false
+       ```
+       Adapt `ALLOWED_DOMAINS` to the issuers actually used, then restart Forgejo.
+    3. Rotate the signing key on a schedule and after any exposure: generate a new key file, deploy
+       it, restart, and check that cloud providers accept tokens signed with it.
+
+references:
+  - title: Configuration cheat sheet - actions and authorized integrations
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Authorized Integrations
+    url: https://forgejo.org/docs/latest/user/api/authorized-integrations/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenID Connect in Forgejo Actions
+    url: https://forgejo.org/docs/latest/user/actions/security-openid-connect/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-016
+    type: related
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-PLAT-007
+    type: related
+  - id: CB-CICD-PLAT-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

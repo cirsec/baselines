@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-004
+title: Keep build and job logs in controlled storage for a defined retention
+finding:
+  title: Build logs disappear with pods or stay in vendor defaults
+  description: Job logs are deleted with the pods that ran them, kept only for the vendor's default period, or stored where anyone can delete them; after an incident nobody can see what a malicious build executed or which secrets it touched.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [build-logs, retention, evidence, forensics, log-storage]
+
+description: |
+  Build and job logs and the run history of pipelines (who triggered what, which commit, which
+  result) are kept for at least **{{ build_log_retention_days }}** days in storage controlled by the
+  organization: a bucket or log platform in the organization's account, or the platform's own store
+  configured with that retention. Access to the logs is restricted to the project's members and
+  security staff, and developers cannot delete the history of deployment builds.
+
+  Logs are not left only in places that disappear on their own: Kubernetes pods that are garbage
+  collected, temporary runner disks, or a provider-owned default bucket with unknown retention.
+
+  Visibility of logs to non-members is covered by CB-CICD-PIPE-022, masking of secrets in logs by
+  CB-CICD-SEC-022, and artifact and log retention settings in general by CB-CICD-ART-014.
+rationale: |
+  Build logs are the evidence of what a pipeline actually ran: injected commands, downloaded
+  scripts, secret access, the artifacts it produced. Attacks on CI/CD pipelines are often found
+  weeks later, after logs have rotated away, and an attacker with write access to a project may
+  delete runs to hide what they did. Keeping logs in controlled storage with a retention period and
+  restricted deletion preserves that evidence.
+impact: |
+  Storage costs grow with retention. Logs may contain sensitive data despite masking, so the storage
+  must have the same access restrictions as the pipelines.
+
+parameters:
+  - name: build_log_retention_days
+    type: integer
+    description: Minimum number of days build and job logs and run history are kept.
+    unit: days
+    default: 365
+    minimum: 90
+
+audit:
+  manual: |
+    Use read access to the project or platform settings and to the log storage.
+
+    1. For each CI/CD platform, find where job logs are stored and how long they are kept; open the
+       logs of a deployment build older than the expected retention.
+    2. Check the products:
+       - **AWS CodeBuild**: the project `logsConfig` has CloudWatch Logs (enabled by default) or S3
+         logs enabled; the CloudWatch log group has a retention of at least
+         {{ build_log_retention_days }} days and restricted `logs:GetLogEvents`; S3 logs keep
+         `encryptionDisabled` false.
+       - **Google Cloud Build**: builds write logs to a user-owned bucket (`logsBucket`, or
+         `defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET`) or to Cloud Logging with a defined
+         retention, not only to the default logs bucket.
+       - **Argo Workflows**: `workflow-controller-configmap` sets `archiveLogs: true` with an artifact
+         repository, and the workflow archive (`persistence.archive`) keeps runs for the retention.
+       - **Tekton**: step logs, which live in the TaskRun pods, are collected by the cluster log agent
+         or Tekton Results before pods are pruned.
+       - **GitLab**: **Admin** > **Settings** > **CI/CD** > **Archive pipelines** archives old
+         pipelines (logs stay visible, jobs cannot be re-run); job logs are not removed before the
+         retention.
+       - **TeamCity**: the project **Clean-up Rules** keep deployment builds and their logs for the
+         retention, and developers do not have the **Remove build** permission.
+       - **Buildkite**: job log archiving to the organization's S3 bucket or build exports are
+         configured (Enterprise plan) when the retention exceeds the plan's build retention.
+    3. Check who can delete runs or logs.
+    4. Fail if logs of deployment builds are not available for {{ build_log_retention_days }} days, are
+       stored only in ephemeral or provider-owned default storage, or can be deleted by developers.
+
+remediation:
+  manual: |
+    1. Decide the retention per pipeline type, with at least {{ build_log_retention_days }} days for
+       builds that deploy or release.
+    2. Configure storage and retention:
+       - **AWS CodeBuild**: keep CloudWatch Logs enabled, set the log group retention and a KMS key,
+         or enable S3 logs to an organization bucket with encryption.
+       - **Google Cloud Build**: set `logsBucket` to an organization bucket or
+         `defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET`, and set the bucket retention.
+       - **Argo Workflows**: set `archiveLogs: true` and an artifact repository in
+         `workflow-controller-configmap`, and enable the workflow archive with an `archiveTTL` that
+         matches the retention.
+       - **Tekton**: deploy a cluster log collector or Tekton Results and keep logs centrally.
+       - **GitLab**: set **Archive pipelines** to the period after which runs become read-only, and
+         align job log and artifact expiry with the retention.
+       - **TeamCity**: adjust **Clean-up Rules** to keep deployment builds longer, and remove the
+         **Remove build** permission from developer roles.
+       - **Buildkite**: configure job log archiving or build exports to the organization's bucket.
+    3. Restrict read and delete access on the storage to project members, platform administrators
+       and security staff.
+
+references:
+  - title: LogsConfig (AWS CodeBuild API)
+    url: https://docs.aws.amazon.com/codebuild/latest/APIReference/API_LogsConfig.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Store and manage build logs (Cloud Build)
+    url: https://cloud.google.com/build/docs/securing-builds/store-manage-build-logs
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuring Archive Logs (Argo Workflows)
+    url: https://argo-workflows.readthedocs.io/en/latest/configure-archive-logs/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Execution Logs (Tekton)
+    url: https://tekton.dev/docs/pipelines/logs/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Job log archiving (Buildkite)
+    url: https://buildkite.com/docs/pipelines/governance/job-log-archiving
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: partial
+    note: Covers the retention of build logs; audit logs are covered by the other LOG controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1070
+related_controls:
+  - id: CB-CICD-ART-014
+    type: related
+  - id: CB-CICD-PIPE-022
+    type: related
+  - id: CB-CICD-SEC-022
+    type: related
+  - id: CB-CICD-LOG-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

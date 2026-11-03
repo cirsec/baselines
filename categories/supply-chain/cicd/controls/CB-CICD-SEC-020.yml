@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-020
+title: Give each job and step only the secrets it references
+finding:
+  title: Jobs receive every secret of the project instead of the ones they use
+  description: When secrets are passed wholesale to reusable workflows, dumped as one object or injected into every step, a compromised test step or third-party action reads the deployment credentials along with its own.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, least-privilege, reusable-workflows, secret-injection]
+
+description: |
+  Each pipeline, job and step receives only the secrets it names. Reusable workflows and templates
+  get secrets through an explicit mapping, not by inheriting all of the caller's secrets; scripts
+  reference individual secrets, not the whole secrets context; and platform features that inject
+  every credential attached to a service account or agent into every step are turned off in favour
+  of per-step mounts or variables.
+
+  Which projects can reach a shared secret is covered by CB-CICD-SEC-007; binding to protected
+  environments by CB-CICD-SEC-008.
+rationale: |
+  The number of steps that can read a secret is its real exposure. Test steps, linters and
+  third-party actions run code the team does not control; if they receive the deployment
+  credentials too, any of them becomes a path to production. Explicit references also make it
+  possible to see, in review, which code can read which secret.
+impact: |
+  Reusable workflows need their secrets declared and passed explicitly, which adds lines to each
+  call. On Tekton, turning off built-in credential initialization means credentials must be bound
+  to tasks through workspaces or environment variables.
+notes: |
+  Tekton's `disable-creds-init` flag is the stricter implementation of this control: with it,
+  credentials annotated on the service account are no longer copied into every step, and each
+  task must bind the ones it needs.
+
+audit:
+  manual: |
+    Use read access to pipeline files and runner or agent configuration.
+
+    1. Review the pipeline files and look for blanket secret passing:
+       - **GitHub**: calls to reusable workflows use `secrets:` with named entries, not
+         `secrets: inherit`; no expression passes the whole context (`${{ toJSON(secrets) }}`) or
+         indexes it dynamically (`secrets[format(...)]`); secrets are mapped into `env:` of the steps
+         that use them rather than the whole job where possible. zizmor (`secrets-inherit`,
+         `overprovisioned-secrets`) and poutine (job exposes all secrets) report these patterns.
+       - **Buildkite**: agent `environment` hooks that export secrets do so only for the pipeline
+         and step that need them (checking `BUILDKITE_PIPELINE_SLUG` and `BUILDKITE_STEP_KEY`),
+         and workloads with different trust use separate clusters.
+       - **Tekton**: the `feature-flags` ConfigMap in `tekton-pipelines` has
+         `disable-creds-init: "true"`, and credentials reach tasks through Secret-backed workspaces
+         or `env` bound only to the steps that need them.
+    2. Fail if a job, reusable workflow or step receives secrets it does not reference.
+
+remediation:
+  manual: |
+    1. Replace blanket passing with explicit references:
+       - **GitHub**: in each call to a reusable workflow, replace `secrets: inherit` with a
+         `secrets:` block listing each needed secret, declare them under `on.workflow_call.secrets`
+         in the called workflow, and replace `toJSON(secrets)` or dynamic indexing with named
+         secrets. Lint workflows with zizmor in CI.
+       - **Buildkite**: scope exports in environment hooks by pipeline and step, or move secrets to
+         Buildkite secrets with access policies (CB-CICD-SEC-008).
+       - **Tekton**: set `disable-creds-init: "true"` in `feature-flags`, then bind credentials to
+         the tasks that need them with workspaces or `envFrom`.
+    2. Rotate secrets that were exposed to steps that should not have had them, if any of those
+       steps ran untrusted code.
+
+references:
+  - title: Reuse workflows - passing secrets
+    url: https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audits
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Managing pipeline secrets
+    url: https://buildkite.com/docs/pipelines/security/secrets/managing
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Authentication at run time - disabling Tekton's built-in auth
+    url: https://tekton.dev/docs/pipelines/auth/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers secret access at job and step level.
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SEC-007
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+  - id: CB-CICD-PIPE-023
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

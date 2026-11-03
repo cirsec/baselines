@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-004
+title: Disable unused plugins, resolvers and rendering tools
+finding:
+  title: CI servers and controllers keep plugins and resolvers that nobody needs
+  description: Every extra plugin, remote resolver or manifest rendering tool adds code that runs with controller privileges, and unmaintained ones carry flaws that are never fixed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [attack-surface, plugins, resolvers, gitops, minimization]
+
+applicability:
+  versions: [argo-cd, github, jenkins, tekton]
+
+parameters:
+  - name: minimization
+    type: enum
+    description: How far the component set is reduced. `unmaintained-removed` = deprecated and unmaintained plugins are removed; `unused-disabled` = in addition, unused resolvers and rendering tools are disabled, controller egress is allow-listed and superfluous actions are removed.
+    default: unmaintained-removed
+    profile_defaults:
+      hardened: unused-disabled
+    allowed: [unmaintained-removed, unused-disabled]
+
+description: |
+  CI servers, pipeline controllers and GitOps controllers run only the extensions they need. The
+  required level is `{{ minimization }}`:
+  - `unmaintained-removed`: deprecated, unmaintained and unused plugins are uninstalled from CI
+    servers; the plugin list is kept as code (for example a `plugins.txt` or configuration as
+    code file).
+  - `unused-disabled`: in addition, remote resolvers and manifest rendering tools that are not
+    used are disabled, the controllers that fetch remote content have an egress allow-list, and
+    workflows do not add actions for tools the runner image already provides.
+
+  Removing vulnerable components is covered by CB-CICD-COMP-003, and unused platform features by
+  CB-CICD-PLAT-014.
+rationale: |
+  Plugins and resolvers run inside the controller with access to its credentials and to every
+  project. Each one widens the attack surface and the patching load. Remote resolvers fetch
+  content from URLs that pipeline authors choose, and rendering tools such as Helm or Kustomize can
+  read files outside the application directory on the repository server when misconfigured.
+impact: |
+  Removing a plugin or disabling a resolver breaks the pipelines that still use it; list the
+  users before removal. An egress allow-list needs maintenance when new sources are added.
+notes: |
+  Tekton enables the bundles, git, hub and cluster resolvers by default. The Argo CD option
+  `kustomize.buildOptions: --load_restrictor none` lets Kustomize read outside the application
+  directory and should not be used.
+
+audit:
+  manual: |
+    Use an administrator account with read access (Jenkins **Overall/Read** and plugin manager,
+    `kubectl get` on the Tekton and Argo CD namespaces).
+
+    1. List the installed extensions and compare them with what pipelines use:
+       - **Jenkins**: **Manage Jenkins** > **Plugins** > **Installed plugins**; look for
+         deprecated, adopt-this-plugin or unused plugins.
+       - **Tekton**: ConfigMap `resolvers-feature-flags` in the resolvers namespace, keys
+         `enable-bundles-resolver`, `enable-git-resolver`, `enable-hub-resolver`,
+         `enable-cluster-resolver`, `enable-http-resolver`; NetworkPolicy on the resolvers
+         deployment.
+       - **Argo CD**: ConfigMap `argocd-cm`, keys `kustomize.buildOptions` (no
+         `--load_restrictor none`) and `helm.valuesFileSchemes`; Config Management Plugin
+         sidecars in use.
+       - **GitHub**: zizmor `superfluous-actions` on the workflows.
+    2. Fail if deprecated or unmaintained plugins are installed, or, when `{{ minimization }}` is
+       `unused-disabled`, if an unused resolver or rendering tool is enabled, if controllers that
+       fetch remote content have unrestricted egress, or if workflows use actions that only
+       duplicate a preinstalled tool.
+
+remediation:
+  manual: |
+    1. Agree on the list of needed plugins, resolvers and tools with the pipeline owners.
+    2. Reduce the set:
+       - **Jenkins** (administrator): uninstall unneeded plugins from **Manage Jenkins** >
+         **Plugins** > **Installed plugins** and keep the remaining list in `plugins.txt` or
+         configuration as code.
+       - **Tekton** (cluster administrator): set the unused `enable-*-resolver` keys to `"false"`
+         in `resolvers-feature-flags`, and add a NetworkPolicy that limits resolver egress to the
+         registries and Git servers in use.
+       - **Argo CD** (administrator): remove `--load_restrictor none` from
+         `kustomize.buildOptions`, limit `helm.valuesFileSchemes` to `https`, and run Config
+         Management Plugins only for trusted repositories.
+       - **GitHub**: replace actions flagged by zizmor `superfluous-actions` with the tool already
+         present on the runner.
+    3. Restart controllers where needed and run the main pipelines once.
+  rollback: |
+    Re-enable the resolver or reinstall the plugin, then plan its removal with its users.
+
+references:
+  - title: Managing plugins
+    url: https://www.jenkins.io/doc/book/managing/plugins/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Getting started with resolvers
+    url: https://tekton.dev/docs/pipelines/resolution-getting-started/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Kustomize
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD security
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(1)
+    relation: related
+related_controls:
+  - id: CB-CICD-COMP-003
+    type: related
+  - id: CB-CICD-PLAT-014
+    type: related
+  - id: CB-CICD-PLAT-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

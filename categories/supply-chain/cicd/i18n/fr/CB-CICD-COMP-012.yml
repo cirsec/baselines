@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: S'assurer que les références de composants pointent vers le vrai dépôt amont
+finding:
+  title: Des références d'actions épinglées pointent vers des forks, des propriétaires sosies ou des références ambiguës
+  description: Un SHA de commit qui n'existe que dans un fork, une coquille dans le nom du propriétaire ou un compte propriétaire renommé puis repris fait exécuter du code d'attaquant par un workflow alors que la référence semble épinglée.
+parameters:
+  ref_integrity: Contrôles appliqués aux références d'actions. `genuine-upstream` = pas de commit imposteur, de propriétaire usurpé par typosquatting ni de propriétaire repris ; `exact-match` = en plus, pas de nom ambigu entre tag et branche et des commentaires de version conformes au SHA épinglé.
+description: |
+  Les références d'actions et de workflows réutilisables des workflows GitHub pointent vers du code
+  du dépôt amont voulu. Le niveau exigé est `{{ ref_integrity }}` :
+  - `genuine-upstream` : chaque commit épinglé est atteignable depuis une branche ou un tag du dépôt
+    nommé (pas un commit qui n'existe que dans un fork) ; les noms de propriétaire et de dépôt sont
+    exactement ceux voulus, pas des sosies ; les références ne passent pas par une redirection
+    laissée par un propriétaire renommé ou supprimé.
+  - `exact-match` : en plus, les références n'utilisent pas un nom qui existe à la fois comme tag
+    et comme branche, et le commentaire de version à côté d'un SHA (`# v4.2.0`) désigne le tag qui
+    pointe vers ce SHA.
+
+  L'épinglage lui-même relève de CB-CICD-COMP-011.
+rationale: |
+  GitHub sert un commit sous le nom du dépôt parent même s'il n'existe que dans un fork : un
+  attaquant peut ouvrir un fork, y pousser un commit et le faire référencer comme
+  `owner/repo@<sha>`. Les propriétaires usurpés par typosquatting et les noms repris de comptes
+  renommés servent du code d'attaquant sous une référence d'apparence familière. Les relecteurs
+  font confiance au commentaire de version ; s'il ne correspond pas au SHA, la revue approuve
+  autre chose.
+impact: |
+  Corriger les constats suppose de mettre à jour les références vers le propriétaire canonique et
+  vers des SHA issus des tags de publication amont. Les contrôles demandent un outil ou un fichier
+  de verrouillage ; la revue manuelle seule ne passe pas à l'échelle.
+notes: |
+  Le fichier de verrouillage GitHub Actions (CB-CICD-COMP-011, niveau `lockfile`) enregistre
+  `owner_id` et `repo_id` et rejette à l'exécution les commits qui ne sont que dans des forks ou qui
+  ne sont pas atteignables depuis la référence verrouillée ; un `owner_id` ou `repo_id` modifié
+  dans un diff du fichier doit faire l'objet d'une enquête, et `--accept-moved` ne doit pas être
+  utilisé en automatisation.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts ; zizmor a besoin d'un jeton GitHub en lecture sur les
+    dépôts publics pour ses audits en ligne.
+
+    1. Passer zizmor avec les audits en ligne sur les workflows : `impostor-commit`,
+       `typosquat-uses` et, pour `exact-match`, `ref-confusion`, `ref-version-mismatch` et
+       `stale-action-refs`.
+    2. Vérifier que les propriétaires cités dans `uses:` figurent dans la liste d'autorisation de
+       CB-CICD-COMP-001 et qu'aucun ne redirige vers un autre propriétaire (ouvrir
+       `https://github.com/<owner>/<repo>` et comparer l'URL finale).
+    3. Là où un `actions.lock` existe, revoir dans son historique les changements de `owner_id` ou
+       `repo_id`.
+    4. Échec si une référence pointe vers un commit présent uniquement dans un fork, un
+       propriétaire sosie ou redirigé, ou, quand `{{ ref_integrity }}` vaut `exact-match`, vers une
+       référence ambiguë ou un SHA dont le commentaire de version désigne une autre publication.
+remediation:
+  manual: |
+    1. Remplacer chaque référence relevée par le SHA du tag de publication voulu dans le dépôt
+       amont canonique, et corriger le commentaire de version.
+    2. Ajouter zizmor (ou un équivalent) comme contrôle obligatoire sur les modifications de
+       `.github/workflows/**` (CB-CICD-TEST-004).
+    3. Adopter le fichier de verrouillage Actions pour que l'identité du dépôt et l'atteignabilité
+       du commit soient vérifiées à l'exécution.

@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-036
+title: Restrict who can change builds or act as build identities
+finding:
+  title: Many principals can edit builds, override build parameters or run as the build identity
+  description: Permission to edit a build project, a trigger or a pipeline, to override its build commands or to pass its role is the same as running arbitrary code with the build's credentials, yet it is often granted with broad developer roles.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [build-permissions, iam, passrole, impersonation, pipeline-integrity]
+
+applicability:
+  versions: [aws-codesuite, google-cloud-build, tekton, argo-cd]
+
+description: |
+  Creating or editing build projects, triggers, pipelines and repository connections, starting
+  builds with overridden commands, environment or role, and impersonating build identities (pass
+  role, act as a service account) are limited to pipeline administrators or to the infrastructure
+  as code pipeline that manages them through review. Developers trigger builds through source changes
+  and the normal pipeline, not by editing the build definition in the cloud console.
+
+  Protection of pipeline definitions stored in repositories is covered by CB-CICD-PIPE-005; the
+  identity each build runs as by CB-CICD-IAM-034; platform-level objects by CB-CICD-IAM-017.
+rationale: |
+  On cloud build services the build definition lives in the platform, outside code review. Anyone who
+  can update a CodeBuild project, start a build with a `buildspecOverride` or pass a role, edit a Cloud
+  Build trigger while holding `iam.serviceAccounts.actAs`, or create a Tekton `TaskRun` in a build
+  namespace can run their own commands with the build identity and its secrets, and produce
+  artifacts that look legitimate.
+impact: |
+  Developers who adjusted builds in the console must go through pipeline administrators or the
+  infrastructure as code repository. Debug builds with overrides need a separate project with a
+  low-privilege role.
+
+audit:
+  manual: |
+    Use a cloud or cluster role that can read IAM policies and role bindings.
+
+    1. **AWS CodeBuild**: list principals allowed `codebuild:CreateProject`, `codebuild:UpdateProject`,
+       `codebuild:StartBuild` and `iam:PassRole` on build roles (IAM Access Analyzer or policy
+       review). `StartBuild` accepts `buildspecOverride`, `environmentVariablesOverride`,
+       `privilegedModeOverride` and `serviceRoleOverride` (the last one also needs `iam:PassRole`);
+       for non-administrators, a deny statement with the condition key `codebuild:source.buildspec`
+       (`Null` operator) blocks buildspec overrides.
+    2. **AWS CodePipeline**: principals allowed `codepipeline:CreatePipeline`,
+       `codepipeline:UpdatePipeline` and `iam:PassRole` on pipeline roles are pipeline administrators
+       or the infrastructure as code deployment role.
+    3. **Google Cloud Build**: principals with Cloud Build Editor (`roles/cloudbuild.builds.editor`)
+       who also hold `iam.serviceAccounts.actAs` on a build service account (for example Service
+       Account User granted on that account) can create, edit and run triggers as it; this pair is
+       limited to pipeline administrators, and Service Account User is granted per service account,
+       not on the whole project. Cloud Build Connection Admin (`roles/cloudbuild.connectionAdmin`) is
+       limited to administrators.
+    4. **Tekton**: in build namespaces, only CI service accounts and trusted users can create
+       `TaskRun` and `PipelineRun` objects; Tekton's ClusterRoles aggregate into the Kubernetes `edit`
+       role, so every `edit` binding in those namespaces grants it.
+    5. **Argo CD**: Kubernetes RBAC on the Argo CD namespace (secrets, ConfigMaps, `Application` and
+       `AppProject` objects) is limited to platform administrators; `argocd login --core` bypasses Argo
+       CD's own authentication and RBAC, so Kubernetes RBAC is the only control there.
+    6. Fail if principals other than pipeline administrators or the reviewed IaC pipeline can change
+       build definitions, override build parameters or act as a build identity.
+
+remediation:
+  manual: |
+    1. Manage build projects, triggers and pipelines as code, deployed by a dedicated role after
+       review.
+    2. **AWS**: remove `codebuild:UpdateProject`, `codepipeline:UpdatePipeline` and `iam:PassRole`
+       on build roles from developer policies; add a deny on `codebuild:StartBuild` when
+       `codebuild:source.buildspec` is present (and on the other overrides) for non-administrators,
+       through IAM or a service control policy.
+    3. **Google Cloud Build**: grant Service Account User on specific build service accounts only to
+       pipeline administrators, and remove project-wide grants; keep Cloud Build Editor for those who
+       need it.
+    4. **Tekton**: remove `edit` bindings in build namespaces from people who should not start runs,
+       or create a custom role without Tekton resources; enforce Pod Security Admission in those
+       namespaces.
+    5. **Argo CD**: limit Kubernetes access to the Argo CD namespace to platform administrators.
+
+references:
+  - title: AWS CodeBuild condition keys - prevent buildspec modifications
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/action-context-keys.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: AWS CodeBuild permissions reference
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/auth-and-access-control-permissions-reference.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CodePipeline permissions reference
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/permissions-reference.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Cloud Build service account - user access to triggers
+    url: https://cloud.google.com/build/docs/cloud-build-service-account
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Cloud Build IAM roles and permissions
+    url: https://cloud.google.com/build/docs/iam-roles-permissions
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD user management - core mode
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-IAM-034
+    type: related
+  - id: CB-CICD-PIPE-005
+    type: related
+  - id: CB-CICD-IAM-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

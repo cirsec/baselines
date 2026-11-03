@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Analyser les définitions de pipeline avec un linter de sécurité à chaque modification
+finding:
+  title: Les modifications de fichiers de pipeline sont fusionnées sans linter de sécurité
+  description: Des expressions propices à l'injection, des permissions de jeton trop larges, des déclencheurs dangereux et des composants non épinglés sont introduits dans les fichiers de pipeline et ne sont découverts qu'après leur exploitation par un attaquant.
+description: |
+  Chaque demande de modification qui touche des définitions de pipeline (fichiers de workflow,
+  `.gitlab-ci.yml`, `azure-pipelines.yml`, configuration CircleCI et Bitbucket, modèles et actions
+  composites) est contrôlée par un linter de sécurité CI, et ce contrôle est obligatoire avant
+  fusion. Outils adaptés : zizmor et actionlint pour GitHub Actions, poutine pour GitHub, GitLab,
+  Azure Pipelines et Tekton, et Checkov pour plusieurs formats CI.
+
+  Les résultats sont signalés dans la demande de modification ; les résultats de gravité élevée
+  font échouer le contrôle. Les règles vérifiées par le linter servent CB-CICD-PIPE-014,
+  CB-CICD-PIPE-015, CB-CICD-COMP-011 et CB-CICD-COMP-012 ; l'audit périodique des définitions de
+  pipeline existantes relève de CB-CICD-PIPE-007.
+rationale: |
+  Les fichiers de pipeline sont du code qui s'exécute avec des secrets et des jetons en écriture,
+  et leurs motifs dangereux (entrée non fiable dans des commandes shell, déclencheurs privilégiés
+  sur du code de fork, composants non épinglés) sont bien connus et détectables automatiquement.
+  Les relecteurs les manquent facilement car la syntaxe paraît anodine. Un linter sur chaque
+  modification les attrape avant fusion pour un coût quasi nul.
+impact: |
+  Les pipelines existants peuvent d'abord produire beaucoup de résultats ; les corriger ou
+  consigner les exceptions acceptées dans la configuration de l'outil avant de rendre le contrôle
+  obligatoire.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts et à leurs réglages de protection de branche ou de
+    ruleset.
+
+    1. Vérifier qu'un job de linter tourne sur les demandes de modification qui touchent des
+       fichiers de pipeline :
+       - **GitHub** : un workflow exécute zizmor (par exemple avec `--format sarif` envoyé vers
+         code scanning), poutine ou actionlint sur les pull requests qui modifient `.github/**`, et
+         le contrôle est exigé par un ruleset ou une règle de protection sur la branche par défaut.
+       - **GitLab** : un job de pipeline de merge request exécute poutine ou Checkov (framework
+         `gitlab_ci`) sur `.gitlab-ci.yml` et les fichiers inclus, et **Pipelines must succeed** est
+         exigé pour les fusions.
+       - **Autres plates-formes** : un job équivalent tourne sur les fichiers de pipeline et bloque
+         la fusion.
+    2. Échec si des modifications de pipeline peuvent être fusionnées sans résultat de linter de
+       sécurité, ou si le linter signale des résultats de gravité élevée ni corrigés ni consignés
+       comme exceptions.
+remediation:
+  manual: |
+    1. Ajouter un job de linter à chaque dépôt, idéalement depuis un modèle commun :
+       - **GitHub** : un workflow déclenché sur `pull_request` pour `.github/**` qui exécute zizmor
+         et envoie le SARIF vers code scanning, ou exécute poutine ou actionlint.
+       - **GitLab** : un job dans les pipelines de merge request qui exécute poutine ou
+         `checkov --framework gitlab_ci`.
+    2. Corriger ou consigner les résultats existants, puis rendre le contrôle obligatoire
+       (CB-CICD-SCM-019).

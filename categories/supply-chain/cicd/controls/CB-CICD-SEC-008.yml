@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-008
+title: Make deployment secrets available only to protected branches and environments
+finding:
+  title: Deployment credentials are readable from unprotected branches and merge request pipelines
+  description: Any developer can push a branch or open a merge request whose pipeline prints the production credentials, without review and without touching the protected branch.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, protected-branches, environments, deployment, contexts]
+
+description: |
+  Credentials that reach production or other deployment targets are bound to protected refs or
+  environments: they are delivered only to jobs that run on a protected branch or tag, or that
+  declare an environment whose protection rules (required reviewers, allowed branches) pass.
+  Pipelines of unprotected branches, merge or pull requests and forks do not receive them.
+
+  When `{{ scope_coverage }}` is `all-secrets`, every secret, not only deployment credentials, is
+  scoped to a protected environment or branch, and platforms that support it add an expression,
+  claim or policy restriction (branch, pipeline, project) on top of group membership.
+
+  Protection of the branches themselves is covered by CB-CICD-SCM-006 and CB-CICD-PIPE-008;
+  restrictions by project by CB-CICD-SEC-007; fork pipelines by CB-CICD-PIPE-010.
+parameters:
+  - name: scope_coverage
+    type: enum
+    description: deploy-credentials scopes production and deployment credentials to protected branches or environments; all-secrets scopes every secret that way and adds expression, claim or policy restrictions where the platform supports them.
+    allowed: [deploy-credentials, all-secrets]
+    default: deploy-credentials
+    profile_defaults:
+      hardened: all-secrets
+rationale: |
+  Branch protection and review only protect production if production credentials depend on them.
+  When a secret is available to every pipeline of the project, a developer, a compromised
+  developer account or a malicious dependency in a feature branch can read it before any review
+  happens. Tying the secret to a protected ref or an environment with required reviewers makes the
+  review the gate for credential use.
+impact: |
+  Jobs on feature branches can no longer deploy to environments that use protected credentials;
+  preview deployments need their own, lower-privilege credentials. On GitLab, anyone who can push
+  or merge to a protected branch or create a protected tag can still read protected variables.
+notes: |
+  CircleCI config policies need the Scale plan (or CircleCI Server 4.2 or later). GitLab merge
+  request pipelines can reach protected variables only when the dedicated setting is on, both
+  branches are protected and in the same project; fork pipelines never can.
+
+audit:
+  manual: |
+    Use a role that can read CI/CD variable settings, environments and contexts (values are not
+    needed).
+
+    1. List the credentials that reach production or deployment targets (from the inventory,
+       CB-CICD-SEC-001).
+    2. Check how each one is delivered:
+       - **GitLab**: under **Settings** > **CI/CD** > **Variables** (project, group, instance), each
+         deployment credential has **Protect variable** set and an **Environments** scope
+         (`environment_scope`) matching a protected environment, not `*`. Under **Access protected
+         resources in merge request pipelines**, **Allow merge request pipelines to access
+         protected variables and runners** is cleared unless reviewed. On self-managed instances,
+         **Admin** > **Settings** > **CI/CD** > **Protect CI/CD variables by default** is selected.
+       - **GitHub**: deployment credentials are environment secrets, not repository or
+         organization secrets, and the jobs that use them declare `environment:`; the environment
+         has deployment branch rules and, for production, required reviewers. The zizmor
+         `secrets-outside-env` audit lists secrets used outside an environment.
+       - **CircleCI**: production contexts have **Expression restrictions** (for example
+         `pipeline.git.branch == "main"`) in addition to security groups and project
+         restrictions.
+       - **Buildkite**: each Buildkite secret used for deployment has an access policy matching
+         first-party claims such as the pipeline and the protected branch.
+    3. When `{{ scope_coverage }}` is `all-secrets`, also check that no secret is defined without an
+       environment or protected scope, and:
+       - **CircleCI** (Scale plan): a config policy uses `contexts_reserved_by_branches` or
+         `contexts_allowed_by_project_ids` to hard-fail pipelines that use production contexts
+         outside their branches or projects.
+    4. Fail if a deployment credential is available to pipelines of unprotected branches, merge or
+       pull requests, or, for `all-secrets`, if any secret is not scoped to a protected environment
+       or branch.
+
+remediation:
+  manual: |
+    1. Protect the branches and tags that deploy (CB-CICD-SCM-006) and create protected
+       environments for each deployment target.
+    2. Rebind the credentials:
+       - **GitLab**: edit each deployment variable, select **Protect variable** and set
+         **Environments** to the target environment; protect that environment. Clear **Allow merge
+         request pipelines to access protected variables and runners**. Administrators of
+         self-managed instances select **Protect CI/CD variables by default**.
+       - **GitHub**: create environments with deployment branch rules and required reviewers, move
+         the credentials to environment secrets, add `environment: <name>` to the deploying jobs,
+         then delete the repository and organization copies.
+       - **CircleCI**: add **Expression restrictions** to production contexts; on the Scale plan,
+         add config policies with `contexts_reserved_by_branches` and
+         `contexts_allowed_by_project_ids`, starting in soft-fail mode.
+       - **Buildkite**: add an access policy to each deployment secret restricting it to the
+         deploying pipeline and branch.
+    3. Rotate credentials that were readable from unprotected branches.
+
+references:
+  - title: Protect a CI/CD variable
+    url: https://docs.gitlab.com/ci/variables/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request pipelines - control access to protected variables and runners
+    url: https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing environments for deployment
+    url: https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using contexts - expression restrictions
+    url: https://circleci.com/docs/guides/security/contexts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage contexts with config policies
+    url: https://circleci.com/docs/guides/config-policies/manage-contexts-with-config-policies/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite secrets access policies
+    url: https://buildkite.com/docs/pipelines/security/secrets/buildkite-secrets/access-policies
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers binding secrets to protected refs and environments.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SEC-007
+    type: related
+  - id: CB-CICD-PIPE-008
+    type: related
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-SCM-006
+    type: related
+  - id: CB-CICD-DEPLOY-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-001
+title: Define mandatory security scans and apply them centrally
+finding:
+  title: Security scans depend on each team adding them to its own pipeline
+  description: When every project chooses its own scans, new and forgotten repositories run none, and a team under pressure can remove a scan from its pipeline without anyone noticing.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, sast, secret-detection, dependency-scanning, policy, governance]
+
+parameters:
+  - name: enforcement
+    type: enum
+    description: How the mandatory scans are applied. `default-config` = a default security configuration or template is applied to all new and existing repositories; `enforced` = the scans are applied by a policy that projects cannot disable or remove.
+    default: default-config
+    profile_defaults:
+      hardened: enforced
+    allowed: [default-config, enforced]
+
+description: |
+  The organization writes down which categories of security scan every project must run (at
+  least static analysis, secret detection and dependency scanning, plus container and
+  infrastructure-as-code scanning where the project has such files) and applies them centrally
+  through the platform rather than relying on each pipeline. The required level is
+  `{{ enforcement }}`:
+  - `default-config`: a default security configuration, scan template or pipeline template is
+    attached to all existing repositories and to new ones by default;
+  - `enforced`: the scans are applied by a policy (enforced security configuration, scan
+    execution policy, mandatory template or agent hook) that project maintainers cannot turn off.
+
+  The content of each scan is covered by CB-CICD-TEST-002 (static analysis), CB-CICD-TEST-005
+  (images) and CB-CICD-TEST-006 (infrastructure as code); mandatory pipeline templates in general
+  by CB-CICD-PIPE-003.
+rationale: |
+  Security scanning only helps where it runs. Coverage set up project by project leaves gaps in
+  new, small and forgotten repositories, which are often the ones attackers find. Applying scans
+  from the organization level gives full coverage by default, and enforcement prevents a single
+  team from silently dropping a control that others rely on.
+impact: |
+  Central scans add pipeline time and findings to triage in every project. Some scanners need
+  paid editions (GitHub Code Security and Secret Protection for private repositories, GitLab
+  Ultimate for scan execution policies, Buildkite Enterprise for pipeline templates).
+notes: |
+  On GitHub, enforcement of a security configuration can break when Actions is later disabled
+  on a repository, because code scanning default setup needs Actions. Buildkite pipeline
+  templates cannot be combined with signed pipelines.
+
+audit:
+  manual: |
+    Use an organization owner or security manager role in read mode.
+
+    1. Get the written list of mandatory scan categories.
+    2. Check how they are applied:
+       - **GitHub**: organization or enterprise **Settings** > **Advanced Security** >
+         **Configurations**: a configuration that enables the mandatory scans is set with **Use as
+         default for newly created repositories**, is attached to all repositories, and for
+         `enforced` has **Enforce configuration** selected.
+       - **GitLab**: projects include the scan templates or components (SAST, Secret Detection,
+         Dependency Scanning, Container Scanning, IaC scanning); for `enforced`, a **scan
+         execution policy** linked to the top-level group runs them (GitLab Ultimate).
+       - **Buildkite**: a pipeline template (Enterprise plan) or an agent hook adds the scan steps
+         to every pipeline.
+    3. Fail if there is no written list, if repositories are not covered by the central
+       configuration, or, when `{{ enforcement }}` is `enforced`, if project maintainers can
+       disable a mandatory scan.
+
+remediation:
+  manual: |
+    1. Agree on the mandatory scan categories with the development teams and the security team.
+    2. Apply them centrally:
+       - **GitHub** (organization owner or security manager): create a custom security
+         configuration (or use the GitHub recommended one) with the needed features, select **Use
+         as default for newly created repositories**, apply it to all repositories, and select
+         **Enforce configuration** for `enforced`.
+       - **GitLab** (group Owner): add scan execution policies in **Secure** > **Policies** of the
+         top-level group that run the analyzers on the default branch and in merge request
+         pipelines.
+       - **Buildkite** (organization administrator): create a pipeline template with the scan
+         steps and assign it to all pipelines, or add the scans in an agent hook on every queue.
+    3. Report coverage each month and follow up on repositories that fall out of it.
+
+references:
+  - title: Security configuration enforcement
+    url: https://docs.github.com/en/code-security/reference/security-at-scale/configuration-enforcement
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Creating a custom security configuration
+    url: https://docs.github.com/en/code-security/how-tos/secure-at-scale/configure-organization-security/establish-complete-coverage/create-custom-configuration
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Scan execution policies
+    url: https://docs.gitlab.com/user/application_security/policies/scan_execution_policies/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pipeline templates
+    url: https://buildkite.com/docs/pipelines/governance/templates
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-218, Secure Software Development Framework (SSDF) 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.1"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.7"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.2.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-15
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-002
+    type: related
+  - id: CB-CICD-PIPE-003
+    type: related
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-DEP-VULN-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

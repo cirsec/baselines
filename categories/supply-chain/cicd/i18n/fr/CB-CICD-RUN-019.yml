@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-019
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Donner aux pods de build Kubernetes des comptes de service dédiés au moindre privilège
+finding:
+  title: Des pods de build tournent avec le compte par défaut du namespace ou un compte de service trop privilégié
+  description: Des pods de build et de workflow qui utilisent le compte de service par défaut, un rôle à l'échelle du cluster ou un namespace partagé avec le contrôleur de runners permettent à n'importe quelle étape d'appeler l'API Kubernetes avec ces droits, de lire les secrets d'autres pipelines ou d'altérer le contrôleur.
+parameters:
+  sa_token: Manière dont les identifiants de l'API Kubernetes arrivent aux pods de build. dedicated-account signifie un compte de service dédié au moindre privilège par pipeline ou namespace ; no-token cesse aussi de monter le jeton du compte de service dans les conteneurs de build principaux.
+description: |
+  Les pods de build et de workflow, et les contrôleurs qui les créent (Actions Runner Controller,
+  contrôleurs Tekton et Argo Workflows, delegates Kubernetes), tournent dans des namespaces séparés par
+  domaine de confiance : contrôleurs de runners à part des pods de runners, pipelines de pull requests
+  non fiables à part des pipelines de release. Chaque pipeline ou namespace utilise un compte de service
+  dédié, lié par un RBAC limité au namespace aux seules permissions dont il a besoin. Le compte de service
+  `default` du namespace et `cluster-admin` ne sont jamais utilisés par les builds.
+
+  Avec `{{ sa_token }}` à `no-token`, le jeton du compte de service n'est pas monté dans les conteneurs qui
+  exécutent les étapes de build.
+
+  Les identités cloud rattachées à ces comptes de service relèvent de CB-CICD-SEC-015 ; les identités des
+  contrôleurs de déploiement de CB-CICD-DEPLOY-009.
+rationale: |
+  Chaque étape d'un build peut lire le jeton monté dans son pod. Avec le compte de service par défaut ou
+  un rôle large, une dépendance malveillante ou une modification de pipeline peut lister les secrets,
+  créer des pods dans d'autres namespaces ou modifier le contrôleur. Séparer les namespaces tient un
+  pipeline de pull request compromis à l'écart des identifiants de release.
+impact: |
+  Les pipelines qui appellent l'API Kubernetes (étapes de déploiement, tests sur cluster) ont besoin de
+  rôles explicites. Désactiver le montage du jeton dans Argo Workflows impose de désigner un compte de
+  service d'exécuteur.
+notes: |
+  Les pods Argo Workflows utilisent le compte de service `default` sauf si le workflow en désigne un, et
+  le conteneur principal a le jeton monté ; rien ne limite le compte de service du namespace qu'un
+  workflow peut utiliser. Les task runs Tekton utilisent le compte de service `default` du namespace quand
+  aucun n'est indiqué. GitHub recommande de faire tourner les pods de runners d'Actions Runner Controller
+  dans un autre namespace que celui du contrôleur, un namespace par organisation ou par runner scale set,
+  et de stocker les identifiants de la GitHub App dans un secret Kubernetes.
+audit:
+  manual: |
+    Utiliser un rôle de cluster qui peut lire les namespaces, comptes de service, rôles et liaisons, et les
+    ressources de build (`get`/`list` uniquement).
+
+    1. Associer les namespaces aux domaines de confiance et vérifier que contrôleurs, builds non fiables et
+       builds de release ne sont pas dans le même namespace.
+    2. Pour chaque namespace de build, lister les comptes de service et leurs liaisons de rôle ; chercher
+       des liaisons à `cluster-admin`, des rôles de cluster avec des verbes génériques, ou des rôles sur
+       `secrets` entre namespaces.
+    3. Par produit :
+       - **Tekton** : `spec.taskRunTemplate.serviceAccountName` du `PipelineRun` (et
+         `spec.serviceAccountName` du `TaskRun`) désigne un compte de service dédié ; les pipelines de
+         release et de pull request tournent dans des namespaces différents.
+       - **Argo Workflows** : `spec.serviceAccountName` du `Workflow` (ou les valeurs par défaut des
+         workflows) désigne un compte de service dédié ; avec `{{ sa_token }}` à `no-token`,
+         `spec.automountServiceAccountToken: false` avec `spec.executor.serviceAccountName` renseigné. Les
+         règles Checkov `CKV_ARGO_1` et `CKV_ARGO_2` aident.
+       - **GitHub** (Actions Runner Controller) : les runner scale sets sont installés dans des namespaces
+         séparés de celui du contrôleur (`arc-systems` et `arc-runners` dans les exemples),
+         s'authentifient avec une GitHub App stockée dans un secret Kubernetes, et les pods de runners n'ont
+         pas de rôles à l'échelle du cluster.
+    4. Échec si un pod de build utilise le compte de service `default` du namespace, si un compte de service
+       de build est lié à `cluster-admin` ou à un rôle de cluster dont il n'a pas besoin, ou si des
+       contrôleurs partagent un namespace avec des pods de build ; avec `{{ sa_token }}` à `no-token`, échec
+       aussi si des conteneurs de build montent un jeton de compte de service.
+remediation:
+  manual: |
+    1. Créer un namespace par domaine de confiance et séparer contrôleurs, pipelines non fiables et
+       pipelines de release.
+    2. Créer un compte de service par pipeline ou namespace, avec un `Role` et un `RoleBinding` limités à
+       ce dont le pipeline a besoin, et retirer `cluster-admin` et les liaisons de rôles de cluster larges.
+    3. Par produit :
+       - **Tekton** : poser `serviceAccountName` sur chaque `PipelineRun` et `TaskRun`, ou via les
+         trigger templates.
+       - **Argo Workflows** : poser `serviceAccountName` dans les valeurs par défaut des workflows et, pour
+         `no-token`, `automountServiceAccountToken: false` avec un `executor.serviceAccountName`.
+       - **GitHub** : réinstaller les runner scale sets dans leurs propres namespaces avec les identifiants
+         de la GitHub App dans un secret Kubernetes.
+    4. Ajouter une politique d'admission qui rejette les pods de build utilisant le compte de service
+       `default`.
