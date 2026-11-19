@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-035
+title: Make CI/CD controllers and GitOps reconcilers act with tenant-scoped identities
+finding:
+  title: Shared controllers act with cluster-wide privileges on behalf of every tenant
+  description: When a GitOps or workflow controller applies every tenant's resources with its own cluster-admin identity, a tenant who can write to its own repository can create objects in other namespaces or take over the cluster.
+status: draft
+profiles: [hardened]
+risk:
+  severity: high
+assessment: manual
+tags: [multi-tenancy, gitops, flux, argo-workflows, kubernetes-rbac]
+
+applicability:
+  versions: [flux, argo-workflows]
+
+description: |
+  On clusters shared by several teams, controllers that act on behalf of a tenant use that tenant's
+  identity:
+
+  - the default service account used by the controllers has no permissions, and each tenant's
+    reconciliations run with a least-privilege service account of its own namespace;
+  - references across namespaces (sources, secrets, kubeconfigs) are disabled;
+  - UI and API servers that only display state run with read-only permissions;
+  - tenants cannot remove or change the platform administrators' bindings or the controllers
+    themselves.
+
+  Deployment targets of GitOps projects are covered by CB-CICD-DEPLOY-008 and CB-CICD-DEPLOY-009.
+rationale: |
+  GitOps and workflow controllers usually run with cluster-admin rights so they can apply anything.
+  Without impersonation of a tenant identity, whatever a tenant commits to its repository is applied
+  with those rights, which defeats namespace isolation. A UI server with write permissions gives the
+  same power to anyone who can reach it.
+impact: |
+  Each tenant namespace needs a service account and role bindings for what it deploys. Existing
+  Kustomizations and HelmReleases without `serviceAccountName` stop reconciling once the default
+  service account has no permissions.
+
+audit:
+  manual: |
+    Use a cluster role that can read deployments, role bindings and Flux or Argo Workflows resources.
+
+    1. **Flux**:
+       - helm-controller, kustomize-controller, notification-controller, image-reflector-controller,
+         image-automation-controller (and source-watcher) run with `--no-cross-namespace-refs=true`;
+       - kustomize-controller and helm-controller (and source-watcher) run with
+         `--default-service-account=<name>`, where that service account has no permissions, and
+         tenant `Kustomization` and `HelmRelease` objects set `spec.serviceAccountName`;
+       - the object identity defaults are set: `--default-service-account` on source-,
+         notification-, image-reflector- and image-automation-controller,
+         `--default-decryption-service-account` and `--default-kubeconfig-service-account` on
+         kustomize-controller, `--default-kubeconfig-service-account` on helm-controller;
+       - admission rules or RBAC prevent tenants from modifying the Flux namespace and the platform
+         administrators' bindings.
+    2. **Argo Workflows**: the `argo-server` Role or ClusterRole only has `get`, `list` and `watch`
+       verbs when the server is only used to view workflows; users act with their own identity
+       (`client` or SSO RBAC, CB-CICD-IAM-014).
+    3. Fail if tenant reconciliations run with the controller's own identity, if cross-namespace
+       references are allowed, or if a read-only UI server has write permissions.
+
+remediation:
+  manual: |
+    1. **Flux**: patch the controller deployments (for example with a Kustomize patch in the
+       bootstrap repository) to add `--no-cross-namespace-refs=true`, `--default-service-account` and
+       the object identity flags; create a least-privilege service account in each tenant namespace and
+       set `spec.serviceAccountName` on tenant objects; add admission policies that protect the Flux
+       namespace and admin bindings, with a documented break-glass procedure.
+    2. **Argo Workflows**: replace the `argo-server` role with one limited to `get`, `list` and `watch`
+       if the server is used read-only.
+    3. Test each tenant's reconciliation after the change.
+
+references:
+  - title: Flux multi-tenancy lockdown
+    url: https://fluxcd.io/flux/installation/configuration/multitenancy/
+    publisher: Flux project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security
+    url: https://fluxcd.io/flux/security/
+    publisher: Flux project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows security
+    url: https://argo-workflows.readthedocs.io/en/latest/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers the identity used by shared controllers on behalf of tenants.
+threats:
+  - framework: mitre-attack
+    id: T1610
+related_controls:
+  - id: CB-CICD-DEPLOY-008
+    type: related
+  - id: CB-CICD-DEPLOY-009
+    type: related
+  - id: CB-CICD-IAM-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

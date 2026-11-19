@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-013
+title: Deny cross-project use of job tokens except for an explicit allowlist
+finding:
+  title: Job tokens from any project can reach this project's repository, packages and artifacts
+  description: When the job token allowlist is off or push with job tokens is allowed, a pipeline in an unrelated or compromised project can read or change this project with the rights of the user who triggered it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [job-token, ci-job-token, cross-project-access, allowlist]
+applicability:
+  versions: [gitlab, gitea]
+
+description: |
+  A project accepts job tokens only from its own pipelines and from the groups or projects on an
+  explicit allowlist. Job tokens cannot push to the repository unless a reviewed GitOps or release
+  need requires it, and the token format is the signed JWT format where the platform offers a
+  choice.
+
+  When `{{ cross_project_scope }}` is `fine-grained`, each allowlist entry is limited to the API
+  permissions it needs (for example read packages only), and the project features that job tokens
+  from any project could otherwise reach on public or internal projects (CI/CD artifacts,
+  container and package registries, releases, environments, repository) are visible to project
+  members only.
+
+  Default permissions of the job token inside its own project are covered by CB-CICD-SEC-012.
+parameters:
+  - name: cross_project_scope
+    type: enum
+    description: allowlist enforces the job token allowlist, keeps Git push with job tokens off and uses the JWT token format; fine-grained also sets minimal permissions on each allowlist entry and limits project features to members.
+    allowed: [allowlist, fine-grained]
+    default: allowlist
+    profile_defaults:
+      hardened: fine-grained
+rationale: |
+  A job token carries the permissions of the user who started the job. Without an allowlist, any
+  pipeline that user can run, in any project, can use its token against this project, so a
+  malicious merge request in a low-value project becomes a way into a high-value one. Push access
+  with job tokens lets a compromised job alter source code without a pipeline being triggered in
+  the target project.
+impact: |
+  Pipelines that download artifacts, packages or images from other projects need to be added to
+  those projects' allowlists. Tools that push back with the job token (release tagging, version
+  bumps) need the push setting or another credential.
+notes: |
+  On GitLab, do not allow Git push with job tokens on pull mirrors: the upstream repository owner
+  could use the token to push to the mirror. The legacy job token format remains selectable until
+  GitLab 20.0.
+
+audit:
+  manual: |
+    Use the Maintainer role on the projects (and administrator access on self-managed instances).
+
+    1. Check the allowlist and push settings:
+       - **GitLab**: **Settings** > **CI/CD** > **Job token permissions**: **Authorized groups and
+         projects** is **This project and any groups and projects in the allowlist** (API
+         `ci_job_token_scope_enabled` / GraphQL `inboundJobTokenScopeEnabled` is true) and the
+         allowlist holds only projects with a documented need. **Allow Git push requests to the
+         repository** (`ci_push_repository_for_job_token_allowed`) and **Allow cross-project Git
+         push requests from allowlisted projects** are off unless reviewed. On self-managed
+         instances, **Admin** > **Settings** > **CI/CD** > **Job token permissions** > **Enable and
+         enforce job token allowlist for all projects** is selected. On the top-level group,
+         **Settings** > **CI/CD** > **General pipelines** > **Enable JWT format for CI/CD job
+         tokens** is on.
+       - **Gitea**: **Settings** > **Actions** > **General** > **Cross-Repository Access** of the
+         user or organization lists only the private repositories that must be readable (for
+         example shared actions), and collaborative owners on private repositories are limited to
+         those that need them.
+    2. When `{{ cross_project_scope }}` is `fine-grained`, also check:
+       - **GitLab**: each allowlist entry has fine-grained permissions (job token policies such as
+         read packages) rather than default permissions, and **Settings** > **General** >
+         **Visibility, project features, permissions** sets CI/CD, container registry, package
+         registry, releases, environments and repository to **Only project members** on public
+         or internal projects.
+    3. Fail if the allowlist is disabled, if it lists projects with no documented need, if job
+       tokens can push without a reviewed reason, or, for `fine-grained`, if allowlist entries have
+       default permissions or the features remain visible to everyone with access.
+
+remediation:
+  manual: |
+    1. On GitLab:
+       - Select **This project and any groups and projects in the allowlist** and add only the
+         projects that need cross-project access. Administrators of self-managed instances select
+         **Enable and enforce job token allowlist for all projects**.
+       - Clear **Allow Git push requests to the repository** and **Allow cross-project Git push
+         requests from allowlisted projects** unless a reviewed workflow needs them.
+       - Keep **Enable JWT format for CI/CD job tokens** on for the top-level group.
+       - For `fine-grained`, edit each allowlist entry to grant only the needed fine-grained
+         permissions, and set the project features listed above to **Only project members**.
+    2. On Gitea, remove repositories from **Cross-Repository Access** and collaborative owners
+       unless they are needed, and grant read access only.
+
+references:
+  - title: GitLab CI/CD job token
+    url: https://docs.gitlab.com/ci/jobs/ci_job_token/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Fine-grained permissions for CI/CD job tokens
+    url: https://docs.gitlab.com/ci/jobs/fine_grained_permissions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CI/CD settings - job token permissions
+    url: https://docs.gitlab.com/administration/settings/continuous_integration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Token permissions - cross-repository access
+    url: https://docs.gitea.com/usage/actions/token-permissions
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers cross-project reach of job tokens.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SEC-012
+    type: related
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-ART-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

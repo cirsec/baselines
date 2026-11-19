@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Activer la journalisation d'audit sur chaque système CI/CD
+finding:
+  title: Un système CI/CD n'enregistre aucune piste d'audit de qui a modifié quoi
+  description: Les changements de configuration, de permissions, d'identifiants et de pipelines d'un système CI/CD ne sont pas enregistrés ; après une intrusion, personne ne peut dire quel compte a modifié un job, ajouté un identifiant ou lancé un script, ni quand.
+description: |
+  Chaque système CI/CD (SCM, serveurs de CI et de CD, registres d'artefacts, contrôleurs GitOps et
+  orchestrateurs qui les hébergent) enregistre des événements d'audit pour les actions des personnes
+  et des identités programmatiques (jetons, applications, comptes de service). Chaque événement
+  identifie au moins l'acteur et l'identifiant utilisé, l'action, l'objet modifié, l'heure et, quand
+  c'est possible, l'adresse source.
+
+  Les événements couvrent au moins : connexions et actions d'administration ; changements de
+  permissions, de membres et de rôles ; création et révocation de jetons, clés et secrets ;
+  changements de protection de branche, de réglages de pipeline et de runner ; modifications de
+  configuration des jobs ; et changements des réglages de sécurité de la plate-forme elle-même.
+
+  Là où la journalisation d'audit est optionnelle ou fournie par un plugin, elle est activée.
+  L'adresse IP source et le détail des requêtes API relèvent de CB-CICD-LOG-002, l'export vers le
+  SIEM de CB-CICD-LOG-003, et la conservation et la protection de CB-CICD-LOG-005.
+rationale: |
+  Sans piste d'audit, une investigation ne peut établir comment l'attaquant est entré, quels
+  pipelines ou identifiants ont été modifiés, ni ce qu'il faut renouveler et reconstruire. Plusieurs
+  produits sont livrés avec l'audit désactivé (organisations Azure DevOps, Gitea) ou sans audit dans
+  le cœur (Jenkins) : l'état par défaut est souvent l'absence totale de piste.
+impact: |
+  Les enregistrements d'audit consomment du stockage et, pour certains produits, nécessitent un
+  plugin ou une édition supérieure. Ils peuvent contenir des données personnelles (noms
+  d'utilisateur, adresses IP) soumises aux règles de protection des données.
+notes: |
+  L'audit Azure DevOps n'est disponible que pour les organisations adossées à Microsoft Entra ID et
+  conserve les événements 90 jours. Gitea conserve les événements d'audit pendant `RETENTION_DAYS`
+  (30 par défaut) : définir une valeur plus longue ou les exporter (CB-CICD-LOG-003). La
+  documentation de Forgejo ne décrit pas de journal d'audit structuré ; seuls les journaux d'accès et
+  du routeur peuvent être collectés. Sur GitLab Self-Managed, les événements d'audit au niveau de
+  l'instance exigent Premium ou Ultimate.
+audit:
+  manual: |
+    Utiliser un rôle administrateur ou auditeur qui peut lire les réglages et événements d'audit.
+
+    1. Lister les systèmes CI/CD de l'inventaire (CB-CICD-PLAT-002) et, pour chacun, vérifier que
+       l'audit est activé et qu'un changement récent (par exemple une modification de permission de
+       test) apparaît avec l'acteur, l'action, l'objet et l'heure.
+    2. Vérifier les produits où l'audit est optionnel :
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Stratégies** > **Log Audit Events**
+         est activé, et **Audit** apparaît dans les paramètres de l'organisation avec des événements
+         récents.
+       - **Gitea** : `app.ini` `[audit] RECORD_OUTPUT = database`, et les événements apparaissent
+         sous **Site administration** > **Monitoring** > **Audit Log**
+         (`/-/admin/monitor/audit_logs`).
+       - **Forgejo** : `app.ini` `[log]` active le journal d'accès (`LOGGER_ACCESS_MODE`) et le
+         journal du routeur, et ces journaux sont collectés, faute de journal d'audit structuré
+         documenté.
+       - **Jenkins** : le plugin Audit Trail est installé et configuré dans **Manage Jenkins** >
+         **System** > **Audit Trail** avec un journaliseur fichier, syslog ou Elasticsearch, et son
+         motif d'URL couvre les changements de configuration et d'identifiants, les builds et
+         `/script`.
+    3. Échec si un système CI/CD n'enregistre aucun événement d'audit, si l'audit est désactivé, ou si
+       les événements n'identifient pas l'acteur et l'objet modifié.
+remediation:
+  manual: |
+    Utiliser un compte administrateur de chaque système.
+
+    1. **Azure DevOps** : dans **Paramètres de l'organisation** > **Stratégies**, activer **Log Audit
+       Events** (l'organisation doit être connectée à Microsoft Entra ID).
+    2. **Gitea** : poser `[audit] RECORD_OUTPUT = database` et un `RETENTION_DAYS` conforme à la
+       politique de conservation, puis redémarrer.
+    3. **Forgejo** : activer les journaux d'accès et du routeur dans `[log]` et les transmettre au
+       collecteur central de journaux.
+    4. **Jenkins** : installer le plugin Audit Trail et configurer un journaliseur qui écrit hors du
+       contrôleur (syslog ou Elasticsearch) ; ajouter Job Configuration History si des différences
+       de configuration sont nécessaires.
+    5. Pour les autres produits, activer toutes les catégories optionnelles de journal d'audit ou de
+       sécurité, et vérifier que les actions programmatiques sont attribuées au jeton ou à
+       l'application qui les a faites.

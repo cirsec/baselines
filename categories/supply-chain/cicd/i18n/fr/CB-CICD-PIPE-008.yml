@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger chaque branche qui peut déclencher un pipeline doté de secrets
+finding:
+  title: Des pipelines dotés de secrets peuvent être déclenchés depuis des branches non protégées
+  description: Un pipeline dont le filtre de déclenchement couvre des branches que la protection de branche ne couvre pas (par exemple `release/*` alors que seule `main` est protégée) permet à quiconque peut pousser de l'exécuter avec les secrets de production depuis une branche que personne n'a relue.
+description: |
+  Pour chaque pipeline qui peut utiliser des secrets, des identifiants de déploiement ou des jetons
+  en écriture, l'ensemble des branches et tags qui peuvent le déclencher est couvert un pour un par
+  la protection de branche et de tag : chaque motif de déclenchement (`main`, `release/*`, tags
+  `v*`...) correspond à une règle de protection qui exige une revue et bloque les poussées
+  directes. Quand un nouveau motif de déclenchement est ajouté, la règle de protection est ajoutée
+  en même temps.
+
+  Le contenu des règles de protection de branche relève de CB-CICD-SCM-006 à CB-CICD-SCM-010 ; les
+  définitions de pipeline relues relèvent de CB-CICD-PIPE-005.
+rationale: |
+  La protection de branche et les déclencheurs de pipeline sont généralement configurés à des
+  endroits différents par des personnes différentes. Quand ils divergent, une branche non protégée
+  lance quand même le pipeline privilégié, et l'attaquant n'a besoin que du droit de pousser pour
+  exécuter son code avec les identifiants du pipeline.
+impact: |
+  Les équipes qui poussent directement sur des branches de déclenchement doivent passer par des pull
+  requests.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les fichiers de pipeline, les réglages de déclenchement et les
+    règles de protection de branche.
+
+    1. Pour chaque pipeline doté de secrets ou de droits de déploiement, lister ses motifs de
+       déclenchement de branches et de tags (filtres `on:` des workflows, `rules:`/`workflow:rules`,
+       sections `trigger:`/`pr:`, groupes de filtres de webhook, réglages de déclenchement dans
+       l'interface).
+    2. Lister les règles de protection de branche et de tag du dépôt.
+    3. Échec si un motif de déclenchement correspond à une branche ou un tag qu'aucune règle de
+       protection ne couvre, ou si un pipeline privilégié n'a aucun filtre de branche.
+remediation:
+  manual: |
+    1. Restreindre les filtres de déclenchement des pipelines privilégiés aux branches et tags qui en
+       ont réellement besoin.
+    2. Ajouter une règle de protection de branche ou de tag pour chaque motif restant, avec revue
+       obligatoire et sans poussée directe (CB-CICD-SCM-006, CB-CICD-SCM-010).
+    3. Quand la plate-forme le permet, limiter aussi les secrets aux références protégées ou aux
+       environnements (CB-CICD-SEC-008), pour qu'un motif oublié ne les expose pas.

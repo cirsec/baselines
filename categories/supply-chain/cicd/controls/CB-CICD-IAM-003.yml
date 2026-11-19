@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-003
+title: Disable bootstrap administrator accounts and keep local accounts for break-glass only
+finding:
+  title: Built-in administrator or super-user accounts stay active beside SSO
+  description: A bootstrap admin account with its initial password still stored, or a super-user token written to the server log, gives full control of the platform to anyone who reads that secret or log.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [break-glass, default-credentials, local-accounts, administrator]
+
+description: |
+  Once administrators sign in through the identity provider, the accounts created at installation
+  that bypass it are disabled, and their initial secrets are deleted. At most one or two named
+  break-glass accounts keep a local login, with a long random password stored in a vault, MFA where
+  the platform supports it, and alerting on every use. No account keeps a default or vendor
+  password.
+
+  The general SSO requirement is covered by CB-CICD-IAM-001; the first-run installer by
+  CB-CICD-PLAT-006.
+rationale: |
+  Bootstrap accounts are known by name (`admin`, `root`, super user), often keep the password set at
+  installation, and are excluded from the identity provider's MFA and leaver process. Their secrets
+  also end up in places with wide read access: the Argo CD initial password sits in clear in a
+  Kubernetes secret, and the TeamCity super-user token is printed to the server log, which is often
+  shipped to a central log platform.
+impact: |
+  If SSO breaks and no break-glass account works, administrators lose access. Test the break-glass
+  procedure before disabling the bootstrap account, and document how to re-enable it.
+
+audit:
+  manual: |
+    Use an administrator role that can read authentication settings and user lists.
+
+    1. List accounts that can sign in without the identity provider, and check that each one is a
+       documented break-glass account with a vaulted secret.
+    2. Check the bootstrap accounts:
+       - **Argo CD**: `argocd-cm` has `admin.enabled: "false"`, and the secret
+         `argocd-initial-admin-secret` no longer exists in the Argo CD namespace
+         (`kubectl get secret argocd-initial-admin-secret -n argocd`).
+       - **TeamCity**: `<TeamCity Data Directory>/config/internal.properties` contains
+         `teamcity.superUser.disable=true`.
+       - **GitLab self-managed**: the `root` account has a strong password set at installation (for
+         example through `GITLAB_ROOT_PASSWORD`), is used only as break-glass, and other
+         administrators sign in through SSO.
+       - **GitHub Enterprise Server**: **Management Console** > **Authentication** does not have
+         **Allow creation of accounts with built-in authentication** selected, unless built-in
+         accounts are the documented break-glass accounts.
+       - **Forgejo**: `[service] ENABLE_INTERNAL_SIGNIN = false` when every user signs in through
+         an external source.
+    3. Search logs and secret stores for initial passwords or super-user tokens.
+    4. Fail if a bootstrap or default account can still sign in outside a documented break-glass
+       procedure, or if its initial secret still exists.
+
+remediation:
+  manual: |
+    1. Make sure at least two administrators can sign in through SSO, and create or keep the
+       break-glass account with a vaulted password.
+    2. Disable the bootstrap access:
+       - **Argo CD**: set `admin.enabled: "false"` in `argocd-cm` and delete
+         `argocd-initial-admin-secret` (`kubectl delete secret argocd-initial-admin-secret -n argocd`).
+       - **TeamCity**: add `teamcity.superUser.disable=true` to `internal.properties` and restart the
+         server; remove the setting only in an emergency.
+       - **GitLab self-managed**: rotate the `root` password, store it in the vault, and restrict its
+         use to break-glass.
+       - **GitHub Enterprise Server**: clear **Allow creation of accounts with built-in
+         authentication** in the Management Console, or limit built-in accounts to break-glass.
+    3. Alert on every sign-in of a break-glass account (CB-CICD-LOG-006).
+  rollback: |
+    Re-enable the bootstrap login (`admin.enabled: "true"`, remove `teamcity.superUser.disable`)
+    only for recovery, then disable it again.
+
+references:
+  - title: Argo CD getting started - initial admin password
+    url: https://argo-cd.readthedocs.io/en/stable/getting_started/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD user management
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity Super User
+    url: https://www.jetbrains.com/help/teamcity/super-user.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab hardening - configuration recommendations
+    url: https://docs.gitlab.com/security/hardening_configuration_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Allowing built-in authentication for users outside your provider
+    url: https://docs.github.com/en/enterprise-server@latest/admin/managing-iam/understanding-iam-for-enterprises/allowing-built-in-authentication-for-users-outside-your-provider
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.9.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R34"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.001
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-PLAT-006
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

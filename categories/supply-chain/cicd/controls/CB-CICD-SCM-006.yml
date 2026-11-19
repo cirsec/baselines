@@ -1,0 +1,177 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-006
+title: Protect default and release branches on every repository
+finding:
+  title: Default or release branches have no protection rule
+  description: Without a protection rule, anyone with write access can push, rewrite or delete the branch that releases are built from, and the change runs in pipelines that hold production secrets.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [branch-protection, rulesets, default-branch, release-branches]
+
+description: |
+  Every repository has an active protection rule (ruleset, protected branch, branch policy or
+  branch restriction) on its default branch and on its release branches (for example
+  `release/*`). Rules are defined at the organization, group, project or instance level wherever
+  the platform allows, so new repositories are protected from creation and repository
+  administrators cannot remove the protection.
+
+  This control checks that the protection exists and is active. What the rule must contain is
+  covered by the dedicated controls: changes only through pull requests (CB-CICD-SCM-007), no
+  force push or deletion (CB-CICD-SCM-009), review (CB-CICD-SCM-012) and status checks
+  (CB-CICD-SCM-019). Protection of every branch that can trigger a secret-bearing pipeline is
+  covered by CB-CICD-PIPE-008.
+rationale: |
+  The default and release branches are what pipelines build and deploy, and on several platforms
+  being "protected" is what unlocks protected variables, protected runners and deployment
+  environments. An unprotected default branch lets a single compromised developer account push a
+  modified pipeline definition that exfiltrates those secrets, or rewrite history to hide the
+  change.
+impact: |
+  Developers can no longer push directly to the protected branches once the dedicated rules are
+  applied. Automation that pushed to them needs a reviewed path or a narrowly scoped exemption.
+notes: |
+  On GitHub, repository rulesets on private repositories need GitHub Team or Enterprise, and
+  organization rulesets targeting many repositories need GitHub Enterprise. Rulesets and branch
+  protection rules combine: the most restrictive version of each rule applies. On GitLab, an
+  instance administrator (Premium) can prevent group owners from overriding the default branch
+  protection. On Gitea, do not add the **Gitea Actions** system user to push, force-push or
+  deletion allowlists unless a release workflow needs it.
+
+audit:
+  manual: |
+    Use a role that can read branch protection settings (repository admin, maintainer or
+    organization owner).
+
+    1. List repositories and, for each, its default branch and release branch patterns.
+    2. Check that an active rule targets them:
+       - **GitHub**: **Organization** > **Settings** > **Rules** > **Rulesets** and each
+         repository's **Settings** > **Rules** / **Branches**: an **Active** ruleset targets
+         `~DEFAULT_BRANCH` and the release patterns (API: `GET /repos/{owner}/{repo}/rules/branches/{branch}`
+         returns rules). Scorecard's `Branch-Protection` check and legitify help at scale.
+       - **GitLab**: **Admin** > **Settings** > **Repository** > **Default branch** >
+         **Initial default branch protection** and each group's **Settings** > **Repository** >
+         **Default branch** are **Fully protected**; each project's **Settings** > **Repository** >
+         **Protected branches** lists the default branch and release patterns.
+       - **Azure DevOps**: **Project settings** > **Repositories** > **All Repositories** >
+         **Policies** > **Branch Policies** contains **Protect the default branch of each
+         repository** (and release patterns), or each repository's default branch shows the
+         policy icon in **Repos** > **Branches**.
+       - **Bitbucket Cloud**: repository **Settings** > **Workflow** > **Branch restrictions** has a
+         restriction on the main and release branches.
+       - **Bitbucket Data Center**: **Project settings** > **Branch permissions** (or **Repository
+         settings** > **Branch permissions**) covers the default and release branches.
+       - **Gitea / Forgejo**: repository **Settings** > **Branches** has a protection rule whose
+         pattern matches the default and release branches.
+    3. Fail if any repository's default or release branch is not covered by an active rule, or if
+       a rule is disabled or only in evaluation mode.
+
+remediation:
+  manual: |
+    1. Define the protection centrally where possible:
+       - **GitHub**: create an organization or enterprise ruleset targeting `~DEFAULT_BRANCH` and
+         `release/*` on all repositories (start in **Evaluate** mode on GitHub Enterprise Cloud to
+         see what would be blocked), then set it to **Active**.
+       - **GitLab**: set **Initial default branch protection** to **Fully protected** for the
+         instance and groups, clear **Allow owners to manage default branch protection per group**
+         (Premium), and add protected branch rules for release patterns.
+       - **Azure DevOps**: in **Project settings** > **Repositories** > **All Repositories** >
+         **Policies**, add a cross-repository branch policy with **Protect the default branch of
+         each repository** and one for release patterns.
+       - **Bitbucket**: add branch restrictions (Cloud) or project-level branch permissions (Data
+         Center) on the main and release branches.
+       - **Gitea / Forgejo**: add a branch protection rule for the default and release branch
+         patterns in each repository.
+    2. Fill each rule with the settings required by CB-CICD-SCM-007, CB-CICD-SCM-009,
+       CB-CICD-SCM-012 and CB-CICD-SCM-019.
+    3. Include the check in repository creation templates so new repositories start protected.
+
+references:
+  - title: About rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Default branch
+    url: https://docs.gitlab.com/user/project/repository/branches/default/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using branch permissions
+    url: https://confluence.atlassian.com/bitbucketserver/using-branch-permissions-776639807.html
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers the existence of protection on default and release branches; review and check requirements are separate controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.14"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.15"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.16"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.17"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L3
+    relation: partial
+    note: SLSA Source L3 also requires evidence that the technical controls were enforced continuously.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-008
+    type: related
+  - id: CB-CICD-SCM-007
+    type: related
+  - id: CB-CICD-SCM-009
+    type: related
+  - id: CB-CICD-SCM-011
+    type: related
+  - id: CB-CICD-SCM-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

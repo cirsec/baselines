@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-033
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger des clés SSH robustes, à expiration et maîtrisées centralement
+finding:
+  title: Les clés SSH d'accès Git sont faibles, n'expirent jamais ou ne sont pas maîtrisées centralement
+  description: Les clés SSH des utilisateurs et les clés de déploiement sont des identifiants durables hors du SSO et des stratégies de jetons ; une clé faible ou oubliée donne l'accès en clonage, et souvent en push, pendant des années.
+parameters:
+  ssh_policy: Exigence SSH. `strong-expiring-keys` exige des clés RSA d'au moins 2048 bits ou Ed25519/ECDSA, pas de DSA, et une expiration imposée ; `certificates-only` exige aussi des certificats SSH émis par une autorité de l'organisation, désactive SSH là où il ne sert pas et désactive les clés de déploiement.
+description: |
+  Les clés SSH utilisées pour l'accès Git emploient des algorithmes robustes (Ed25519 ou ECDSA, y
+  compris les variantes sur clé de sécurité, ou RSA d'au moins 2048 bits, jamais DSA) et expirent,
+  l'expiration étant imposée par la plate-forme quand elle le peut. Avec `{{ ssh_policy }}` réglé sur
+  `certificates-only`, les utilisateurs s'authentifient avec des certificats SSH à courte durée de vie
+  émis par une autorité de certification de l'organisation, SSH est désactivé là où personne n'en a
+  besoin, et les clés de déploiement sont remplacées par des identités d'application.
+
+  La durée de vie des jetons relève de CB-CICD-IAM-028 ; les identifiants machine en lecture seule
+  pour les checkouts CI de CB-CICD-SEC-014.
+rationale: |
+  Les clés SSH sont souvent plus anciennes que le poste actuel de la personne, copiées d'un portable à
+  l'autre, et non couvertes par les stratégies de PAT, le SSO ou l'accès conditionnel de la
+  plate-forme. Les clés de déploiement ne sont liées à aucun utilisateur, n'expirent jamais, et une
+  clé de déploiement en écriture pousse sans revue. Les algorithmes faibles rendent les clés
+  falsifiables avec le temps. L'expiration et les certificats bornent la vie d'une clé volée.
+impact: |
+  Les clés existantes non conformes sont désactivées (GitLab désactive les clés qui enfreignent une
+  restriction de type). Les utilisateurs ont besoin d'un processus de renouvellement des clés ; les
+  certificats demandent une autorité et un outillage d'émission. Désactiver les clés de déploiement
+  sur GitHub désactive celles qui existent dans chaque dépôt et casse l'automatisation qui les
+  utilise.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou de propriétaire.
+
+    1. Vérifier les réglages SSH :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Visibility and access
+         controls** : **DSA SSH keys** est interdit, **RSA SSH keys** exige au moins 2048 bits ;
+         **Account and limit** > **Limit the lifetime of SSH keys** est réglé (Ultimate).
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Stratégies** > **Validate SSH key
+         expiration** est activé (activé par défaut ; désactivé, les clés expirées restent
+         utilisables). Avec `certificates-only` et sans usage de SSH, **SSH authentication** est
+         désactivé.
+       - **GitHub** (`certificates-only`) : **Enterprise settings** ou **Organization settings** >
+         **Authentication security** > **SSH certificate authorities** contient l'autorité de
+         l'organisation et **Require SSH Certificates** est coché (GitHub Enterprise Cloud ou Server) ;
+         la stratégie des clés de déploiement (**Policies** > **Repositories** de l'entreprise, ou
+         **Member privileges** de l'organisation) désactive les clés de déploiement.
+    2. Lister les clés et clés de déploiement existantes avec leur algorithme, taille et ancienneté
+       quand la plate-forme les affiche (inventaire des identifiants GitLab, clés de déploiement GitHub
+       par dépôt).
+    3. Échec si des clés DSA ou RSA courtes sont acceptées, si l'expiration des clés n'est pas imposée,
+       ou, avec `certificates-only`, si des clés simples ou des clés de déploiement sont encore
+       acceptées.
+remediation:
+  manual: |
+    1. **GitLab auto-hébergé** : définir les restrictions de type de clé (interdire DSA, RSA d'au moins
+       2048, autoriser Ed25519 et ECDSA) et régler **Limit the lifetime of SSH keys**.
+    2. **Azure DevOps** : garder **Validate SSH key expiration** activé ; désactiver **SSH
+       authentication** si Git en HTTPS avec des jetons Entra couvre tous les usages.
+    3. **GitHub** (`certificates-only`) : ajouter l'autorité SSH, cocher **Require SSH Certificates**,
+       indiquer aux utilisateurs l'URL SSH pour certificats, et désactiver les clés de déploiement après
+       avoir migré les automatisations vers des GitHub Apps.
+    4. Demander aux utilisateurs de remplacer les clés faibles ou anciennes et supprimer celles qui ne
+       respectent pas la politique.
+  rollback: |
+    Décocher **Require SSH Certificates** ou réautoriser les clés de déploiement si une automatisation
+    critique casse, puis la migrer.

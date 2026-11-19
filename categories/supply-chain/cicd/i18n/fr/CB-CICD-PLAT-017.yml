@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter les services de la plate-forme sous des comptes dédiés à moindre privilège sur des hôtes durcis
+finding:
+  title: Les services de la plate-forme CI/CD tournent sous root, des comptes partagés ou trop privilégiés
+  description: Le serveur SCM ou de CI tourne sous root, sous un compte de domaine partagé ou sur un hôte ou cluster non durci ; une seule vulnérabilité de la plate-forme donne à l'attaquant l'hôte, les autres services qu'il héberge et tous les systèmes que le compte peut atteindre.
+description: |
+  Chaque service CI/CD auto-hébergé (serveurs SCM, de CI et de CD, registres, contrôleurs GitOps et
+  leurs bases de données) tourne sous son propre compte dédié et non interactif, qui n'est ni root
+  ni administrateur local ou de domaine, ne détient que les droits nécessaires au service, et n'est
+  réutilisé ni par des personnes ni par d'autres services. Les composants hébergés sur Kubernetes
+  tournent avec des comptes de service dédiés et sans conteneurs privilégiés.
+
+  Avec `hardening_scope` à `hosting-benchmark` (ici **{{ hardening_scope }}**), les hôtes et la
+  plate-forme d'orchestration qui exécutent les services CI/CD sont aussi durcis selon un référentiel
+  reconnu (guides de durcissement du système d'exploitation et de Kubernetes, socles des
+  fournisseurs cloud), avec un accès d'administration restreint, des nœuds immuables ou reconstruits
+  régulièrement, des mesures de disponibilité et une journalisation d'audit.
+
+  Les runners et hôtes de build relèvent de CB-CICD-RUN-021 et CB-CICD-RUN-018 ; les comptes de
+  service utilisés par les pipelines de CB-CICD-IAM-034.
+rationale: |
+  Les serveurs CI/CD traitent des entrées non fiables (dépôts, webhooks, plugins) et leurs
+  vulnérabilités sont régulièrement exploitées. Quand le service tourne sous root ou sous un compte
+  administrateur partagé, un exploit prend immédiatement le contrôle de l'hôte et peut réutiliser le
+  compte ailleurs dans le domaine. Un compte dédié peu privilégié et un hôte durci empêchent une
+  vulnérabilité de la plate-forme de devenir une compromission de toute l'infrastructure.
+impact: |
+  Les installations existantes peuvent nécessiter des changements de propriétaire de fichiers et un
+  nouveau compte de service. Durcir la plate-forme d'hébergement selon un référentiel (profil
+  renforcé) demande un responsable de la configuration des hôtes ou du cluster et des vérifications
+  périodiques.
+parameters:
+  hardening_scope: Ce qui doit être durci. `service-accounts` exige des comptes dédiés à moindre privilège pour chaque service de la plate-forme ; `hosting-benchmark` exige en plus que les hôtes et la plate-forme d'orchestration suivent un référentiel de durcissement reconnu.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux hôtes (liste des processus, définitions de services) ou au
+    cluster (charges de travail, comptes de service, RBAC).
+
+    1. Pour chaque service de la plate-forme, trouver le compte sous lequel il tourne
+       (`ps -o user`, `User=` de systemd, compte d'ouverture de session du service Windows,
+       `securityContext` et `serviceAccountName` du pod).
+    2. Vérifier que le compte est dédié à ce service, n'est ni root ni administrateur, ne peut pas
+       ouvrir de session interactive, et n'a pas de droits au-delà des besoins du service
+       (appartenances à des groupes, liaisons RBAC, rôles cloud).
+    3. **Azure DevOps Server** : le compte de service du serveur (TFSService) et le compte des sources
+       de données de rapports (TFSReports) sont des comptes de domaine ou de groupe de travail dédiés,
+       avec les seuls droits documentés par Microsoft (TFSService a besoin de **Ouvrir une session en
+       tant que service**, TFSReports de **Permettre l'ouverture d'une session locale**), et les
+       services de build ou d'agent tournent sous leurs propres comptes.
+    4. Avec `hosting-benchmark`, obtenir le dernier rapport de conformité au référentiel pour les
+       hôtes et le cluster qui exécutent les plates-formes et vérifier les écarts ouverts.
+    5. Échec si un service de la plate-forme tourne sous root, sous un administrateur ou sous un
+       compte partagé avec des personnes ou d'autres services, ou (avec `hosting-benchmark`) si ses
+       hôtes ou son cluster n'ont pas d'évaluation au regard d'un référentiel ou ont des écarts de
+       gravité élevée non acceptés.
+remediation:
+  manual: |
+    1. Créer un compte dédié et non interactif pour chaque service de la plate-forme, avec les seuls
+       droits nécessaires, et lui transférer la propriété de ses répertoires de données et de
+       configuration.
+    2. Modifier les définitions de service pour tourner sous ce compte (`User=` de systemd, ouverture
+       de session du service Windows, `securityContext.runAsNonRoot` et `serviceAccountName` dédié
+       pour les pods), puis redémarrer.
+    3. **Azure DevOps Server** : utiliser des comptes dédiés distincts pour TFSService, TFSReports et
+       les services de build ou d'agent, plutôt qu'un compte partagé, et retirer toute appartenance à
+       un groupe d'administrateurs non requise par le produit.
+    4. Pour `hosting-benchmark`, appliquer un référentiel de durcissement reconnu aux hôtes et au
+       cluster, reconstruire les nœuds depuis des images durcies, restreindre l'accès
+       d'administration et planifier des analyses de conformité.

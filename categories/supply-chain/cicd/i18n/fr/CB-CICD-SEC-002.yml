@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Authentifier les pipelines avec des identifiants émis par la plate-forme ou propres à une machine, pas des jetons personnels
+finding:
+  title: Les pipelines stockent des jetons d'accès personnels ou des clés SSH personnelles d'employés
+  description: Un jeton personnel stocké en secret CI agit avec tout ce que son propriétaire peut atteindre, souvent sur de nombreux dépôts et organisations, et continue de fonctionner après un changement de poste ; quiconque peut modifier un pipeline peut le lire et agir sous l'identité de cette personne.
+description: |
+  Les jobs s'authentifient auprès de la plate-forme et des autres dépôts dans cet ordre de
+  préférence : le jeton que la plate-forme émet pour le job (`GITHUB_TOKEN`, `CI_JOB_TOKEN`,
+  `System.AccessToken`), puis un identifiant qui appartient à une application, un projet, un
+  groupe ou un compte de service (jeton d'installation d'une GitHub App, jeton d'accès de projet ou
+  de groupe, jeton d'accès de dépôt ou d'espace de travail, connexion de service). Les jetons
+  d'accès personnels, mots de passe et clés SSH personnelles d'employés ne sont pas stockés dans
+  les secrets ou variables CI.
+
+  Les jetons machine restants ont le plus petit périmètre qui fonctionne (un dépôt ou projet,
+  lecture seule quand c'est possible), une date d'expiration, un nom qui dit à quoi ils servent et
+  un propriétaire. Un compte machine utilisé en dernier recours suit les mêmes règles qu'une
+  personne (MFA, revue).
+
+  Les identifiants cloud et registre relèvent de CB-CICD-SEC-015. Les politiques de durée de vie et
+  de périmètre des jetons à l'échelle de la plate-forme relèvent de CB-CICD-IAM-028 et
+  CB-CICD-IAM-029.
+rationale: |
+  Un jeton personnel porte toute la portée de son propriétaire, souvent un administrateur, et est
+  rarement limité à un seul dépôt. Stocké dans la CI, il est lisible par quiconque peut modifier un
+  fichier de pipeline, et son usage apparaît dans les journaux d'audit comme l'activité du
+  propriétaire lui-même. Le jeton de job intégré est limité à l'exécution et expire avec elle ; les
+  jetons d'application et de projet sont limités aux ressources pour lesquelles ils ont été créés
+  et ne dépendent pas du maintien d'un employé à son poste.
+impact: |
+  Les pipelines qui poussent vers d'autres dépôts, créent des releases ou appellent l'API de la
+  plate-forme ont besoin qu'une application ou un jeton de niveau projet soit créé et reçoive les
+  permissions correspondantes. Certaines fonctions des jetons de projet et de groupe dépendent de
+  l'édition (voir les étapes par plate-forme).
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lister les noms des secrets et variables et les
+    jetons machine (les valeurs ne sont pas nécessaires).
+
+    1. Lister les secrets et variables à chaque niveau et repérer les jetons et clés par leur nom
+       ou leur préfixe (par exemple `ghp_`, `github_pat_`, `glpat-`, ou une clé privée SSH). Pour
+       chacun, trouver le compte auquel il appartient.
+    2. Vérifier chaque plate-forme :
+       - **GitHub** : les workflows qui appellent l'API ou poussent utilisent `GITHUB_TOKEN` ou un
+         jeton de GitHub App (par exemple `actions/create-github-app-token`) ; tout jeton d'accès
+         personnel fine-grained restant appartient à un compte machine dédié avec 2FA. L'audit
+         zizmor `github-app` aide à revoir l'usage des jetons d'application.
+       - **GitLab** : aucune variable CI/CD ne contient un jeton `glpat-` d'une personne ; l'accès
+         inter-projets passe par `CI_JOB_TOKEN`, des jetons d'accès de projet ou de groupe ou un
+         compte de service. Sous **Settings** > **Access tokens**, chaque jeton a une expiration, des
+         portées en lecture seule quand c'est possible et un nom qui dit à quoi il sert. Sous
+         **Settings** > **CI/CD** > **Pipeline trigger tokens**, chaque jeton appartient à un compte
+         de service et sert encore ; préférer le mot-clé `trigger:` avec `CI_JOB_TOKEN` pour les
+         pipelines multi-projets.
+       - **Bitbucket** : **Repository settings** (ou paramètres du projet ou de l'espace de travail)
+         > **Access tokens** : un jeton par intégration, portées minimales, date d'expiration ;
+         aucun jeton d'API personnel ni mot de passe d'application n'est stocké dans les
+         **Repository variables** ou **Workspace variables**.
+       - **Azure DevOps** : les pipelines utilisent `$(System.AccessToken)` pour appeler Azure
+         DevOps ; quand une autre identité est nécessaire, une connexion de service **Azure
+         DevOps** adossée à une identité de charge de travail (préversion) ou à un principal de
+         service remplace un jeton d'accès personnel stocké dans un groupe de variables.
+    3. Échec si un jeton d'accès personnel, un mot de passe ou une clé SSH personnelle d'une
+       personne est stocké dans la CI, ou si un jeton machine restant n'a pas d'expiration, a des
+       portées plus larges que son usage ou n'a pas de propriétaire.
+remediation:
+  manual: |
+    1. Pour chaque identifiant personnel trouvé, identifier ce que le pipeline en fait et choisir
+       le remplaçant le moins puissant : jeton de job, puis jeton d'application ou de niveau
+       projet, puis compte machine dédié.
+       - **GitHub** : utiliser `GITHUB_TOKEN` avec des `permissions:` explicites (CB-CICD-SEC-012) ;
+         pour l'accès à d'autres dépôts, installer une GitHub App sur les dépôts nécessaires et
+         émettre un jeton dans le job avec `actions/create-github-app-token`, limité par les entrées
+         `repositories:` et `permission-<nom>:` (CB-CICD-SEC-014).
+       - **GitLab** : utiliser `CI_JOB_TOKEN` et ajouter le projet appelant à la liste
+         d'autorisation du jeton de job du projet cible (CB-CICD-SEC-013) ; sinon créer un jeton
+         d'accès de projet ou de groupe ou un jeton de compte de service avec des portées en
+         lecture et une expiration. Sur GitLab.com, les jetons d'accès de projet et de groupe
+         nécessitent Premium ou Ultimate.
+       - **Bitbucket** : créer un jeton d'accès de dépôt avec les portées nécessaires et une
+         expiration ; les jetons d'accès de projet et d'espace de travail nécessitent Bitbucket
+         Premium. Chaque périmètre contient au plus 25 jetons et la valeur n'est affichée qu'une
+         fois.
+       - **Azure DevOps** : utiliser `$(System.AccessToken)` passé dans l'environnement du step, ou
+         créer une connexion de service **Azure DevOps** avec une identité de charge de travail qui
+         n'a que les permissions nécessaires.
+    2. Stocker le nouveau jeton en secret (CB-CICD-SEC-003), modifier le pipeline, l'exécuter, puis
+       révoquer le jeton personnel.
+    3. Enregistrer le nouvel identifiant dans l'inventaire (CB-CICD-SEC-001).

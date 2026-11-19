@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-001
+title: Define every pipeline as code and disable UI-defined pipelines
+finding:
+  title: Pipelines or build steps are defined and edited in the CI platform's web interface
+  description: Steps typed into a classic designer or a settings page change without review and outside version control, so an attacker or an insider with edit rights can add a step that prints secrets or ships a modified artifact without leaving a commit behind.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [pipeline-as-code, classic-pipelines, change-control, consistent-build]
+
+description: |
+  Every build, test, scan, publish and deploy step is declared in a pipeline file stored in version
+  control and changed through the same review as code. The CI/CD platform is configured so that
+  pipelines cannot be defined in its user interface: classic or UI-defined pipeline creation is
+  disabled, and a pipeline object in the platform holds at most a pointer to its file in the
+  repository. The same pipeline definition builds every release of a product.
+
+  The expected level is `{{ ui_pipeline_editing }}`:
+
+  - `new-pipelines-as-code`: no new pipeline can be created in the UI and existing UI-defined
+    pipelines are being migrated;
+  - `no-ui-edits`: in addition, pipeline objects themselves (pipelines, teams, permissions, tokens)
+    are managed as reviewed infrastructure as code, and teams only have read access to them in the
+    UI.
+
+  Keeping the code itself in version control is covered by CB-CICD-SCM-005; managing the platform's
+  own configuration as code by CB-CICD-PLAT-015.
+rationale: |
+  A pipeline edited in a web form has no diff, no reviewer and often no history, so a malicious or
+  mistaken step goes unnoticed and cannot be traced to a change request. When the pipeline is a
+  file, every change to what runs with the pipeline's secrets goes through branch protection and
+  review, and the release can be rebuilt with the same steps.
+impact: |
+  Existing classic or UI-defined pipelines must be migrated to YAML before they can be retired. On
+  Azure DevOps, disabling both classic build and classic release pipelines also prevents creating
+  task groups and deployment groups.
+notes: |
+  Harness: the **Enforce Git Experience** default setting (**Default Settings** > **Git
+  Experience**) disables inline pipelines so that only remote, Git-stored pipelines can be created;
+  use **Allow Overrides** only where a scope must differ.
+
+parameters:
+  - name: ui_pipeline_editing
+    type: enum
+    description: How far UI editing of pipelines is removed. new-pipelines-as-code blocks UI-defined pipeline creation; no-ui-edits also puts pipeline objects under reviewed infrastructure as code.
+    allowed: [new-pipelines-as-code, no-ui-edits]
+    default: new-pipelines-as-code
+    profile_defaults:
+      hardened: no-ui-edits
+
+audit:
+  manual: |
+    Use a platform role that can read organization and project pipeline settings.
+
+    1. List the pipelines of each project and check that each one reads its steps from a file in a
+       repository. Fail on any pipeline whose steps are only stored in the platform.
+    2. Check the platform settings that prevent UI-defined pipelines:
+       - **Azure DevOps**: **Organization settings** and **Project settings** > **Pipelines** >
+         **Settings**: **Disable creation of classic build pipelines** and **Disable creation of
+         classic release pipelines** are both on. List remaining classic build and release
+         pipelines.
+       - **Buildkite**: **Pipeline Settings** > **Steps**: the YAML steps editor holds only the
+         `buildkite-agent pipeline upload` step; the remaining steps come from `pipeline.yml` in the
+         repository.
+       - **Harness**: the **Enforce Git Experience** setting is on at account level and inline
+         pipelines are not used for production.
+    3. For `no-ui-edits`, check that pipelines, teams and tokens are managed through an
+       infrastructure-as-code repository with required review (for example the Buildkite Terraform
+       provider), and that teams have **Read Only** access to pipelines in the UI.
+    4. Fail if a pipeline can be created or its steps changed in the UI, or, for `{{ ui_pipeline_editing }}`
+       = `no-ui-edits`, if pipeline objects are changed outside the reviewed IaC workflow.
+
+remediation:
+  manual: |
+    1. Export each UI-defined pipeline to a pipeline file in its repository, review it, and switch
+       the pipeline to read that file.
+    2. Block new UI-defined pipelines:
+       - **Azure DevOps**: as a Project Collection Administrator, turn on **Disable creation of
+         classic build pipelines** and **Disable creation of classic release pipelines** under
+         **Organization settings** > **Pipelines** > **Settings** (or per project).
+       - **Buildkite**: replace the steps in **Pipeline Settings** > **Steps** with a single
+         `buildkite-agent pipeline upload` step and move the steps to `pipeline.yml` under branch
+         protection.
+       - **Harness**: turn on **Enforce Git Experience** in **Default Settings** > **Git
+         Experience** at account level and move inline pipelines to Git.
+    3. For `no-ui-edits`, manage pipelines, teams and tokens from a reviewed IaC repository applied
+       by a service account (for example the Buildkite Terraform provider with two reviewers), and
+       lower team permissions on pipelines to read only.
+    4. Delete the migrated classic or UI-defined pipelines.
+
+references:
+  - title: Secure Azure Pipelines - security overview
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Build track, requirements for producing artifacts
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/blob/main/community/working-groups/supply-chain-security/supply-chain-security-paper/sscsp.md
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+  - title: SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.1"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L1
+    relation: partial
+    note: SLSA Build L1 asks for a consistent build process; this control also forbids UI-defined steps on the platform.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-005
+    type: related
+  - id: CB-CICD-PLAT-015
+    type: related
+  - id: CB-CICD-PIPE-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

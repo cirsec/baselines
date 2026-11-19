@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-012
+title: Roll out production releases progressively with automatic and protected rollback
+finding:
+  title: Releases go to all of production at once, and rollback can restore any old version
+  description: An all-at-once release exposes every user to a faulty or malicious build before anyone can react, and an unrestricted rollback lets an operator or attacker bring back a version with known vulnerabilities.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [progressive-delivery, canary, rollback, release, vulnerable-versions]
+
+description: |
+  Production releases of critical services are staged: a canary, a percentage of traffic or a first
+  ring of users or regions receives the new version first, health and error metrics are evaluated
+  automatically, and the rollout continues only if they stay within thresholds. When they do not,
+  the rollout is stopped and reverted automatically.
+
+  Rollback targets are restricted: before deploying an earlier version, the pipeline checks that
+  the version is not affected by known vulnerabilities that were fixed in later versions (from the
+  vulnerability status recorded for each release), and a rollback to such a version needs an explicit
+  exception approved like any other production change.
+
+  Serialization and outdated deployments are covered by CB-CICD-DEPLOY-007; vulnerability handling
+  of dependencies by CB-DEP-VULN-003.
+rationale: |
+  Progressive delivery limits the blast radius of a bad release, whether it is a bug or a malicious
+  change that slipped through the pipeline: only a fraction of users is exposed, and automatic
+  analysis stops the rollout quickly. Protecting rollback closes the opposite path, where a "quick
+  revert" during an incident, or an attacker with deploy rights, restores a version whose
+  vulnerabilities were already public.
+impact: |
+  Progressive delivery needs traffic management (service mesh, load balancer or feature flags), good
+  health metrics and a rollout controller. Releases take longer to reach all users. Rollback checks
+  need a record of the vulnerability status of each release.
+notes: |
+  None of the CI/CD platforms in scope enforces staged rollout or protected rollback on its own;
+  progressive delivery controllers such as Argo Rollouts or Flagger, or cloud deployment services,
+  provide the rollout part.
+
+audit:
+  manual: |
+    Use a role that can read deployment definitions and release records.
+
+    1. For each critical production service, check how releases are rolled out: staged (canary,
+       percentage, rings) with automated analysis, or all at once.
+    2. Check that failed analysis stops and reverts the rollout automatically, and review a recent
+       failed or aborted rollout.
+    3. Check the rollback procedure: before an earlier version is deployed, its known
+       vulnerabilities are checked, and rolling back to a version with fixed vulnerabilities needs an
+       approved exception.
+    4. Fail if critical services are released to all of production at once, if a failed rollout is
+       not reverted automatically, or if a rollback can deploy a known-vulnerable version without an
+       approved exception.
+
+remediation:
+  manual: |
+    1. Put critical services behind a progressive delivery mechanism (for example Argo Rollouts,
+       Flagger, or the cloud provider's staged deployment feature) with canary or ring steps.
+    2. Define analysis metrics and thresholds (error rate, latency, saturation) and configure
+       automatic abort and rollback.
+    3. Record the vulnerability status of each release (for example from the SBOM and scans,
+       CB-DEP-INV-001), and add a pre-deployment check that blocks rollback to versions affected by
+       fixed vulnerabilities unless an exception is approved.
+
+references:
+  - title: Argo Rollouts
+    url: https://argo-rollouts.readthedocs.io/en/stable/
+    publisher: Argo Project
+    kind: tool
+    accessed: 2026-11-03
+  - title: Flagger
+    url: https://flagger.app/
+    publisher: Flux
+    kind: tool
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.4.2"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.4.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-4
+    relation: related
+related_controls:
+  - id: CB-CICD-DEPLOY-007
+    type: related
+  - id: CB-DEP-VULN-003
+    type: related
+  - id: CB-DEP-INV-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

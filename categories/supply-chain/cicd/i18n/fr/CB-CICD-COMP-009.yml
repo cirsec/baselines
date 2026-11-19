@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Mettre à jour automatiquement les composants de pipeline après un délai de carence
+finding:
+  title: Les composants de pipeline ne sont pas mis à jour, ou le sont le jour même de leur publication
+  description: Sans robot de mise à jour, les actions et images épinglées dérivent jusqu'à porter des failles connues ; avec un robot sans délai de carence, une version malveillante est proposée à la fusion quelques heures après sa publication.
+parameters:
+  cooldown_days: Nombre minimal de jours entre la publication d'une nouvelle version d'un composant et la proposition de mise à jour.
+description: |
+  Un robot de mise à jour des dépendances (par exemple Dependabot ou Renovate) couvre les
+  composants CI de chaque dépôt (actions et workflows réutilisables, images de job et de service,
+  orbs ou plugins quand le robot les prend en charge) ainsi que les dépendances du code, et :
+  - attend au moins `{{ cooldown_days }}` jours après une publication avant de la proposer, avec
+    un délai plus long pour les versions majeures si souhaité ; les correctifs de sécurité peuvent
+    échapper à ce délai ;
+  - met à jour les SHA de commit et les empreintes épinglés en même temps que leurs commentaires
+    de version ;
+  - n'exécute jamais de code issu des dépendances qu'il met à jour (pas d'exécution de code
+    externe pendant les mises à jour).
+
+  Les propositions de mise à jour passent par la revue et les contrôles habituels. Les règles
+  d'âge minimal des paquets applicatifs relèvent de CB-DEP-AGE-001, et les mises à jour
+  automatiques des dépendances du code de CB-DEP-UPD-001.
+rationale: |
+  Épingler les composants sur un commit ou une empreinte (CB-CICD-COMP-011) empêche les changements
+  silencieux mais fige la version ; sans mises à jour automatiques, les composants épinglés prennent
+  du retard sur les correctifs. La plupart des versions malveillantes de paquets et d'actions
+  populaires sont détectées et retirées en quelques jours, si bien qu'un délai de carence les
+  écarte des propositions. Un robot qui exécute du code de manifeste pendant les mises à jour donne
+  à ce code accès aux identifiants du robot.
+impact: |
+  Les correctifs des nouvelles versions arrivent quelques jours plus tard, sauf les mises à jour de
+  sécurité. Les équipes reçoivent régulièrement des pull requests de mise à jour à revoir ; les
+  regroupements en réduisent le nombre.
+notes: |
+  Dependabot applique un délai de carence par défaut de 3 jours aux mises à jour de version quand
+  `cooldown` n'est pas configuré ; les mises à jour de sécurité ne sont pas retardées. Quand
+  Dependabot met à jour une action couverte par un fichier de verrouillage Actions, il régénère
+  l'entrée correspondante dans la même pull request.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts.
+
+    1. Vérifier que chaque dépôt actif a une configuration de robot de mise à jour qui inclut ses
+       composants CI (Scorecard `Dependency-Update-Tool` signale les dépôts qui n'en ont pas).
+    2. Vérifier la configuration :
+       - **GitHub** : `.github/dependabot.yml` contient une entrée `updates` avec
+         `package-ecosystem: github-actions` (et `docker` pour les images de job), un `cooldown`
+         avec `default-days` d'au moins `{{ cooldown_days }}`, et pas de
+         `insecure-external-code-execution: allow`. Les audits zizmor `dependabot-cooldown` et
+         `dependabot-execution` le signalent.
+       - **Autres plates-formes** : la configuration du robot (par exemple Renovate
+         `minimumReleaseAge`) couvre les fichiers de pipeline et les images avec le même délai.
+    3. Échec si les composants CI d'un dépôt ne sont pas couverts par un robot de mise à jour, si
+       le délai de carence est inférieur à `{{ cooldown_days }}` jours, ou si le robot peut exécuter
+       du code externe pendant les mises à jour.
+remediation:
+  manual: |
+    1. Ajouter ou compléter la configuration du robot dans chaque dépôt, idéalement à partir d'un
+       modèle commun :
+       - **GitHub** : dans `.github/dependabot.yml`, ajouter une entrée avec `package-ecosystem:
+         github-actions`, `directory: /`, un `schedule` hebdomadaire, des `groups` pour les mises à
+         jour mineures et correctives et `cooldown: default-days: {{ cooldown_days }}` ; retirer
+         `insecure-external-code-execution: allow`.
+       - **Renovate** : activer les gestionnaires des fichiers de pipeline et des images de
+         conteneur et régler `minimumReleaseAge` sur le même nombre de jours.
+    2. Exiger les contrôles et la revue habituels sur les pull requests de mise à jour.

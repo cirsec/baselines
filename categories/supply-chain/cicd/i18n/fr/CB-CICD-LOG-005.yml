@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver les journaux d'audit et preuves CI/CD et les protéger contre l'altération
+finding:
+  title: Les journaux d'audit CI/CD peuvent être effacés par ceux qu'ils enregistrent, ou expirent trop tôt
+  description: Les journaux d'audit, journaux du fournisseur d'identité et preuves de développement sont conservés peu de temps ou sans durée définie, et les administrateurs de la plate-forme peuvent les supprimer ou les modifier ; un intrus disposant des droits d'administration efface ses traces et les intrusions anciennes ne peuvent pas être analysées.
+description: |
+  Les journaux d'audit CI/CD, les journaux de connexion et de provisionnement du fournisseur
+  d'identité pour les applications CI/CD, et les preuves de développement (approbations,
+  enregistrements de version, provenance) sont conservés au moins **{{ audit_log_retention_days }}**
+  jours, en cohérence avec les obligations légales et réglementaires de l'organisation.
+
+  La copie conservée pendant cette durée ne peut être ni modifiée ni supprimée par les personnes dont
+  elle enregistre les actions : elle est stockée dans le SIEM ou une archive administrés par une
+  autre équipe que celle des plates-formes CI/CD, sur un stockage immuable ou à écriture unique
+  (verrouillage d'objet, politiques de rétention), et sa suppression n'est possible qu'après la
+  durée de conservation. La lecture des journaux est elle-même journalisée.
+
+  L'export des journaux relève de CB-CICD-LOG-003 ; les journaux de build de CB-CICD-LOG-004 ; les
+  enregistrements de version de CB-CICD-ART-012.
+rationale: |
+  Un attaquant qui obtient les droits d'administration d'une plate-forme CI/CD, ou un initié qui les
+  détient, peut généralement vider ou modifier les journaux propres de la plate-forme. Des journaux
+  détenus par une autre équipe sur un stockage immuable gardent la preuve intacte. La conservation
+  doit aussi couvrir le délai de détection des intrusions dans la chaîne d'approvisionnement,
+  souvent de plusieurs mois, et les journaux du fournisseur d'identité sont nécessaires pour relier
+  une action CI/CD à une personne.
+impact: |
+  Les coûts de stockage augmentent avec la durée et l'immuabilité. La durée doit être conciliée avec
+  les règles de protection des données, les journaux contenant des données personnelles.
+notes: |
+  Sur GitHub, le journal d'audit affiche 180 jours d'événements et 7 jours d'événements Git dans
+  l'interface web ; la diffusion n'est pas rétroactive et doit donc être en place avant que la
+  preuve soit nécessaire. Les journaux de connexion SSO et de provisionnement SCIM du fournisseur
+  d'identité pour GitHub (et les autres SaaS CI/CD) devraient être conservés dans le SIEM avec la
+  même durée que le journal d'audit de la plate-forme.
+parameters:
+  audit_log_retention_days: Nombre minimal de jours de conservation, dans un stockage protégé, des journaux d'audit CI/CD, des journaux associés du fournisseur d'identité et des preuves de développement.
+audit:
+  manual: |
+    Demander au SOC ou au responsable de la plate-forme de journaux les réglages de conservation et
+    de protection des sources de journaux CI/CD, et utiliser un accès en lecture au SIEM.
+
+    1. Pour chaque source d'audit CI/CD et les journaux du fournisseur d'identité des applications
+       CI/CD (par exemple connexions SSO et provisionnement SCIM de GitHub), comparer la conservation
+       configurée dans le SIEM ou l'archive à {{ audit_log_retention_days }} jours, et lancer une
+       requête sur la date la plus ancienne attendue.
+    2. Vérifier que le stockage est immuable pendant la durée de conservation (verrouillage d'objet,
+       politique de rétention, WORM) ou que la suppression exige un rôle détenu par une autre équipe.
+    3. Comparer la liste des administrateurs du SIEM ou de l'archive à celle des administrateurs des
+       plates-formes CI/CD : personne ne devrait cumuler les deux rôles sans exception documentée.
+    4. Vérifier que les preuves de développement (approbations, enregistrements de version) sont
+       conservées pendant la même durée.
+    5. Échec si une source est conservée moins de {{ audit_log_retention_days }} jours, si des
+       administrateurs CI/CD peuvent supprimer ou modifier la copie conservée, ou si les journaux du
+       fournisseur d'identité des applications CI/CD ne sont pas conservés.
+remediation:
+  manual: |
+    1. Régler la conservation des journaux CI/CD et des journaux associés du fournisseur d'identité
+       dans le SIEM ou l'archive à au moins {{ audit_log_retention_days }} jours, en cohérence avec
+       les obligations légales.
+    2. Stocker la copie longue durée sur un stockage immuable (par exemple un bucket avec
+       verrouillage d'objet en mode conformité, ou une politique de rétention d'espace d'analyse que
+       l'équipe CI/CD ne peut pas raccourcir).
+    3. Confier l'administration de la plate-forme de journaux à une équipe distincte des
+       administrateurs CI/CD, et journaliser les accès aux journaux.
+    4. Ajouter au SIEM les journaux de connexion et de provisionnement du fournisseur d'identité pour
+       les applications CI/CD, avec la même durée de conservation.

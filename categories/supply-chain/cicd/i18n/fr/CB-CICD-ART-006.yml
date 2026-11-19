@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier signatures et provenance des artefacts avant promotion et admission en production
+finding:
+  title: Les pipelines et cibles de déploiement acceptent des artefacts sans vérifier leur signature ni leur origine
+  description: Quand rien ne vérifie l'empreinte, la signature et la provenance d'un artefact avant sa promotion ou son admission en production, un artefact altéré ou construit par un attaquant passe en production dès qu'il atteint le registre.
+description: |
+  Avant qu'un artefact soit consommé par une étape ultérieure du pipeline, promu entre registres ou
+  environnements, ou admis dans un environnement d'exécution de production, son intégrité et son
+  origine sont vérifiées, au niveau `{{ verification_depth }}` :
+
+  - `signature-and-provenance` : la somme de contrôle correspond à l'empreinte enregistrée, la
+    signature est valide, et la provenance est vérifiée par rapport au builder et à la source
+    attendus, ancrée sur le dépôt et le workflow ou l'identité de build attendus, pas sur « n'importe
+    quelle signature valide ».
+  - `all-steps-policy` : en plus, chaque étape de la chaîne (source, build, test, analyse,
+    empaquetage) produit une attestation signée, et l'ensemble des attestations est évalué par
+    rapport à une politique de chaîne d'approvisionnement signée (par exemple un layout in-toto ou une
+    politique d'admission sous contrôle des changements) avant le déploiement.
+
+  Les environnements de production imposent cette vérification par un contrôleur d'admission ou une
+  barrière de déploiement qui rejette les artefacts non vérifiés, pour qu'un `kubectl apply` manuel ou
+  un push direct ne puisse pas la contourner. Les artefacts déployés dans des environnements isolés
+  sont vérifiés avec les attestations copiées avec eux.
+
+  La production des signatures et de la provenance relève de CB-CICD-ART-001 et CB-CICD-ART-005.
+rationale: |
+  Signatures et provenance n'arrêtent une attaque que si quelqu'un les vérifie. Vérifier à la
+  promotion et à l'admission garantit qu'un artefact poussé avec des identifiants de registre volés,
+  construit depuis un fork ou reconstruit hors du pipeline de publication est rejeté avant de
+  s'exécuter. Ancrer la vérification sur l'identité attendue est essentiel : une vérification qui
+  accepte n'importe quelle signature Sigstore accepte aussi celle produite par le pipeline de
+  l'attaquant.
+impact: |
+  Un contrôleur d'admission ou un moteur de politiques doit être déployé et maintenu sur les clusters
+  de production, d'abord en mode simulation pour trouver les images non signées, y compris celles de
+  tiers qui demandent une exception ou leur propre politique de confiance. Une chaîne de signature en
+  panne bloque les déploiements : une procédure d'urgence documentée est nécessaire.
+notes: |
+  L'attesteur `built-by-cloud-build` de Binary Authorization ne couvre que les images construites par
+  Cloud Build avec provenance (images listées dans `images:`, pas poussées par `docker push`). La mise
+  en place du Sigstore Policy Controller de GitHub exige que les attestations soient poussées dans le
+  registre (`push-to-registry: true`). La vérification **Evaluate artifact** d'Azure Pipelines ne
+  fonctionne qu'avec des images de conteneur.
+parameters:
+  verification_depth: Ce qui est vérifié avant promotion et admission. signature-and-provenance vérifie empreinte, signature et provenance ancrées sur l'identité attendue ; all-steps-policy exige en plus une attestation signée pour chaque étape de la chaîne, évaluée par rapport à une politique signée.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline, les contrôleurs de déploiement et les
+    politiques d'admission des clusters.
+
+    1. Pour chaque chemin de déploiement en production (job de déploiement, contrôleur GitOps,
+       procédure manuelle), trouver où l'artefact est vérifié avant de s'exécuter.
+    2. Vérifier que la vérification ancre l'identité attendue (dépôt, workflow, identifiant de builder
+       ou clé), pas seulement la présence d'une signature :
+       - **GitHub** : les jobs de déploiement exécutent `gh attestation verify <artefact> --owner <org>`
+         (ou `--repo`, `--signer-workflow`) ; les clusters exécutent le Sigstore Policy Controller
+         avec le `TrustRoot` GitHub et une `ClusterImagePolicy` qui désigne l'organisation ou le
+         dépôt attendus.
+       - **Google Cloud Build** : la politique Binary Authorization de GKE ou Cloud Run a
+         `evaluationMode: REQUIRE_ATTESTATION`, `enforcementMode: ENFORCED_BLOCK_AND_AUDIT_LOG` et
+         `requireAttestationsBy: projects/<projet>/attestors/built-by-cloud-build` ; ou l'étape de
+         déploiement exécute
+         `slsa-verifier verify-image --builder-id https://cloudbuild.googleapis.com/GoogleHostedWorker --source-uri <depot>`.
+       - **Flux** : les sources `OCIRepository` (et `HelmChart` OCI) posent
+         `spec.verify.provider: cosign` (ou `notation`) et, pour les signatures sans clé,
+         `spec.verify.matchOIDCIdentity` avec des expressions régulières `issuer` et `subject` qui
+         correspondent à l'identité du workflow CI.
+       - **Buildkite** : les étapes qui consomment des artefacts d'autres étapes les vérifient avec
+         `buildkite-agent artifact shasum` avant usage.
+       - **Tekton** : les pipelines de confiance ne consomment des artefacts d'un registre qu'après
+         une tâche de vérification (par exemple cosign ou les attestations Chains) entre pipelines non
+         fiables et pipelines de confiance.
+    3. Vérifier que le contrôleur d'admission est en mode bloquant, pas seulement en audit ou en
+       simulation, sur la production.
+    4. Avec `all-steps-policy` : vérifier que chaque étape de la chaîne produit une attestation signée
+       et que la politique qui les évalue est elle-même signée et sous contrôle des changements.
+    5. Échec si un chemin de déploiement en production ne vérifie pas signature et provenance, si la
+       vérification accepte n'importe quel signataire, ou si le contrôle d'admission n'est pas
+       bloquant.
+remediation:
+  manual: |
+    1. Décider de l'identité attendue pour chaque artefact (dépôt, workflow ou builder, clé) et
+       l'enregistrer dans la configuration de déploiement.
+    2. Ajouter la vérification à chaque promotion et à l'admission :
+       - **GitHub** : ajouter `gh attestation verify` aux jobs de déploiement ; sur Kubernetes,
+         installer le Sigstore Policy Controller, ajouter le `TrustRoot` GitHub et une
+         `ClusterImagePolicy` pour l'organisation, et étiqueter les espaces de noms de production pour
+         l'application de la politique.
+       - **Google Cloud Build** : dans **Binary Authorization** > **Policy** > **Edit Policy**,
+         choisir **Allow only images that have been approved by all of the following attestors** et
+         ajouter `built-by-cloud-build` ; commencer avec `DRYRUN_AUDIT_LOG_ONLY`, puis passer à
+         `ENFORCED_BLOCK_AND_AUDIT_LOG`.
+       - **Flux** : ajouter `spec.verify` avec `provider: cosign` et `matchOIDCIdentity` à chaque
+         `OCIRepository` et `HelmChart` de production.
+       - **Buildkite** : appeler `buildkite-agent artifact shasum` et comparer avant d'utiliser un
+         artefact téléchargé.
+       - Autres plates-formes : vérifier avec cosign ou slsa-verifier dans l'étape de déploiement, et
+         utiliser un contrôleur d'admission (Sigstore Policy Controller, Kyverno) sur le cluster cible.
+    3. Exécuter les politiques d'admission d'abord en mode audit, corriger ou exempter les images non
+       signées, puis passer en mode bloquant.
+    4. Pour `all-steps-policy`, ajouter des attestations pour les étapes source, test et analyse et
+       les évaluer avec une politique signée avant le déploiement.
+  rollback: |
+    Repasser la politique d'admission en mode audit ou simulation pour l'espace de noms concerné le
+    temps de corriger le problème de signature ou de vérification, et consigner l'exception.

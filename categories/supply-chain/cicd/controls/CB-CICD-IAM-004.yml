@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-004
+title: Disable password authentication for Git and API access
+finding:
+  title: Git over HTTPS and the API accept account passwords
+  description: An account password accepted on Git and API endpoints can be sprayed or replayed without MFA, and a single phished password gives clone and push access to every repository of the user.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [password, git-https, api, basic-auth, tokens]
+
+applicability:
+  versions: [gitlab, gitea, forgejo]
+
+description: |
+  Git over HTTPS and API calls authenticate with access tokens or SSH keys, never with the account
+  password. Users who sign in through SSO have no usable local password for the web interface
+  either. One break-glass administrator may keep a web password (CB-CICD-IAM-003).
+
+  Token lifetime and scope are covered by CB-CICD-IAM-028 and CB-CICD-IAM-029.
+rationale: |
+  Git clients and API endpoints do not go through the identity provider, so a password accepted
+  there skips MFA and conditional access. Password-based Git access is a classic target of password
+  spraying and credential stuffing, and passwords stored in Git credential helpers or CI scripts
+  have no scope and no expiry.
+impact: |
+  Users and scripts that clone with a password must switch to a personal access token or an SSH key;
+  Git credential managers handle this transparently with OAuth. On Gitea and Forgejo, password
+  clones over HTTPS stop working.
+
+audit:
+  manual: |
+    Use an instance administrator role, or read access to `app.ini`.
+
+    1. Check the instance settings:
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **Sign-in restrictions**:
+         **Allow password authentication for Git over HTTP(S)** is cleared
+         (`password_authentication_enabled_for_git: false` in the application settings API), and
+         **Disable password and passkey authentication for users with an SSO identity** is selected
+         when SSO is in use. On GitLab.com, the group SAML setting **Enforce SSO-only
+         authentication for Git and Dependency Proxy activity** gives the same result.
+       - **Gitea / Forgejo**: `[service] ENABLE_BASIC_AUTHENTICATION = false`.
+    2. Fail if Git over HTTPS or the API accepts an account password.
+
+remediation:
+  manual: |
+    1. Announce the change and give users the token or SSH key procedure.
+    2. Apply it:
+       - **GitLab self-managed**: in **Sign-in restrictions**, clear **Allow password authentication
+         for Git over HTTP(S)** and select **Disable password and passkey authentication for users
+         with an SSO identity** (instance administrator).
+       - **Gitea / Forgejo**: set `ENABLE_BASIC_AUTHENTICATION = false` in `[service]` and restart.
+    3. Rotate passwords that were stored in scripts or credential helpers.
+  rollback: |
+    Re-select the setting (GitLab) or set `ENABLE_BASIC_AUTHENTICATION = true` (Gitea, Forgejo) while
+    remaining scripts are migrated.
+
+references:
+  - title: GitLab sign-in restrictions
+    url: https://docs.gitlab.com/administration/settings/sign_in_restrictions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110.003
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-IAM-032
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

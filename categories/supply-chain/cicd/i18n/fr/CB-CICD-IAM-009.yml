@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'inscription libre sur les plates-formes CI/CD auto-hébergées
+finding:
+  title: Toute personne qui atteint la plate-forme peut créer un compte
+  description: L'inscription ouverte permet à un tiers de créer un compte, de voir les projets internes et publics et, sur de nombreuses plates-formes, d'exécuter des jobs sur les runners partagés ou d'hériter des permissions par défaut.
+description: |
+  Les comptes des plates-formes SCM et CI/CD auto-hébergées ne sont créés que par le fournisseur
+  d'identité (provisionnement automatique SSO restreint à l'organisation) ou par un administrateur.
+  L'inscription libre est désactivée. Si l'inscription doit rester ouverte, elle exige une adresse
+  électronique confirmée dans un domaine de l'entreprise, l'approbation d'un administrateur quand elle
+  existe, et un dispositif anti-automatisation (captcha).
+
+  La restriction des membres d'organisations SaaS aux domaines de l'entreprise relève de
+  CB-CICD-IAM-010.
+rationale: |
+  Un compte est la première étape de la plupart des attaques sur une plate-forme CI/CD : avec lui, un
+  utilisateur voit les projets internes, peut les dupliquer, ouvre des merge requests qui lancent des
+  pipelines et, sur Forgejo ou Gitea avec Actions, peut exécuter du code sur les runners partagés. Sur
+  Jenkins, l'inscription ouverte combinée à la stratégie « Logged-in users can do anything » fait de
+  chaque nouveau compte un administrateur.
+impact: |
+  Les nouveaux utilisateurs doivent être provisionnés par le fournisseur d'identité ou par un
+  administrateur. Les instances communautaires publiques qui reposent sur l'inscription doivent
+  appliquer la variante restreinte.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de l'instance ou un accès en lecture à la configuration de la
+    plate-forme.
+
+    1. Vérifier les réglages d'inscription :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **New user account
+         restrictions** : **Allow new user accounts** est décoché (`signup_enabled: false`) ; s'il est
+         coché, **Require admin approval for new user accounts** est coché, **Email confirmation
+         settings** vaut **Hard**, et une liste de domaines de l'entreprise autorisés est définie.
+       - **Gitea / Forgejo** : `[service] DISABLE_REGISTRATION = true` (défaut Forgejo `false`), ou
+         `ALLOW_ONLY_EXTERNAL_REGISTRATION = true` avec un fournisseur d'identité restreint à
+         l'organisation ; si l'inscription reste ouverte, `REGISTER_EMAIL_CONFIRM = true`,
+         `ENABLE_CAPTCHA = true` et `EMAIL_DOMAIN_ALLOWLIST` liste les domaines de l'entreprise.
+         `[oauth2_client] ENABLE_AUTO_REGISTRATION = true` n'est utilisé qu'avec un fournisseur
+         restreint à l'organisation.
+       - **Jenkins** : le domaine de sécurité n'est pas **Jenkins' own user database** avec
+         inscription autorisée (`allowsSignup: true` sous `jenkins.securityRealm.local` en
+         configuration as code).
+       - **Woodpecker** : `WOODPECKER_OPEN=false` (défaut), ou, s'il vaut `true`, des organisations
+         approuvées sont définies (`WOODPECKER_ORGS` ou organisations autorisées par forge) pour que
+         seuls leurs membres puissent s'inscrire.
+    2. Tenter d'ouvrir la page d'inscription sans être connecté.
+    3. Échec si une personne extérieure peut créer un compte sans approbation d'un administrateur ni
+       identité de l'entreprise.
+remediation:
+  manual: |
+    1. Désactiver l'inscription ouverte (administrateur de l'instance) :
+       - **GitLab auto-hébergé** : décocher **Allow new user accounts**, ou cocher **Require admin
+         approval for new user accounts**, régler **Email confirmation settings** sur **Hard** et
+         ajouter les domaines autorisés.
+       - **Gitea / Forgejo** : poser `DISABLE_REGISTRATION = true`, ou
+         `ALLOW_ONLY_EXTERNAL_REGISTRATION = true` avec un fournisseur d'identité propre à
+         l'organisation, puis redémarrer.
+       - **Jenkins** : basculer le domaine de sécurité vers le fournisseur d'identité, ou désactiver
+         l'inscription dans la base d'utilisateurs propre de Jenkins.
+       - **Woodpecker** : poser `WOODPECKER_OPEN=false`, ou la restreindre aux organisations
+         approuvées.
+    2. Revoir les comptes créés pendant que l'inscription était ouverte et supprimer les inconnus.

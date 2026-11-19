@@ -1,0 +1,142 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-032
+title: Disable legacy and unscoped credential types
+finding:
+  title: Legacy or broad credential types are still accepted by CI/CD platforms
+  description: App passwords, legacy API tokens, deprecated OAuth apps and tokens passed in URLs are broad, long-lived and easy to leak, and they bypass the controls built for newer, scoped credentials.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [legacy-credentials, app-passwords, classic-tokens, oauth, feed-tokens]
+
+applicability:
+  versions: [bitbucket, jenkins, azure-devops, gitea, forgejo, github, gitlab]
+
+parameters:
+  - name: legacy_credentials
+    type: enum
+    description: Which credential types are disabled. `legacy-types` covers app passwords, legacy API tokens, deprecated OAuth apps and tokens in URL query strings; `legacy-and-broad-types` also restricts GitHub classic personal access tokens and disables GitLab feed tokens.
+    default: legacy-types
+    profile_defaults:
+      hardened: legacy-and-broad-types
+    allowed: [legacy-types, legacy-and-broad-types]
+
+description: |
+  Credential types that the vendor has deprecated, that cannot be scoped or expired, or that leak
+  easily are turned off, and users move to their scoped replacements. With `{{ legacy_credentials }}`
+  set to `legacy-and-broad-types`, credentials that are still supported but broad (GitHub classic
+  personal access tokens, GitLab feed tokens) are also restricted.
+
+  Password authentication on Git and API endpoints is covered by CB-CICD-IAM-004.
+rationale: |
+  Legacy credentials predate scopes and expiry: a Bitbucket app password or a Jenkins legacy API token
+  is effectively a second password, a GitHub classic token reaches every repository its owner can
+  reach, and a token in a URL query string ends up in proxy and access logs. Their replacements are
+  scoped, expiring and visible to administrators.
+impact: |
+  Scripts and integrations using these credentials stop working and must be migrated. Restricting
+  classic tokens on GitHub also blocks tools that only support them; SSH keys created by such tokens
+  keep working.
+
+audit:
+  manual: |
+    Use an administrator or owner role, or read access to the platform configuration.
+
+    1. Check each credential type:
+       - **Bitbucket Cloud**: integrations use API tokens with scopes and expiry, not app passwords.
+         Atlassian stopped the creation of app passwords on 9 September 2025 and announced that
+         existing ones stop working on 9 June 2026; list any remaining ones in personal settings.
+       - **Jenkins**: **Manage Jenkins** > **Security** > **API Token**: the options to generate a
+         legacy API token for new users and to let users create a legacy token are disabled (the
+         default since Jenkins 2.129), and the legacy token monitor shows no user with a legacy token.
+       - **Azure DevOps**: **Organization settings** > **Policies** > **Third-party application access
+         via OAuth** is off (off by default for new organizations; Azure DevOps OAuth no longer
+         accepts new registrations, and the policy does not affect Microsoft Entra OAuth apps).
+       - **Gitea / Forgejo**: `[security] DISABLE_QUERY_AUTH_TOKEN = true`.
+       - **GitHub** (`legacy-and-broad-types`): **Enterprise settings** > **Policies** > **Personal
+         access tokens** > **Tokens (classic)** or **Organization settings** > **Personal access
+         tokens** restricts access via personal access tokens (classic).
+       - **GitLab self-managed** (`legacy-and-broad-types`): **Admin** > **Settings** > **General** >
+         **Visibility and access controls** > **Feed token** > **Disable feed token** is selected.
+    2. Fail if a credential type in scope is still enabled or in use.
+
+remediation:
+  manual: |
+    1. Identify the scripts and integrations using each legacy type (audit logs, token listings).
+    2. Migrate them to scoped credentials, then disable the legacy type:
+       - **Bitbucket Cloud**: replace app passwords with API tokens with scopes, or with workspace,
+         project or repository access tokens.
+       - **Jenkins**: disable both legacy API token options in **Security** > **API Token**, and
+         revoke remaining legacy tokens from the legacy token monitor.
+       - **Azure DevOps**: turn off **Third-party application access via OAuth** and move integrations
+         to Microsoft Entra OAuth.
+       - **Gitea / Forgejo**: set `DISABLE_QUERY_AUTH_TOKEN = true` and pass tokens in the
+         `Authorization` header.
+       - **GitHub** (`legacy-and-broad-types`): restrict access via classic tokens at enterprise or
+         organization level; use fine-grained tokens or GitHub Apps.
+       - **GitLab self-managed** (`legacy-and-broad-types`): select **Disable feed token**.
+
+references:
+  - title: Bitbucket Cloud transitions to API tokens (app password deprecation)
+    url: https://www.atlassian.com/blog/bitbucket/bitbucket-cloud-transitions-to-api-tokens-enhancing-security-with-app-password-deprecation
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: New API token system in Jenkins
+    url: https://www.jenkins.io/blog/2018/07/02/new-api-token-system/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change application connection and security policies for your organization
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/change-application-access-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Setting a personal access token policy for your organization
+    url: https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/setting-a-personal-access-token-policy-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab token overview - feed token
+    url: https://docs.gitlab.com/security/tokens/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers legacy and unscoped user credential types only.
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-IAM-004
+    type: related
+  - id: CB-CICD-IAM-029
+    type: related
+  - id: CB-CICD-COMP-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

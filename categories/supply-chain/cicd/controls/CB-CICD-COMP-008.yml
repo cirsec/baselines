@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-008
+title: Sign outbound webhooks and send them over verified TLS
+finding:
+  title: Webhooks are sent without a secret or with certificate checks turned off
+  description: Webhook receivers that cannot authenticate the sender accept forged events that trigger builds or deployments, and deliveries without certificate verification can be read or changed in transit.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [webhooks, tls, integrity, integrations]
+
+applicability:
+  versions: [forgejo, gitea, github, gitlab]
+
+description: |
+  Organization, group, repository and system webhooks sent by the source platform:
+  - use an `https://` URL with TLS certificate verification enabled;
+  - carry a secret (an HMAC signing secret where the platform offers one) that the receiver
+    validates before acting on the payload;
+  - target only known receivers; instance-wide system hooks go only to trusted internal endpoints
+    such as monitoring or the SIEM.
+
+  The secret is random, stored on the receiver side as a secret and never placed in the URL.
+  Authentication of inbound pipeline triggers is covered by CB-CICD-PIPE-013, and outbound
+  request restrictions of the platform by CB-CICD-PLAT-010.
+rationale: |
+  Webhooks drive CI triggers, deployments and chat-ops. A receiver that does not check a signature
+  can be fed forged push or release events by anyone who knows its URL, and plain HTTP or skipped
+  certificate checks let a network attacker read repository data in payloads or alter them.
+  System hooks see events from the whole instance and leak a lot if they point to the wrong place.
+impact: |
+  Receivers must be changed to validate the signature or token, and secrets have to be set on
+  existing webhooks. Receivers with self-signed certificates need a certificate from a trusted
+  internal CA instead of turning verification off.
+notes: |
+  GitLab 19.0 and later offers a **Signing token** (HMAC-SHA256) that GitLab recommends over the
+  plain-text **Secret token**. GitLab group webhooks require Premium or Ultimate.
+
+audit:
+  manual: |
+    Use an organization owner, project maintainer or instance administrator account; webhook
+    secrets are not displayed, only whether one is set.
+
+    1. List the webhooks at organization, group, project and system level and check each:
+       - **GitHub**: organization or repository **Settings** > **Webhooks**, or REST `GET
+         /orgs/{org}/hooks` and `GET /repos/{owner}/{repo}/hooks`: the payload URL is `https://`,
+         `config.insecure_ssl` is `"0"` (SSL verification on) and a secret is set. Tools such as
+         legitify, Scorecard (`Webhooks`) and Checkov `CKV_GITHUB_6` / `CKV_GITHUB_7` report these.
+       - **GitLab**: project or group **Settings** > **Webhooks** and **Admin** > **System hooks**:
+         **Enable SSL verification** is selected and a **Signing token** or **Secret token** is
+         set; system hooks point only to internal monitoring or SIEM endpoints.
+       - **Gitea / Forgejo**: `app.ini` section `[webhook]`, `SKIP_TLS_VERIFY = false`; each
+         webhook has a secret.
+    2. Fail if a webhook uses `http://`, has certificate verification disabled, has no secret, or
+       if a system hook targets an endpoint outside the trusted internal set.
+
+remediation:
+  manual: |
+    1. Make each receiver validate the signature (GitHub `X-Hub-Signature-256`, GitLab signing
+       token) or the token header with a constant-time comparison.
+    2. Update the webhooks:
+       - **GitHub** (organization owner or repository admin): edit the webhook, set an `https://`
+         payload URL, keep **SSL verification** enabled and enter a random **Secret**.
+       - **GitLab** (Maintainer or Owner; administrator for system hooks): select **Generate
+         signing token**, keep **Enable SSL verification** selected, and delete system hooks that
+         do not target trusted internal endpoints.
+       - **Gitea / Forgejo** (administrator): keep `SKIP_TLS_VERIFY = false` and set a secret on
+         each webhook.
+    3. Rotate webhook secrets when receivers or owners change.
+
+references:
+  - title: Best practices for using webhooks
+    url: https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Validating webhook deliveries
+    url: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Webhooks
+    url: https://docs.gitlab.com/user/project/integrations/webhooks/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: System hooks
+    url: https://docs.gitlab.com/administration/system_hooks/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.3.4"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+related_controls:
+  - id: CB-CICD-PIPE-013
+    type: related
+  - id: CB-CICD-PLAT-010
+    type: related
+  - id: CB-CICD-COMP-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

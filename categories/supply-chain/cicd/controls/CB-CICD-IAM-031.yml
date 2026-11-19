@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-031
+title: Revoke leaked and unused tokens automatically
+finding:
+  title: Leaked or long-unused access tokens stay valid
+  description: A token found in a public repository or left unused for months remains a working credential until someone revokes it by hand, which often never happens.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [token-revocation, secret-leak, inactive-tokens, credential-hygiene]
+
+applicability:
+  versions: [azure-devops, buildkite]
+
+parameters:
+  - name: max_token_inactivity_days
+    type: integer
+    description: Number of days without use after which a token loses access to the organization.
+    unit: days
+    default: 90
+    minimum: 7
+    maximum: 365
+
+description: |
+  The platform revokes tokens that are reported as leaked (for example found in a public repository
+  by secret scanning partners) without waiting for a human, and removes the organization's access
+  from tokens unused for {{ max_token_inactivity_days }} days.
+
+  Secret scanning of the organization's own repositories is covered by CB-CICD-SEC-009, rotation of
+  pipeline secrets by CB-CICD-SEC-011.
+rationale: |
+  Leaked tokens are exploited within minutes of being pushed to a public repository; a notification
+  that waits for business hours is too slow. Unused tokens add risk without value: they are forgotten
+  in old scripts and backups, and nobody notices when they start being used again.
+impact: |
+  An integration that runs less often than the inactivity period loses access and must get a new
+  token. A legitimate token pushed by mistake is revoked and must be replaced.
+
+audit:
+  manual: |
+    Use an administrator role (Azure DevOps Administrator role in Entra for tenant policies).
+
+    1. Check the revocation settings:
+       - **Azure DevOps**: **Organization settings** > **Microsoft Entra** > **Automatically revoke
+         leaked personal access tokens** is on (default on; when off, only an email is sent).
+       - **Buildkite**: the organization API security settings define a maximum period after which
+         inactive API access tokens are revoked (Enterprise plan), at most
+         {{ max_token_inactivity_days }} days.
+    2. Fail if leaked tokens are not revoked automatically, or if unused tokens keep access beyond
+       the period.
+
+remediation:
+  manual: |
+    1. **Azure DevOps**: turn **Automatically revoke leaked personal access tokens** back on if it was
+       disabled.
+    2. **Buildkite**: in the organization API security settings, set the inactive API token revocation
+       period.
+    3. On platforms without automatic revocation of unused tokens, include token last-use dates in the
+       identity review (CB-CICD-IAM-026).
+
+references:
+  - title: Manage personal access tokens using policies (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/manage-pats-with-policies-for-administrators
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing API access tokens - inactive API tokens revocation (Buildkite)
+    url: https://buildkite.com/docs/apis/managing-api-tokens
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R26"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

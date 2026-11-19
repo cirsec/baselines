@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-002
+title: Validate identity assertions when authentication is delegated
+finding:
+  title: Delegated sign-in trusts unverified tokens, emails or identity headers
+  description: When certificate checks are skipped, unverified emails are accepted or identity headers are trusted from any source, an attacker can sign in as another user by presenting a forged token or sending the header directly to the platform.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [oidc, dex, reverse-proxy, authentication, tls]
+
+applicability:
+  versions: [argo-cd, gitea, forgejo]
+
+description: |
+  When a platform delegates sign-in to an OpenID Connect provider, a Dex connector or an
+  authenticating reverse proxy, it checks what it receives: the TLS certificate of the identity
+  provider is verified, email addresses are accepted only when the provider marks them verified, and
+  identity headers set by a reverse proxy are accepted only from that proxy's addresses, with the
+  platform reachable only through it.
+
+  Configuring SSO itself is covered by CB-CICD-IAM-001.
+rationale: |
+  The platform maps the identity it receives to an account and its roles. Skipping TLS verification
+  lets anyone who can intercept the connection to the identity provider forge tokens. Trusting
+  unverified emails lets a user of a shared or multi-tenant identity provider register the email of
+  an administrator and inherit that account. Trusting identity headers from any address lets anyone
+  who reaches the platform directly send `X-WEBAUTH-USER: admin`.
+impact: |
+  None known when the identity provider has a valid certificate and the proxy addresses are known.
+  Fixing a trust-all proxy setting may require network changes so that the platform only accepts
+  traffic from the proxy.
+
+audit:
+  manual: |
+    Read access to the platform configuration (`argocd-cm` ConfigMap, `app.ini`) is enough.
+
+    1. Identify how sign-in is delegated on each platform.
+    2. Check the assertion settings:
+       - **Argo CD**: in `argocd-cm`, `oidc.tls.insecure.skip.verify` is absent or `"false"`; in
+         `dex.config`, no connector sets `insecureSkipEmailVerified: true` unless the identity
+         provider is single-tenant and only issues verified emails. `insecureEnableGroups` is set
+         only when the provider returns groups in the token and the group names are controlled by
+         the organization.
+       - **Gitea / Forgejo**: if `[service] ENABLE_REVERSE_PROXY_AUTHENTICATION` or
+         `ENABLE_REVERSE_PROXY_AUTHENTICATION_API` is `true`, `[security]
+         REVERSE_PROXY_TRUSTED_PROXIES` lists only the proxy addresses (default `127.0.0.0/8,::1/128`)
+         and the application port is not reachable except through the proxy.
+    3. Fail if TLS verification of the identity provider is disabled, if unverified emails are
+       trusted on a multi-tenant provider, or if reverse-proxy authentication trusts `*` or a range
+       wider than the proxies.
+
+remediation:
+  manual: |
+    1. **Argo CD**: set `oidc.tls.insecure.skip.verify: "false"` (or remove it) and give Argo CD the
+       identity provider CA if it is private; remove `insecureSkipEmailVerified` from Dex connectors.
+       Restart `argocd-server` and test sign-in.
+    2. **Gitea / Forgejo**: set `REVERSE_PROXY_TRUSTED_PROXIES` to the proxy addresses only, bind the
+       application to localhost or a private interface reachable only by the proxy, and set
+       `ENABLE_REVERSE_PROXY_AUTHENTICATION = false` if the proxy no longer authenticates users.
+    3. Make the proxy strip any identity header coming from the client before adding its own.
+
+references:
+  - title: Argo CD user management - SSO
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Dex OpenID Connect connector
+    url: https://dexidp.io/docs/connectors/oidc/
+    publisher: Dex
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-8
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: partial
+    note: Covers the trust placed in delegated identity assertions only.
+threats:
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-PLAT-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

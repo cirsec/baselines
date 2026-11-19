@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-021
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser la fusion automatique que là où revue et vérifications sont imposées
+finding:
+  title: Des pull requests peuvent être fusionnées automatiquement sans revue ni vérifications imposées
+  description: Une fonction de fusion automatique ou un bot de fusion qui fusionne dès qu'un build réussit, ou qui se fie à l'auteur déclaré de la pull request, laisse passer une modification sans les approbations que la branche est censée exiger.
+description: |
+  La fusion automatique (fusion à la réussite des vérifications, bots de fusion, fusion automatique
+  des mises à jour de dépendances) n'est activée que sur les branches où la revue et les
+  vérifications de statut obligatoires sont imposées par la plate-forme, pour que la fusion
+  automatique n'ait lieu qu'une fois toutes les exigences remplies. Les bots de fusion et les
+  workflows de fusion automatique sont revus : ils utilisent une identité dédiée qui ne peut pas
+  contourner les règles de protection, et décident de ce qu'ils fusionnent à partir de données
+  vérifiées (le contenu réel de la pull request et l'identité de l'auteur selon la plate-forme), pas
+  de champs qu'un attaquant peut usurper.
+
+  Les approbations obligatoires relèvent de CB-CICD-SCM-012 ; les vérifications obligatoires de
+  CB-CICD-SCM-019 ; le contournement des règles de protection de CB-CICD-SCM-011.
+rationale: |
+  La fusion automatique transforme la revue et les vérifications en une barrière purement
+  automatique. Quand cette barrière n'est qu'indicative (avertissements, vérifications
+  facultatives), la fusion automatique supprime le dernier regard humain sur la modification. Des
+  workflows qui approuvent et fusionnent les pull requests du « bot de dépendances » en se fondant
+  sur l'acteur déclencheur ou le nom de branche ont été détournés pour fusionner des pull requests
+  d'attaquants se faisant passer pour le bot.
+impact: |
+  Les dépôts sans revue ni vérifications imposées perdent la fusion automatique jusqu'à leur mise en
+  place. Les workflows de fusion automatique peuvent devoir être réécrits pour vérifier l'auteur via
+  l'API de la plate-forme.
+notes: |
+  Sur Bitbucket Cloud, **Allow automatic merge when builds pass** est disponible sur toutes les
+  offres mais ne bloque sur les autres contrôles de fusion que si **Prevent a merge with unresolved
+  merge checks** (Premium) est activé ; en Standard, le laisser désactivé. La règle
+  `confused_deputy_auto_merge` de poutine signale les workflows GitHub qui fusionnent
+  automatiquement sur la foi d'un acteur usurpable.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des dépôts, les restrictions de branche et les
+    fichiers de workflow.
+
+    1. Lister les dépôts où la fusion automatique ou un bot de fusion est activé.
+    2. Pour chacun, vérifier que la revue et les vérifications de statut obligatoires sont imposées
+       sur la branche cible (CB-CICD-SCM-012, CB-CICD-SCM-019) :
+       - **GitHub** : **Settings** > **General** > **Pull Requests** > **Allow auto-merge** n'est
+         activé que sur les dépôts dont les branches cibles ont un ruleset actif avec approbations et
+         vérifications de statut obligatoires.
+       - **Bitbucket Cloud** : le réglage de fusion **Allow automatic merge when builds pass** de la
+         restriction de branche n'est activé qu'avec **Prevent a merge with unresolved merge checks**
+         (Premium).
+    3. Passer en revue les bots de fusion et workflows de fusion automatique : ils utilisent une
+       identité dédiée absente de toute liste de contournement, et identifient l'auteur de la pull
+       request via la plate-forme plutôt que par l'acteur déclencheur, le nom de branche ou le message
+       de commit.
+    4. Échec si la fusion automatique est activée là où la revue ou les vérifications ne sont pas
+       imposées, ou si un bot de fusion peut contourner la protection ou être déclenché par un auteur
+       usurpé.
+remediation:
+  manual: |
+    1. Imposer d'abord la revue et les vérifications sur les branches cibles (CB-CICD-SCM-012,
+       CB-CICD-SCM-019).
+    2. Désactiver la fusion automatique là où elles ne peuvent pas être imposées :
+       - **GitHub** : décocher **Allow auto-merge** dans les réglages du dépôt.
+       - **Bitbucket Cloud** : décocher **Allow automatic merge when builds pass**, ou activer
+         **Prevent a merge with unresolved merge checks** (Premium).
+    3. Retirer les bots de fusion des listes de contournement et réécrire les workflows de fusion
+       automatique pour qu'ils vérifient l'auteur via l'API de la plate-forme et exigent les mêmes
+       approbations que les pull requests humaines.

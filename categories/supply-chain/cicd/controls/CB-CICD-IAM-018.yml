@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-018
+title: Keep organization and instance administrators few, named and delegated
+finding:
+  title: Too many people, or a single person, hold owner or instance administrator rights
+  description: Every owner or instance administrator can change any repository, pipeline, runner or secret; a long list multiplies the accounts worth phishing, and a single owner is a single point of failure.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [administrators, owners, least-privilege, delegation]
+
+description: |
+  Owner and administrator roles at organization, enterprise or instance level are held by a small
+  number of named people (typically two to five, never only one), using accounts dedicated to that
+  role where the platform allows it. Day-to-day CI/CD administration (runners, Actions policies,
+  secrets, pipelines) is delegated through narrower roles. Build agents and service identities are
+  never members of administrator groups.
+
+  Repository and project administrators are covered by CB-CICD-IAM-019, step-up and just-in-time
+  elevation by CB-CICD-IAM-020.
+rationale: |
+  Administrator rights on a CI/CD platform equal control of everything it builds and deploys: on
+  Jenkins, Overall/Administer opens the script console and plugin upload, on GitHub an owner can
+  disable branch protection and read audit data across the organization. Fewer administrators means
+  fewer accounts to protect and a review that is actually possible; at least two avoids losing
+  control when one person is away or leaves.
+impact: |
+  Former administrators who still need part of the role move to a delegated role. Custom
+  organization roles on GitHub need GitHub Enterprise Cloud.
+notes: |
+  On Azure DevOps, members of **Project Collection Service Accounts** inherit **Project Collection
+  Administrators**: a build identity placed there becomes an organization administrator. On
+  Woodpecker, `WOODPECKER_ADMIN` only grants admin rights: a user removed in the UI becomes admin
+  again at the next sign-in after a restart if still listed.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. List the administrators of each platform and check names, number and purpose:
+       - **GitHub**: **Organization** > **People** filtered on role **Owner**
+         (`GET /orgs/{org}/members?role=admin`), and enterprise owners; delegated CI/CD tasks use a
+         custom organization role (for example with **Manage organization Actions policies**, runner
+         and secret permissions) instead of the owner role.
+       - **Jenkins**: users and groups granted `Overall/Administer` in the authorization strategy.
+       - **Azure DevOps**: members of **Project Collection Administrators** and **Project Collection
+         Service Accounts** in **Organization settings** > **Permissions**; no build or agent identity.
+       - **Spinnaker**: `fiat.admin.roles` in `fiat-local.yml` names a single small group.
+       - **Woodpecker**: `WOODPECKER_ADMIN` lists only current administrators, and
+         `WOODPECKER_ADMIN_PRIMARY_FORGE_ONLY=true` when several forges are connected.
+       - **GitLab self-managed**: users with the Administrator access level (**Admin** > **Users**,
+         filter **Administrators**).
+    2. Fail if there is only one administrator, if the number exceeds the documented maximum, or if
+       service or build identities hold administrator rights.
+
+remediation:
+  manual: |
+    1. Define the maximum number of administrators and name them.
+    2. Create delegated roles for routine CI/CD work:
+       - **GitHub**: create a custom organization role with the Actions, runner and secret
+         permissions needed, assign it to a team, and demote extra owners to member.
+       - **Jenkins**: grant `Overall/Manage` or `Overall/SystemRead` instead of `Overall/Administer`
+         where it is enough.
+       - **Azure DevOps**: remove extra users and every build or agent identity from Project
+         Collection Administrators and Project Collection Service Accounts.
+       - **Spinnaker**: restrict `fiat.admin.roles` to one administrators group.
+       - **Woodpecker**: remove former administrators from `WOODPECKER_ADMIN` and in the admin
+         settings, and set `WOODPECKER_ADMIN_PRIMARY_FORGE_ONLY=true`.
+    3. Record the list and review it with the access review (CB-CICD-IAM-026).
+
+references:
+  - title: About custom organization roles (GitHub)
+    url: https://docs.github.com/en/enterprise-cloud@latest/organizations/managing-peoples-access-to-your-organization-with-roles/about-custom-organization-roles
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Jenkins permissions
+    url: https://www.jenkins.io/doc/book/security/access-control/permissions/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Azure DevOps security overview
+    url: https://learn.microsoft.com/azure/devops/organizations/security/security-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Spinnaker administrator functionality
+    url: https://spinnaker.io/docs/setup/other_config/security/admin/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker server configuration
+    url: https://woodpecker-ci.org/docs/administration/configuration/server
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R30"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-IAM-019
+    type: related
+  - id: CB-CICD-IAM-020
+    type: related
+  - id: CB-CICD-PLAT-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Séparer le déploiement en production des pipelines de build, de pull request et hors production
+finding:
+  title: Les déploiements en production partagent pipelines, identités ou infrastructure avec les builds de pull request et de test
+  description: Quand le même projet, le même pool de runners ou les mêmes identifiants servent à la fois aux builds non fiables et aux déploiements en production, tout code qui atteint un build de test ou de pull request peut utiliser les identifiants de production ou altérer le déploiement.
+description: |
+  Le déploiement en production s'exécute séparément des builds qui traitent du code non fiable ou non
+  relu, au niveau `{{ separation_level }}` :
+
+  - `pipeline` : le déploiement en production s'exécute dans son propre projet, pipeline ou définition
+    de job, avec sa propre identité et ses propres identifiants, distincts de ceux des builds de pull
+    request, de test et hors production ; les rôles qui peuvent le modifier ou l'exécuter sont
+    distincts des rôles développeurs du projet applicatif. Les builds de pull requests et de tests
+    n'ont aucun accès en écriture aux ressources de production.
+  - `infrastructure` : en plus, les systèmes critiques disposent d'une infrastructure CI/CD de
+    production dédiée : leur propre pool de runners ou d'agents, leur propre compte ou abonnement
+    cloud pour les identités de déploiement et le stockage des artefacts, et leur propre projet ou
+    instance CD, sans chemin réseau ni relation de confiance depuis le côté build et hors production
+    hormis la promotion d'artefacts.
+
+  Les branches et personnes autorisées à déployer relèvent de CB-CICD-DEPLOY-002 ; le partage des
+  runners en général de CB-CICD-RUN-010 ; les secrets de déploiement de CB-CICD-SEC-008.
+rationale: |
+  Les pipelines de build exécutent du code qui change en permanence, y compris depuis des pull
+  requests et des dépendances. Si les identifiants, runners ou permissions de production sont
+  accessibles depuis ces builds, une seule modification ou dépendance malveillante peut déployer en
+  production ou en exfiltrer des données sans passer par la revue et l'approbation. Séparer le chemin
+  de déploiement empêche qu'une compromission côté build ou test se transforme en compromission de la
+  production.
+impact: |
+  Les équipes entretiennent un projet, un pipeline ou un compte supplémentaire par application et une
+  étape de promotion entre eux. Une infrastructure de production dédiée coûte plus cher et demande sa
+  propre administration.
+notes: |
+  Dans GitLab, chaque Maintainer d'un projet peut lire ses variables CI/CD non protégées et modifier
+  son pipeline ; GitLab documente un projet CD séparé, relié par des pipelines multi-projets, pour
+  tenir les secrets de production et la configuration CD hors de portée des Maintainers du projet de
+  développement. Les déploiements inter-comptes d'AWS CodePipeline exigent une clé KMS gérée par le
+  client pour le stockage des artefacts.
+parameters:
+  separation_level: Degré de séparation du déploiement en production. pipeline signifie un projet ou pipeline de déploiement distinct avec sa propre identité et ses propres rôles ; infrastructure exige en plus des runners, un compte ou abonnement cloud et un projet CD dédiés à la production.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration des projets, pipelines, runners et comptes cloud.
+
+    1. Pour chaque application en production, identifier le pipeline qui la déploie, l'identité et les
+       identifiants qu'il utilise, et où il s'exécute.
+    2. Vérifier que les builds de pull request, de test et hors production utilisent d'autres projets
+       ou pipelines, d'autres identités et aucun identifiant de production :
+       - **AWS CodeBuild / CodePipeline** : les projets qui acceptent des builds de pull request par
+         webhook ont un rôle de service sans accès en écriture à la production ; le projet de
+         déploiement a son propre rôle et son groupe de filtres de webhook utilise `ACTOR_ACCOUNT_ID`
+         pour n'autoriser que les utilisateurs de confiance. Avec `infrastructure`, les actions de
+         déploiement utilisent un `roleArn` dans un compte de production distinct.
+       - **GitLab** : le déploiement en production et ses secrets vivent dans un projet CD distinct
+         déclenché par `trigger: project:` (pipeline multi-projets) ; les Maintainers du projet de
+         développement ne sont pas Maintainers du projet CD.
+       - **Azure DevOps** : les étapes de production s'exécutent sur un pool d'agents dédié et
+         utilisent des connexions de service vers un abonnement de production que les pipelines hors
+         production ne peuvent pas utiliser.
+    3. Avec `infrastructure` : vérifier que les runners, comptes ou abonnements cloud et le projet CD
+       de production sont dédiés, et que le seul lien depuis le côté build est la promotion
+       d'artefacts.
+    4. Échec si un build de pull request ou de test peut utiliser des identifiants ou des runners de
+       production, ou si la même identité construit du code non fiable et déploie en production.
+remediation:
+  manual: |
+    1. Séparer le pipeline de chaque application en une partie build et test et une partie
+       déploiement dotée de sa propre identité :
+       - **AWS CodeBuild** : créer un projet pour les builds de pull request et de test avec un rôle
+         de service en lecture seule, et un projet de déploiement distinct avec le rôle en écriture et
+         un filtre de webhook `ACTOR_ACCOUNT_ID` ; pour `infrastructure`, déplacer les cibles de
+         déploiement dans un compte distinct atteint par un `roleArn` inter-comptes et une clé KMS
+         gérée par le client.
+       - **GitLab** : créer un projet CD qui contient les variables de production et les jobs de
+         déploiement, lui donner ses propres membres, et le déclencher depuis le projet de
+         développement avec `trigger: project:`.
+       - **Azure DevOps** : créer un pool d'agents dédié et des connexions de service de production,
+         et ne les accorder qu'au pipeline de production (**Paramètres du projet** > **Pools
+         d'agents** et **Connexions de service** > **Sécurité**).
+    2. Retirer les identifiants de production des projets de build et de test et les renouveler.
+    3. Pour `infrastructure`, déplacer les runners de production, les identités de déploiement et le
+       stockage des artefacts dans un compte ou abonnement dédié avec ses propres administrateurs.

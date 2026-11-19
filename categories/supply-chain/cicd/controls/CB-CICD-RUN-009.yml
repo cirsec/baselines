@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-009
+title: Keep public repositories and fork builds off self-hosted runners
+finding:
+  title: Self-hosted runners accept jobs from public repositories or fork pull requests
+  description: Anyone who can open a pull request on a public project can run code on a self-hosted runner that is reachable from it, plant persistence on the host, read what earlier jobs left behind and pivot into the internal network.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, self-hosted, public-repositories, forks, pull-requests]
+
+description: |
+  Self-hosted runners and agents are not available to public repositories, nor to builds of pull
+  requests from forks. Untrusted contributions run only on platform-hosted runners, or on dedicated
+  runners that are created for one job and destroyed afterwards in an isolated network
+  (CB-CICD-RUN-012, CB-CICD-RUN-023).
+
+  Which secrets fork builds receive is covered by CB-CICD-PIPE-010; approval of external
+  contributors' pipelines by CB-CICD-PIPE-009.
+rationale: |
+  On a public project, the author of a fork pull request is anonymous and the workflow definition can
+  be changed in the pull request itself. A self-hosted runner gives that code a machine inside the
+  organization's network, often persistent and shared with other jobs. Compromising self-hosted
+  runners through public pull requests is a documented attack path on GitHub-hosted projects.
+impact: |
+  Public projects that need special hardware or network access for pull request builds must use
+  ephemeral, isolated runners dedicated to them, or run those checks after merge.
+notes: |
+  On GitHub, runner groups admit only private repositories by default; the setting can be changed per
+  group but not on an organization group shared by an enterprise. CircleCI does not allow
+  self-hosted runners on public projects that build forked pull requests. Audit tools: zizmor
+  (`self-hosted-runner`), poutine (`pr_runs_on_self_hosted`), legitify and OpenSSF Scorecard check
+  this on GitHub.
+
+audit:
+  manual: |
+    Use an organization owner or administrator read role.
+
+    1. List public repositories and projects that build pull requests from forks.
+    2. For each, check which runners their jobs can use and whether any is self-hosted.
+       - **GitHub**: **Organization** > **Settings** > **Actions** > **Runner groups**: no group's
+         repository access policy admits public repositories (REST API field
+         `allows_public_repositories` is `false`); public repositories have no repository-level
+         self-hosted runners. Workflows in public repositories triggered by
+         `pull_request` or `pull_request_target` do not use `runs-on: self-hosted` labels.
+       - **AWS CodeBuild**: runner projects (GitHub Actions or GitLab runners hosted on CodeBuild)
+         that serve public repositories run each job in a new build (on-demand compute), not on a
+         reserved-capacity fleet shared with private projects.
+       - **Azure DevOps**: pipelines that build fork pull requests use Microsoft-hosted agents.
+    3. Fail if a self-hosted runner that persists between jobs or sits in the internal network can run
+       jobs from a public repository or a fork pull request.
+remediation:
+  manual: |
+    1. Move public repositories' jobs to platform-hosted runners, or to ephemeral runners in an
+       isolated network reserved for them.
+    2. Per product:
+       - **GitHub**: as an organization owner, edit each runner group's repository access policy so that it
+         no longer admits public repositories; remove repository-level self-hosted runners from public repositories.
+       - **AWS CodeBuild**: use separate runner projects per trust level, on-demand compute for public
+         repositories, and webhook filters that limit each project to the intended repositories.
+       - **Azure DevOps**: run fork builds on Microsoft-hosted pools only.
+    3. Re-image any self-hosted runner that ran fork code before the change.
+
+references:
+  - title: Managing access to self-hosted runners using groups
+    url: https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure use reference (Hardening for self-hosted runners)
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tutorial - Configure a CodeBuild-hosted GitHub Actions runner
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/action-runner.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure your pipelines - other security considerations
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit - self-hosted-runner
+    url: https://docs.zizmor.sh/audits/#self-hosted-runner
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1059
+related_controls:
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-PIPE-009
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-RUN-010
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

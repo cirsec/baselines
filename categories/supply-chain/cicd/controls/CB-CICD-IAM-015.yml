@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-015
+title: Set default permissions for all members to none or read-only
+finding:
+  title: Every member or authenticated user gets write or administrative access by default
+  description: A base permission granted to everyone means any account, including a newly invited or compromised one, can push code, change pipelines or trigger deployments across all projects.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [base-permissions, least-privilege, default-role, authorization]
+
+description: |
+  Permissions granted implicitly to every member, to the "authenticated" or "everyone" group, or by a
+  default policy are none or read-only. Write, maintain and administrative access is granted through
+  explicit teams or groups per project.
+
+  The authorization model itself is covered by CB-CICD-IAM-014, group-based role design by
+  CB-CICD-IAM-016, and anonymous access by CB-CICD-IAM-011.
+rationale: |
+  Base permissions apply to everyone at once, including accounts nobody reviews. On Jenkins, granting
+  Overall/Administer to "authenticated" makes every user an administrator. Even read access has a
+  cost: on GitHub, base read permission on private repositories lets every member fork them, open
+  pull requests that run workflows, and read workflow logs; Argo CD `role:readonly` exposes every
+  application, cluster and repository definition.
+impact: |
+  Members who relied on base permissions lose access to repositories or pipelines where they are not
+  in a team. Create the teams before lowering the base permission. Inner-source organizations may
+  keep read as the base permission as a documented decision.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. Check the default permissions:
+       - **GitHub**: **Organization settings** > **Member privileges** > **Base permissions** is
+         **No permission** or **Read** (`default_repository_permission` in `GET /orgs/{org}`); the
+         enterprise policy for base permissions, if set, enforces the same.
+       - **Jenkins**: in the authorization matrix, `anonymous` has no permission and `authenticated`
+         has at most `Overall/Read`.
+       - **Argo CD**: `policy.default` in `argocd-rbac-cm` is empty or a custom minimal role, not
+         `role:admin` (and `role:readonly` only by documented decision); permissions of the default
+         policy cannot be removed with a deny rule.
+       - **Buildkite**: teams are enabled; the **Everyone** team does not hold pipelines with **Full
+         Access**, and teams grant **Build & Read** or **Read Only** unless maintainers need more (the
+         highest permission across a user's teams applies).
+       - **Bitbucket Cloud**: **Workspace settings** > **User groups**: default groups have
+         **Automatically assign permissions for new repositories** set to none or read.
+    2. Fail if any implicit or default grant gives write, maintain or administrative rights.
+
+remediation:
+  manual: |
+    1. Create teams or groups that carry the write and maintain access people actually need.
+    2. Lower the defaults:
+       - **GitHub**: set **Base permissions** to **No permission** (or **Read** for inner source);
+         enforce it with the enterprise policy.
+       - **Jenkins**: remove all permissions from `anonymous` and keep at most `Overall/Read` for
+         `authenticated`.
+       - **Argo CD**: set `policy.default: ''` (or a custom role) in `argocd-rbac-cm` and grant
+         project roles to SSO groups.
+       - **Buildkite**: enable teams, remove pipelines from **Everyone**, and give teams the narrowest
+         pipeline permission.
+       - **Bitbucket Cloud**: set default groups to no or read access for new repositories and review
+         existing repository permissions.
+
+references:
+  - title: Setting base permissions for an organization
+    url: https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/setting-base-permissions-for-an-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Access Control (Jenkins)
+    url: https://www.jenkins.io/doc/book/security/access-control/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD RBAC configuration
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite team permissions
+    url: https://buildkite.com/docs/platform/team-management/permissions
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Grant access to a workspace (Bitbucket Cloud)
+    url: https://support.atlassian.com/bitbucket-cloud/docs/grant-access-to-a-workspace/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.1"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.3"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-014
+    type: related
+  - id: CB-CICD-IAM-016
+    type: related
+  - id: CB-CICD-IAM-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

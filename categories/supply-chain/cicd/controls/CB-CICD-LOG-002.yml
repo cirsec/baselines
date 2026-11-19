@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-002
+title: Record the client source IP and API requests in audit events
+finding:
+  title: Audit events do not show where actions came from
+  description: Audit events lack the client IP address, or API calls made with tokens are not logged; investigators cannot tell a stolen token used from an attacker's infrastructure from normal automation.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [audit-log, source-ip, api-logging, forensics, github-enterprise-cloud, argo-cd]
+applicability:
+  versions: [github, argo-cd]
+
+description: |
+  Audit events of the CI/CD platforms include the real client source IP address, not only the
+  address of a proxy or gateway:
+
+  - GitHub Enterprise Cloud: source IP disclosure is enabled for the enterprise (it then applies to
+    every organization in it).
+  - Argo CD: the API server logs the client address (`server.enable.source.ip.logging`).
+
+  With `ip_logging_scope` set to `source-ip-and-api` (**{{ ip_logging_scope }}** here), API request
+  events are also captured (GitHub **API Request Events**, streamed to the SIEM), and client
+  addresses are taken from forwarded headers only when the request comes from a listed trusted
+  proxy (Argo CD `server.trusted.proxies` set to the ingress or load balancer addresses, not the
+  whole pod network).
+rationale: |
+  Most CI/CD intrusions use valid but stolen credentials. The source address is often the only
+  field that distinguishes an attacker from the legitimate owner of a token, and API request events
+  show what a token read or changed, not just that it existed. Trusting forwarded headers from any
+  source lets an attacker write any address into the log, so the proxy list must be narrow.
+impact: |
+  IP addresses are personal data: retention and access to these logs must follow the
+  organization's data protection rules. API request events add volume to the audit stream.
+notes: |
+  On GitHub, IP addresses are not shown for some events, for example `api.request` events without
+  repository context, and actions of personal accounts on public repositories when Enterprise
+  Managed Users are not used. GitHub streams only security-relevant API endpoints.
+
+parameters:
+  - name: ip_logging_scope
+    type: enum
+    description: Detail required in audit events. `source-ip` requires the client source IP; `source-ip-and-api` also requires API request events and client IP taken from forwarded headers only behind listed trusted proxies.
+    allowed: [source-ip, source-ip-and-api]
+    default: source-ip
+    profile_defaults:
+      hardened: source-ip-and-api
+
+audit:
+  manual: |
+    Use an enterprise owner (GitHub) or read access to the Argo CD configuration and logs.
+
+    1. **GitHub Enterprise Cloud**: in the enterprise **Settings** > **Audit log** > **Settings**,
+       check that **Enable source IP disclosure** is selected under "Disclose actor IP addresses in
+       audit logs"; with `source-ip-and-api`, check that **Enable API Request Events** is selected
+       under "API Requests" and that a stream is configured (CB-CICD-LOG-003).
+    2. **Argo CD**: in `argocd-cmd-params-cm`, check `server.enable.source.ip.logging: "true"`;
+       check in the `argocd-server` logs that `source.ip` shows client addresses. With
+       `source-ip-and-api`, check that `server.trusted.proxies` lists only the ingress or load
+       balancer addresses and that `server.client.ip.header` is set only if every trusted proxy
+       overwrites that header.
+    3. Fail if audit events carry no client address, if the address logged is always the proxy's,
+       or (with `source-ip-and-api`) if API request events are not captured or forwarded headers are
+       trusted from a broad range.
+
+remediation:
+  manual: |
+    1. **GitHub Enterprise Cloud** (enterprise owner): go to the enterprise **Settings** > **Audit
+       log** > **Settings**, select **Enable source IP disclosure**; for `source-ip-and-api`, also
+       select **Enable API Request Events** and stream the audit log.
+    2. **Argo CD**: set `server.enable.source.ip.logging: "true"` in `argocd-cmd-params-cm`; for
+       `source-ip-and-api`, set `server.trusted.proxies` to the ingress or load balancer addresses
+       and, only if they all set it, `server.client.ip.header`; restart `argocd-server`.
+    3. Update the record of processing and the retention of the logs for the personal data they now
+       contain.
+
+references:
+  - title: Displaying IP addresses in the audit log for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/displaying-ip-addresses-in-the-audit-log-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Streaming the audit log for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/streaming-the-audit-log-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security (Argo CD operator manual)
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-3(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-CICD-LOG-001
+    type: related
+  - id: CB-CICD-LOG-003
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

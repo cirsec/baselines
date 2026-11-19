@@ -1,0 +1,141 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-001
+title: Inventory pipeline credentials and scope each one to a single use
+finding:
+  title: Pipeline credentials have no owner, broad permissions or are shared between pipelines
+  description: Nobody can say which pipelines hold a given token or what it can reach, and the same credential serves several systems, so one leak opens every system that trusts it and cannot be revoked without breaking unknown builds.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, credential-inventory, least-privilege, service-connections]
+
+description: |
+  Every credential that pipelines and CI/CD platforms use from source checkout to deployment (CI
+  secrets and variables, service connections, deploy keys, registry and cloud credentials, tokens
+  of integrations) is listed with its owner, the system it reaches, its permissions, where it is
+  stored and which pipelines use it.
+
+  Each credential is granted only the permissions and the resource scope its pipeline needs (one
+  resource group, one registry repository, one package feed), and is used in one context only: one
+  pipeline or deployment target, one environment. The same credential is not reused between
+  test and production, between unrelated projects, or between a pipeline and a human.
+
+  Which kind of credential to use (job token, app, federation) is covered by CB-CICD-SEC-002 and
+  CB-CICD-SEC-015; how shared secrets are restricted to projects by CB-CICD-SEC-007; rotation by
+  CB-CICD-SEC-011.
+rationale: |
+  After a pipeline compromise, responders need to know within hours which credentials were exposed
+  and what each one can reach. Without an inventory, keys stay valid because nobody knows they
+  exist, or are not rotated because nobody knows what would break. A credential scoped to one
+  target and one pipeline limits the damage of a leak to that target, while a shared
+  subscription-wide or organization-wide credential turns any compromised job into access to
+  everything.
+impact: |
+  Building the first inventory takes time across platforms and cloud accounts. Splitting shared
+  credentials creates more of them to manage, which is offset by moving to short-lived federated
+  credentials where possible.
+
+audit:
+  manual: |
+    Use a platform role that can list secrets, variables and service connections (names and
+    metadata only) and read cloud IAM policies.
+
+    1. Get the credential inventory and check that each entry has an owner, the target system, the
+       permissions, the storage location and the pipelines that use it.
+    2. Compare the inventory with what is actually configured: secrets and variables at
+       organization, group, project and environment level, service connections, deploy keys,
+       integrations and the identities they map to in cloud accounts and registries.
+    3. For a sample of credentials, read the permissions granted on the target side and check
+       that they match the pipeline's need (no owner/administrator role, no subscription- or
+       organization-wide scope when one resource is deployed).
+    4. Check that the same credential value or identity is not used by several unrelated
+       pipelines, by test and production, or by people.
+       - **Azure DevOps**: **Project settings** > **Service connections**: each Azure Resource
+         Manager connection is scoped to a resource group where possible, the Azure role
+         assigned to its identity is not Contributor or Owner on the whole subscription, and
+         **Usage history** shows only the pipelines that are expected to use it.
+    5. Fail if a credential used by pipelines is missing from the inventory or has no owner, if
+       its permissions or scope exceed what its pipeline needs, or if one credential is shared
+       between environments, unrelated pipelines or humans.
+
+remediation:
+  manual: |
+    1. Build the inventory from the platform listings and the cloud and registry IAM, and record
+       an owner for each credential. Keep it with the platform configuration so it is updated
+       when credentials change.
+    2. Delete credentials that have no owner or no current use (CB-CICD-SEC-011).
+    3. Split shared credentials: create one identity per pipeline or deployment target and per
+       environment, give each one only the permissions it needs, then revoke the shared one.
+       - **Azure DevOps**: create Azure Resource Manager service connections scoped to a specific
+         resource group, with a least-privilege role on that resource group only, and grant each
+         connection to the pipelines that need it (CB-CICD-SEC-007).
+    4. Review the inventory at least once a year and after each incident.
+
+references:
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: Securing Azure Pipelines - service connections and resources
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Connect to Azure with an Azure Resource Manager service connection
+    url: https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers inventory, scope and single use of credentials; storage, rotation and federation are covered by other SEC controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-SEC-007
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+  - id: CB-CICD-IAM-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

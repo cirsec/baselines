@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réinitialiser les approbations quand de nouveaux commits sont poussés
+finding:
+  title: Les approbations restent valides après l'ajout de nouveaux commits à la pull request
+  description: Un contributeur peut faire approuver une modification anodine, puis pousser des commits supplémentaires sur la même branche et les fusionner sous l'approbation précédente ; le code livré n'est alors pas celui qui a été revu.
+description: |
+  Quand la branche source d'une pull request ou merge request change d'une façon qui modifie son
+  contenu, les approbations existantes sont annulées et la demande doit être approuvée de nouveau.
+  La revue qui autorise la fusion couvre donc toujours la révision finale.
+
+  Les plates-formes peuvent conserver une approbation quand le diff est inchangé (par exemple après
+  un rebase sans nouvelle modification) ; c'est acceptable. Exiger que le dernier pousseur ne soit
+  pas l'approbateur relève de CB-CICD-SCM-013 et complète ce contrôle sans le remplacer.
+rationale: |
+  Sans réinitialisation des approbations, le schéma « approuver puis pousser » annule complètement
+  la revue : l'approbation est attachée à la pull request, pas aux commits qui ont été lus. C'est
+  l'un des moyens les plus simples pour une personne interne ou un attaquant muni d'un jeton de
+  développeur de fusionner du code non revu alors que tous les rapports montrent la modification
+  comme approuvée.
+impact: |
+  Les relecteurs approuvent de nouveau après chaque modification du contenu, ce qui ajoute des
+  allers-retours sur les pull requests de longue durée. Sur certaines plates-formes, un rebase ou
+  une fusion depuis la branche cible peut aussi réinitialiser les approbations.
+notes: |
+  Sur GitLab (Premium), **Remove all approvals when commits are added to the source branch** est
+  activé par défaut ; **Remove approvals by Code Owners if their files changed** est une variante
+  plus étroite qui laisse les autres approbations en place. Sur Bitbucket Cloud, la
+  réinitialisation des approbations nécessite Premium. Sur Azure DevOps, **Réinitialiser tous les
+  votes d'approbation** conserve les votes de rejet et d'attente, ce qui est le comportement voulu.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la protection de branche et les réglages des merge requests.
+
+    1. Vérifier le réglage sur les règles qui protègent les branches par défaut et de release :
+       - **GitHub** : règle de ruleset **Require a pull request before merging** > **Dismiss stale
+         pull request approvals when new commits are pushed** activée (même option dans les règles
+         de protection de branche).
+       - **GitLab** (Premium) : **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings** > **Remove all approvals when commits are added to the source
+         branch** est coché.
+       - **Azure DevOps** : **Exiger un nombre minimal de réviseurs** > **Lorsque de nouvelles
+         modifications sont envoyées (push)** vaut **Réinitialiser tous les votes d'approbation** ou
+         **Réinitialiser tous les votes des réviseurs de code**.
+       - **Bitbucket Cloud** (Premium) : les réglages de fusion de la restriction de branche
+         incluent **Reset approvals when the source branch is modified**.
+       - **Gitea / Forgejo** : la règle de branche active **Dismiss stale approvals**.
+    2. Examiner un échantillon de pull requests fusionnées dont le dernier commit est postérieur à
+       la dernière approbation et confirmer qu'il n'en existe aucune.
+    3. Échec si une approbation donnée avant une modification du contenu compte encore pour la
+       fusion.
+remediation:
+  manual: |
+    1. Activer la réinitialisation des approbations sur chaque règle de protection :
+       - **GitHub** : activer **Dismiss stale pull request approvals when new commits are pushed**
+         dans le ruleset.
+       - **GitLab** : cocher **Remove all approvals when commits are added to the source branch** au
+         niveau du groupe de premier niveau pour que les projets en héritent.
+       - **Azure DevOps** : sous **Lorsque de nouvelles modifications sont envoyées (push)**, choisir
+         **Réinitialiser tous les votes d'approbation**.
+       - **Bitbucket Cloud** : activer **Reset approvals when the source branch is modified**,
+         éventuellement avec **Keep approvals if there is no change to the diff in the pull
+         request**.
+       - **Gitea / Forgejo** : cocher **Dismiss stale approvals**.
+    2. Prévenir les relecteurs que les approbations ne valent plus que pour la dernière révision.

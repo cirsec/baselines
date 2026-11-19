@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Retirer les composants CI vulnérables, compromis ou non maintenus
+finding:
+  title: Les pipelines utilisent des composants CI avec des vulnérabilités connues ou sans mainteneur
+  description: Des actions, tâches et plugins visés par des avis de sécurité, issus de dépôts amont archivés ou tournant sur des environnements d'exécution en fin de vie restent dans les pipelines, et un composant connu comme compromis continue de s'exécuter faute de moyen de le bloquer rapidement.
+description: |
+  Les composants exécutés par les pipelines et les plugins des plates-formes sont maintenus et
+  exempts de vulnérabilités connues :
+  - les composants visés par un avis de sécurité publié sont mis à jour vers une version corrigée
+    ou remplacés ;
+  - les composants dont le dépôt amont est archivé, ou qui tournent sur un environnement
+    d'exécution en fin de vie, sont remplacés par une alternative maintenue ;
+  - l'organisation peut bloquer un composant compromis (ou l'une de ses versions) au niveau de la
+    plate-forme en quelques heures, sans modifier chaque pipeline ;
+  - les plugins des serveurs CI sont mis à jour à intervalle régulier et leurs avertissements de
+    sécurité sont traités.
+
+  Les propositions automatiques de mise à jour des composants relèvent de CB-CICD-COMP-009, et le
+  traitement des vulnérabilités des dépendances applicatives de CB-DEP-VULN-001 et
+  CB-DEP-VULN-004.
+rationale: |
+  Les composants CI s'exécutent avec les secrets du pipeline. Une action vulnérable peut être
+  exploitée depuis une pull request, et une action compromise exfiltre les secrets de tous les
+  pipelines qui l'exécutent jusqu'à son retrait. Quand la réponse passe par la modification de
+  chaque workflow, la fenêtre reste ouverte des jours. Les composants non maintenus ne reçoivent
+  plus de correctifs et tournent sur des environnements que les plates-formes suppriment.
+impact: |
+  Les mises à jour de composants et de plugins doivent être testées, et une entrée de liste de
+  blocage fait échouer les pipelines qui utilisent encore le composant bloqué tant qu'ils ne sont
+  pas modifiés. Les mises à jour de plugins Jenkins peuvent nécessiter un redémarrage du
+  contrôleur.
+notes: |
+  Sur GitHub, les alertes Dependabot ne se déclenchent pas pour les actions épinglées sur un SHA de
+  commit ; utiliser en plus un outil d'audit comme zizmor (`known-vulnerable-actions`,
+  `archived-uses`) ou poutine (`known_vulnerability_in_build_component`). Le réglage Azure DevOps
+  **Restrict out of support Node.js versions in pipeline tasks** n'est documenté que pour Azure
+  DevOps Services.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline et les réglages de l'organisation ;
+    pour Jenkins, un compte avec **Overall/Read** et l'accès au gestionnaire de plugins.
+
+    1. Passer un outil d'audit sur les définitions de pipeline (zizmor `known-vulnerable-actions`
+       et `archived-uses`, poutine `known_vulnerability_in_build_component`) et lister les
+       composants visés par un avis, issus d'un dépôt archivé ou sur un environnement en fin de vie.
+    2. Vérifier comment chaque plate-forme maintient les composants à jour et bloque les mauvais :
+       - **GitHub** : **Settings** > **Actions** > **General** > **Policies** au niveau entreprise
+         ou organisation accepte des motifs de blocage avec le préfixe `!` (par exemple
+         `!owner/action@*`) ; vérifier que la procédure d'incident s'en sert.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Pipelines** > **Paramètres** >
+         **Restrictions de tâches** > **Restrict out of support Node.js versions in pipeline
+         tasks** est activé (Azure DevOps Services) et aucun pipeline n'utilise de tâches qui
+         reposent sur les exécuteurs Node.js 6, 10 ou 16.
+       - **Jenkins** : **Manage Jenkins** > **Plugins** > **Updates** ne montre aucune mise à jour
+         de sécurité en attente, et aucun avertissement de sécurité sur les plugins installés n'est
+         affiché ou masqué.
+    3. Échec si un composant visé par un avis connu ou issu d'un dépôt archivé est encore utilisé,
+       si des plugins portent des avertissements de sécurité non traités, ou s'il n'existe aucun
+       moyen de bloquer un composant compromis dans toute l'organisation.
+remediation:
+  manual: |
+    1. Mettre à jour ou remplacer chaque composant relevé par l'audit ; préférer une alternative
+       maintenue et largement revue, ou une copie interne.
+    2. Préparer le moyen de confinement :
+       - **GitHub** (propriétaire d'entreprise ou d'organisation) : ajouter un motif de blocage
+         comme `!owner/action@*` à la liste des actions autorisées pendant un incident, et le
+         retirer une fois le composant corrigé ou remplacé.
+       - **Azure DevOps** (Project Collection Administrator) : activer **Restrict out of support
+         Node.js versions in pipeline tasks**, lire les avertissements dans les journaux et mettre
+         à jour les tâches concernées.
+       - **Jenkins** (administrateur) : appliquer les mises à jour de plugins depuis **Manage
+         Jenkins** > **Plugins** > **Updates** au moins chaque semaine, et traiter les
+         avertissements de sécurité affichés pour les plugins installés.
+    3. Ajouter l'étape de liste de blocage au runbook de réponse aux incidents CI/CD
+       (CB-CICD-LOG-009).

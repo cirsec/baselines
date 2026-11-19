@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les comptes administrateur d'amorçage et réserver les comptes locaux au secours
+finding:
+  title: Des comptes administrateur intégrés ou super-utilisateur restent actifs à côté du SSO
+  description: Un compte admin d'amorçage dont le mot de passe initial est encore stocké, ou un jeton super-utilisateur écrit dans le journal du serveur, donne le contrôle total de la plate-forme à quiconque lit ce secret ou ce journal.
+description: |
+  Une fois que les administrateurs se connectent par le fournisseur d'identité, les comptes créés à
+  l'installation qui le contournent sont désactivés et leurs secrets initiaux supprimés. Au plus un ou
+  deux comptes de secours nominatifs gardent une connexion locale, avec un long mot de passe aléatoire
+  stocké dans un coffre, la MFA quand la plate-forme la prend en charge et une alerte à chaque
+  utilisation. Aucun compte ne garde un mot de passe par défaut ou fourni par l'éditeur.
+
+  L'exigence générale de SSO relève de CB-CICD-IAM-001 ; l'assistant de premier lancement de
+  CB-CICD-PLAT-006.
+rationale: |
+  Les comptes d'amorçage ont un nom connu (`admin`, `root`, super user), gardent souvent le mot de
+  passe posé à l'installation et échappent à la MFA et au processus de départ du fournisseur
+  d'identité. Leurs secrets finissent aussi dans des endroits largement lisibles : le mot de passe
+  initial d'Argo CD est en clair dans un secret Kubernetes, et le jeton super-utilisateur de TeamCity
+  est écrit dans le journal du serveur, souvent envoyé vers une plate-forme de journaux centrale.
+impact: |
+  Si le SSO tombe et qu'aucun compte de secours ne fonctionne, les administrateurs perdent l'accès.
+  Tester la procédure de secours avant de désactiver le compte d'amorçage, et documenter comment le
+  réactiver.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur qui peut lire les réglages d'authentification et la liste des
+    utilisateurs.
+
+    1. Lister les comptes qui peuvent se connecter sans le fournisseur d'identité et vérifier que
+       chacun est un compte de secours documenté avec un secret en coffre.
+    2. Vérifier les comptes d'amorçage :
+       - **Argo CD** : `argocd-cm` contient `admin.enabled: "false"`, et le secret
+         `argocd-initial-admin-secret` n'existe plus dans l'espace de noms d'Argo CD
+         (`kubectl get secret argocd-initial-admin-secret -n argocd`).
+       - **TeamCity** : `<TeamCity Data Directory>/config/internal.properties` contient
+         `teamcity.superUser.disable=true`.
+       - **GitLab auto-hébergé** : le compte `root` a un mot de passe robuste posé à l'installation
+         (par exemple par `GITLAB_ROOT_PASSWORD`), ne sert qu'au secours, et les autres
+         administrateurs se connectent par SSO.
+       - **GitHub Enterprise Server** : **Management Console** > **Authentication** n'a pas **Allow
+         creation of accounts with built-in authentication** coché, sauf si les comptes intégrés
+         sont les comptes de secours documentés.
+       - **Forgejo** : `[service] ENABLE_INTERNAL_SIGNIN = false` quand tous les utilisateurs se
+         connectent par une source externe.
+    3. Rechercher des mots de passe initiaux ou des jetons super-utilisateur dans les journaux et les
+       coffres de secrets.
+    4. Échec si un compte d'amorçage ou par défaut peut encore se connecter hors d'une procédure de
+       secours documentée, ou si son secret initial existe encore.
+remediation:
+  manual: |
+    1. S'assurer qu'au moins deux administrateurs se connectent par SSO, et créer ou garder le compte
+       de secours avec un mot de passe en coffre.
+    2. Désactiver l'accès d'amorçage :
+       - **Argo CD** : poser `admin.enabled: "false"` dans `argocd-cm` et supprimer
+         `argocd-initial-admin-secret` (`kubectl delete secret argocd-initial-admin-secret -n argocd`).
+       - **TeamCity** : ajouter `teamcity.superUser.disable=true` dans `internal.properties` et
+         redémarrer le serveur ; ne retirer ce réglage qu'en cas d'urgence.
+       - **GitLab auto-hébergé** : changer le mot de passe de `root`, le stocker en coffre et réserver
+         son usage au secours.
+       - **GitHub Enterprise Server** : décocher **Allow creation of accounts with built-in
+         authentication** dans la Management Console, ou limiter les comptes intégrés au secours.
+    3. Alerter à chaque connexion d'un compte de secours (CB-CICD-LOG-006).
+  rollback: |
+    Ne réactiver la connexion d'amorçage (`admin.enabled: "true"`, retrait de
+    `teamcity.superUser.disable`) que pour une reprise, puis la désactiver de nouveau.

@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-023
+title: Isolate runners from internal networks and instance metadata
+finding:
+  title: Runners can reach internal services and the cloud metadata endpoint
+  description: A runner on a flat network gives every job a foothold to scan and attack internal systems, other runners and the CI controller, and to fetch the host's cloud credentials from the instance metadata endpoint.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, network-segmentation, metadata, network-policy, lateral-movement]
+
+parameters:
+  - name: network_perimeter
+    type: enum
+    description: Network isolation of runners. segmented means a dedicated subnet with no route to internal or administration services or between runners, and the metadata endpoint blocked; default-deny adds default-deny network policies or a service perimeter with only documented flows allowed.
+    allowed: [segmented, default-deny]
+    default: segmented
+    profile_defaults:
+      hardened: default-deny
+
+description: |
+  Self-hosted runners sit in a dedicated network segment (VPC, subnet, VLAN or Kubernetes namespace)
+  with no inbound access from the internet, no route to internal or administration services, no traffic
+  between runners, and no access to the cloud instance metadata endpoint from jobs. Outbound traffic is
+  limited to the CI server and the services builds need. In Kubernetes, the namespaces of CI
+  controllers are protected by network policies that the cluster's CNI enforces.
+
+  With `{{ network_perimeter }}` set to `default-deny`, all runner and controller namespaces use
+  default-deny network policies with documented flows, and managed build pools sit inside a service
+  perimeter (for example VPC Service Controls).
+
+  Allowlisting of package registries for dependency downloads is covered by CB-DEP-CI-003.
+rationale: |
+  Jobs run code from pull requests and third-party dependencies. On a flat network that code can reach
+  databases, admin interfaces, other runners and the CI controller. The metadata endpoint hands out the
+  instance's cloud credentials to any process that asks, which turns a build into cloud access.
+impact: |
+  Jobs that call internal services (integration tests, deployments) need explicit flows or dedicated
+  runners in the right segment. Blocking metadata requires that nothing on the runner depends on the
+  instance role, or that the runner agent is allowed and jobs are not.
+notes: |
+  Flux installs network policies in `flux-system` so that only Flux components can fetch source
+  artifacts served over HTTP inside the cluster; they protect nothing if the CNI does not enforce
+  network policies. On Google Cloud Build, VPC Service Controls apply only to private pools, Pub/Sub
+  triggers are not supported inside a perimeter, and logs must go to Cloud Logging only or a bucket
+  inside the perimeter. On GitHub-hosted runners, network egress can be monitored and blocked with
+  tools such as StepSecurity Harden-Runner.
+
+audit:
+  manual: |
+    Use read access to network configuration (VPC, firewall, security groups, network policies) and
+    runner deployment manifests.
+
+    1. Map the networks runners sit in and the routes and firewall rules from them to internal ranges,
+       administration services, other runners and the CI controller.
+    2. From a test job on each runner type, try to reach an internal service and the metadata endpoint
+       (`169.254.169.254`); both must fail.
+    3. Per product:
+       - **GitHub / GitLab / Gitea / Forgejo / Buildkite** self-hosted runners: runner hosts are in a
+         dedicated subnet; metadata access from jobs is blocked (firewall rule, or IMDSv2 with hop limit
+         `1` for containerized jobs on AWS); the instance role is minimal. GitLab
+         Docker runners can set `FF_NETWORK_PER_BUILD` for a network per job.
+       - **Argo Workflows**: `NetworkPolicy` objects in the Argo namespace allow only the documented
+         flows (Argo Server ingress, metrics from Prometheus, egress to the database and artifact
+         store).
+       - **Flux**: the network policies installed in `flux-system` exist and are enforced by the CNI
+         (validated with a tool such as Cyclonus or Sonobuoy).
+       - **Google Cloud Build**: with `{{ network_perimeter }}` set to `default-deny`, private pools are
+         in a VPC Service Controls perimeter that restricts `cloudbuild.googleapis.com`, with destination
+         Artifact Registry and Cloud Storage projects inside it, and pools use `NO_PUBLIC_EGRESS` where
+         possible.
+    4. Fail if a job can reach internal or administration services, other runners or the metadata
+       endpoint; with `{{ network_perimeter }}` set to `default-deny`, also fail if runner or controller
+       namespaces lack default-deny policies or managed pools sit outside a perimeter.
+remediation:
+  manual: |
+    1. Move runners into a dedicated network segment with no inbound access from the internet and
+       firewall rules that deny traffic to internal ranges and between runners.
+    2. Block the metadata endpoint for jobs (host firewall, IMDSv2 hop limit `1`, Kubernetes network
+       policy), and reduce the instance role to the minimum.
+    3. Per product:
+       - **Argo Workflows / Flux**: add or keep network policies on controller namespaces and use a CNI
+         that enforces them.
+       - **Google Cloud Build**: create a VPC Service Controls perimeter around the private pool project,
+         restrict the Cloud Build API, and set build logging to `CLOUD_LOGGING_ONLY`.
+    4. Run the reachability tests again from a job on each runner type.
+
+references:
+  - title: Self-managed runner security (Network segmentation)
+    url: https://docs.gitlab.com/runner/security/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist (Network and data exposure)
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows security (Network security)
+    url: https://argo-workflows.readthedocs.io/en/latest/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security best practices (Network isolation)
+    url: https://fluxcd.io/flux/security/best-practices/
+    publisher: Flux project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using VPC Service Controls with private pools
+    url: https://docs.cloud.google.com/build/docs/private-pools/using-vpc-service-controls
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configure the Instance Metadata Service options
+    url: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: partial
+    note: Covers network separation of build runners; other environments are out of scope.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-7(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.005
+  - framework: mitre-attack
+    id: T1046
+related_controls:
+  - id: CB-DEP-CI-003
+    type: related
+  - id: CB-CICD-RUN-022
+    type: related
+  - id: CB-CICD-PLAT-005
+    type: related
+  - id: CB-CICD-RUN-007
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

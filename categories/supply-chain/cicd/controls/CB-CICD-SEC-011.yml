@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-011
+title: Rotate remaining static secrets on a schedule and delete unused ones
+finding:
+  title: Static CI secrets and service connections are years old or no longer used
+  description: A secret that never changes stays valid in every log, backup, laptop and former employee's memory it ever reached, and unused secrets keep that exposure without any benefit.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, rotation, credential-lifecycle, service-connections, webhooks]
+
+description: |
+  Every long-lived secret that cannot yet be replaced by a federated or platform-issued credential
+  (CI secrets and variables, service connections, deploy keys, webhook secrets) has an owner and a
+  rotation period of at most {{ max_secret_age }} days. It is rotated immediately when a leak is
+  suspected: a secret scanning alert, a compromised runner or account, or the departure of someone
+  who had access to it.
+
+  Secrets and service connections that no pipeline has used for a review period are deleted, not
+  just left in place. Rotation is automated where the issuing system and the secrets store allow
+  it.
+
+  Moving to short-lived credentials is covered by CB-CICD-SEC-015; the inventory that gives each
+  secret an owner by CB-CICD-SEC-001; automatic revocation of leaked platform tokens by
+  CB-CICD-IAM-031.
+parameters:
+  - name: max_secret_age
+    type: integer
+    description: Maximum age of a static secret before it must be rotated.
+    unit: days
+    default: 365
+    minimum: 1
+    maximum: 365
+rationale: |
+  Static secrets accumulate exposure: each job log, cache, backup, debug session and person that
+  saw them is a possible source of leak, and nobody can be sure that all copies were found after an
+  incident. Regular rotation bounds the useful life of a stolen copy. Deleting unused secrets
+  removes credentials that would only be noticed after being abused.
+impact: |
+  Rotation needs a tested procedure per secret, and the issuing system must allow two valid values
+  during the switch, otherwise pipelines fail briefly. Deleting a secret that was still used
+  breaks the pipelines that relied on it.
+notes: |
+  Azure Pipelines may disable Azure Resource Manager service connections that were not used for
+  100 days; disabled connections should then be deleted, not re-enabled by default. The Woodpecker
+  webhook token does not cover the request body, so a leaked webhook URL lets anyone send forged
+  hooks for the repository until the secret is rotated.
+
+audit:
+  manual: |
+    Use a role that can list secrets and service connections with their metadata (values are not
+    needed).
+
+    1. List the static secrets with their last update date and their last use where the platform
+       records it:
+       - **GitHub**: `GET /orgs/{org}/actions/secrets`, `GET /repos/{owner}/{repo}/actions/secrets`
+         and `GET /repos/{owner}/{repo}/environments/{environment_name}/secrets` return
+         `updated_at` for each secret.
+       - **Azure DevOps**: **Project settings** > **Service connections** > connection > **Usage
+         history** shows the last use; variable groups linked to Azure Key Vault show the rotation
+         date in Key Vault.
+       - **Buildkite**: the rotation date is recorded in the secrets store that holds the secret
+         (Buildkite secrets or the external manager).
+       - **Woodpecker**: record when **Repair repository** was last run for each repository whose
+         webhook URL or secret could have been exposed.
+    2. Compare each date with `{{ max_secret_age }}` days and with the dates of known incidents and
+       departures.
+    3. Look for secrets and service connections with no use in the last review period.
+    4. Fail if a static secret is older than `{{ max_secret_age }}` days, was not rotated after a
+       suspected leak, or has not been used in the review period and still exists.
+
+remediation:
+  manual: |
+    1. Give each static secret a rotation procedure: create a new value at the issuer, update the
+       store, run the pipelines, revoke the old value.
+    2. Automate rotation where possible (for example with the secrets manager's rotation feature
+       or a scheduled pipeline that rotates and updates the value).
+       - **Azure DevOps**: keep secrets in Azure Key Vault with rotation and link them to variable
+         groups; review service connection **Usage history** quarterly and delete unused
+         connections.
+       - **GitHub**: update the value with `gh secret set`; prefer OIDC (CB-CICD-SEC-015) for
+         cloud credentials so no rotation is needed.
+       - **Woodpecker**: run **Repair repository** in the repository settings to rotate the
+         webhook secret when the URL or secret may have leaked.
+    3. Delete secrets and connections that were not used in the review period, after confirming
+       with their owner.
+    4. Add rotation to the incident response runbook (CB-CICD-LOG-009) so that every suspected
+       leak triggers it.
+
+references:
+  - title: REST API endpoints for GitHub Actions secrets
+    url: https://docs.github.com/en/rest/actions/secrets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Azure Pipelines - service connections and resources
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Connect to Azure with an Azure Resource Manager service connection
+    url: https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist - secrets management
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security boundaries
+    url: https://woodpecker-ci.org/docs/usage/security-boundaries
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers rotation and removal of static secrets.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(3)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-001
+    type: related
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-CICD-IAM-031
+    type: related
+  - id: CB-CICD-LOG-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

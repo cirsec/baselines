@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Enregistrer les runners avec des jetons à courte durée de vie et à usage unique
+finding:
+  title: Des jetons d'enregistrement de runner réutilisables sont encore acceptés
+  description: Un jeton d'enregistrement qui reste valable pour de multiples enregistrements permet à quiconque le trouve dans un script, une image ou une page de wiki de rattacher un runner pirate qui reçoit ensuite des jobs et leurs secrets.
+description: |
+  Les runners et agents sont enregistrés avec un identifiant créé pour ce runner, qui expire vite ou ne
+  sert qu'une fois : workflow de création de runner de GitLab (jeton d'authentification du runner),
+  jetons d'enregistrement GitHub (valables une heure) ou configurations de runner just-in-time. Les
+  anciens jetons d'enregistrement partagés sont désactivés quand la plate-forme le permet, et
+  réinitialisés après chaque usage sinon. Les jetons d'enregistrement ne sont jamais intégrés à des
+  images, versionnés ou stockés dans des variables d'environnement durables.
+
+  La durée de vie et la protection de l'identifiant propre du runner après l'enregistrement relèvent de
+  CB-CICD-RUN-005.
+rationale: |
+  Un jeton d'enregistrement réutilisable est une invitation permanente : avec lui, une machine choisie par
+  l'attaquant rejoint la flotte de runners et commence à recevoir des jobs, avec leurs secrets et jetons
+  de job. Ces jetons finissent dans des scripts de provisionnement, des données cloud-init et des images de
+  conteneur, où ils survivent à la personne qui les a créés.
+impact: |
+  L'automatisation de provisionnement des runners doit demander un jeton neuf à chaque enregistrement
+  (appel d'API ou workflow de création de runner) au lieu de lire une valeur fixe.
+notes: |
+  GitLab classe les jetons d'enregistrement comme hérités et recommande le workflow de création de runner.
+  Sur Gitea, un jeton d'enregistrement, y compris celui posé avec `GITEA_RUNNER_REGISTRATION_TOKEN`, reste
+  valable pour un nombre quelconque d'enregistrements jusqu'à sa réinitialisation.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de la plate-forme en lecture.
+
+    1. Trouver où le provisionnement des runners obtient son identifiant d'enregistrement (scripts,
+       images, infrastructure as code, coffres de secrets) et vérifier qu'il est obtenu à chaque
+       enregistrement.
+    2. Vérifier les réglages de la plate-forme :
+       - **GitLab** : **Admin** > **Settings** > **CI/CD** > **Runners** > **Runner registration** :
+         **Allow runner registration token** est décoché (autorisé par défaut). Vérifier dans les fichiers
+         `config.toml` les runners enregistrés avec un jeton d'enregistrement.
+       - **Gitea** : aucun jeton global n'est posé via `GITEA_RUNNER_REGISTRATION_TOKEN` ou
+         `GITEA_RUNNER_REGISTRATION_TOKEN_FILE` ; les jetons d'enregistrement d'instance, d'organisation et
+         de dépôt (**Settings** > **Actions** > **Runners**) sont réinitialisés après chaque
+         enregistrement.
+       - **GitHub** : les runners auto-hébergés sont enregistrés avec le jeton d'enregistrement valable une
+         heure ou une configuration just-in-time générée par l'API REST, jamais avec un jeton stocké dans
+         une image.
+    3. Échec si un identifiant d'enregistrement capable d'enregistrer plus d'un runner reste valable après
+       usage, ou est stocké dans une image, un dépôt ou une variable durable.
+remediation:
+  manual: |
+    1. Modifier le provisionnement pour demander un identifiant d'enregistrement à chaque nouveau runner
+       via l'API de la plate-forme, et ne le transmettre au runner qu'au démarrage.
+    2. Désactiver ou renouveler les anciens jetons :
+       - **GitLab** : migrer les runners vers le workflow de création de runner, puis en tant
+         qu'administrateur décocher **Allow runner registration token** ; faire de même pour les groupes
+         qui l'autorisent encore.
+       - **Gitea** : retirer `GITEA_RUNNER_REGISTRATION_TOKEN` de l'environnement du serveur et
+         réinitialiser le jeton d'enregistrement dans l'interface web après chaque enregistrement.
+       - **GitHub** : enregistrer les runners avec `config.sh` et un jeton demandé à l'instant, ou avec une
+         configuration just-in-time (CB-CICD-RUN-012).
+    3. Chercher d'anciens jetons d'enregistrement dans les images, dépôts et wikis et les réinitialiser.

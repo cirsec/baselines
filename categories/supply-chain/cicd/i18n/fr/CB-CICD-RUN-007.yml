@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Authentifier les connexions des runners vers le serveur et vers les hôtes de sources
+finding:
+  title: Des runners se connectent par des canaux non vérifiés ou acceptent des clés d'hôte inconnues
+  description: Un runner qui parle à son serveur sans TLS ni vérification de certificat, ou qui accepte n'importe quelle clé d'hôte SSH au premier checkout, peut recevoir des jobs ou du code source de quiconque est placé sur le réseau, et lui livre ses identifiants.
+description: |
+  Les runners et agents se connectent au serveur CI/CD en TLS avec vérification du certificat, ou en
+  WebSocket sur le point d'accès HTTPS du serveur. Les ports d'écoute d'agents inutilisés sont fermés, et
+  ceux qui sont nécessaires ne sont joignables que depuis les réseaux de runners. Les checkouts de sources
+  en SSH vérifient les clés d'hôte contre un fichier `known_hosts` géré au lieu d'accepter de nouvelles
+  clés au premier usage.
+
+  Les réglages TLS de la plate-forme elle-même relèvent de CB-CICD-PLAT-004 ; TLS et vérification des clés
+  d'hôte pour les connexions aux dépôts faites par la plate-forme relèvent de CB-CICD-SEC-019.
+rationale: |
+  La connexion du runner transporte jobs, secrets et identifiants du runner. Sans vérification, un
+  attaquant sur le chemin peut se faire passer pour le serveur et les lire, ou se faire passer pour un
+  hôte Git et servir des sources modifiées qui seront ensuite construites et publiées.
+impact: |
+  Les serveurs auto-hébergés ont besoin d'un certificat reconnu par les runners (AC interne diffusée dans
+  les images de runner). Les fichiers `known_hosts` gérés doivent être mis à jour quand un hôte Git
+  renouvelle ses clés.
+notes: |
+  Woodpecker sert le gRPC des agents sans TLS et son agent ignore la vérification de certificat par
+  défaut : placer le serveur derrière un proxy TLS ou utiliser un socket Unix pour les agents locaux. Le
+  port TCP des agents entrants de Jenkins révèle la version de Jenkins à quiconque s'y connecte.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration des runners (fichiers, manifestes de déploiement) et
+    aux réglages de sécurité du serveur.
+
+    1. Pour chaque type de runner, vérifier le schéma de l'URL du serveur et les réglages de vérification
+       de certificat.
+    2. Vérifier quels ports d'écoute d'agents le serveur expose et d'où ils sont joignables.
+    3. Vérifier comment les runners vérifient les clés d'hôte SSH pour les checkouts.
+       - **Woodpecker** : les agents posent `WOODPECKER_GRPC_SECURE=true` (défaut `false`) et
+         `WOODPECKER_GRPC_SKIP_VERIFY=false` (défaut `true`).
+       - **TeamCity** : `serverUrl` dans le `buildAgent.properties` de chaque agent commence par
+         `https://`.
+       - **Jenkins** : **Manage Jenkins** > **Security** > **Agents** > **TCP port for inbound agents** est
+         désactivé et les agents entrants utilisent WebSocket, ou réglé sur un port fixe joignable
+         uniquement depuis les réseaux d'agents. L'image Docker officielle expose le port 50000.
+       - **Buildkite** : les agents tournent avec `no-ssh-keyscan=true` (`--no-ssh-keyscan`) et un
+         `known_hosts` géré.
+    4. Échec si un runner se connecte au serveur sans TLS ou sans vérification de certificat, si un port
+       d'agent est joignable hors des réseaux de runners, ou si les checkouts SSH acceptent des clés d'hôte
+       inconnues.
+remediation:
+  manual: |
+    1. Donner au serveur CI un certificat reconnu par les hôtes de runner et passer les URL des runners en
+       HTTPS.
+    2. Par produit :
+       - **Woodpecker** : terminer le gRPC des agents sur un proxy TLS (ou un socket Unix via
+         `WOODPECKER_GRPC_ADDR` pour les agents sur le même hôte) et poser
+         `WOODPECKER_GRPC_SECURE=true`, `WOODPECKER_GRPC_SKIP_VERIFY=false` sur les agents.
+       - **TeamCity** : poser `serverUrl=https://...` dans `buildAgent.properties` et redémarrer les
+         agents.
+       - **Jenkins** : configurer les agents entrants en WebSocket et désactiver le port TCP des agents, ou
+         fixer un port et ne l'autoriser que depuis les réseaux d'agents.
+       - **Buildkite** : poser `no-ssh-keyscan=true` et diffuser un fichier `known_hosts` contenant les
+         clés des hôtes Git.
+    3. Filtrer sur le serveur les ports d'agents inutilisés.

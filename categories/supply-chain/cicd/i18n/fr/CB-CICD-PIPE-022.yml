@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-022
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les journaux de pipeline et le détail des jobs aux membres du projet
+finding:
+  title: Les pipelines, journaux de jobs et artefacts des projets publics ou internes sont visibles des non-membres
+  description: Les journaux et artefacts de jobs contiennent souvent des noms d'hôtes internes, des versions de dépendances, des valeurs partiellement masquées ou des sorties de débogage, et dans les projets publics ou internes n'importe qui, ou tout utilisateur authentifié, peut les lire.
+description: |
+  Dans les projets GitLab publics et internes, les pipelines, journaux de jobs et artefacts de jobs
+  ne sont visibles que des membres du projet. **Project-based pipeline visibility** est décoché, et
+  pour les projets publics la visibilité de la fonctionnalité **CI/CD** vaut **Only project
+  members**. Les non-membres peuvent au plus voir l'état des pipelines sur les merge requests et les
+  commits.
+
+  L'accès public aux artefacts sur d'autres plates-formes et stockages relève de CB-CICD-ART-010.
+rationale: |
+  Les journaux sont écrits pour les personnes qui dépannent le build, pas pour le public. Ils
+  exposent l'environnement de build, des points d'accès internes et parfois des secrets qui ont
+  échappé au masquage, ce qui aide un attaquant à préparer une attaque ciblée sur le pipeline.
+impact: |
+  Les contributeurs extérieurs aux projets publics ne peuvent plus lire les journaux des pipelines en
+  échec et ont besoin qu'un membre leur en transmette la partie utile.
+notes: |
+  Sur GitHub, les journaux de workflow des dépôts publics sont toujours publics ; il n'existe pas de
+  réglage équivalent, ce qui rend CB-CICD-PIPE-019 et CB-CICD-SEC-022 d'autant plus importants.
+setting:
+  location: Projet GitLab > Settings > CI/CD > General pipelines > Project-based pipeline visibility
+  recommended_value: Décoché (public_builds = false) ; visibilité CI/CD Only project members sur les projets publics
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages du projet (Maintainer).
+
+    1. Lister les projets publics et internes.
+    2. Pour chacun, vérifier **Settings** > **CI/CD** > **General pipelines** > **Project-based
+       pipeline visibility** (`public_builds` dans `GET /projects/:id`) et, pour les projets publics,
+       **Settings** > **General** > **Visibility, project features, permissions** > **CI/CD**
+       (`builds_access_level`).
+    3. Échec si `public_builds` vaut `true`, ou si un projet public a un `builds_access_level` autre
+       que `private` (**Only project members**).
+remediation:
+  manual: |
+    1. En tant que Maintainer, décocher **Project-based pipeline visibility** dans **Settings** >
+       **CI/CD** > **General pipelines**, ou appeler `PUT /projects/:id` avec `public_builds=false`.
+    2. Pour les projets publics, régler **CI/CD** sur **Only project members** dans **Settings** >
+       **General** > **Visibility, project features, permissions** (`builds_access_level=private`).
+    3. Relire les journaux de jobs publics existants pour repérer les valeurs exposées et renouveler
+       tout secret trouvé.
+  rollback: |
+    Recocher **Project-based pipeline visibility** si un projet doit publier ses journaux.

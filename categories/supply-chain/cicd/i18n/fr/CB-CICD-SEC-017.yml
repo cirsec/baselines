@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Maîtriser la clé de signature des jetons d'identité de la forge et les émetteurs externes auxquels elle fait confiance
+finding:
+  title: La forge auto-hébergée signe les jetons d'identité des jobs avec une clé non gérée et accepte n'importe quel émetteur JWT externe
+  description: Quiconque lit la clé de signature peut émettre des jetons d'identité que les fournisseurs cloud acceptent comme identités de pipeline, et une liste d'émetteurs ouverte permet à tout utilisateur de faire accepter à la forge des jetons d'un émetteur qu'il contrôle ou de lui faire interroger des hôtes internes.
+description: |
+  Une forge auto-hébergée qui émet des jetons d'identité OpenID Connect pour ses jobs les signe
+  avec une clé asymétrique lisible par le seul service de la forge, tenue hors des sauvegardes qui
+  quittent la zone de confiance de la plate-forme, et renouvelée périodiquement et après toute
+  exposition soupçonnée. Les jetons ont une durée de vie courte, d'une heure au plus.
+
+  Quand la forge accepte aussi des JWT de systèmes externes pour authentifier des appels d'API
+  (Authorized Integrations de Forgejo), seuls les émetteurs d'une liste d'autorisation explicite
+  peuvent être enregistrés, et les émetteurs situés sur des réseaux privés sont refusés.
+
+  L'ancrage de la confiance des fournisseurs cloud sur les revendications des jetons relève de
+  CB-CICD-SEC-016 ; la protection des autres clés de la plate-forme, de CB-CICD-PLAT-007.
+setting:
+  location: Sections `[actions]` et `[authorized_integration]` du fichier `app.ini` de Forgejo
+  recommended_value: "Algorithme asymétrique, fichier de clé protégé et renouvelé, ID_TOKEN_EXPIRATION_TIME <= 3600 ; ALLOWED_DOMAINS limité aux émetteurs de confiance, ALLOW_LOCALNETWORKS = false"
+rationale: |
+  Les rôles cloud font confiance aux jetons d'identité de la forge parce qu'ils font confiance à sa
+  clé de signature. Une clé copiée permet à un attaquant de se faire passer pour n'importe quel
+  dépôt et branche de la forge auprès de tous les comptes cloud fédérés avec elle, sans exécuter de
+  job. Sans liste d'émetteurs autorisés, tout utilisateur peut enregistrer une Authorized
+  Integration pour un émetteur arbitraire, ce qui fait interroger par la forge des hôtes choisis
+  par l'utilisateur et accepter des jetons qu'il peut émettre.
+impact: |
+  Renouveler la clé de signature impose de publier la nouvelle clé publique avant que des jetons
+  signés avec elle ne soient utilisés ; les fournisseurs cloud qui mettent en cache le jeu de clés
+  peuvent rejeter brièvement les nouveaux jetons. La liste d'émetteurs autorisés doit être mise à
+  jour avant que les utilisateurs puissent intégrer un nouveau système externe.
+audit:
+  manual: |
+    Utiliser un compte avec un accès en lecture à la configuration et au répertoire de données de
+    Forgejo.
+
+    1. Dans `app.ini`, section `[actions]` :
+       - `ID_TOKEN_SIGNING_ALGORITHM` est un algorithme asymétrique (Forgejo n'accepte ici que les
+         variantes RS, ES ou EdDSA).
+       - Le fichier désigné par `ID_TOKEN_SIGNING_PRIVATE_KEY_FILE` (relatif à `APP_DATA_PATH`
+         s'il n'est pas absolu) n'est lisible que par le compte de service Forgejo, n'est dans aucun
+         dépôt, et sa date de création est dans la période de renouvellement.
+       - `ID_TOKEN_EXPIRATION_TIME` vaut 3600 secondes ou moins.
+    2. Dans la section `[authorized_integration]` :
+       - `ALLOWED_DOMAINS` ne liste que les émetteurs de confiance de l'organisation (par exemple
+         `token.actions.githubusercontent.com` ou l'hôte de la forge elle-même) ; il n'est pas vide,
+         car une valeur vide autorise tous les domaines.
+       - `ALLOW_LOCALNETWORKS` vaut `false`.
+       - `REQUEST_TIMEOUT` garde sa valeur courte par défaut sauf raison particulière.
+    3. Échec si l'algorithme est symétrique, si le fichier de clé est lisible par d'autres comptes
+       ou plus ancien que la période de renouvellement, si les jetons vivent plus d'une heure, si
+       `ALLOWED_DOMAINS` est vide ou si les réseaux locaux sont autorisés.
+remediation:
+  manual: |
+    1. Restreindre le fichier de clé de signature au compte de service Forgejo et l'exclure des
+       dépôts de configuration.
+    2. Régler dans `app.ini` :
+       ```
+       [actions]
+       ID_TOKEN_SIGNING_ALGORITHM = RS256
+       ID_TOKEN_EXPIRATION_TIME = 3600
+
+       [authorized_integration]
+       ALLOWED_DOMAINS = token.actions.githubusercontent.com, forge.example.com
+       ALLOW_LOCALNETWORKS = false
+       ```
+       Adapter `ALLOWED_DOMAINS` aux émetteurs réellement utilisés, puis redémarrer Forgejo.
+    3. Renouveler la clé de signature périodiquement et après toute exposition : générer un nouveau
+       fichier de clé, le déployer, redémarrer, et vérifier que les fournisseurs cloud acceptent
+       les jetons signés avec elle.

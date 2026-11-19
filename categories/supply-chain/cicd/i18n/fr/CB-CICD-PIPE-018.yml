@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-018
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne pas envoyer de variables de pipeline à des hôtes non approuvés
+finding:
+  title: Des scripts de pipeline envoient des variables CI ou des secrets à des points d'accès externes
+  description: Une étape qui poste les variables d'environnement avec curl ou wget, ou ouvre une connexion netcat vers une adresse IP brute, est soit une porte dérobée d'exfiltration, soit un accident prêt à divulguer tous les secrets du job.
+description: |
+  Les scripts de pipeline n'envoient pas de variables CI/CD, de secrets ou de jetons de job à des
+  points d'accès réseau, sauf aux hôtes relus qui en ont besoin (le registre, l'API cloud, la cible
+  de déploiement) et qui sont listés pour le pipeline. Le niveau attendu est `{{ exfil_check }}` :
+
+  - `ci-variables` : aucun appel `curl`, `wget` ou similaire ne transporte de variables CI ou de
+    secrets vers un hôte hors de la liste approuvée ;
+  - `any-unlisted-host` : en plus, tout appel réseau des scripts vers une adresse IP brute ou un hôte
+    hors liste est signalé et justifié, y compris les connexions `nc`/netcat.
+
+  Le filtrage des sorties réseau sur les runners relève de CB-CICD-RUN-023 ; la manipulation des
+  secrets dans les jobs relève de CB-CICD-SEC-023.
+rationale: |
+  Le moyen le plus rapide de voler des secrets CI est un `curl` d'une ligne qui poste `env` vers le
+  serveur d'un attaquant, souvent caché dans un long script ou un fichier utilitaire. Relire et lister
+  les hôtes avec lesquels chaque pipeline communique fait d'une telle ligne une anomalie évidente en
+  revue et dans les analyses automatiques.
+impact: |
+  Chaque pipeline a besoin d'une courte liste des hôtes qu'il appelle légitimement. Les analyseurs
+  signalent aussi des appels légitimes, qui doivent être relus une fois et documentés.
+parameters:
+  exfil_check: ci-variables interdit d'envoyer des variables CI vers des hôtes hors liste ; any-unlisted-host signale tout appel vers des IP brutes ou des hôtes hors liste.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline et aux scripts qu'ils appellent.
+
+    1. Rechercher dans les étapes `script:` (GitLab), `run:` (GitHub Actions, CircleCI) et
+       équivalentes, ainsi que dans les scripts shell appelés, les commandes `curl`, `wget`,
+       `nc`/`netcat`, `Invoke-WebRequest` et similaires. Checkov (`CKV_GITLABCI_1`,
+       `CKV_CIRCLECIPIPELINES_5`, `CKV_CIRCLECIPIPELINES_7`) signale les motifs courants.
+    2. Pour chaque appel, comparer la destination à la liste d'hôtes approuvés du pipeline et
+       vérifier si des variables, secrets ou jetons sont envoyés.
+    3. Échec si un script envoie des variables CI ou des secrets à un hôte hors liste, ou, pour
+       `{{ exfil_check }}` = `any-unlisted-host`, si un appel vise une adresse IP brute ou un hôte
+       hors liste sans justification consignée.
+remediation:
+  manual: |
+    1. Supprimer les appels qui envoient des variables à des hôtes inconnus et rechercher comment ils
+       ont été introduits (CB-CICD-LOG-009 en cas de malveillance).
+    2. Rédiger la liste des hôtes approuvés de chaque pipeline à côté de sa définition.
+    3. Ajouter un analyseur de pipeline ou une règle spécifique aux contrôles du dépôt de pipeline
+       pour que les nouveaux appels vers des hôtes hors liste échouent en revue (CB-CICD-TEST-004).
+    4. Appliquer la même liste au niveau réseau sur les runners (CB-CICD-RUN-023).

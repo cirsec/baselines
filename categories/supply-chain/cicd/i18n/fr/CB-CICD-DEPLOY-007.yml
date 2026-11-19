@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher le déploiement en production de builds périmés
+finding:
+  title: Une exécution de pipeline plus ancienne ou un ancien artefact peut écraser le déploiement de production en cours
+  description: Quand les jobs de déploiement ne sont pas sérialisés et que rien ne vérifie l'âge de ce qui est déployé, une ancienne exécution retardée, un job relancé ou un ancien artefact choisi délibérément peut ramener la production à une version aux vulnérabilités connues.
+description: |
+  Les déploiements vers un environnement de production sont sérialisés, et un job de déploiement
+  issu d'un pipeline plus ancien ne peut pas s'exécuter après qu'un plus récent a déployé. Niveau de
+  vérification : `{{ age_limit }}`.
+
+  - `newest-only` : les jobs de déploiement sont sérialisés par environnement et les jobs de
+    déploiement périmés sont rejetés par la plate-forme ; revenir à une version antérieure se fait en
+    la déployant par une nouvelle exécution de pipeline, après consignation de la décision.
+  - `build-horizon` : en plus, les systèmes critiques refusent les artefacts plus anciens qu'un
+    horizon de build défini (par exemple 90 jours après le build), pour qu'un ancien artefact construit
+    avec des dépendances et une chaîne de compilation dépassées ne puisse pas être redéployé ; il doit
+    être reconstruit à partir des sources et dépendances actuelles.
+
+  Les fenêtres de changement et verrous exclusifs relèvent de CB-CICD-DEPLOY-006 ; le retour arrière
+  protégé dans la livraison progressive de CB-CICD-DEPLOY-012.
+rationale: |
+  Les pipelines se terminent dans un ordre imprévisible. Sans sérialisation, une ancienne exécution
+  qui attendait un runner ou une approbation peut écraser un déploiement plus récent et réintroduire
+  sans bruit des bogues ou vulnérabilités corrigés. Un attaquant capable de déclencher ou relancer un
+  job peut exploiter la même faiblesse pour déployer volontairement une version vulnérable connue. Un
+  horizon de build limite aussi la durée pendant laquelle des artefacts construits avec des
+  dépendances anciennes et non corrigées restent déployables.
+impact: |
+  Relancer un ancien job de déploiement ne sert plus de retour arrière ; les retours arrière passent
+  par une nouvelle exécution de pipeline. Avec un horizon de build, les versions maintenues longtemps
+  doivent être reconstruites périodiquement.
+notes: |
+  Dans GitLab, **Prevent outdated deployment jobs** détermine l'âge d'après l'heure de démarrage du
+  job, pas celle du commit : le job manuel d'un commit plus récent peut être bloqué si le job d'un
+  pipeline plus ancien a été démarré plus tard. **Allow job retries for rollback deployments** est
+  activé par défaut et permet de relancer d'anciens jobs de déploiement ; GitLab conseille de le
+  décocher dans les projets sensibles.
+parameters:
+  age_limit: Ce qui est imposé sur l'âge des déploiements. newest-only sérialise les déploiements et rejette les jobs de déploiement périmés ; build-horizon refuse en plus, sur les systèmes critiques, les artefacts plus anciens que l'horizon de build de l'organisation.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages et définitions des pipelines.
+
+    1. Lister les jobs de déploiement en production et la manière dont ils sont déclenchés et
+       relancés.
+    2. Vérifier la sérialisation et la protection contre les jobs périmés :
+       - **GitLab** : les jobs de déploiement en production posent `resource_group` (par exemple
+         `resource_group: production`) ; **Settings** > **CI/CD** > **General pipelines** a **Prevent
+         outdated deployment jobs** coché et **Allow job retries for rollback deployments** décoché.
+       - **Azure DevOps** : les environnements de production ont la vérification **Exclusive lock**
+         (CB-CICD-DEPLOY-006).
+       - **Bitbucket** : un seul déploiement par environnement s'exécute à la fois ; vérifier que les
+         steps de déploiement utilisent des environnements `deployment:`.
+       - Autres plates-formes : un groupe de concurrence ou un verrou par environnement et une
+         vérification dans l'étape de déploiement que la version est plus récente que celle en
+         service.
+    3. Avec `build-horizon` : vérifier que l'étape de déploiement ou la politique d'admission compare
+       la date de build de l'artefact (issue de la provenance) à l'horizon et échoue s'il est plus
+       ancien.
+    4. Échec si deux déploiements peuvent s'exécuter en même temps en production, si un job de
+       déploiement plus ancien peut s'exécuter après un plus récent, ou (renforcé) si un artefact plus
+       ancien que l'horizon de build peut être déployé.
+remediation:
+  manual: |
+    1. Sérialiser les déploiements en production et rejeter les jobs périmés :
+       - **GitLab** : ajouter `resource_group: production` aux jobs de déploiement en production ;
+         dans **Settings** > **CI/CD** > **General pipelines**, cocher **Prevent outdated deployment
+         jobs** et décocher **Allow job retries for rollback deployments**.
+       - **Azure DevOps** : ajouter la vérification **Exclusive lock** à l'environnement de
+         production.
+       - Autres plates-formes : utiliser la fonction de concurrence ou de verrou de la plate-forme par
+         environnement.
+    2. Documenter le retour arrière comme une nouvelle exécution de pipeline qui déploie une version
+       choisie, avec approbation.
+    3. Pour `build-horizon` : lire la date de build dans la provenance de l'artefact dans l'étape de
+       déploiement ou la politique d'admission et rejeter les artefacts plus anciens que l'horizon ;
+       planifier des reconstructions périodiques des versions maintenues longtemps.

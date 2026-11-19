@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-004
+title: Register runners with short-lived, single-use tokens
+finding:
+  title: Reusable runner registration tokens are still accepted
+  description: A registration token that stays valid for many registrations lets anyone who finds it in a script, an image or a wiki page attach a rogue runner that then receives jobs and their secrets.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, registration, tokens, credentials]
+
+description: |
+  Runners and agents are registered with a credential that is created for that runner and expires
+  quickly or works once: GitLab's runner creation workflow (runner authentication token), GitHub
+  registration tokens (valid one hour) or just-in-time runner configurations. Legacy shared
+  registration tokens are disabled where the platform allows it, and reset after each use where it
+  does not. Registration tokens are never
+  baked into images, committed or stored in long-lived environment variables.
+
+  Lifetime and protection of the runner's own authentication credential after registration are
+  covered by CB-CICD-RUN-005.
+rationale: |
+  A reusable registration token is a standing invitation: with it, a machine of the attacker's
+  choice joins the runner fleet and starts receiving jobs, including their secrets and job tokens.
+  Such tokens end up in provisioning scripts, cloud-init data and container images, where they
+  outlive the person who created them.
+impact: |
+  Runner provisioning automation must request a fresh token for each registration (API call or
+  runner creation workflow) instead of reading a fixed value.
+notes: |
+  GitLab marks registration tokens as legacy and recommends the runner creation workflow. On Gitea,
+  a registration token, including one set with `GITEA_RUNNER_REGISTRATION_TOKEN`, stays valid for
+  any number of registrations until it is reset.
+
+audit:
+  manual: |
+    Use a platform administrator read role.
+
+    1. Find where runner provisioning gets its registration credential (scripts, images,
+       infrastructure-as-code, secret stores) and check that it is fetched per registration.
+    2. Check the platform settings:
+       - **GitLab**: **Admin** > **Settings** > **CI/CD** > **Runners** > **Runner registration**:
+         **Allow runner registration token** is cleared (it is allowed by default). Check
+         `config.toml` files for runners registered with a registration token.
+       - **Gitea**: no global token is set through `GITEA_RUNNER_REGISTRATION_TOKEN` or
+         `GITEA_RUNNER_REGISTRATION_TOKEN_FILE`; registration tokens at instance, organization and
+         repository level (**Settings** > **Actions** > **Runners**) are reset after each
+         registration.
+       - **GitHub**: self-hosted runners are registered with the one-hour registration token or a
+         just-in-time configuration generated through the REST API, never with a token stored in an
+         image.
+    3. Fail if a registration credential that can register more than one runner stays valid after
+       use, or is stored in an image, a repository or a long-lived variable.
+remediation:
+  manual: |
+    1. Change provisioning to request a registration credential for each new runner through the
+       platform API, and pass it to the runner at start-up only.
+    2. Disable or rotate legacy tokens:
+       - **GitLab**: migrate runners to the runner creation workflow, then as an administrator clear
+         **Allow runner registration token**; do the same for groups that still allow it.
+       - **Gitea**: remove `GITEA_RUNNER_REGISTRATION_TOKEN` from the server environment and reset
+         the registration token in the web interface after each registration.
+       - **GitHub**: register runners with `config.sh` and a freshly requested token, or with a
+         just-in-time configuration (CB-CICD-RUN-012).
+    3. Search images, repositories and wikis for old registration tokens and reset them.
+
+references:
+  - title: Continuous integration and deployment admin settings (Control runner registration)
+    url: https://docs.gitlab.com/administration/settings/continuous_integration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Migrating to the new runner registration workflow
+    url: https://docs.gitlab.com/ci/runners/new_creation_workflow/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea Actions runner (Obtain a registration token)
+    url: https://docs.gitea.com/usage/actions/runner
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure use reference (Using just-in-time runners)
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers runner registration credentials only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-RUN-002
+    type: related
+  - id: CB-CICD-RUN-005
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

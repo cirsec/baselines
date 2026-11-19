@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Définir les analyses de sécurité obligatoires et les appliquer de façon centralisée
+finding:
+  title: Les analyses de sécurité dépendent de chaque équipe qui les ajoute à son propre pipeline
+  description: Quand chaque projet choisit ses analyses, les dépôts nouveaux ou oubliés n'en exécutent aucune, et une équipe sous pression peut retirer une analyse de son pipeline sans que personne ne le remarque.
+parameters:
+  enforcement: Mode d'application des analyses obligatoires. `default-config` = une configuration de sécurité ou un modèle par défaut est appliqué à tous les dépôts nouveaux et existants ; `enforced` = les analyses sont appliquées par une politique que les projets ne peuvent ni désactiver ni retirer.
+description: |
+  L'organisation écrit quelles catégories d'analyse de sécurité chaque projet doit exécuter (au
+  moins l'analyse statique, la détection de secrets et l'analyse des dépendances, plus l'analyse
+  des conteneurs et de l'infrastructure as code quand le projet contient de tels fichiers) et les
+  applique de façon centralisée par la plate-forme plutôt qu'en s'en remettant à chaque pipeline.
+  Le niveau exigé est `{{ enforcement }}` :
+  - `default-config` : une configuration de sécurité, un modèle d'analyse ou un modèle de pipeline
+    par défaut est rattaché à tous les dépôts existants et, par défaut, aux nouveaux ;
+  - `enforced` : les analyses sont appliquées par une politique (configuration de sécurité
+    imposée, politique d'exécution d'analyses, modèle obligatoire ou hook d'agent) que les
+    mainteneurs de projet ne peuvent pas désactiver.
+
+  Le contenu de chaque analyse relève de CB-CICD-TEST-002 (analyse statique), CB-CICD-TEST-005
+  (images) et CB-CICD-TEST-006 (infrastructure as code) ; les modèles de pipeline obligatoires en
+  général de CB-CICD-PIPE-003.
+rationale: |
+  Une analyse de sécurité n'aide que là où elle tourne. Une couverture mise en place projet par
+  projet laisse des trous dans les dépôts nouveaux, petits et oubliés, qui sont souvent ceux que
+  trouvent les attaquants. Appliquer les analyses depuis le niveau de l'organisation donne une
+  couverture complète par défaut, et l'imposition empêche une équipe seule de retirer en silence un
+  contrôle sur lequel d'autres comptent.
+impact: |
+  Les analyses centralisées allongent les pipelines et ajoutent des résultats à trier dans chaque
+  projet. Certains analyseurs sont payants (GitHub Code Security et Secret Protection pour les
+  dépôts privés, GitLab Ultimate pour les politiques d'exécution d'analyses, Buildkite Enterprise
+  pour les modèles de pipeline).
+notes: |
+  Sur GitHub, l'imposition d'une configuration de sécurité peut être rompue si Actions est ensuite
+  désactivé sur un dépôt, car la configuration par défaut de code scanning a besoin d'Actions. Les
+  modèles de pipeline Buildkite ne peuvent pas être combinés avec les pipelines signés.
+audit:
+  manual: |
+    Utiliser un rôle propriétaire d'organisation ou gestionnaire de la sécurité en lecture.
+
+    1. Récupérer la liste écrite des catégories d'analyse obligatoires.
+    2. Vérifier leur mode d'application :
+       - **GitHub** : **Settings** de l'organisation ou de l'entreprise > **Advanced Security** >
+         **Configurations** : une configuration qui active les analyses obligatoires est réglée
+         avec **Use as default for newly created repositories**, est rattachée à tous les dépôts,
+         et pour `enforced` a **Enforce configuration** sélectionné.
+       - **GitLab** : les projets incluent les modèles ou composants d'analyse (SAST, Secret
+         Detection, Dependency Scanning, Container Scanning, analyse IaC) ; pour `enforced`, une
+         **scan execution policy** liée au groupe de premier niveau les exécute (GitLab Ultimate).
+       - **Buildkite** : un modèle de pipeline (offre Enterprise) ou un hook d'agent ajoute les
+         étapes d'analyse à chaque pipeline.
+    3. Échec s'il n'existe pas de liste écrite, si des dépôts ne sont pas couverts par la
+       configuration centrale, ou, quand `{{ enforcement }}` vaut `enforced`, si les mainteneurs
+       de projet peuvent désactiver une analyse obligatoire.
+remediation:
+  manual: |
+    1. Convenir des catégories d'analyse obligatoires avec les équipes de développement et
+       l'équipe sécurité.
+    2. Les appliquer de façon centralisée :
+       - **GitHub** (propriétaire d'organisation ou gestionnaire de la sécurité) : créer une
+         configuration de sécurité personnalisée (ou utiliser celle recommandée par GitHub) avec les
+         fonctions nécessaires, sélectionner **Use as default for newly created repositories**,
+         l'appliquer à tous les dépôts, et sélectionner **Enforce configuration** pour `enforced`.
+       - **GitLab** (Owner du groupe) : ajouter dans **Secure** > **Policies** du groupe de premier
+         niveau des politiques d'exécution d'analyses qui lancent les analyseurs sur la branche par
+         défaut et dans les pipelines de merge request.
+       - **Buildkite** (administrateur de l'organisation) : créer un modèle de pipeline avec les
+         étapes d'analyse et l'affecter à tous les pipelines, ou ajouter les analyses dans un hook
+         d'agent sur chaque file.
+    3. Publier la couverture chaque mois et relancer les dépôts qui en sortent.

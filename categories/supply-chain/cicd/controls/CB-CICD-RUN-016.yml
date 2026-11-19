@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-016
+title: Run job containers without privileged mode
+finding:
+  title: Job containers run in privileged mode
+  description: A privileged job, service or plugin container has near-full access to the runner host, so anyone who can change a pipeline gets root on the runner, its credentials and every other job it serves.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [containers, privileged, docker-in-docker, rootless, runners]
+
+description: |
+  Job containers, service containers and plugin containers run without privileged mode and without
+  host namespaces (`--pid=host` and similar). Container images are built with tools that do not need
+  privileges (rootless BuildKit, Buildah, Kaniko-style builders) rather than privileged
+  Docker-in-Docker.
+
+  Where privileged builds cannot be avoided, they run only on dedicated runners that are ephemeral
+  (CB-CICD-RUN-012), accept jobs only from protected refs (CB-CICD-RUN-011) and never build untrusted
+  code. Mounting the Docker socket or host paths is covered by CB-CICD-RUN-017.
+rationale: |
+  Privileged mode turns off most container isolation: the job can access host devices, load kernel
+  modules and escape to the host. On a runner, that means root on the machine that holds the runner
+  credential and runs other teams' jobs.
+impact: |
+  Pipelines that build images with privileged Docker-in-Docker must switch to a rootless builder or to
+  dedicated privileged runners. Some test suites that need privileged services must move to dedicated
+  runners.
+notes: |
+  On GitLab, `services_privileged` defaults to the value of `privileged`; `allowed_privileged_services`
+  limits which service images may run privileged. On Woodpecker, only instance admins can mark a
+  repository trusted, which allows `privileged` and host volumes in its steps; plugins listed in
+  `WOODPECKER_PLUGINS_PRIVILEGED` run privileged for any repository, so list them with exact tags. On
+  AWS CodeBuild, privileged mode is needed only to run the Docker daemon for image builds.
+
+audit:
+  manual: |
+    Use read access to runner configuration and build project settings.
+
+    1. List runners, projects and pipelines that allow privileged containers.
+    2. Per product:
+       - **GitLab**: `config.toml` `[runners.docker]` has `privileged = false` and no
+         `services_privileged = true`; no `--pid=host`. Privileged runners, if any, are protected,
+         ephemeral and dedicated.
+       - **Gitea / Forgejo**: runner `config.yml` has `container.privileged: false` (default).
+       - **Woodpecker**: few repositories have the **Trusted** security option (**Repository
+         settings**, set by instance admins); `WOODPECKER_PLUGINS_PRIVILEGED` is empty or lists exact
+         image tags.
+       - **AWS CodeBuild**: `aws codebuild batch-get-projects` shows `environment.privilegedMode`
+         `false` (default) except on dedicated image-build projects that never build pull request
+         code.
+    3. Search pipeline definitions for privileged requests (for example `docker:dind` services,
+       `privileged: true` in step or pod specifications).
+    4. Fail if a runner or build project that runs untrusted or multi-project jobs allows privileged
+       containers.
+remediation:
+  manual: |
+    1. Move image builds to a rootless builder.
+    2. Per product:
+       - **GitLab**: set `privileged = false` on shared runners; keep a separate protected, ephemeral
+         runner for jobs that still need privileges, with `allowed_privileged_services` limited.
+       - **Gitea / Forgejo**: keep `container.privileged: false`; give privileged builds a dedicated
+         runner on a disposable VM.
+       - **Woodpecker**: remove **Trusted** from repositories that do not need it and reduce
+         `WOODPECKER_PLUGINS_PRIVILEGED` to pinned images.
+       - **AWS CodeBuild**: set `privilegedMode` to `false` on projects that do not build images, and
+         keep image-build projects separate from pull request builds.
+    3. Add admission policy (Pod Security Admission `baseline` or `restricted`) on Kubernetes runners to
+       reject privileged pods (CB-CICD-RUN-018).
+
+references:
+  - title: Self-managed runner security (Usage of Docker executor)
+    url: https://docs.gitlab.com/runner/security/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab Runner advanced configuration ([runners.docker])
+    url: https://docs.gitlab.com/runner/configuration/advanced-configuration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Forgejo Actions deployments (container.privileged)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker security boundaries (Trusted repositories)
+    url: https://woodpecker-ci.org/docs/usage/security-boundaries
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: AWS CodeBuild API reference - ProjectEnvironment (privilegedMode)
+    url: https://docs.aws.amazon.com/codebuild/latest/APIReference/API_ProjectEnvironment.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1611
+  - framework: mitre-attack
+    id: T1610
+related_controls:
+  - id: CB-CICD-RUN-017
+    type: related
+  - id: CB-CICD-RUN-018
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+  - id: CB-CICD-RUN-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

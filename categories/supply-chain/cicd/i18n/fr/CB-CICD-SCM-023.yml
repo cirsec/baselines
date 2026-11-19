@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-023
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger des commits signés sur les branches protégées
+finding:
+  title: Les branches protégées acceptent des commits non signés
+  description: Sans signature, rien ne prouve qu'un commit d'une branche de release a été écrit par la personne qu'il désigne ; un jeton volé ou un miroir compromis peut donc introduire des commits d'apparence légitime.
+description: |
+  Les commits poussés sur les branches par défaut et de release portent une signature
+  cryptographique valide (GPG, SSH ou S/MIME, ou signature émise par la plate-forme pour les commits
+  web et des bots) que la plate-forme vérifie, et les pushes contenant des commits non signés ou
+  invérifiables sont rejetés. Les clés de signature sont enregistrées sur les comptes des
+  développeurs, si bien qu'une signature rattache un commit à un collaborateur connu ; les
+  développeurs protègent leurs clés et utilisent l'authentification multifacteur sur le compte qui
+  les porte.
+
+  La vérification des signatures par les pipelines et les contrôleurs GitOps avant le build ou le
+  déploiement relève de CB-CICD-SCM-024 ; le contrôle d'identité sans signature de CB-CICD-SCM-022.
+rationale: |
+  Les champs auteur de Git peuvent être falsifiés, et les jetons d'accès à la plate-forme sont une
+  cible fréquente. Une signature obligatoire signifie que pousser un commit attribué à un mainteneur
+  exige aussi la clé privée de ce mainteneur. Un historique signé est aussi ce que la vérification
+  en aval (pipelines, Argo CD, Flux) peut contrôler, ce qui donne une intégrité de la source qui va
+  au-delà du contrôle d'accès de la plate-forme.
+impact: |
+  Chaque développeur doit créer une clé de signature et l'enregistrer, et les outils qui commitent
+  (bots de release, outils de mise à jour de dépendances) doivent signer leurs commits ou commiter
+  via l'API de la plate-forme. Les collaborateurs qui poussent un commit non signé doivent réécrire
+  leur propre branche et la pousser en force avant de fusionner.
+notes: |
+  Sur GitHub, les commits faits dans l'interface web, et ceux qu'une GitHub App crée via l'API sans
+  informations personnalisées d'auteur, de committer ou de signature, sont signés par GitHub. Les
+  utilisateurs qui activent le mode vigilant voient signalés comme non vérifiés les commits non
+  signés qui revendiquent leur identité. Sur GitLab, **Reject unsigned commits** (Premium) accepte
+  encore les commits créés par l'interface ou l'API GitLab sans signature ; le Web IDE est bloqué par
+  défaut dans les projets soumis à cette règle. Sur Gitea et Forgejo, `[repository.signing]
+  DEFAULT_TRUST_MODEL` décide quelles signatures comptent comme vérifiées ; `collaborator` ou
+  `collaboratorcommitter` les rattache aux collaborateurs du dépôt.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la protection de branche ou les règles de push.
+
+    1. Vérifier l'exigence de signature sur les branches par défaut et de release :
+       - **GitHub** : le ruleset active **Require signed commits** (protection de branche : **Require
+         signed commits**). legitify et Checkov signalent les dépôts qui ne l'ont pas.
+       - **GitLab** (Premium) : la règle de push **Reject unsigned commits** est cochée au niveau de
+         l'instance (**Admin** > **Push rules**), du groupe (**Settings** > **Repository** >
+         **Pre-defined push rules**) ou du projet (**Settings** > **Repository** > **Push rules**).
+       - **Gitea / Forgejo** : la règle de branche active **Require signed commits**, et `app.ini`
+         `[repository.signing] DEFAULT_TRUST_MODEL` vaut `collaborator` ou
+         `collaboratorcommitter`.
+    2. Examiner les commits récents des branches protégées (`git log --show-signature` ou le badge
+       de vérification de la plate-forme) et confirmer qu'ils sont vérifiés.
+    3. Échec si une branche protégée accepte des commits non signés ou non vérifiés de développeurs
+       ou de bots.
+remediation:
+  manual: |
+    1. Aider les développeurs à créer des clés de signature et à les enregistrer sur leurs comptes ;
+       configurer les bots pour qu'ils signent ou commitent via l'API de la plate-forme.
+    2. Exiger les signatures :
+       - **GitHub** : activer **Require signed commits** dans le ruleset des branches protégées.
+       - **GitLab** : cocher **Reject unsigned commits** dans les règles de push au niveau du groupe
+         ou de l'instance, et dans les projets existants.
+       - **Gitea / Forgejo** : activer **Require signed commits** dans la règle de branche et régler
+         `DEFAULT_TRUST_MODEL` sur `collaborator` ou `collaboratorcommitter`.
+    3. Vérifier que la méthode de fusion utilisée pour les pull requests produit des commits vérifiés
+       sur la branche cible.

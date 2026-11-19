@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-017
+title: Require re-authentication to approve merge requests
+finding:
+  title: Merge requests can be approved from any open session without re-authentication
+  description: An attacker who hijacks a reviewer's browser session or session cookie can approve merge requests on their behalf and satisfy the review requirement.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [code-review, re-authentication, session-hijacking, electronic-signature]
+
+applicability:
+  versions: [gitlab]
+
+description: |
+  On projects that hold critical code or pipelines, GitLab asks approvers to authenticate again,
+  with their password or through SAML, before their approval is recorded. An approval is then an
+  explicit, authenticated act rather than a click in an existing session.
+
+  Session lifetime is covered by CB-CICD-IAM-008; multi-factor authentication by CB-CICD-IAM-006.
+rationale: |
+  Review controls assume that the approver is the person behind the account at the time of the
+  approval. Stolen session cookies, an unlocked workstation or a malicious browser extension break
+  that assumption. Re-authentication at approval time limits what such a session can do, and gives
+  an approval the weight of an electronic signature where regulations ask for one.
+impact: |
+  Approvers enter their password or go through the SAML flow for each approval. Password
+  authentication or SAML must be enabled for the users concerned.
+notes: |
+  The setting needs GitLab Premium. On GitLab.com it is only available on top-level groups. On
+  GitLab Self-Managed, SAML re-authentication is available by default and can be hidden with a
+  feature flag.
+
+setting:
+  location: Top-level group or project > Settings > Merge requests > Merge request approvals > Approval settings > Require user re-authentication (password or SAML) to approve
+  default_value: Disabled
+  recommended_value: Enabled on projects holding critical code or pipelines
+
+audit:
+  manual: |
+    Use a role that can read merge request approval settings (Maintainer or Owner).
+
+    1. List the projects that hold critical code, pipeline templates or deployment configuration.
+    2. For each one, or for its top-level group, open **Settings** > **Merge requests** > **Merge
+       request approvals** > **Approval settings** and check **Require user re-authentication
+       (password or SAML) to approve**.
+    3. Fail if the setting is cleared on a critical project.
+
+remediation:
+  manual: |
+    1. Make sure password or SAML authentication is enabled for the approvers.
+    2. In the top-level group (preferred) or the project, select **Require user re-authentication
+       (password or SAML) to approve** and save.
+    3. Tell approvers that they will be prompted to authenticate when approving.
+  rollback: |
+    Clear **Require user re-authentication (password or SAML) to approve** in the same settings.
+
+references:
+  - title: Merge request approval settings
+    url: https://docs.gitlab.com/user/project/merge_requests/approvals/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-IAM-008
+    type: related
+  - id: CB-CICD-IAM-006
+    type: related
+  - id: CB-CICD-SCM-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

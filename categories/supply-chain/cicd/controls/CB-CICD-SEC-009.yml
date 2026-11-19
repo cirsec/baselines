@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-009
+title: Scan every repository for secrets and handle each finding as a leaked credential
+finding:
+  title: Repositories are not scanned for committed secrets, or secret alerts are left open
+  description: Tokens and keys committed to source code or its history stay usable for as long as nobody looks, and anyone with read access to the repository, a fork or a clone can find them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, secret-scanning, detection, incident-response]
+
+description: |
+  Secret scanning runs on every repository of the organization, including new repositories from
+  the moment they are created, and covers the full Git history, not only new commits. Alerts are
+  routed to a named owner (the repository's team or the security team), and every confirmed
+  finding is handled as a leaked credential: it is revoked or rotated at the issuer first, then
+  removed from the code, and the alert is closed with the action taken.
+
+  When `{{ detection_depth }}` is `extended`, scanning also uses validity checks to prioritize live
+  secrets, generic (non-provider) and custom patterns for internal credential formats, and the
+  organization's own token prefix where the platform lets administrators change it, registered in
+  every scanner in use.
+
+  Blocking secrets before they are pushed is covered by CB-CICD-SEC-010; secrets in pipeline
+  definitions and settings by CB-CICD-SEC-021.
+parameters:
+  - name: detection_depth
+    type: enum
+    description: provider scans all repositories and their history with the platform's provider patterns and routes alerts; extended adds validity checks, generic and custom patterns, and an organization-specific token prefix registered in the scanners.
+    allowed: [provider, extended]
+    default: provider
+    profile_defaults:
+      hardened: extended
+rationale: |
+  Committed secrets are one of the most common sources of credential leaks, and Git history keeps
+  them after the file is fixed. Attackers scan public and leaked repositories automatically and
+  use valid credentials within minutes. Scanning everything and treating each hit as an incident,
+  revoking before cleaning, closes the window between the leak and its exploitation.
+impact: |
+  The first scan of existing repositories can raise many alerts that need triage. Scanning private
+  repositories on GitHub and Azure DevOps requires a paid secret protection licence; some GitLab
+  features need Ultimate.
+notes: |
+  On GitLab, changing the personal access token prefix makes the built-in detectors miss tokens
+  with the new prefix until the pipeline secret detection ruleset is customized. Bitbucket Data
+  Center secret scanning is on by default; forks use their own rules and do not inherit them.
+
+audit:
+  manual: |
+    Use a security manager or auditor role that can read code security settings and secret
+    scanning alerts.
+
+    1. Check that scanning is enabled on all repositories and applied to new ones:
+       - **GitHub**: **Organization** (or **Enterprise**) **Settings** > **Advanced Security** >
+         **Configurations**: the attached configuration enables **Secret scanning** (GitHub Secret
+         Protection for private and internal repositories), is applied to every repository and is
+         set as default for newly created repositories (**Use as default for newly created
+         repositories** = **All repositories**).
+       - **GitLab**: every project runs pipeline secret detection
+         (`include: template: Jobs/Secret-Detection.gitlab-ci.yml`, a security policy or a scan
+         execution policy), and one pipeline per project has run with
+         `SECRET_DETECTION_HISTORIC_SCAN: "true"`. Pipeline detection runs on all tiers; results in
+         the vulnerability report and enforcement by policy need Ultimate.
+       - **Azure DevOps**: **Project settings** > **Repos** > **Repositories**: **Advanced
+         Security** or **Secret Protection** (paid) is on for every repository, and under
+         **Settings**, **Automatically enable Advanced Security for new repositories** is on (or
+         **Organization settings** > **Repositories** > **Automatically enable Advanced Security
+         for new projects**). Enabling it scans the full history.
+       - **Bitbucket Data Center**: secret scanning is not turned off in `bitbucket.properties`,
+         no project or repository is listed under **Secret scanning** > **Excluded repositories**
+         without a reason, and allowlist rules are reviewed.
+       - Other platforms: a scanner such as gitleaks or TruffleHog runs on every repository, in CI
+         and on the full history.
+    2. Review the open alerts: each has an owner, and alerts older than the organization's
+       response time have a recorded action (revoked, false positive with reason).
+    3. When `{{ detection_depth }}` is `extended`, also check:
+       - **GitHub**: the configuration enables **Validity checks** and non-provider patterns, and
+         custom patterns exist at organization or enterprise level for internal token formats.
+       - **GitLab**: on self-managed instances, **Admin** > **Settings** > **General** > **Account
+         and limit** > **Personal access token prefix** is set to an organization-specific value,
+         and the pipeline secret detection ruleset includes that prefix.
+       - **Azure DevOps**: validity checks are part of Secret Protection; check that alerts are
+         filtered on **Active** first.
+    4. Fail if a repository is not scanned, if history was never scanned, if alerts have no owner,
+       or if a confirmed secret was removed from code without being revoked.
+
+remediation:
+  manual: |
+    1. Enable scanning on all repositories and for new ones:
+       - **GitHub**: create or edit a code security configuration with **Secret scanning** on,
+         apply it to all repositories and set it as default for new repositories.
+       - **GitLab**: add the `Jobs/Secret-Detection.gitlab-ci.yml` template, or enforce it with a
+         scan execution policy across groups; run one historic scan per project.
+       - **Azure DevOps**: in **Organization settings** > **Repositories** (or **Project
+         settings** > **Repos** > **Settings**), select **Enable all**, turn on **Secret
+         Protection** and the automatic enablement for new projects or repositories.
+       - **Bitbucket Data Center**: keep secret scanning enabled and remove unjustified exclusions.
+    2. Route alerts: assign owners per repository and send notifications to the owning team and to
+       the security team.
+    3. For each finding: revoke or rotate at the issuer, check the issuer's logs for use, then
+       remove the secret from the code and close the alert with the action taken.
+    4. When `{{ detection_depth }}` is `extended`, turn on validity checks and non-provider
+       patterns, define custom patterns for internal tokens, and on GitLab self-managed set an
+       organization-specific personal access token prefix and add it to the detection ruleset.
+
+references:
+  - title: About secret scanning
+    url: https://docs.github.com/en/code-security/concepts/secret-security/about-secret-scanning
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Pipeline secret detection
+    url: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Account and limit settings - personal access token prefix
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set up secret scanning for GitHub Advanced Security for Azure DevOps
+    url: https://learn.microsoft.com/azure/devops/repos/security/github-advanced-security-secret-scanning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secret scanning (Bitbucket Data Center)
+    url: https://confluence.atlassian.com/bitbucketserver/secret-scanning-1157471613.html
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitleaks
+    url: https://github.com/gitleaks/gitleaks
+    publisher: Gitleaks
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers detection of committed secrets and response to findings.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-010
+    type: related
+  - id: CB-CICD-SEC-021
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+  - id: CB-CICD-IAM-031
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

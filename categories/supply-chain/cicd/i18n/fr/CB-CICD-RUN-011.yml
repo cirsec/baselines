@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'exécuter sur les runners privilégiés que des jobs de références protégées ou de workflows approuvés
+finding:
+  title: Des runners avec accès de déploiement acceptent des jobs de n'importe quelle branche
+  description: Un runner qui détient des identifiants de déploiement ou un accès réseau à la production mais exécute les jobs de n'importe quelle branche permet à quiconque peut pousser une branche d'exécuter du code avec cet accès, sans revue.
+description: |
+  Les runners qui détiennent des identifiants de déploiement, un rôle d'instance avec des droits
+  d'écriture ou un accès réseau à la production n'exécutent que des jobs de branches ou tags protégés, ou
+  uniquement des jobs définis dans des workflows approuvés à une référence protégée. Ils ne prennent pas
+  les jobs sans tag : un job n'y arrive que s'il les demande explicitement et y est autorisé.
+
+  La protection des branches elles-mêmes relève de CB-CICD-SCM-006 et CB-CICD-PIPE-008.
+rationale: |
+  La protection des branches et la revue ne protègent la production que si les identifiants de
+  déploiement ne sont pas accessibles depuis du code non revu. Quand le runner de déploiement accepte
+  n'importe quelle branche, une branche de fonctionnalité avec un fichier de pipeline modifié suffit pour
+  exécuter des commandes arbitraires avec l'accès à la production.
+impact: |
+  Les jobs qui tournent sur ces runners depuis des branches non protégées (par exemple des déploiements de
+  test) doivent passer sur d'autres runners. Sur GitLab, les pipelines de merge request ne peuvent utiliser
+  des runners protégés que si c'est configuré.
+notes: |
+  GitHub ne restreint les groupes de runners à des workflows sélectionnés que sur GitHub Enterprise Cloud
+  et GitHub Enterprise Server. Les références de workflow doivent être épinglées sur une branche pour les
+  workflows ordinaires, et sur une branche, un tag ou un SHA complet pour les workflows réutilisables ;
+  seuls les jobs définis directement dans les workflows listés y ont accès.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou de propriétaire en lecture sur les réglages des runners.
+
+    1. Identifier les runners qui détiennent des identifiants de déploiement, des rôles cloud en écriture
+       ou un accès réseau à la production.
+    2. Par produit :
+       - **GitLab** : chacun de ces runners (**Admin** > **CI/CD** > **Runners**, ou **Build** >
+         **Runners** du groupe, ou **Settings** > **CI/CD** > **Runners** > **Edit** du projet) a
+         **Protected** coché et **Run untagged jobs** décoché, et les jobs de déploiement le sélectionnent
+         avec `tags:`.
+       - **GitHub** (GitHub Enterprise Cloud ou Server) : **Organization** > **Settings** > **Actions** >
+         **Runner groups** > le groupe : **Workflow access** vaut **Selected workflows** et liste les
+         workflows de release sous la forme `owner/repo/.github/workflows/file.yml@refs/heads/main` (ou un
+         tag ou un SHA pour les workflows réutilisables).
+    3. Échec si un runner privilégié peut exécuter des jobs d'une branche non protégée, de n'importe quel
+       workflow, ou des jobs sans tag.
+remediation:
+  manual: |
+    1. Séparer les runners privilégiés des runners à usage général (CB-CICD-RUN-010).
+    2. Les restreindre :
+       - **GitLab** : modifier chaque runner privilégié, cocher **Protected**, décocher **Run untagged
+         jobs**, et ajouter des tags que seuls les jobs de déploiement demandent.
+       - **GitHub** : en tant que propriétaire d'organisation, régler le **Workflow access** du groupe de
+         runners sur **Selected workflows** avec des références complètes vers les workflows de release.
+    3. Lancer les pipelines de déploiement depuis la branche protégée et vérifier que les autres jobs
+       n'atteignent plus le runner.

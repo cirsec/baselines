@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre le fork des dépôts privés et internes
+finding:
+  title: Les dépôts privés peuvent être forkés vers des comptes extérieurs à l'organisation
+  description: Un membre peut forker du code privé vers un espace personnel ou externe hors de portée des protections, de l'audit et du départ des collaborateurs, et les pull requests depuis un fork deviennent un moyen d'exécuter du code modifié dans les pipelines d'origine.
+description: |
+  Les dépôts privés et internes ne peuvent pas être forkés hors de l'organisation. La politique est
+  fixée par `{{ fork_policy }}` :
+
+  - `within-organization` : les forks ne sont autorisés que vers des espaces appartenant à
+    l'organisation, au groupe, à l'entreprise ou au workspace, jamais vers des comptes personnels
+    ou externes.
+  - `disabled` : le fork des dépôts privés et internes est désactivé ; les contributeurs utilisent
+    des branches du dépôt d'origine sous protection de branche.
+
+  La politique est posée au niveau le plus haut disponible (entreprise, groupe de premier niveau,
+  workspace, instance) pour que les administrateurs de dépôt ne puissent pas l'assouplir. Le
+  traitement des pull requests venant de forks par les pipelines relève de CB-CICD-PIPE-009 et
+  CB-CICD-PIPE-010.
+rationale: |
+  Un fork dans un espace personnel est une copie complète de l'historique qui échappe aux revues
+  d'accès de l'organisation et, sur certaines plates-formes, survit un temps au retrait du membre.
+  Les pull requests depuis un fork sont aussi le moyen habituel de faire tourner du code contrôlé
+  par un attaquant dans un workflow. Garder les forks dans l'organisation limite qui détient des
+  copies et qui peut ouvrir de telles pull requests.
+impact: |
+  Les contributeurs qui travaillaient depuis des forks personnels doivent utiliser des forks
+  appartenant à l'organisation ou des branches. Avec `disabled`, les flux de contribution qui
+  reposent sur les forks (contributeurs externes, inner source entre organisations) ont besoin
+  d'un autre circuit.
+notes: |
+  Gitea n'a pas d'interrupteur qui désactive le fork. Avec `MAX_CREATION_LIMIT = 0`
+  (CB-CICD-SCM-001) et `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false`, les forks comptent dans la limite
+  de création et les utilisateurs sans quota explicite ne peuvent pas forker. Forgejo dispose de
+  `[repository] DISABLE_FORKS`. Sur Bitbucket Cloud, un dépôt public autorise toujours les forks
+  publics, et la politique de fork du workspace prime sur le réglage du dépôt.
+parameters:
+  fork_policy: Où les dépôts privés et internes peuvent être forkés.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur qui peut lire les réglages de
+    l'organisation ou de l'instance.
+
+    1. Lister les forks existants des dépôts privés et internes et relever ceux qui appartiennent à
+       des espaces personnels ou externes.
+    2. Vérifier la politique de fork :
+       - **GitHub** : **Enterprise** > **Policies** > **Repositories** > **Repository forking** (et
+         l'emplacement autorisé des forks), dans chaque organisation **Settings** > **Member
+         privileges** > **Repository forking**, et dans chaque dépôt **Settings** > **General** >
+         **Allow forking**. Pour `within-organization`, les forks sont limités à l'organisation ou
+         à l'entreprise ; pour `disabled`, le fork des dépôts privés et internes n'est pas autorisé.
+       - **GitLab** (Premium) : dans le groupe de premier niveau, **Settings** > **General** >
+         **Permissions and group features** > **Prevent project forking outside current group** est
+         coché. Pour `disabled`, **Settings** > **General** > **Visibility, project features,
+         permissions** > **Forks** est désactivé dans chaque projet.
+       - **Bitbucket Cloud** : politique de fork du workspace et **Settings** > **Repository
+         details** > **Forking** du dépôt réglé sur **Allow only private forks**
+         (`within-organization`) ou **No forks** (`disabled`).
+       - **Gitea** : `app.ini` `[repository] ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` avec une
+         limite de création à `0` (`disabled`).
+       - **Forgejo** : `app.ini` `[repository] DISABLE_FORKS = true` (`disabled`), ou
+         `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` avec une limite de création.
+    3. Échec si un dépôt privé ou interne peut être forké hors de l'organisation, ou, avec
+       `disabled`, s'il peut être forké tout court.
+remediation:
+  manual: |
+    1. Poser la politique au niveau le plus haut :
+       - **GitHub** : en tant que propriétaire d'entreprise, régler **Repository forking** pour
+         n'autoriser les forks qu'au sein de l'entreprise ou de l'organisation, ou pour interdire
+         le fork des dépôts privés et internes ; sinon le régler par organisation dans **Member
+         privileges**.
+       - **GitLab** : en tant que propriétaire du groupe de premier niveau, cocher **Prevent project
+         forking outside current group** ; pour `disabled`, désactiver **Forks** dans chaque projet
+         sensible.
+       - **Bitbucket Cloud** : régler la politique de fork du workspace pour empêcher le fork hors
+         du workspace, et **Forking** sur **Allow only private forks** ou **No forks**.
+       - **Gitea / Forgejo** : poser `ALLOW_FORK_WITHOUT_MAXIMUM_LIMIT = false` avec une limite de
+         création, ou `DISABLE_FORKS = true` sur Forgejo, puis redémarrer le service.
+    2. Demander aux propriétaires de forks externes de dépôts privés de les supprimer, et retirer
+       aux membres l'accès aux forks que l'organisation ne peut pas supprimer.

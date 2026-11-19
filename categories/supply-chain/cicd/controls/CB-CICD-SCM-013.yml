@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-013
+title: Prevent authors and last pushers from approving their own changes
+finding:
+  title: Authors, committers or automation can approve their own pull requests
+  description: When the author, a committer or the pipeline's own token counts as an approver, the required review can be satisfied by the same person or workflow that wrote the change, and code can be added after approval without anyone else seeing it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [code-review, self-approval, separation-of-duties, pull-requests]
+
+applicability:
+  versions: [github, gitlab, azure-devops]
+
+description: |
+  The approvals required on protected branches (CB-CICD-SCM-012) come from people other than the
+  ones who wrote the change. The scope is set by `{{ excluded_approvers }}`:
+
+  - `author`: the author of a pull or merge request cannot approve it, and the CI/CD platform's
+    built-in job token cannot approve pull requests.
+  - `author-and-pushers`: in addition, users who added commits to the request, and in particular
+    the last person to push, cannot provide the approval that allows the merge, so content pushed
+    after a review must be approved by someone else.
+
+  Resetting approvals on new commits is covered by CB-CICD-SCM-014; preventing authors from
+  editing approval rules in a merge request by CB-CICD-SCM-015.
+rationale: |
+  Self-approval turns a four-eyes rule into a one-person rule. The common bypasses are an author
+  approving their own request where the platform allows it, a workflow using the job token to
+  approve the pull request it opened, and the "approve, then push" pattern: a collaborator waits
+  for an approval and then pushes extra commits to the branch before merging.
+impact: |
+  Pull requests on which every reviewer also pushed commits need one more reviewer. Workflows
+  that opened and approved pull requests automatically (dependency bumps) need a human approval or
+  a dedicated app with its own review rule.
+notes: |
+  On GitHub, the author can never approve their own pull request; the baseline lever is the
+  Actions setting, and the hardened one is the last-push rule. On GitLab these settings need
+  Premium; set them at instance or top-level group level to lock them, and note that a rebase
+  changes the Git committer, so the user who rebases is also excluded. On Azure DevOps, the
+  requestor option exists separately in **Require a minimum number of reviewers** and in
+  **Automatically included reviewers**.
+
+parameters:
+  - name: excluded_approvers
+    type: enum
+    description: Which contributors are excluded from approving a change.
+    allowed: [author, author-and-pushers]
+    default: author
+    profile_defaults:
+      hardened: author-and-pushers
+
+audit:
+  manual: |
+    Use a role that can read branch protection, approval settings and Actions settings.
+
+    1. Check the approval settings on protected branches:
+       - **GitHub**: enterprise, organization and repository **Settings** > **Actions** > **General**
+         > **Workflow permissions** > **Allow GitHub Actions to create and approve pull requests**
+         is cleared. For `author-and-pushers`, the ruleset rule **Require a pull request before
+         merging** enables **Require approval of the most recent reviewable push**.
+       - **GitLab** (Premium): **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings**: **Prevent approval by merge request creator** is selected; for
+         `author-and-pushers`, **Prevent approvals by users who add commits** is also selected.
+         Check the instance (**Admin** > **Push rules** > **Merge request approvals**) or top-level group
+         settings that lock them.
+       - **Azure DevOps**: branch policy **Require a minimum number of reviewers** has **Allow
+         requestors to approve their own changes** cleared (same in **Automatically included
+         reviewers**); for `author-and-pushers`, **Prohibit the most recent pusher from approving
+         their own changes** is selected.
+    2. Sample merged pull requests and check that no approval came from the author, from a bot
+       using the job token, or, with `author-and-pushers`, from the last pusher.
+    3. Fail if, for the configured scope, an excluded contributor's approval can satisfy the
+       review requirement.
+
+remediation:
+  manual: |
+    1. Exclude authors and automation:
+       - **GitHub**: clear **Allow GitHub Actions to create and approve pull requests** at
+         enterprise or organization level so repositories inherit it; for `author-and-pushers`,
+         enable **Require approval of the most recent reviewable push** in the ruleset.
+       - **GitLab**: select **Prevent approval by merge request creator** (and **Prevent approvals
+         by users who add commits** for `author-and-pushers`) at top-level group or instance level
+         so projects cannot clear them.
+       - **Azure DevOps**: clear **Allow requestors to approve their own changes**; for
+         `author-and-pushers`, select **Prohibit the most recent pusher from approving their own
+         changes**.
+    2. Give automation that must open pull requests a dedicated identity whose pull requests still
+       need a human approval.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approval settings
+    url: https://docs.gitlab.com/user/project/merge_requests/approvals/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers self-approval and approval by automation; other review requirements are separate controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: requires
+  - id: CB-CICD-SCM-014
+    type: related
+  - id: CB-CICD-SCM-015
+    type: related
+  - id: CB-CICD-SEC-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

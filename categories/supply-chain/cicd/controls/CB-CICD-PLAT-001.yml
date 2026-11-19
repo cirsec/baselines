@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-001
+title: Include the CI/CD chain in the risk analysis and protect it like production
+finding:
+  title: The CI/CD chain is left out of the risk analysis
+  description: Platforms, runners and SaaS services that can deploy to production are treated as developer tooling, so they get weaker protection than the systems they can change, and an attacker reaches production through them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [risk-analysis, governance, saas, third-party, protection-level]
+
+description: |
+  The organization's risk analysis covers the whole CI/CD chain: source code management, CI and CD
+  platforms, runners and build hosts, artifact registries, GitOps controllers, the workstations of
+  developers and administrators who can change pipelines, subcontractors with access, and every SaaS
+  service involved.
+
+  For each SaaS service, the analysis records which data it holds or sees (source code, secrets,
+  build logs, artifacts), where that data is hosted and under which jurisdiction, and whether this
+  is acceptable for the confidentiality of the projects concerned.
+
+  Each component gets at least the protection level of the most sensitive environment it can
+  deploy to or change: a pipeline that deploys to production is protected as production. The
+  analysis is reviewed when a platform, a hosting model or a major integration changes.
+
+  The individual technical measures are covered by the other CB-CICD controls; this control checks
+  that they are chosen from a risk analysis that includes the chain.
+rationale: |
+  A CI/CD chain holds the credentials and the authority to change production, so compromising a
+  runner, a plugin, a developer workstation or a SaaS integration is often easier than attacking
+  production directly. When the chain is not in the risk analysis, it is administered with
+  development habits (shared admins, unpatched servers, broad tokens) and its SaaS providers are
+  chosen without looking at where code and secrets go.
+impact: |
+  Adds the CI/CD components to the scope of the risk analysis and may raise the protection
+  requirements of build and deployment systems (administration, monitoring, patching) to those of
+  production.
+
+audit:
+  manual: |
+    Ask the risk owner or the security team for the current risk analysis and the CI/CD component
+    inventory (CB-CICD-PLAT-002).
+
+    1. Check that the scope of the risk analysis explicitly names the CI/CD components in use: SCM,
+       CI and CD platforms, runners, registries, GitOps controllers, administrator and developer
+       workstations, subcontractors and SaaS services.
+    2. For each SaaS service, check that data categories, hosting location and jurisdiction were
+       assessed and accepted for the confidentiality level of the projects it serves.
+    3. For each component that can deploy to or change an environment, compare its required
+       protection level with that of the environment.
+    4. Check the date of the last review against the last change of platform or hosting model.
+    5. Fail if a CI/CD component that can reach production is missing from the analysis, if a SaaS
+       service was adopted without a data and location assessment, or if a component has a lower
+       required protection level than an environment it deploys to.
+
+remediation:
+  manual: |
+    1. Add the CI/CD chain to the scope of the risk analysis, using the inventory of
+       CB-CICD-PLAT-002 as the list of components.
+    2. Assess each SaaS service: data it holds, hosting region, jurisdiction, subcontractors, and
+       contractual guarantees; record the decision.
+    3. Assign each component the protection level of the most sensitive environment it can change,
+       and derive the measures (administration, isolation, monitoring, patching) from it.
+    4. Schedule a review at least once a year and whenever a platform, hosting model or major
+       integration changes.
+
+references:
+  - title: Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines (SP 800-204D)
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: Les essentiels DevSecOps
+    url: https://cyber.gouv.fr/publications/les-essentiels-devsecops
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-11-03
+  - title: Defending software build pipelines from malicious attack
+    url: https://www.ncsc.gov.uk/blog-post/defending-software-build-pipelines-from-malicious-attack
+    publisher: NCSC
+    kind: guide
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: RA-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1199
+related_controls:
+  - id: CB-CICD-PLAT-002
+    type: related
+  - id: CB-CICD-PLAT-017
+    type: related
+  - id: CB-CICD-IAM-021
+    type: related
+  - id: CB-CICD-DEPLOY-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

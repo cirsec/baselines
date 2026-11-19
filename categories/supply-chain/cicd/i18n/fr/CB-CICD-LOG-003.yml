@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Diffuser en continu les journaux d'audit CI/CD vers le SIEM central
+finding:
+  title: Les journaux d'audit CI/CD restent dans chaque plate-forme
+  description: Les événements d'audit ne sont consultables que dans la console de chaque éditeur et pour une durée limitée ; ils expirent avant la découverte d'une intrusion, ne peuvent pas être corrélés aux journaux d'identité et du cloud, et un attaquant disposant des droits d'administration sur la plate-forme peut s'y cacher.
+description: |
+  Les événements d'audit de chaque système CI/CD sont exportés en continu (diffusion, transfert ou
+  export planifié toutes les quelques heures au plus) vers le SIEM ou la plate-forme centrale de
+  journaux de l'organisation, où ils sont conservés au-delà de la durée de l'éditeur et corrélés aux
+  journaux du fournisseur d'identité, du cloud et des postes.
+
+  L'export utilise le mécanisme natif de l'éditeur quand il existe (diffusion du journal d'audit,
+  transfert syslog, puits de journaux d'audit cloud). Son état est surveillé : un flux arrêté
+  déclenche une alerte, la plupart des produits ne gardant qu'une courte mémoire tampon.
+
+  Les événements enregistrés relèvent de CB-CICD-LOG-001, leur durée de conservation et leur
+  protection de CB-CICD-LOG-005, et les règles d'alerte de CB-CICD-LOG-006.
+rationale: |
+  La conservation native est courte (par exemple 90 jours pour Azure DevOps et l'historique
+  d'événements AWS CloudTrail, 180 jours dans l'interface de GitHub et 7 jours pour les événements
+  Git), alors que les intrusions CI/CD sont souvent découvertes des mois plus tard. Une copie hors de
+  la plate-forme survit aussi à la compromission d'un compte administrateur et permet aux analystes
+  de suivre un jeton volé du fournisseur d'identité jusqu'au pipeline et au compte cloud atteint.
+impact: |
+  La diffusion native exige souvent une édition supérieure (GitHub Enterprise Cloud, GitLab
+  Ultimate, Atlassian Guard pour Bitbucket, offre Scale de CircleCI, offre Enterprise de Buildkite
+  pour le journal d'audit) et ajoute des coûts d'ingestion au SIEM. La diffusion n'est pas
+  rétroactive : les événements antérieurs au démarrage du flux ne sont pas envoyés.
+notes: |
+  Bitbucket Cloud expose son journal d'audit complet via Atlassian Guard une fois l'espace de travail
+  lié à l'organisation Atlassian ; les événements antérieurs à ce lien ne sont pas repris. Harness
+  diffuse sa piste d'audit depuis **Account Settings** > **Security and Governance** > **Audit
+  Trail** > **Audit Log Streaming**.
+audit:
+  manual: |
+    Utiliser un rôle administrateur ou auditeur sur chaque plate-forme, et un accès en lecture au
+    SIEM.
+
+    1. Pour chaque système CI/CD de l'inventaire, identifier le mécanisme d'export et vérifier dans
+       le SIEM la présence d'événements des dernières 24 heures.
+    2. Vérifier la configuration native :
+       - **GitHub Enterprise Cloud** : **Settings** > **Audit log** > **Log streaming** de
+         l'entreprise a un flux actif (Splunk, Azure Event Hubs, Azure Blob Storage, Amazon S3,
+         Google Cloud Storage, Datadog ou Microsoft Purview) sans alerte d'état.
+       - **GitHub Enterprise Server** : **Management Console** > **Monitoring** > **Enable log
+         forwarding** est coché, avec TLS et le certificat d'autorité du récepteur.
+       - **GitLab** : **Secure** > **Audit events** > **Streams** du groupe ou de l'instance a une
+         destination HTTP, Amazon S3 ou Google Cloud Logging (Ultimate) ; les destinations HTTP
+         vérifient l'en-tête de jeton.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Audit** > **Flux** contient un flux
+         Splunk, Azure Monitor Logs ou Event Grid activé.
+       - **Bitbucket Cloud** : l'espace de travail est lié à l'organisation Atlassian et le journal
+         d'audit d'Atlassian Guard est exporté vers le SIEM.
+       - **CircleCI** : **Organization Settings** > **Security** > **Audit Logs** > **Stream audit
+         logs** envoie vers un bucket S3 ou compatible S3 lu par le SIEM (offre Scale).
+       - **Buildkite** : l'intégration Amazon EventBridge diffuse les événements du journal d'audit
+         (offre Enterprise) vers le SIEM.
+       - **TeamCity** : les enregistrements d'audit (**Administration** > **Audit**, également écrits
+         dans le journal du serveur) et les journaux du serveur sont envoyés au SIEM.
+       - **AWS CodeBuild / CodePipeline / CodeArtifact** : une piste CloudTrail (de préférence au
+         niveau de l'organisation) livre les événements de gestion vers un bucket protégé et le
+         SIEM ; l'historique d'événements CloudTrail seul (90 jours) ne suffit pas.
+       - **Google Cloud Build** : un puits de journaux route les journaux d'audit de
+         `cloudbuild.googleapis.com` (Admin Activity, et Data Access si activé) vers le projet
+         central ou le SIEM.
+       - **Argo CD** : les journaux d'`argocd-server` (champ `security` compris) et les événements
+         Kubernetes des Applications sont collectés par la chaîne de journaux du cluster et conservés
+         dans le SIEM.
+    3. Vérifier qu'un flux arrêté ou en échec déclenche une alerte.
+    4. Échec si les événements d'audit d'un système CI/CD ne sont pas exportés vers le SIEM, si
+       l'export a plus d'un jour de retard, ou si les pannes de flux passent inaperçues.
+remediation:
+  manual: |
+    1. Préparer un point d'ingestion dans le SIEM (collecteur HTTP, bucket, event hub) avec
+       authentification et TLS.
+    2. Configurer l'export natif de chaque plate-forme :
+       - **GitHub Enterprise Cloud** : dans **Settings** > **Audit log** > **Log streaming** de
+         l'entreprise, configurer un flux vers un point d'accès pris en charge et garder la
+         vérification SSL.
+       - **GitHub Enterprise Server** : dans **Management Console** > **Monitoring**, cocher
+         **Enable log forwarding**, saisir l'adresse du serveur, activer TLS et téléverser le
+         certificat d'autorité.
+       - **GitLab** : dans **Secure** > **Audit events** > **Streams**, ajouter une destination au
+         niveau du groupe racine ou de l'instance.
+       - **Azure DevOps** : dans **Paramètres de l'organisation** > **Audit** > **Flux**, créer un
+         flux vers le SIEM.
+       - **Bitbucket Cloud** : lier l'espace de travail à l'organisation Atlassian et exporter le
+         journal d'audit d'Atlassian Guard.
+       - **CircleCI** : dans **Organization Settings** > **Security** > **Audit Logs**, choisir
+         **Stream audit logs** et configurer le bucket avec OIDC.
+       - **Buildkite** : activer l'intégration Amazon EventBridge et router les événements d'audit
+         vers le SIEM.
+       - **TeamCity** : envoyer les journaux du serveur, enregistrements d'audit compris, avec
+         l'agent de journaux.
+       - **AWS** : créer une piste CloudTrail d'organisation vers un bucket protégé et la transférer.
+       - **Google Cloud Build** : créer un puits de journaux pour les journaux d'audit de Cloud Build
+         vers le projet central.
+       - **Argo CD** : collecter les journaux d'`argocd-server` et les événements des Applications
+         avec l'agent de journaux du cluster.
+    3. Ajouter une alerte SIEM sur l'absence de données de chaque source.

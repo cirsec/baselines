@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'exécuter les pipelines privilégiés qu'à partir de définitions de pipeline relues
+finding:
+  title: Un pipeline doté de secrets exécute le fichier de pipeline présent sur la branche poussée, quel qu'il soit
+  description: Quiconque peut pousser une branche peut y modifier le fichier de pipeline et faire exécuter par la plate-forme les étapes modifiées avec les secrets et droits de déploiement du pipeline, sans aucune revue (exécution de pipeline empoisonné).
+description: |
+  Un pipeline qui détient des secrets, des jetons en écriture ou des droits de déploiement n'exécute
+  qu'une définition qui a été relue. Le niveau attendu est `{{ definition_source }}` :
+
+  - `protected-refs` : les pipelines privilégiés et leurs secrets sont liés à des branches ou tags
+    protégés, donc la définition qu'ils exécutent a été fusionnée après revue ; les exécutions depuis
+    d'autres branches ne reçoivent aucun secret ;
+  - `restricted-source` : en plus, la définition des pipelines privilégiés est conservée hors du
+    dépôt applicatif (dépôt séparé à accès restreint, définition en ligne ou dans un stockage
+    d'objets, dépôt de réglages versionnés), ou des règles de chemin de fichier bloquent les
+    modifications directes des répertoires de workflows.
+
+  La revue des fichiers de pipeline par les code owners relève de CB-CICD-SCM-018 ; la restriction
+  des secrets aux branches et environnements protégés relève de CB-CICD-SEC-008.
+rationale: |
+  Dans la plupart des plates-formes, la définition du pipeline est lue dans le commit construit. Un
+  utilisateur qui peut pousser une branche, sans pouvoir fusionner, peut quand même modifier ce
+  fichier et faire exécuter des étapes arbitraires avec les identifiants rattachés au pipeline. Lier
+  les pipelines privilégiés à des définitions relues ferme ce chemin pour les initiés comme pour les
+  identifiants de développeur volés.
+impact: |
+  Les développeurs ne peuvent plus tester sur leurs propres branches, avec les vrais identifiants,
+  des modifications d'étapes de pipeline privilégié ; une copie non privilégiée ou un environnement
+  de recette est nécessaire. Déplacer la définition dans un dépôt séparé ajoute un second endroit à
+  modifier.
+notes: |
+  Les règles de branche seules n'empêchent pas une nouvelle branche d'exécuter un workflow modifié
+  sur `push` ; les secrets et droits de déploiement doivent aussi être limités aux références
+  protégées. Sur AWS CodeBuild, le filtre de webhook `FILE_PATH` ne regarde que les 100 premiers
+  fichiers modifiés et n'est pas pris en charge pour les événements de pull request de GitHub
+  Enterprise Server : un buildspec en ligne ou stocké dans S3 est plus sûr. Sur GitLab, ne pas faire
+  pointer le fichier de configuration CI/CD vers une URL externe.
+parameters:
+  definition_source: protected-refs lie les pipelines privilégiés à des références protégées relues ; restricted-source conserve aussi leur définition hors du dépôt applicatif ou derrière des règles de chemin de fichier.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des pipelines, la portée des secrets et les règles
+    des dépôts.
+
+    1. Lister les pipelines qui détiennent des secrets, des jetons en écriture ou des droits de
+       déploiement.
+    2. Pour chacun, trouver d'où est lue sa définition et sur quelles références ses secrets sont
+       disponibles. Échec si une exécution sur une branche non protégée obtient ces secrets.
+    3. Pour `restricted-source`, vérifier par plate-forme :
+       - **GitLab** : **Settings** > **CI/CD** > **General pipelines** > **CI/CD configuration file**
+         pointe vers un fichier d'un projet restreint (`path/.gitlab-ci.yml@group/ci-config-project`).
+       - **GitHub** : un push ruleset d'organisation ou de dépôt avec **Restrict file paths** couvre
+         `.github/workflows/**`, avec contournement réservé aux propriétaires de la CI (les dépôts
+         privés et internes demandent GitHub Team ou Enterprise).
+       - **Gitea** : la règle de protection de branche liste `.gitea/workflows/**;.github/workflows/**`
+         dans **Protected file patterns**.
+       - **AWS CodeBuild** : les projets qui construisent des pull requests non fiables utilisent un
+         buildspec en ligne ou stocké dans S3 (`source.buildspec`), pas `buildspec.yml` du dépôt.
+       - **TeamCity** : les **Versioned Settings** du projet utilisent une racine VCS dédiée aux
+         contributeurs restreints, pas le dépôt applicatif.
+    4. Échec si un pipeline privilégié peut exécuter une définition non relue, ou, pour
+       `{{ definition_source }}` = `restricted-source`, si sa définition peut être modifiée dans le
+       dépôt applicatif sans règle de chemin protégé.
+remediation:
+  manual: |
+    1. Limiter les secrets, identifiants de déploiement et environnements des pipelines privilégiés
+       aux branches et tags protégés (CB-CICD-SEC-008) et exiger une revue sur ces références.
+    2. Pour `restricted-source` :
+       - **GitLab** : déplacer la définition du pipeline dans un projet restreint et régler
+         **CI/CD configuration file** sur `<chemin>@<groupe>/<projet>[:<ref>]` (rôle Maintainer).
+       - **GitHub** : créer un push ruleset avec **Restrict file paths** sur `.github/workflows/**` et
+         réserver le contournement à l'équipe CI.
+       - **Gitea** : ajouter les répertoires de workflows aux **Protected file patterns** de la règle
+         de protection de branche, et limiter qui peut pousser de nouvelles branches.
+       - **AWS CodeBuild** : définir le buildspec du projet en ligne ou vers un objet S3 au lieu de
+         le lire dans la source.
+       - **TeamCity** : stocker les réglages versionnés dans un dépôt dédié modifiable uniquement par
+         les ingénieurs build.
+    3. Relancer les pipelines privilégiés et vérifier qu'une définition modifiée sur une branche de
+       fonctionnalité n'obtient aucun secret.

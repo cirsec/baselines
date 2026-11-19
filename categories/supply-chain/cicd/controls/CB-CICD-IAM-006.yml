@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-006
+title: Enforce multi-factor authentication for every platform user
+finding:
+  title: Members of SCM or CI/CD platforms can sign in without a second factor
+  description: An account without MFA falls to a single phished or reused password, and on an SCM or CI/CD platform that account can push code, change pipelines or read secrets.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [mfa, 2fa, authentication, conditional-access]
+
+description: |
+  Every member, administrator and outside collaborator of the source control, CI/CD and registry
+  platforms uses multi-factor authentication, enforced either by the platform or by the identity
+  provider when sign-in goes through SSO. Enrolment grace periods are short (at most a few days), and
+  a periodic check finds no member without MFA.
+
+  Which factors are accepted is covered by CB-CICD-IAM-007, SSO by CB-CICD-IAM-001.
+rationale: |
+  Developer and administrator accounts on SCM and CI/CD platforms are a direct path to the release:
+  a push to a branch that triggers a deployment, a change to a pipeline definition or a read of a
+  project secret. Passwords leak through phishing, reuse and infostealers; MFA stops most of these
+  takeovers. The NCSC, ANSSI and SSDF all list MFA for access to source and pipelines as a base
+  measure.
+impact: |
+  Users without MFA lose access when enforcement starts (GitHub removes them from the organization,
+  Bitbucket hides private content, Buildkite blocks them). Announce a date, list who is not enrolled,
+  and plan for shared bot accounts, which should move to non-human identities (CB-CICD-IAM-027).
+notes: |
+  When sign-in goes through SSO, the platform's own 2FA setting may not apply (Gitea ignores
+  `TWO_FACTOR_AUTH` for externally authenticated users, GitHub Enterprise Managed Users has no 2FA
+  requirement): MFA must then be enforced by the identity provider for that application. On
+  Buildkite, enforcing SSO for the whole organization requires the 2FA enforcement to be off.
+
+audit:
+  manual: |
+    Use an owner, administrator or auditor role that can see members' 2FA status.
+
+    1. For each platform, find where MFA is enforced (platform setting or identity provider policy
+       for that application).
+    2. Check the setting:
+       - **GitHub**: **Organization settings** (or **Enterprise settings**) > **Authentication
+         security** > **Require two-factor authentication** is selected; `GET /orgs/{org}` returns
+         `two_factor_requirement_enabled: true`. With Enterprise Managed Users, check the identity
+         provider instead.
+       - **GitLab**: self-managed **Admin** > **Settings** > **General** > **Sign-in restrictions**
+         > **Enforce two-factor authentication**, or on GitLab.com the top-level group **Settings** >
+         **General** > **Permissions and group features** > **All users in this group must set up
+         two-factor authentication**; the grace period (`two_factor_grace_period`, default 48 hours)
+         is short. **Admin** > **Users** filtered on 2FA disabled, or the members API, shows no
+         active member without 2FA.
+       - **Azure DevOps**: a Microsoft Entra Conditional Access policy requiring MFA covers Azure
+         DevOps for all users (Entra ID P1).
+       - **Bitbucket Cloud**: **Workspace settings** > **Access controls** > **Require users to enable
+         two-step verification** is on (Premium), or the Atlassian Guard authentication policy
+         enforces it.
+       - **Buildkite**: **Settings** > **Security** has **Enforce Two-factor authentication**, or SSO
+         is enforced for the organization.
+       - **CircleCI**: SSO with MFA at the identity provider, or the 2FA requirement of the connected
+         GitHub or Bitbucket organization.
+       - **Harness**: **Account Settings** > **Authentication** > **Enforce Two Factor
+         Authentication** is on.
+       - **TeamCity**: **Administration** > **Authentication** > two-factor authentication mode is
+         **Mandatory**, or at least the administrators group is forced with the internal property
+         `teamcity.2fa.mandatoryUserGroupKey`.
+       - **Gitea**: `[security] TWO_FACTOR_AUTH = enforced` (Gitea 1.24 and later).
+       - **Forgejo**: `[security] GLOBAL_TWO_FACTOR_REQUIREMENT = all` (or `admin` as a minimum).
+    3. List members without MFA (organization people list, admin user filter, or the TeamCity
+       `/app/rest/users?fields=user(id,username,enabled2FA)` endpoint).
+    4. Fail if MFA is not enforced for all users of a platform, or if active members without MFA
+       remain after the grace period.
+
+remediation:
+  manual: |
+    1. Publish the date, ask users to enrol, and list who is not enrolled.
+    2. Enforce MFA:
+       - **GitHub**: select **Require two-factor authentication** at enterprise level (organization
+         level if there is no enterprise); reinvite removed outside collaborators once they enrol.
+       - **GitLab**: enable **Enforce two-factor authentication** for the instance or the top-level
+         group, with a grace period of 8 hours to a few days.
+       - **Azure DevOps**: create a Conditional Access policy that targets Azure DevOps and requires
+         MFA.
+       - **Bitbucket Cloud**: turn on **Require users to enable two-step verification** in
+         **Access controls**, or enforce it with an Atlassian Guard policy.
+       - **Buildkite**: select **Enforce Two-factor authentication** and **Update Access Control**,
+         or enforce SSO with an identity provider that requires MFA.
+       - **Harness**: toggle **Enforce Two Factor Authentication** on.
+       - **TeamCity**: set the two-factor mode to **Mandatory** (users get one week to enrol).
+       - **Gitea**: set `TWO_FACTOR_AUTH = enforced`; **Forgejo**: set
+         `GLOBAL_TWO_FACTOR_REQUIREMENT = all`; restart.
+    3. For platforms behind SSO, require MFA in the identity provider policy for each application.
+  rollback: |
+    Lengthen the grace period rather than disabling enforcement if many users are blocked.
+
+references:
+  - title: Requiring two-factor authentication in your organization
+    url: https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enforce two-factor authentication (GitLab)
+    url: https://docs.gitlab.com/security/two_factor_authentication/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Control access to your private content (Bitbucket Cloud)
+    url: https://support.atlassian.com/bitbucket-cloud/docs/control-access-to-your-private-content/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enforce two-factor authentication (Buildkite)
+    url: https://buildkite.com/docs/platform/team-management/enforce-2fa
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing two-factor authentication (TeamCity)
+    url: https://www.jetbrains.com/help/teamcity/managing-two-factor-authentication.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Harness two-factor authentication
+    url: https://developer.harness.io/harness-platform/use-harness-platform/authentication/two-factor-authentication.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.2"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.5"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.2.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-2(2)
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R1"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1110
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-007
+    type: related
+  - id: CB-CICD-IAM-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

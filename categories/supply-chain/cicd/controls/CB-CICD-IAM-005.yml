@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-005
+title: Apply a password and lockout policy to remaining local accounts
+finding:
+  title: Local platform accounts accept short passwords and unlimited login attempts
+  description: Without length, breach and lockout rules, local accounts on a CI/CD platform can be guessed or sprayed with leaked passwords until one works.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [password-policy, lockout, brute-force, local-accounts]
+
+applicability:
+  versions: [harness, gitea, forgejo, argo-cd]
+
+description: |
+  Where a platform still has local logins (break-glass accounts, small instances without an identity
+  provider), passwords are at least 12 characters, checked against known breached passwords where the
+  platform can do it, hashed with a strong algorithm, and repeated failed logins lock or throttle the
+  account.
+
+  Moving users to the identity provider is covered by CB-CICD-IAM-001, which makes this control apply
+  to very few accounts.
+rationale: |
+  CI/CD platforms are often exposed to the network of every developer, and sometimes to the internet.
+  A local account with a weak password and no lockout is the easiest way in, and the platform's
+  default policies (8 characters, no complexity, no breach check) are below current guidance.
+impact: |
+  Existing users are asked for a compliant password at their next change. Lockout can be used to deny
+  service to a known account: prefer throttling or a short lockout window for administrators.
+
+audit:
+  manual: |
+    Use an administrator role that can read authentication settings or the platform configuration.
+
+    1. Check the policy on each platform with local accounts:
+       - **Harness**: **Account Settings** > **Authentication**, password policy: **Enforce
+         password strength** and **Enforce lockout policy** are on.
+       - **Gitea / Forgejo**: `[security] MIN_PASSWORD_LENGTH` is 12 or more (default 8),
+         `PASSWORD_COMPLEXITY` lists the required classes (default `off`), `PASSWORD_CHECK_PWN = true`
+         (needs outbound access to the Have I Been Pwned range API), and `PASSWORD_HASH_ALGO` is
+         `argon2` or `pbkdf2_hi`.
+       - **Argo CD**: the `argocd-server` environment does not disable login throttling
+         (`ARGOCD_SESSION_FAILURE_MAX_FAIL_COUNT`, default 5, and
+         `ARGOCD_SESSION_FAILURE_WINDOW_SECONDS`, default 300, not set to 0), and `passwordPattern` in
+         `argocd-cm` requires at least 12 characters (default `^.{8,32}$`).
+    2. Fail if local accounts exist and the platform accepts passwords shorter than 12 characters or
+       does not limit failed login attempts.
+
+remediation:
+  manual: |
+    1. **Harness**: in **Authentication**, turn on **Enforce password strength** (minimum length 12
+       and character rules) and **Enforce lockout policy** (number of failures and lockout time); an
+       account administrator with edit rights on authentication settings is required.
+    2. **Gitea / Forgejo**: in `app.ini` `[security]`, set `MIN_PASSWORD_LENGTH = 12`,
+       `PASSWORD_COMPLEXITY = lower,upper,digit`, `PASSWORD_CHECK_PWN = true` and
+       `PASSWORD_HASH_ALGO = argon2` (or `pbkdf2_hi`), then restart. New hashes apply at the next
+       password change.
+    3. **Argo CD**: keep the default failure count and window, and set `passwordPattern` in `argocd-cm`
+       to require at least 12 characters, for example `"^.{12,64}$"`.
+
+references:
+  - title: Harness authentication - password policies
+    url: https://developer.harness.io/harness-platform/use-harness-platform/authentication.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD user management - local users
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-7
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R10"
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R21"
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R27"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1110
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

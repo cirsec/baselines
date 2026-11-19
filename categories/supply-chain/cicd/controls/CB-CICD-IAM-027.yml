@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-027
+title: Run automation under dedicated non-human identities
+finding:
+  title: Automation runs under personal or shared user accounts
+  description: Scripts and integrations that use a person's account or a shared login inherit all that person's access, keep working after the person leaves, and cannot be attributed or revoked on their own.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [service-accounts, workload-identity, machine-identity, automation, tokens]
+
+description: |
+  Each automation (integration, bot, script, GitOps controller) authenticates to the SCM and CI/CD
+  platforms with its own non-human identity: a service account, service principal, managed identity,
+  app installation or project-scoped role. These identities:
+
+  - are not shared between automations and are never a person's account;
+  - cannot sign in interactively;
+  - use credentials that expire (short-lived tokens where the platform issues them);
+  - are created only by administrators and have an owner.
+
+  How secrets are delivered to pipelines is covered by CB-CICD-SEC-002 and CB-CICD-SEC-015; token
+  lifetime and scope by CB-CICD-IAM-028 and CB-CICD-IAM-029.
+rationale: |
+  A personal account used by automation carries everything its owner can reach, usually far more than
+  the integration needs, and its credentials are copied into scripts and servers. When the owner
+  leaves, the automation breaks or, worse, the account is kept alive. Shared accounts make every action
+  anonymous. Dedicated identities can be scoped, monitored and revoked without side effects.
+impact: |
+  Each integration needs its own identity and a credential change. Some platforms count service
+  accounts as billable users.
+
+audit:
+  manual: |
+    Use an administrator role on each platform.
+
+    1. List the identities used by automation and check that none is a person's account or shared
+       login (names such as `ci-bot` used by several systems, accounts with a human email).
+    2. Check the platform mechanisms:
+       - **Azure DevOps**: automations use Entra service principals or managed identities added as
+         users (they cannot sign in interactively or create PATs) or workload identity service
+         connections, not PATs of user accounts.
+       - **GitLab**: automations use service accounts or project and group access tokens; on
+         self-managed, **Admin** > **Settings** > **General** > **Account and limit** > **Allow
+         top-level group owners to create Service accounts** is cleared unless delegation is reviewed
+         (Premium).
+       - **Harness**: automations use service accounts whose API key tokens have an expiration date
+         (not **No Expiration**) and role bindings limited to what they do.
+       - **TeamCity**: automations use dedicated users whose access tokens have an expiration and
+         limited permissions scope.
+       - **Argo CD**: automations use project role tokens created with an expiry
+         (`argocd proj role create-token <project> <role> -e <duration>`) or local accounts with
+         `apiKey` only (no `login`); unused local accounts have `accounts.<name>.enabled: "false"`.
+       - **Buildkite**: services use OAuth Token Exchange (short-lived tokens) instead of a
+         long-lived API access token tied to a user.
+    3. Fail if an automation uses a personal or shared account, if a non-human identity can sign in
+       interactively, or if its credentials never expire.
+
+remediation:
+  manual: |
+    1. Create one non-human identity per automation, owned by the team that runs it.
+    2. Move the automation to it:
+       - **Azure DevOps**: register an Entra application or managed identity, add it to the
+         organization with the needed groups, and use Entra tokens or a workload identity service
+         connection.
+       - **GitLab**: create a service account (administrator) or a project access token with an
+         expiry; keep service account creation by group owners off unless reviewed.
+       - **Harness**: create a service account, bind a narrow role, and create API key tokens with an
+         expiration date.
+       - **TeamCity**: create a dedicated user in a restricted group and issue an access token with a
+         time limit and limited permissions.
+       - **Argo CD**: create a project role with the needed policies and issue tokens with `-e`.
+       - **Buildkite**: set up OAuth Token Exchange for the service.
+    3. Revoke the personal or shared credentials previously used, and disable shared accounts.
+
+references:
+  - title: Use service principals and managed identities in Azure DevOps
+    url: https://learn.microsoft.com/azure/devops/integrate/get-started/authentication/service-principal-managed-identity
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab account and limit settings - service account creation
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Add and manage API keys (Harness)
+    url: https://developer.harness.io/harness-platform/use-harness-platform/automation/api/add-and-manage-api-keys.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuring your user profile - access tokens (TeamCity)
+    url: https://www.jetbrains.com/help/teamcity/configuring-your-user-profile.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo CD projects - project roles
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/projects/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite OAuth Token Exchange
+    url: https://buildkite.com/docs/apis/oauth-token-exchange
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(9)
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R30"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-IAM-028
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

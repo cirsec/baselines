@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Alerter l'astreinte quand la réconciliation GitOps échoue ou que la santé se dégrade
+finding:
+  title: Les échecs de synchronisation GitOps et les applications dégradées passent inaperçus
+  description: Argo CD ou Flux n'arrive pas à réconcilier, ou une application passe en état dégradé, sans que personne soit prévenu ; la production s'écarte silencieusement de Git, et une altération dans le cluster ou un correctif de sécurité bloqué reste invisible.
+description: |
+  Les contrôleurs GitOps préviennent l'équipe d'astreinte quand la réconciliation échoue ou que la
+  santé d'une application se dégrade, via le système de notification du contrôleur :
+
+  - Argo CD : le moteur de notifications a au moins les déclencheurs `on-sync-failed` et
+    `on-health-degraded` abonnés pour les applications de production (annotation par application
+    ou par projet, ou abonnements par défaut dans `argocd-notifications-cm`), avec envoi vers le
+    canal d'astreinte. Les identifiants des services sont conservés dans
+    `argocd-notifications-secret`.
+  - Flux : le notification-controller a un `Provider` pour le canal d'astreinte et une `Alert` avec
+    `eventSeverity: error` couvrant les objets `Kustomization`, `HelmRelease` et sources
+    (`GitRepository`, `OCIRepository`, `HelmRepository`) de production.
+
+  Les alertes sont acquittées et analysées : un échec peut venir d'une erreur dans Git, mais aussi
+  d'un changement fait directement dans le cluster, d'une source qui ne peut être vérifiée, ou d'un
+  déploiement bloqué.
+
+  La détection des écarts pour les déploiements hors GitOps relève de CB-CICD-DEPLOY-011.
+rationale: |
+  Un contrôleur GitOps est le système qui maintient la production conforme à Git. S'il échoue en
+  silence, la production garde son état, modifications manuelles ou malveillantes comprises, et les
+  correctifs de sécurité fusionnés dans Git n'arrivent jamais. Les échecs de vérification de
+  signature ou de source apparaissent aussi comme des erreurs de réconciliation : ils sont souvent
+  le premier signe d'une source altérée.
+impact: |
+  Nécessite une destination d'astreinte et une courte procédure de tri. Les applications bruyantes
+  peuvent demander un ajustement de leurs contrôles de santé.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux espaces de noms des contrôleurs GitOps (`argocd`,
+    `flux-system`) et à la destination des notifications.
+
+    1. **Argo CD** : dans `argocd-notifications-cm`, vérifier que les déclencheurs `on-sync-failed`
+       et `on-health-degraded` existent et que les applications de production y sont abonnées
+       (annotations `notifications.argoproj.io/subscribe.on-sync-failed.<service>` sur l'Application
+       ou l'AppProject, ou champ `subscriptions`) ; vérifier que le jeton du service est dans
+       `argocd-notifications-secret`, pas dans la ConfigMap.
+    2. **Flux** : `kubectl get providers,alerts -A` montre une `Alert` avec `eventSeverity: error`
+       dont les `eventSources` incluent les objets `Kustomization`, `HelmRelease` et sources de
+       production, liée à un `Provider` pour le canal d'astreinte.
+    3. Vérifier qu'un échec récent (ou un test, par exemple une branche volontairement cassée dans
+       une application de test) a produit une notification que quelqu'un a acquittée.
+    4. Échec si des applications ou sources de production n'ont pas de notification d'échec, ou si
+       les notifications partent vers un canal que personne ne surveille.
+remediation:
+  manual: |
+    1. **Argo CD** : installer les déclencheurs et modèles du catalogue de notifications, configurer
+       le service (Slack, PagerDuty, webhook...) avec son jeton dans `argocd-notifications-secret`,
+       et abonner les applications de production à `on-sync-failed` et `on-health-degraded`, de
+       préférence par des `subscriptions` par défaut dans `argocd-notifications-cm` ou des
+       annotations d'AppProject.
+    2. **Flux** : créer un `Provider` pour le canal d'astreinte avec son secret, et une `Alert` avec
+       `eventSeverity: error` et des `eventSources` pour les objets `Kustomization`, `HelmRelease`
+       et sources de production (`name: '*'` par espace de noms si besoin).
+    3. Rédiger une courte procédure de tri : comparer cluster et Git, examiner les événements d'audit
+       récents, et escalader en incident de sécurité si la cause n'est pas une erreur dans Git.

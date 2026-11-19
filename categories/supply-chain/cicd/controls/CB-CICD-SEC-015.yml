@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-015
+title: Use short-lived federated credentials for cloud and registry access
+finding:
+  title: Pipelines authenticate to cloud accounts or registries with long-lived keys
+  description: A cloud access key or service principal secret stored as a CI variable stays valid after it leaks from a job log, a compromised runner or a malicious pull request, until someone notices and rotates it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [oidc, workload-identity, federation, cloud-credentials, short-lived-credentials]
+
+description: |
+  Pipelines, GitOps controllers and the platform itself get cloud and registry credentials from an
+  OpenID Connect (OIDC) token or a workload identity issued for the run, exchanged against a cloud
+  role scoped to that pipeline. No long-lived cloud credential is stored as a CI secret or variable:
+  no AWS access key, Azure client secret or certificate, Google service account JSON key, or
+  non-expiring Kubernetes service account token.
+
+  The permission to request an ID token is granted only to the jobs that call the cloud, not to the
+  whole pipeline. Where a platform has no OIDC issuer, credentials come from the runner's own
+  workload identity (instance role, managed identity, Kubernetes workload identity) or are fetched at
+  job start with the shortest workable lifetime.
+
+  How the cloud trust policy is pinned to a repository, branch or environment is covered by
+  CB-CICD-SEC-016.
+rationale: |
+  Stolen CI secrets are the most common outcome of a pipeline compromise, and long-lived cloud keys
+  are the most valuable of them: they work from anywhere and for months. A federated token is
+  minted for one run, expires within minutes to an hour, and can only be exchanged for a role whose
+  trust policy names the pipeline. A leak then gives an attacker a short window instead of standing
+  access to the cloud account.
+impact: |
+  Each cloud role needs a federated trust relationship with the CI/CD platform's OIDC issuer, and
+  pipelines need a small change to request the token. Existing keys must be revoked once every
+  pipeline has moved, which needs an inventory of where they are used. Self-managed platforms whose
+  issuer is not reachable from the internet need the cloud provider to fetch the OIDC discovery
+  document from a public location.
+notes: |
+  Bitbucket Pipelines documents OIDC per step; check that `oidc: true` is set only on the steps that
+  deploy. AWS CodeBuild, Google Cloud Build and Harness delegate run as a cloud role or service
+  account and do not need stored keys at all; the control fails there only if keys were added as
+  environment variables anyway.
+
+audit:
+  manual: |
+    Use a platform role that can read pipeline settings and variable names (values are not needed).
+
+    1. List the secrets and variables at organization, group, project and environment level and
+       look for long-lived cloud credentials: names or values shaped like `AWS_ACCESS_KEY_ID` /
+       `AWS_SECRET_ACCESS_KEY` (key ids starting with `AKIA`), `AZURE_CLIENT_SECRET` or
+       `ARM_CLIENT_SECRET`, `GOOGLE_CREDENTIALS` or a service account JSON key, or a Kubernetes
+       bearer token.
+    2. On the cloud side, list the access keys, client secrets and service account keys that belong
+       to CI/CD identities and check their last use date.
+    3. Check how each platform in use gets its cloud credentials:
+       - **GitHub**: deploying workflows declare `permissions: id-token: write` on the deploying job
+         only, and use the cloud login action with a role (for example `role-to-assume`,
+         `client-id` without `client-secret`, `workload_identity_provider`). On GitHub Enterprise
+         Server, **Management Console** > **Actions** > artifact and log storage uses OIDC.
+       - **GitLab**: deploying jobs declare `id_tokens:` with an `aud` per cloud; no cloud key is
+         stored in CI/CD variables. The removed `CI_JOB_JWT` / `CI_JOB_JWT_V2` variables are not used.
+       - **Azure DevOps**: **Project settings** > **Service connections**: every Azure Resource
+         Manager connection uses **Workload identity federation**, none uses a secret.
+       - **Bitbucket**: deploying steps set `oidc: true`; **Repository settings** > **OpenID
+         Connect** gives the issuer and audience used by the cloud trust.
+       - **Buildkite**: deploying steps call `buildkite-agent oidc request-token` with an audience.
+       - **Gitea / Forgejo**: Gitea jobs declare `permissions: id-token: write`; Forgejo jobs set
+         `enable-openid-connect: true`.
+       - **Argo CD**: cluster secrets (label `argocd.argoproj.io/secret-type: cluster`) use
+         `awsAuthConfig`, `execProviderConfig` or workload identity, not a static `bearerToken`.
+       - **Flux**: `GitRepository`, `OCIRepository`, `HelmRepository` and `Bucket` sources use
+         `spec.provider` (`aws`, `azure`, `gcp`) or `serviceAccountName` with workload identity
+         instead of a `secretRef` holding cloud keys.
+       - **AWS CodeArtifact**: the token is fetched at job start with
+         `aws codeartifact get-authorization-token --duration-seconds` set to the shortest workable
+         value, not stored.
+    4. Fail if a long-lived cloud credential is stored in the platform for a cloud that supports
+       federation, or if the ID token permission is granted to every job of a pipeline that has
+       non-deploying jobs.
+
+remediation:
+  manual: |
+    1. Register the CI/CD platform's OIDC issuer as an identity provider in each cloud account
+       (AWS IAM OIDC provider, Microsoft Entra federated credential, Google Workload Identity
+       Federation pool).
+    2. Create one role per pipeline or per deployment target, with only the permissions it needs,
+       and a trust policy pinned to the repository and protected ref or environment
+       (CB-CICD-SEC-016).
+    3. Change the deploying jobs to request a token and assume the role:
+       - **GitHub**: add `permissions: id-token: write` to the deploying job and use the official
+         cloud login action with the role.
+       - **GitLab**: add `id_tokens: <NAME>: aud: <audience>` to the deploying job and pass the
+         token to the cloud CLI.
+       - **Azure DevOps**: open each Azure Resource Manager service connection and select
+         **Convert** to switch it to workload identity federation, or create a new one with
+         **Workload identity federation (automatic)**.
+       - **Bitbucket**: add `oidc: true` to the deploying step only.
+       - **Buildkite**: request a token with `buildkite-agent oidc request-token --audience
+         <audience>` in the deploying step.
+       - **Gitea / Forgejo**: add `permissions: id-token: write` (Gitea) or
+         `enable-openid-connect: true` (Forgejo) to the deploying job.
+       - **Argo CD / Flux**: give the controller a cloud workload identity and switch cluster
+         secrets and sources to it.
+    4. Run the pipelines, then delete the stored keys from the platform and revoke them in the
+       cloud account.
+  rollback: |
+    Keep the old key disabled, not deleted, until the federated pipelines have run once in each
+    environment; re-enable it if a deployment is blocked.
+
+references:
+  - title: Security hardening your deployments with OpenID Connect
+    url: https://docs.github.com/en/actions/concepts/security/openid-connect
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenID Connect (OIDC) authentication using ID tokens
+    url: https://docs.gitlab.com/ci/secrets/id_token_authentication/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Connect to Azure with an Azure Resource Manager service connection
+    url: https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Integrate Pipelines with resource servers using OIDC
+    url: https://support.atlassian.com/bitbucket-cloud/docs/integrate-pipelines-with-resource-servers-using-oidc/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OIDC with Buildkite
+    url: https://buildkite.com/docs/pipelines/security/oidc
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers the cloud and registry credentials of pipelines; static secrets are covered by other SEC controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(13)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-016
+    type: related
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-SEC-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

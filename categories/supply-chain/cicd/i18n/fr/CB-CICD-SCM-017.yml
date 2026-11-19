@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une nouvelle authentification pour approuver les merge requests
+finding:
+  title: Les merge requests peuvent être approuvées depuis n'importe quelle session ouverte sans nouvelle authentification
+  description: Un attaquant qui détourne la session navigateur ou le cookie de session d'un relecteur peut approuver des merge requests à sa place et satisfaire l'exigence de revue.
+description: |
+  Sur les projets qui contiennent du code ou des pipelines critiques, GitLab demande aux
+  approbateurs de s'authentifier de nouveau, par mot de passe ou via SAML, avant d'enregistrer leur
+  approbation. Une approbation devient alors un acte explicite et authentifié plutôt qu'un clic
+  dans une session existante.
+
+  La durée de vie des sessions relève de CB-CICD-IAM-008 ; l'authentification multifacteur de
+  CB-CICD-IAM-006.
+rationale: |
+  Les contrôles de revue supposent que l'approbateur est bien la personne derrière le compte au
+  moment de l'approbation. Des cookies de session volés, un poste non verrouillé ou une extension de
+  navigateur malveillante cassent cette hypothèse. La réauthentification au moment de l'approbation
+  limite ce qu'une telle session peut faire, et donne à l'approbation la valeur d'une signature
+  électronique là où la réglementation en demande une.
+impact: |
+  Les approbateurs saisissent leur mot de passe ou passent par le flux SAML à chaque approbation.
+  L'authentification par mot de passe ou SAML doit être activée pour les utilisateurs concernés.
+notes: |
+  Le réglage nécessite GitLab Premium. Sur GitLab.com, il n'est disponible que sur les groupes de
+  premier niveau. Sur GitLab Self-Managed, la réauthentification SAML est disponible par défaut et
+  peut être masquée par un feature flag.
+setting:
+  location: Groupe de premier niveau ou projet > Settings > Merge requests > Merge request approvals > Approval settings > Require user re-authentication (password or SAML) to approve
+  recommended_value: Activé sur les projets qui contiennent du code ou des pipelines critiques
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages d'approbation des merge requests (Maintainer ou
+    Owner).
+
+    1. Lister les projets qui contiennent du code critique, des modèles de pipeline ou de la
+       configuration de déploiement.
+    2. Pour chacun, ou pour son groupe de premier niveau, ouvrir **Settings** > **Merge requests** >
+       **Merge request approvals** > **Approval settings** et vérifier **Require user
+       re-authentication (password or SAML) to approve**.
+    3. Échec si le réglage est décoché sur un projet critique.
+remediation:
+  manual: |
+    1. S'assurer que l'authentification par mot de passe ou SAML est activée pour les
+       approbateurs.
+    2. Dans le groupe de premier niveau (de préférence) ou le projet, cocher **Require user
+       re-authentication (password or SAML) to approve** et enregistrer.
+    3. Prévenir les approbateurs qu'une authentification leur sera demandée lors de l'approbation.
+  rollback: |
+    Décocher **Require user re-authentication (password or SAML) to approve** dans les mêmes
+    réglages.

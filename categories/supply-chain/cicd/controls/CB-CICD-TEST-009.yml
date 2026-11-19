@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-009
+title: Test the pipeline's own security controls automatically
+finding:
+  title: Pipeline security gates are never tested to fail
+  description: A scan that silently stopped running, a policy with a typo or a gate set to warn instead of block looks fine in every green pipeline, and the gap is only found after something bad passed through.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [security-testing, policy-as-code, control-validation, pipeline-gates]
+
+description: |
+  The security controls built into the pipelines (merge gates, scans and their thresholds,
+  admission and deployment policies, signature verification, secret detection) are covered by
+  automated tests that prove they block what they should:
+  - policy-as-code rules have unit tests with passing and failing cases;
+  - a test project or scheduled job regularly submits known-bad inputs (a test secret, a
+    vulnerable dependency, an unsigned artifact, an unpinned action) and checks that each gate
+    reports or blocks it;
+  - a failing control test raises an alert to the owner of the control.
+
+  The periodic posture assessment of the platforms themselves is covered by CB-CICD-PLAT-016.
+rationale: |
+  Security gates fail open in quiet ways: a scanner exits early, a policy file is not loaded, an
+  update changes a default. Pipelines stay green, so nobody notices. Testing the controls with
+  known-bad inputs turns these silent failures into visible ones, the same way unit tests do for
+  application code.
+impact: |
+  The team that owns the pipeline controls needs to write and maintain the tests and a test
+  project. Known-bad inputs must be clearly marked as test data so that they do not trigger
+  incident response.
+
+audit:
+  manual: |
+    Use read access to the policy repositories, the control test project and its results.
+
+    1. List the security controls built into the pipelines and their owners.
+    2. For each one, find its automated test (policy unit tests such as `opa test`, or a
+       known-bad input in a test project) and check its last results.
+    3. Fail if a security gate has no automated test, if tests have not run in the last month, or
+       if a failing test did not raise an alert.
+
+remediation:
+  manual: |
+    1. Add unit tests to policy-as-code repositories and run them in their own pipeline.
+    2. Create a test project with known-bad inputs for each gate and a scheduled pipeline that
+       checks each one is reported or blocked.
+    3. Send failures of these tests to the control owners and track them like incidents.
+
+references:
+  - title: Policy testing
+    url: https://www.openpolicyagent.org/docs/policy-testing
+    publisher: Open Policy Agent
+    kind: tool
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-218, Secure Software Development Framework (SSDF) 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CA-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+related_controls:
+  - id: CB-CICD-PLAT-016
+    type: related
+  - id: CB-CICD-TEST-001
+    type: related
+  - id: CB-CICD-DEPLOY-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

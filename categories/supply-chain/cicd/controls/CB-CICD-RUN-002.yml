@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-002
+title: Restrict runner registration to platform administrators
+finding:
+  title: Project or repository administrators can attach their own runners
+  description: A runner registered by any project maintainer receives that project's jobs, secrets and tokens, and on shared scopes can pick up other teams' jobs, so one compromised maintainer account or a rogue machine becomes a collection point for credentials.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, agents, registration, least-privilege]
+
+parameters:
+  - name: runner_registrars
+    type: enum
+    description: Which runners only platform administrators may register. shared-runners covers organization, group and instance runners; all-runners also removes self-registration of repository and project runners.
+    allowed: [shared-runners, all-runners]
+    default: shared-runners
+    profile_defaults:
+      hardened: all-runners
+
+description: |
+  Registering or creating runners and agents is reserved to a small group of platform
+  administrators. The scope covered is set by `{{ runner_registrars }}`:
+
+  - `shared-runners`: runners that serve several repositories or projects (organization, group,
+    instance, enterprise and organization-scoped agent pools) are registered only by that group;
+  - `all-runners`: repository and project administrators cannot register runners at all, and every
+    runner is created centrally.
+
+  Short-lived registration tokens are covered by CB-CICD-RUN-004; who may use a runner once it
+  exists is covered by CB-CICD-RUN-010 and CB-CICD-RUN-011.
+rationale: |
+  A runner is trusted with everything a job receives: checked-out code, secrets, job tokens and
+  cloud credentials. Whoever registers a runner chooses the machine that receives them. When any
+  maintainer can attach a runner, a single compromised account is enough to route jobs to a host
+  the attacker controls and harvest secrets, or to run builds on an unpatched, unmonitored machine.
+impact: |
+  Teams that run their own runners must ask the platform team to register them. Plan a request
+  process and an inventory of existing project runners before restricting registration.
+notes: |
+  On Woodpecker, organization admins and every user for their own repositories can add agents
+  until the server option below is set. On GitLab, turning off project member registration rotates
+  the project registration token.
+
+audit:
+  manual: |
+    Use a platform role that can read runner settings and agent pool security (administrator
+    read access or an auditor role).
+
+    1. List who can create or register runners at each scope (enterprise, organization, group,
+       project, repository) and compare with the platform administrator group.
+    2. List existing runners and agents with the account that registered them; look for runners
+       added by project maintainers.
+    3. Check the platform settings:
+       - **GitHub**: on GitHub Enterprise Cloud, **Enterprise** > **Policies** > **Actions** >
+         **Runners**: repository-level runners are disabled (**Disable for all organizations**,
+         and **Disable in all Enterprise Managed User (EMU) repositories** where used). Otherwise
+         check in each organization's Actions settings which repositories may create
+         repository-level self-hosted runners.
+       - **GitLab**: **Admin** > **Settings** > **CI/CD** > **Runners** > **Runner registration**:
+         **Members of the project can create runners** and **Members of the group can create
+         runners** (both allowed by default); per group, **Admin** > **Overview** > **Groups** >
+         **Edit** > **New group runners can be registered**.
+       - **Azure DevOps**: **Organization settings** > **Agent pools** > **Security**, and each
+         pool's **Security** tab: the **Administrator** role (needed to register agents) is held
+         only by the platform group. By default, project administrators, build administrators,
+         release administrators and the pool creator hold it.
+       - **Woodpecker**: server setting `WOODPECKER_DISABLE_USER_AGENT_REGISTRATION` (default
+         `false`).
+    4. Fail if, for the scope set by `{{ runner_registrars }}`, anyone outside the platform
+       administrator group can register a runner or agent.
+remediation:
+  manual: |
+    1. Inventory existing runners registered by project maintainers and decide which ones are
+       re-registered centrally.
+    2. Restrict registration:
+       - **GitHub**: as an enterprise owner (GitHub Enterprise Cloud), in **Policies** >
+         **Actions** > **Runners**, select **Disable for all organizations**; otherwise, as an
+         organization owner, limit which repositories may create repository-level runners in the
+         organization's Actions settings. Register shared runners in runner groups.
+       - **GitLab**: as an administrator, clear **Members of the project can create runners** and
+         **Members of the group can create runners**; for sensitive groups also clear **New group
+         runners can be registered**.
+       - **Azure DevOps**: as a Project Collection Administrator, keep the **Administrator** role on
+         agent pools for the platform group only and remove it from other groups.
+       - **Woodpecker**: set `WOODPECKER_DISABLE_USER_AGENT_REGISTRATION=true` on the server.
+    3. Re-register the runners that teams still need under central ownership and remove the others
+       (CB-CICD-RUN-006).
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise (Runners)
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Continuous integration and deployment admin settings (Control runner registration)
+    url: https://docs.gitlab.com/administration/settings/continuous_integration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage security in Azure Pipelines (Set agent pool security)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/policies/permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker security boundaries (Agents and backends)
+    url: https://woodpecker-ci.org/docs/usage/security-boundaries
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-RUN-004
+    type: related
+  - id: CB-CICD-RUN-010
+    type: related
+  - id: CB-CICD-RUN-006
+    type: related
+  - id: CB-CICD-IAM-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

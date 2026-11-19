@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-020
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une réauthentification ou une élévation juste-à-temps pour les privilèges d'administration
+finding:
+  title: Les droits d'administrateur sont actifs dans chaque session sans réauthentification
+  description: Quand les droits d'administrateur sont toujours actifs, une session ou un jeton d'administrateur volé peut modifier immédiatement les réglages de l'instance, les runners et les permissions, sans autre contrôle.
+parameters:
+  admin_elevation: Manière dont les administrateurs obtiennent leurs droits. `reauthentication` garde le rôle attribué mais exige une authentification récente avant les actions d'administration ; `just-in-time` rend le rôle seulement éligible et l'accorde pour une durée limitée après approbation.
+description: |
+  Les droits d'administration sur les plates-formes CI/CD ne sont pas actifs dans les sessions
+  courantes. Avec `{{ admin_elevation }}` réglé sur `reauthentication`, les administrateurs se
+  réauthentifient avant une action d'administration ; avec `just-in-time`, l'appartenance au groupe
+  des administrateurs est éligible plutôt que permanente, activée pour une durée limitée avec une
+  justification et une approbation, et journalisée.
+
+  Le nombre d'administrateurs relève de CB-CICD-IAM-018, les postes d'administration dédiés de
+  CB-CICD-IAM-021.
+rationale: |
+  Les administrateurs utilisent le même navigateur et la même session pour la revue de code et pour
+  l'administration de l'instance. La réauthentification rend un cookie de session ou un jeton
+  personnel volé insuffisant pour les actions d'administration ; l'élévation juste-à-temps supprime
+  l'appartenance permanente au groupe des administrateurs, si bien qu'un compte compromis n'a rien à
+  exploiter la plupart du temps.
+impact: |
+  Les administrateurs se réauthentifient ou demandent une activation avant tout travail
+  d'administration, et certains appels d'API avec jetons personnels nécessitent une portée admin
+  mode. L'élévation juste-à-temps sur Azure DevOps nécessite Microsoft Entra ID P2 et un approbateur
+  disponible.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de la plate-forme, ou un rôle Privileged Role Reader dans Entra.
+
+    1. **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Sign-in restrictions** >
+       **Admin Mode** est activé (`admin_mode: true`) ; il s'applique à tous les administrateurs.
+    2. **Azure DevOps** (`just-in-time`) : Project Collection Administrators et Project
+       Administrators contiennent un groupe Entra géré par Privileged Identity Management for Groups,
+       avec des attributions éligibles (pas actives permanentes), une approbation et une durée
+       d'activation maximale.
+    3. Échec si les administrateurs peuvent effectuer des actions d'administration sans
+       réauthentification, ou, avec `just-in-time`, si l'appartenance au groupe des administrateurs
+       est permanente.
+remediation:
+  manual: |
+    1. **GitLab auto-hébergé** : cocher **Admin Mode** dans **Sign-in restrictions** (administrateur
+       de l'instance), et demander aux administrateurs d'utiliser **Enter Admin Mode** pour les tâches
+       d'administration.
+    2. **Azure DevOps** (`just-in-time`) : créer un groupe de sécurité Entra, le placer sous PIM for
+       Groups avec des attributions éligibles, une approbation et une activation courte, l'ajouter à
+       Project Collection Administrators, puis retirer les membres directs permanents.
+    3. Garder un compte de secours hors PIM (CB-CICD-IAM-003).

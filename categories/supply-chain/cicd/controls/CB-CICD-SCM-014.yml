@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-014
+title: Reset approvals when new commits are pushed
+finding:
+  title: Approvals stay valid after new commits are pushed to the pull request
+  description: A contributor can get a harmless change approved, then push extra commits to the same branch and merge them under the earlier approval, so the code that ships is not the code that was reviewed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [code-review, stale-approvals, pull-requests, flow-control]
+
+description: |
+  When the source branch of a pull or merge request changes in a way that alters its content,
+  existing approvals are dismissed and the request needs to be approved again. The review that
+  allows the merge therefore always covers the final revision.
+
+  Platforms may keep an approval when the diff is unchanged (for example after a rebase with no
+  new changes); that is acceptable. Requiring that the last pusher is not the approver is covered
+  by CB-CICD-SCM-013 and is a complement, not a replacement, for this control.
+rationale: |
+  Without approval reset, the "approve then push" pattern defeats review completely: the approval
+  is attached to the pull request, not to the commits that were read. It is one of the simplest
+  ways for an insider or an attacker with a developer token to merge unreviewed code while every
+  report shows the change as approved.
+impact: |
+  Reviewers approve again after each content change, which adds round trips on long-lived pull
+  requests. Rebases and merges from the target branch may also reset approvals on some platforms.
+notes: |
+  On GitLab (Premium) **Remove all approvals when commits are added to the source branch** is on by
+  default; **Remove approvals by Code Owners if their files changed** is a narrower alternative
+  that leaves other approvals in place. On Bitbucket Cloud, approval reset needs Premium. On Azure
+  DevOps, **Reset all approval votes** keeps reject and wait votes, which is the intended
+  behavior.
+
+audit:
+  manual: |
+    Use a role that can read branch protection and merge request settings.
+
+    1. Check the setting on the rules that protect default and release branches:
+       - **GitHub**: ruleset rule **Require a pull request before merging** > **Dismiss stale pull
+         request approvals when new commits are pushed** is enabled (same option in branch
+         protection rules).
+       - **GitLab** (Premium): **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings** > **Remove all approvals when commits are added to the source
+         branch** is selected.
+       - **Azure DevOps**: **Require a minimum number of reviewers** > **When new changes are
+         pushed** is set to **Reset all approval votes** or **Reset all code reviewer votes**.
+       - **Bitbucket Cloud** (Premium): branch restriction merge settings include **Reset approvals
+         when the source branch is modified**.
+       - **Gitea / Forgejo**: the branch rule enables **Dismiss stale approvals**.
+    2. Sample merged pull requests whose last commit is later than the last approval and confirm
+       none exist.
+    3. Fail if an approval given before a content change still counts toward the merge.
+
+remediation:
+  manual: |
+    1. Enable approval reset on every protection rule:
+       - **GitHub**: enable **Dismiss stale pull request approvals when new commits are pushed** in
+         the ruleset.
+       - **GitLab**: select **Remove all approvals when commits are added to the source branch** at
+         top-level group level so projects inherit it.
+       - **Azure DevOps**: under **When new changes are pushed**, select **Reset all approval
+         votes**.
+       - **Bitbucket Cloud**: enable **Reset approvals when the source branch is modified**,
+         optionally with **Keep approvals if there is no change to the diff in the pull request**.
+       - **Gitea / Forgejo**: select **Dismiss stale approvals**.
+    2. Tell reviewers that approvals now apply to the latest revision only.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approval settings
+    url: https://docs.gitlab.com/user/project/merge_requests/approvals/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Suggest or require checks before a merge
+    url: https://support.atlassian.com/bitbucket-cloud/docs/suggest-or-require-checks-before-a-merge/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track - Two-party review
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers approvals that outlive the reviewed revision; other review requirements are separate controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.4"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L4
+    relation: partial
+    note: Implements the final-revision-approved part of two-party review.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: requires
+  - id: CB-CICD-SCM-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

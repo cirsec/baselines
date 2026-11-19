@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter une analyse statique du code sur chaque demande de modification
+finding:
+  title: Les modifications de code sont fusionnées sans analyse statique de sécurité
+  description: Sans analyse statique sur les pull requests, les failles d'injection, de désérialisation non sûre et autres défauts similaires atteignent la branche par défaut sans être vus, là où ils sont plus difficiles à trouver et à corriger.
+description: |
+  Une analyse statique de sécurité applicative (SAST) tourne sur chaque demande de modification et
+  sur la branche par défaut de chaque dépôt qui contient du code, et :
+  - couvre tous les langages du dépôt, y compris les langages de définition de pipeline quand
+    l'outil les prend en charge (par exemple les workflows GitHub Actions dans CodeQL) ;
+  - signale ses résultats au développeur dans la demande de modification, pas seulement dans un
+    tableau de bord séparé ;
+  - voit ses résultats triés par des personnes : les vrais positifs sont corrigés ou suivis, les
+    faux positifs écartés avec une justification.
+
+  Le blocage des fusions sur les nouveaux résultats de gravité élevée relève de CB-CICD-TEST-003, et
+  l'imposition centralisée des analyses de CB-CICD-TEST-001.
+rationale: |
+  L'analyse statique trouve des catégories de vulnérabilités que la revue manque souvent, au moment
+  où le code est écrit et le moins cher à corriger. Ne la lancer que périodiquement ou sur la branche
+  par défaut laisse les failles être fusionnées d'abord. Des résultats que personne ne trie
+  s'accumulent jusqu'à ce que l'outil soit ignoré.
+impact: |
+  La SAST allonge les pipelines et produit des faux positifs à trier. Certains moteurs sont payants
+  (GitHub Code Security pour les dépôts privés, GitHub Code Security for Azure DevOps).
+notes: |
+  La configuration par défaut de code scanning GitHub a besoin de GitHub Actions activé sur le
+  dépôt. Dans Azure DevOps, code scanning repose sur des tâches distribuées par la Marketplace :
+  **Disable Marketplace tasks** (CB-CICD-COMP-001) empêche la configuration par défaut de tourner.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de sécurité et les alertes (gestionnaire de la
+    sécurité, administrateur de projet en lecture).
+
+    1. Lister les dépôts qui contiennent du code et vérifier que la SAST a tourné sur les
+       demandes de modification récentes et sur la branche par défaut, pour tous leurs langages
+       (Scorecard `SAST` le signale pour GitHub).
+    2. Vérifier par plate-forme :
+       - **GitHub** : **Settings** du dépôt > **Advanced Security** > **Code scanning** : la
+         configuration par défaut ou avancée est activée, avec tous les langages détectés y compris
+         GitHub Actions ; les alertes apparaissent sur les pull requests.
+       - **Azure DevOps** : **Paramètres** du dépôt > **GitHub Advanced Security** : **Code
+         scanning** est activé (configuration par défaut) ou les pipelines exécutent les tâches
+         `AdvancedSecurity-Codeql-Init` et `AdvancedSecurity-Codeql-Analyze`.
+       - **Autres plates-formes** : un job SAST tourne dans les pipelines de demande de
+         modification (par exemple le modèle SAST de GitLab) et publie ses résultats là où les
+         développeurs les voient.
+    3. Examiner un échantillon de résultats de plus de 30 jours et vérifier qu'ils ont été triés.
+    4. Échec si un dépôt avec du code n'a pas de SAST sur les demandes de modification, si un
+       langage du dépôt n'est pas couvert, ou si les résultats ne sont pas triés.
+remediation:
+  manual: |
+    1. Activer la SAST sur chaque dépôt, idéalement par la configuration centrale de
+       CB-CICD-TEST-001 :
+       - **GitHub** (administrateur du dépôt ou gestionnaire de la sécurité) : activer la
+         configuration **Default** de code scanning, ou la configuration avancée pour les langages
+         compilés qui demandent un build spécifique.
+       - **Azure DevOps** (Project Administrator, avec le module GitHub Code Security) : activer
+         **Code scanning** dans les réglages Advanced Security du dépôt ou ajouter les tâches CodeQL
+         à un modèle obligatoire.
+       - **GitLab** : inclure le modèle `Jobs/SAST.gitlab-ci.yml` ou le composant SAST.
+    2. Confier le tri des résultats à l'équipe propriétaire de chaque dépôt et revoir l'arriéré
+       régulièrement.

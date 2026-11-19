@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer à tous les jobs des pools de runners approuvés et gouvernés
+finding:
+  title: Des jobs peuvent choisir des runners non gouvernés hors des pools approuvés
+  description: Quand les workflows peuvent encore cibler les runners hébergés standard ou le pool par défaut, et que les jobs de robots comme les mises à jour de dépendances suivent leur propre routage, une partie de la charge CI tourne hors des contrôles réseau, de journalisation et d'accès posés sur les pools approuvés.
+description: |
+  Une politique au niveau de l'organisation fait tourner chaque build sur un pool de runners approuvé :
+  groupes de runners sur GitHub, pools de workers privés sur Google Cloud Build. Les pipelines ne peuvent
+  pas se rabattre sur les runners hébergés standard ou le pool par défaut, et les jobs lancés par des
+  robots de la plate-forme, comme les mises à jour Dependabot sur GitHub, sont routés explicitement vers
+  un pool choisi pour eux.
+
+  Quels dépôts peuvent utiliser quel pool relève de CB-CICD-RUN-010.
+rationale: |
+  L'isolation réseau, le filtrage des sorties, la supervision et la localisation des données sont
+  configurés sur les pools approuvés. Un job qui peut choisir un autre runner échappe à tout cela. Sur
+  GitHub, les jobs Dependabot s'exécutent comme des workflows dynamiques qui ne sont pas soumis aux
+  politiques Actions posées pour les workflows ordinaires : leur routage doit donc être fixé
+  volontairement.
+impact: |
+  Désactiver les runners hébergés standard oblige chaque workflow à cibler des runners via des groupes de
+  runners ; les workflows qui utilisent de simples labels comme `ubuntu-latest` cessent de tourner tant
+  qu'ils ne sont pas mis à jour. Sur Google Cloud Build, les builds qui ne désignent pas un pool privé
+  autorisé échouent.
+notes: |
+  Sur GitHub, les runners étiquetés pour Dependabot ne sont pas disponibles pour les dépôts publics, qui
+  continuent d'utiliser les runners hébergés standard. Quand « Dependabot on self-hosted runners » est
+  activé, les jobs Dependabot ne tournent que sur des runners auto-hébergés ou sur des larger runners
+  portant le label `dependabot`.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire d'entreprise ou d'organisation avec accès en lecture aux politiques
+    Actions (GitHub), ou un rôle qui peut lire les règles d'administration de l'organisation (Google
+    Cloud).
+
+    1. **GitHub** (GitHub Enterprise Cloud) : **Enterprise** > **Policies** > **Actions** > **Standard
+       hosted runners** : les runners hébergés standard sont désactivés pour toutes les organisations.
+       Dans chaque organisation, **Settings** > **Code security** > **Global settings** : vérifier si
+       Dependabot tourne sur des runners Actions et sur des runners auto-hébergés, et quel groupe de
+       runners ou label `dependabot` il utilise.
+    2. **Google Cloud Build** : la contrainte de règle d'administration `cloudbuild.allowedWorkerPools`
+       est appliquée aux dossiers ou projets qui exécutent des builds et ne liste que les pools privés
+       approuvés.
+    3. Revoir les exécutions récentes et vérifier que chaque job a tourné sur un pool approuvé.
+    4. Échec si des jobs peuvent encore tourner sur les runners hébergés standard ou le pool par défaut, ou
+       si les jobs Dependabot sont routés vers un groupe de runners non approuvé pour eux.
+remediation:
+  manual: |
+    1. Créer les groupes de runners ou pools privés approuvés et y donner accès aux dépôts
+       (CB-CICD-RUN-010).
+    2. Mettre à jour les workflows et configurations de build pour cibler ces pools.
+    3. Appliquer la politique :
+       - **GitHub** : en tant que propriétaire d'entreprise, dans **Policies** > **Actions**, section
+         **Standard hosted runners**, choisir **Disable for all organizations**. Router Dependabot vers un
+         groupe de runners dédié ou vers des larger runners portant le label `dependabot` via les réglages
+         de runners Dependabot de l'organisation.
+       - **Google Cloud Build** : poser la règle d'administration `cloudbuild.allowedWorkerPools` avec la
+         liste des pools privés approuvés sur l'organisation ou les dossiers de build.
+    4. Surveiller les exécutions en échec après l'application et corriger les workflows qui utilisent
+       encore d'autres runners.

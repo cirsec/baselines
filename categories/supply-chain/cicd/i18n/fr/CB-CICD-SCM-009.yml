@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les pushes forcés et la suppression des branches protégées
+finding:
+  title: Les branches protégées peuvent subir un push forcé ou être supprimées
+  description: Un push forcé ou une suppression suivie d'une recréation réécrit l'historique d'une branche de release, ce qui peut retirer discrètement un correctif de sécurité ou glisser un commit jamais revu, et efface la trace sur laquelle s'appuient les enquêteurs.
+description: |
+  L'historique des branches par défaut et de release ne fait qu'avancer. Les pushes forcés
+  (réécriture d'historique) et la suppression de ces branches sont refusés à tous, administrateurs
+  compris.
+
+  Quand un contenu doit vraiment être retiré de l'historique (secret divulgué, contenu illicite),
+  l'organisation suit une procédure de purge documentée : la demande est enregistrée, un
+  administrateur et une seconde personne de confiance l'approuvent et l'exécutent, la règle n'est
+  levée que le temps de l'opération, et l'action est journalisée. Le droit de contourner les règles
+  de protection en général relève de CB-CICD-SCM-011.
+rationale: |
+  La revue, les signatures et l'audit supposent qu'un commit, une fois fusionné, reste dans
+  l'historique. Réécrire une branche protégée casse cette hypothèse : un attaquant ou un
+  maintainer imprudent peut retirer un correctif, remplacer un commit revu par un commit non revu
+  portant le même message, ou supprimer la branche et la recréer depuis un autre point. Ceux qui
+  construisent depuis la branche obtiennent alors du code que personne n'a approuvé, et les preuves
+  ont disparu.
+impact: |
+  Les maintainers ne peuvent plus nettoyer l'historique des branches protégées par un push forcé.
+  Les erreurs se corrigent par des commits de revert ; un vrai retrait passe par la procédure de
+  purge.
+notes: |
+  Sur GitLab, les branches protégées ne peuvent pas être supprimées avec Git, mais les utilisateurs
+  ayant le rôle Maintainer ou Owner peuvent encore les supprimer depuis l'interface web ou l'API ;
+  garder ce rôle restreint (CB-CICD-IAM-019). Sur Bitbucket Cloud, les options **Allow rewriting
+  branch history** et **Allow deleting this branch** n'existent qu'au sein d'une restriction de
+  branche. Sur Azure DevOps, une branche portant des stratégies obligatoires ne peut pas être
+  supprimée.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de protection de branche et la sécurité des dépôts.
+
+    1. Pour chaque dépôt, ouvrir la règle qui protège les branches par défaut et de release.
+    2. Vérifier que le push forcé et la suppression sont refusés :
+       - **GitHub** : le ruleset active **Block force pushes** et **Restrict deletions**, ou la règle
+         de protection de branche a **Allow force pushes** et **Allow deletions** décochés. Sur
+         GitHub Enterprise Server, **Policies** > **Options** > **Force pushes** de l'entreprise vaut
+         **Block** ou **Block to the default branch**, avec **Enforce on all repositories**.
+       - **GitLab** : **Settings** > **Repository** > **Branch rules** : **Allowed to force push**
+         est désactivé pour chaque branche protégée.
+       - **Azure DevOps** : **Paramètres du projet** > **Dépôts** > **Sécurité** (tous les dépôts et
+         chaque dépôt) : **Forcer l'envoi (push) (réécrire l'historique, supprimer des branches et
+         des balises)** n'est autorisé pour aucun groupe ni utilisateur, hormis une identité de
+         secours documentée.
+       - **Bitbucket Cloud** : dans **Branch restrictions**, **Allow rewriting branch history** et
+         **Allow deleting this branch** sont décochés pour les branches protégées.
+       - **Bitbucket Data Center** : **Branch permissions** contient **Prevent rewriting history** et
+         **Prevent deletion** sans exemptions larges.
+       - **Gitea** : la règle de branche utilise **Disable force push** et **Disable branch
+         deletion**.
+    3. Vérifier qu'une procédure de purge écrite existe, exige deux personnes et est journalisée.
+    4. Échec si quelqu'un d'autre qu'une identité de secours documentée peut forcer un push ou
+       supprimer une branche protégée, ou s'il n'existe pas de procédure de purge.
+remediation:
+  manual: |
+    1. Refuser le push forcé et la suppression sur les branches protégées :
+       - **GitHub** : activer **Block force pushes** et **Restrict deletions** dans le ruleset, sans
+         acteur de contournement ; sur GitHub Enterprise Server, régler aussi la politique
+         d'entreprise **Force pushes**.
+       - **GitLab** : désactiver **Allowed to force push** sur chaque branche protégée.
+       - **Azure DevOps** : mettre **Forcer l'envoi (push) (réécrire l'historique, supprimer des
+         branches et des balises)** à **Non défini** pour tous les groupes (elle n'est accordée à
+         personne par défaut), et à **Refuser** là où un **Autoriser** est hérité.
+       - **Bitbucket** : décocher **Allow rewriting branch history** et **Allow deleting this
+         branch** (Cloud), ou ajouter **Prevent rewriting history** et **Prevent deletion** (Data
+         Center).
+       - **Gitea** : choisir **Disable force push** et **Disable branch deletion**.
+    2. Rédiger la procédure de purge : ticket de demande, approbation par un administrateur et une
+       seconde personne de confiance, levée temporaire de la règle, journal de l'opération et
+       rétablissement de la règle.

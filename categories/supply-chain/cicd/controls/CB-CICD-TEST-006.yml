@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-006
+title: Check infrastructure as code against the organization policy in the pipeline
+finding:
+  title: Infrastructure-as-code changes are applied without a misconfiguration scan
+  description: Public storage buckets, open security groups or privileged Kubernetes manifests written in infrastructure-as-code files are deployed as written, because nothing checks them before they reach the cloud or cluster.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [security-testing, iac, misconfiguration, policy-as-code]
+
+description: |
+  Repositories that contain infrastructure as code (Terraform, CloudFormation, ARM or Bicep,
+  Kubernetes manifests, Helm charts, Dockerfiles, Ansible) run a misconfiguration scanner in their
+  change request pipelines. The scanner uses rules that reflect the organization's security
+  policy (for example Checkov, KICS, tfsec-based scanners or policy-as-code with Open Policy
+  Agent), its findings are shown in the change request, and high-severity findings fail the check
+  unless an exception is recorded.
+
+  Admission policies at deployment time are covered by CB-CICD-DEPLOY-005.
+rationale: |
+  Cloud and cluster incidents often come from configuration, not code: a bucket made public, a
+  wide network rule, a container allowed to run privileged. When the configuration is written as
+  code, these errors can be caught in review by a scanner before they are applied, where they are
+  cheap to fix.
+impact: |
+  Scanners report many findings on existing code at first; tune the rule set to the
+  organization policy and record exceptions before making the check blocking.
+
+audit:
+  manual: |
+    Use read access to the repositories and recent pipeline results.
+
+    1. List repositories that contain infrastructure-as-code files.
+    2. Check that their change request pipelines run an IaC scanner (for example the GitLab IaC
+       scanning template, Checkov or KICS jobs) with a rule set mapped to the organization policy,
+       and that results appear in the change request.
+    3. Fail if a repository with infrastructure as code has no scan in its change request
+       pipeline, or if high-severity findings do not fail the check and are not recorded as
+       exceptions.
+
+remediation:
+  manual: |
+    1. Add an IaC scanning job to the pipelines of these repositories, from a shared template if
+       possible (for example GitLab `Jobs/SAST-IaC.gitlab-ci.yml`, or a Checkov or KICS job).
+    2. Align the rule set with the organization's cloud and cluster policies and add custom rules
+       for local requirements.
+    3. Fix or record the existing findings, then make the check blocking for high severity.
+
+references:
+  - title: Infrastructure as Code scanning
+    url: https://docs.gitlab.com/user/application_security/iac_scanning/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Checkov
+    url: https://www.checkov.io/
+    publisher: Prisma Cloud
+    kind: tool
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-001
+    type: related
+  - id: CB-CICD-DEPLOY-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

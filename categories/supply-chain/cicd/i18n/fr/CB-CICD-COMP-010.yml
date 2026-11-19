@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier la provenance des outils de build et bibliothèques critiques
+finding:
+  title: Les outils de build et les bibliothèques critiques sont utilisés sans vérifier leur origine
+  description: Compilateurs, outils de build et bibliothèques clés sont pris tels quels depuis des sources publiques, si bien qu'une version altérée ou un build amont compromis atteint tous les produits construits avec eux.
+description: |
+  Les outils qui façonnent chaque sortie de build (compilateurs, SDK, systèmes de build, outils de
+  packaging, images de base des runners) ainsi que les composants CI et bibliothèques que
+  l'organisation juge critiques sont vérifiés avant usage :
+  - leur intégrité et leur provenance sont vérifiées (signature, attestation de provenance publiée
+    ou empreinte obtenue par un canal indépendant) avant leur entrée dans une image de runner ou un
+    miroir ;
+  - les bibliothèques open source critiques sont soit reconstruites par le pipeline de
+    l'organisation à partir d'une copie miroir revue de leur source, soit accompagnées d'un SBOM
+    signé et de déclarations VEX du fournisseur ;
+  - la liste des outils et bibliothèques critiques, et la façon dont chacun a été vérifié, est
+    consignée.
+
+  Les vérifications de signature et de provenance des installations de paquets courantes relèvent
+  de CB-DEP-INV-003 et CB-CICD-COMP-014 ; la provenance des images de runner de CB-CICD-RUN-028.
+rationale: |
+  Les attaques sur les outils de build et les bibliothèques très utilisées atteignent de nombreux
+  produits en aval d'un coup, et l'altération est invisible dans le code de l'application. Vérifier
+  provenance et intégrité avant adoption, et reconstruire depuis une source revue les entrées les
+  plus critiques, supprime la confiance accordée à une infrastructure de build amont que
+  l'organisation ne peut pas auditer.
+impact: |
+  Reconstruire des bibliothèques depuis la source demande un pipeline dédié, du stockage pour les
+  sources en miroir et des personnes pour les maintenir ; le réserver à une courte liste d'entrées
+  critiques. Exiger des SBOM signés et des VEX peut nécessiter des avenants aux contrats
+  fournisseurs.
+notes: |
+  Le S2C2F de l'OpenSSF place la reconstruction depuis la source à son plus haut niveau de
+  maturité ; la traiter comme un objectif pour les dépendances les plus critiques, pas pour toutes.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux définitions de build des images de runner, aux miroirs
+    internes et aux dossiers fournisseurs.
+
+    1. Récupérer la liste des outils de build, composants CI et bibliothèques critiques et la
+       trace de la vérification de chacun.
+    2. Sur un échantillon, vérifier les preuves : étape de vérification de signature ou de
+       provenance dans le pipeline de l'image ou du miroir, pipeline de reconstruction depuis la
+       source en miroir, ou SBOM signé et VEX reçus du fournisseur et contrôlés.
+    3. Échec s'il n'y a pas de liste, si un outil ou une bibliothèque critique entre dans les
+       images de runner ou les miroirs sans contrôle d'intégrité et de provenance, ou si des
+       composants tiers critiques n'ont ni reconstruction depuis la source ni SBOM signé.
+remediation:
+  manual: |
+    1. Désigner les outils de build, composants CI et bibliothèques critiques avec leurs
+       responsables.
+    2. Ajouter la vérification sur les chemins par lesquels ils entrent dans l'organisation :
+       contrôler signatures et attestations de provenance (par exemple avec Sigstore
+       `cosign verify-attestation` ou les fichiers d'empreinte et de signature de l'éditeur) dans
+       le build des images de runner et à l'ingestion dans les miroirs, avec arrêt en cas d'échec.
+    3. Pour les bibliothèques open source les plus critiques, copier la source en miroir, revoir
+       les changements entre versions et les construire dans un pipeline interne qui produit sa
+       propre provenance.
+    4. Pour les fournisseurs commerciaux, exiger un SBOM signé et des déclarations VEX à chaque
+       livraison et vérifier la signature à réception.

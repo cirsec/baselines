@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver les déploiements en production aux références de version protégées et à un groupe de déployeurs nommé
+finding:
+  title: N'importe quelle branche, exécution de pipeline ou développeur peut déployer en production
+  description: Quand les environnements de production acceptent des déploiements depuis des branches non protégées, des builds personnels ou tout utilisateur ayant un accès en écriture, une modification non relue ou un compte de développeur compromis atteint directement la production.
+description: |
+  Les environnements de production, et les ressources utilisées par les déploiements (connexions de
+  service, identifiants cloud, clusters), n'acceptent un déploiement que si toutes les conditions
+  suivantes sont réunies :
+
+  - l'exécution vient d'une branche de version protégée ou d'un tag protégé (par exemple `main`,
+    `release/*`, `v*`), pas de branches de fonctionnalité, de forks ou de builds personnels ;
+  - la modification est appliquée par un job de déploiement lié à l'environnement, pour que les
+    vérifications et approbations de l'environnement s'appliquent ;
+  - l'exécution est lancée ou approuvée par un membre d'un groupe de déployeurs nommé, pas par
+    n'importe quel utilisateur ayant un accès en écriture au dépôt.
+
+  Les approbations avant déploiement relèvent de CB-CICD-DEPLOY-003 ; la séparation des pipelines de
+  déploiement et de build de CB-CICD-DEPLOY-001 ; les secrets limités aux environnements protégés de
+  CB-CICD-SEC-008.
+rationale: |
+  Les identifiants de déploiement font partie des secrets les plus puissants de la CI/CD. Si n'importe
+  quelle branche peut cibler l'environnement de production, la protection des branches et la revue de
+  code sont contournées : un développeur, ou un attaquant muni du jeton d'un développeur, pousse une
+  branche avec un pipeline modifié et la déploie. Lier la production aux références protégées et à un
+  groupe de déployeurs fait de la revue et de la gestion des versions le seul chemin vers la
+  production.
+impact: |
+  Les correctifs urgents doivent passer par une branche protégée. Les équipes ont besoin d'un groupe
+  de déployeurs nommé et doivent le garder restreint. Sur certaines plates-formes, la fonction exige
+  une offre payante.
+notes: |
+  L'option **Protected branches only** de GitHub autorise toutes les branches à déployer si aucune
+  règle de protection de branche n'existe dans le dépôt ; préférer **Selected branches and tags**. Sur
+  GitHub Pro et Team, les règles de branches de déploiement sont disponibles pour les dépôts privés ;
+  sur Free, seulement pour les dépôts publics. Les environnements protégés GitLab exigent Premium ; les
+  administrateurs GitLab peuvent toujours déployer. Les restrictions de déploiement Bitbucket exigent
+  Premium. Le contrôle de branche Azure DevOps demande des noms complets (`refs/heads/main`). L'option
+  **Allow deployments** de Woodpecker permet à toute personne ayant le droit de pousser de déclencher
+  des événements `deploy` et de lire les secrets réservés aux déploiements.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des environnements, des dépôts et des pipelines.
+
+    1. Lister les environnements de production et les ressources utilisées par les déploiements.
+    2. Vérifier quelles références et quelles personnes peuvent déployer :
+       - **GitHub** : **Settings** > **Environments** > production > **Deployment branches and tags**
+         vaut **Selected branches and tags** avec uniquement les branches et tags de version (ou
+         **Protected branches only** quand chaque branche concernée est protégée).
+       - **GitLab** : **Settings** > **CI/CD** > **Protected environments** liste la production avec
+         **Allowed to deploy** réglé sur un groupe ou des utilisateurs nommés (API :
+         `GET /projects/:id/protected_environments`, `deploy_access_levels`) ; au niveau du groupe, les
+         environnements de niveau production sont protégés pour tous les projets. Les jobs de
+         déploiement ne s'exécutent que depuis des branches ou tags protégés.
+       - **Bitbucket** : **Repository settings** > **Deployments** > production : les restrictions de
+         déploiement limitent les branches qui déploient (par exemple `main`, `release/*`) et qui peut
+         déployer.
+       - **Azure DevOps** : sur l'environnement (et les connexions de service de production),
+         **Approbations et vérifications** contient une vérification **Branch control** dont les
+         branches autorisées sont les références de version protégées, avec la vérification de la
+         protection de branche activée ; les étapes de production utilisent des jobs `deployment` liés
+         à l'environnement.
+       - **Woodpecker** : les réglages du dépôt ont **Allow deployments** désactivé, ou les secrets de
+         déploiement sont limités aux événements `deploy` dans des dépôts où toutes les personnes qui
+         poussent sont de confiance.
+       - **TeamCity** : les configurations de build de déploiement ont **Allow triggering personal
+         builds** décoché et s'exécutent sur un pool d'agents dédié ; seul un petit groupe a le droit
+         de les lancer.
+    3. Échec si la production peut être déployée depuis une branche non protégée, un fork, un build
+       personnel, ou par n'importe quel utilisateur ayant un accès en écriture hors du groupe de
+       déployeurs.
+remediation:
+  manual: |
+    1. Créer un groupe de déployeurs et protéger les branches et tags de version.
+    2. Restreindre l'environnement de production :
+       - **GitHub** : dans **Settings** > **Environments** > production, régler **Deployment branches
+         and tags** sur **Selected branches and tags** et ajouter les motifs de version.
+       - **GitLab** : dans **Settings** > **CI/CD** > **Protected environments**, protéger la
+         production et régler **Allowed to deploy** sur le groupe de déployeurs (un accès limité au
+         déploiement peut être donné à un groupe invité avec le rôle Reporter) ; protéger le niveau
+         production au niveau du groupe.
+       - **Bitbucket** : dans l'environnement de déploiement de production, restreindre les branches
+         qui déploient et les permissions de déploiement au groupe de déployeurs (Premium).
+       - **Azure DevOps** : ajouter une vérification **Branch control** avec `refs/heads/main` (et
+         les branches de version), activer la vérification de la protection de branche, et convertir
+         les jobs de production en jobs `deployment` ciblant l'environnement.
+       - **Woodpecker** : désactiver **Allow deployments** sauf si toutes les personnes ayant le droit
+         de pousser sont de confiance.
+       - **TeamCity** : décocher **Allow triggering personal builds** sur les configurations de
+         déploiement, les déplacer vers un pool d'agents propre et limiter qui peut les lancer.
+    3. Tester qu'un déploiement depuis une branche de fonctionnalité est rejeté.

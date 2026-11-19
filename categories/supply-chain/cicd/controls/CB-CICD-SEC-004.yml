@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-004
+title: Fetch high-value secrets at runtime from an external manager separated per environment
+finding:
+  title: Production secrets live in CI variables and share a secrets store with non-production
+  description: Production credentials copied into CI variables are available to every job of the project and are read by the same identity that test pipelines use, so a compromised test job or project member reaches production secrets.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, secrets-manager, vault, environment-separation, short-lived-credentials]
+
+description: |
+  Production and other high-value secrets (signing material, database administrator credentials,
+  third-party production API keys) are not copied into CI variables. Jobs fetch them at runtime from
+  an external secrets manager (HashiCorp Vault, a cloud secret manager or equivalent),
+  authenticating with the job's ID token or workload identity, and request only the secrets they
+  name. Where the manager can issue dynamic or short-lived credentials, those are used.
+
+  Production and non-production secrets are held in distinct manager instances, accounts or
+  tenants, with distinct authentication roles, so that a non-production identity cannot read a
+  production path even by mistake in a policy.
+
+  Storage type of the remaining CI secrets is covered by CB-CICD-SEC-003; binding secrets to
+  protected branches and environments by CB-CICD-SEC-008.
+rationale: |
+  Secrets copied into the CI platform are exposed to everything that can run in the project and to
+  the platform's own backups and administrators. An external manager adds a policy decision at
+  each read, an audit trail per job, revocation in one place, and dynamic credentials that expire
+  after the run. Separating production from non-production stores prevents a policy mistake or a
+  compromised test pipeline from reaching production credentials.
+impact: |
+  Requires running or subscribing to a secrets manager, configuring trust between the CI
+  platform's identity tokens and the manager, and changing jobs to fetch secrets. Jobs depend on
+  the manager's availability. The GitLab integration needs a paid tier.
+notes: |
+  GitLab Secrets Manager, GitLab's own built-in store, is in limited availability; the `secrets:`
+  keyword with an external provider is the documented path for production use.
+
+audit:
+  manual: |
+    Use a platform role that can read pipeline files and project settings, and read access to the
+    secrets manager policies.
+
+    1. Identify the high-value secrets of each production pipeline (from the inventory,
+       CB-CICD-SEC-001) and check where each one is read from.
+    2. Check each platform:
+       - **GitLab** (Premium or Ultimate): deploying jobs use the `secrets:` keyword with a
+         provider (`vault`, `azure_key_vault`, `gcp_secret_manager`, `aws_secrets_manager`) and
+         authenticate with `id_tokens:`; production secrets are not CI/CD variables.
+       - **TeamCity**: the project has a **HashiCorp Vault** connection under **Connections**, and
+         build parameters holding production secrets are **Remote** parameters of type
+         **HashiCorp Vault Parameter**, not password parameters with a stored value.
+       - Other platforms: the deploying job calls the manager with the job's OIDC token or the
+         runner's workload identity (for example the cloud provider's secret retrieval action or
+         CLI) and no long-lived manager token is stored in CI.
+    3. In the secrets manager, check that production secrets are in a separate instance, account
+       or tenant (or at least a separate namespace with its own authentication backend), and that
+       the role used by non-production pipelines cannot read them.
+    4. Fail if a production or other high-value secret is stored as a CI variable, if pipelines
+       authenticate to the manager with a long-lived token, or if one manager role can read both
+       production and non-production secrets.
+
+remediation:
+  manual: |
+    1. Set up a secrets manager per environment class (production, non-production), each with
+       its own authentication role bound to the CI platform's OIDC issuer and to the protected
+       branch or environment that deploys (CB-CICD-SEC-016).
+    2. Move high-value secrets into the production manager, preferring dynamic secrets where the
+       target system supports them.
+    3. Change the deploying jobs to fetch secrets at runtime:
+       - **GitLab**: add `id_tokens:` with the manager's audience and a `secrets:` entry per secret
+         to the deploying job; remove the corresponding CI/CD variables.
+       - **TeamCity**: in the project's **Connections**, add a **HashiCorp Vault** connection
+         (AppRole or GCP IAM authentication), then create **Remote** parameters of type
+         **HashiCorp Vault Parameter** with a `path!/key` query, and reference them as
+         `%parameter_name%`.
+    4. Delete the copies from CI variables and rotate the moved secrets.
+
+references:
+  - title: Use external secrets in CI/CD
+    url: https://docs.gitlab.com/ci/secrets/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: HashiCorp Vault
+    url: https://www.jetbrains.com/help/teamcity/hashicorp-vault.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D - Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Adds runtime retrieval and per-environment separation for high-value secrets.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-003
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-SEC-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

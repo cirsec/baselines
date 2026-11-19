@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-016
+title: Grant access through identity provider groups mapped to least-privilege roles
+finding:
+  title: CI/CD permissions are granted to individuals or through broad built-in roles
+  description: Permissions assigned person by person drift over time and are never removed, and broad built-in roles give developers rights over pipelines, secrets or settings that their job does not need.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [rbac, least-privilege, groups, roles, access-management]
+
+description: |
+  Access to SCM and CI/CD platforms follows functional roles (for example developer, maintainer,
+  approver, release manager, platform administrator). Each role is assigned to a group, preferably
+  synchronized from the identity provider, never directly to individual users. Custom roles grant
+  less than the built-in administrator roles, and administrative roles are bound at the narrowest
+  scope (project rather than organization).
+
+  Base permissions are covered by CB-CICD-IAM-015, the number of administrators by CB-CICD-IAM-018 and
+  CB-CICD-IAM-019, periodic review by CB-CICD-IAM-026.
+rationale: |
+  Write access to source and pipelines is equivalent to running code in the build, so it must be
+  given on purpose. Group-based roles make that visible and reviewable, and removing someone from a
+  group in the identity provider removes their access everywhere. Direct per-user grants and
+  organization-wide admin roles are what access reviews keep finding years after the need ended.
+impact: |
+  Roles and groups have to be designed and existing direct grants migrated. Some platforms evaluate
+  permissions additively, so one broad binding left behind cancels the narrow ones.
+notes: |
+  Harness RBAC is additive: a broad role binding at account level overrides narrower project
+  bindings. On TeamCity, a user who can edit one project can in some cases read artifacts or trigger
+  builds of other projects; keep project editing for trusted maintainers.
+
+audit:
+  manual: |
+    Use an administrator or auditor role that can read permissions.
+
+    1. Document the roles and the group that carries each one.
+    2. Check that permissions are granted to groups:
+       - **Azure DevOps**: **Organization settings** and **Project settings** > **Permissions**: users
+         are members of groups (Contributors, Readers, custom groups backed by Entra groups), and no
+         user has explicit allow entries set directly; access levels come from group rules.
+       - **CircleCI**: **Organization Settings** > **People** and **Groups**: Admin is limited to
+         platform administrators, other members are Contributor or Viewer, and roles come from groups
+         (SSO group mapping where available).
+       - **Harness**: **Access Control**: role bindings target user groups, Account Admin bindings
+         are few, and project-scoped custom roles with resource groups are used for day-to-day work.
+       - **TeamCity**: per-project authorization mode is on; roles are assigned to user groups per
+         project, and custom roles are used instead of Project Administrator where possible.
+       - **GitHub / GitLab / Bitbucket**: repository and project access is granted to teams or
+         groups, not to individual collaborators, except documented exceptions.
+    3. Fail if access is granted mainly to individuals, or if roles broader than needed (organization
+       or account administrator) are used for routine work.
+
+remediation:
+  manual: |
+    1. Create the groups in the identity provider and synchronize them to the platforms.
+    2. Bind roles to groups at the narrowest scope:
+       - **Azure DevOps**: add Entra groups to project groups and create group rules for access
+         levels; remove per-user explicit permissions.
+       - **CircleCI**: create groups, assign them Contributor or Viewer, and map SSO groups.
+       - **Harness**: create project-scoped roles and resource groups, bind them to user groups, and
+         remove broad account-level bindings.
+       - **TeamCity**: switch to per-project authorization, create custom roles, and assign them to
+         groups per project.
+    3. Move existing direct grants into groups, then remove the direct grants.
+
+references:
+  - title: Get started with permissions, access, and security groups (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/security/about-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Roles and permissions overview (CircleCI)
+    url: https://circleci.com/docs/guides/permissions-authentication/roles-and-permissions-overview/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage roles (Harness)
+    url: https://developer.harness.io/harness-platform/use-harness-platform/platform-access-control/manage-roles.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing roles and permissions (TeamCity)
+    url: https://www.jetbrains.com/help/teamcity/managing-roles-and-permissions.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA source track requirements
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.3"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: partial
+    note: SLSA requires the source control system to let the organization define which actors and roles may perform sensitive actions; this control covers the role design side.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R40"
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-015
+    type: related
+  - id: CB-CICD-IAM-018
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

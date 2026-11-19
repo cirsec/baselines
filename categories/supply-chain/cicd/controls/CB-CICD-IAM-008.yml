@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-008
+title: Bound the lifetime of web sessions on CI/CD platforms
+finding:
+  title: Platform web sessions and remember-me cookies stay valid for weeks
+  description: A session cookie stolen from a browser or an infostealer log keeps working on the platform for as long as the session lives, without any password or MFA prompt.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [session, cookie, timeout, authentication]
+
+applicability:
+  versions: [gitlab, gitea, forgejo, buildkite, woodpecker, harness]
+
+parameters:
+  - name: max_session_hours
+    type: integer
+    description: Maximum lifetime of a web session before the user must sign in again.
+    unit: hours
+    default: 168
+    profile_defaults:
+      hardened: 12
+    minimum: 1
+    maximum: 744
+  - name: max_remember_me_days
+    type: integer
+    description: Maximum lifetime of a remember-me cookie.
+    unit: days
+    default: 31
+    profile_defaults:
+      hardened: 7
+    minimum: 0
+    maximum: 31
+  - name: idle_timeout_minutes
+    type: integer
+    description: Inactivity period after which a session ends, where the platform supports it.
+    unit: minutes
+    default: 1440
+    profile_defaults:
+      hardened: 60
+    minimum: 5
+    maximum: 1440
+
+description: |
+  Web sessions on CI/CD platforms end after at most {{ max_session_hours }} hours, remember-me
+  cookies after at most {{ max_remember_me_days }} days, and idle sessions after
+  {{ idle_timeout_minutes }} minutes where the platform has an inactivity timeout. When sign-in goes
+  through SSO, the identity provider session and the platform session both respect these limits.
+  Hardened deployments also pin SSO sessions to the source IP address where the platform supports it.
+
+  API token lifetime is covered by CB-CICD-IAM-028.
+rationale: |
+  Session cookies are what infostealer malware and adversary-in-the-middle phishing kits collect,
+  precisely because they bypass the password and MFA. The shorter the session, the shorter the window
+  in which a stolen cookie gives access to code, pipelines and secrets.
+impact: |
+  Users sign in more often; with SSO this is usually a redirect. Very short absolute lifetimes can
+  interrupt long review or debugging sessions.
+
+audit:
+  manual: |
+    Use an administrator role that can read authentication or session settings, or the platform
+    configuration.
+
+    1. Check the session settings:
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **Account and limit** >
+         **Session duration (minutes)** (default 10080, 7 days) is at most
+         {{ max_session_hours }} hours, and the **Remember me** option is cleared, since it keeps
+         sessions active indefinitely; on hardened instances **Set sessions to expire from creation
+         date** is selected.
+       - **Gitea / Forgejo**: `[security] LOGIN_REMEMBER_DAYS` (default 31) is at most
+         {{ max_remember_me_days }}.
+       - **Buildkite**: **Organization Settings** > **SSO** > session duration is set (6 hours to one
+         year); on hardened organizations **SSO session IP address pinning** is on (Enterprise plan).
+       - **Woodpecker**: `WOODPECKER_SESSION_EXPIRES` (default `72h`) is at most
+         {{ max_session_hours }} hours.
+       - **Harness**: **Account Settings** > **Authentication**: **Session Inactivity Timeout (in
+         minutes)** (default 1440) is at most {{ idle_timeout_minutes }}, and **Absolute Session
+         Timeout (in minutes)** (default 0, not set) is at most {{ max_session_hours }} hours.
+    2. For SSO platforms, check the identity provider session lifetime for those applications.
+    3. Fail if a session or remember-me cookie can outlive the limits above.
+
+remediation:
+  manual: |
+    1. Apply the limits (administrator role):
+       - **GitLab self-managed**: set **Session duration (minutes)** to {{ max_session_hours }} hours
+         in minutes and clear **Remember me**; on hardened instances select **Set sessions to expire
+         from creation date**.
+       - **Gitea / Forgejo**: set `LOGIN_REMEMBER_DAYS` in `[security]` and restart. Do not follow
+         convenience recommendations of a year.
+       - **Buildkite**: set the SSO session duration; enable IP address pinning on hardened
+         organizations.
+       - **Woodpecker**: set `WOODPECKER_SESSION_EXPIRES`, for example `12h`, and restart the server.
+       - **Harness**: set **Session Inactivity Timeout** and **Absolute Session Timeout**.
+    2. Align the identity provider session policy for the platform applications.
+
+references:
+  - title: GitLab account and limit settings
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite single sign-on - session duration and IP pinning
+    url: https://buildkite.com/docs/platform/sso
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker server configuration
+    url: https://woodpecker-ci.org/docs/administration/configuration/server
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Harness authentication - session timeouts
+    url: https://developer.harness.io/harness-platform/use-harness-platform/authentication.md
+    publisher: Harness
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-11
+    relation: related
+  - framework: anssi-mfa
+    framework_version: "2.0"
+    id: "R12"
+    relation: equivalent
+threats:
+  - framework: mitre-attack
+    id: T1539
+related_controls:
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-IAM-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

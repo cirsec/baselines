@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Empêcher l'affaiblissement des exigences de revue au sein d'une pull request
+finding:
+  title: Les règles d'approbation peuvent être modifiées ou les revues rejetées depuis une pull request
+  description: Un auteur qui peut abaisser les règles d'approbation de sa propre merge request, ou n'importe quel écrivain qui peut écarter une revue bloquante, peut fusionner une modification que le processus de revue configuré aurait arrêtée.
+description: |
+  Les exigences de revue configurées pour une branche protégée ne peuvent pas être assouplies pour
+  une pull request ou merge request particulière :
+
+  - les règles d'approbation (nombre d'approbations, approbateurs éligibles) ne peuvent pas être
+    modifiées dans une merge request ;
+  - seuls les administrateurs ou une équipe nommée peuvent écarter une revue soumise, si bien
+    qu'une revue « modifications demandées » ne peut pas être levée par n'importe quel écrivain.
+
+  Le nombre d'approbations exigé est fixé par CB-CICD-SCM-012 ; le droit de contourner totalement les
+  règles par CB-CICD-SCM-011.
+rationale: |
+  Sur GitLab, les règles d'approbation peuvent par défaut être modifiées par merge request, ce qui
+  permet à l'auteur de retirer la règle qui exigerait un relecteur sécurité. Sur GitHub, toute
+  personne ayant un accès en écriture peut écarter une revue qui demande des modifications, ce qui
+  supprime le blocage qu'elle crée. Dans les deux cas, un contrôle obligatoire devient une simple
+  suggestion.
+impact: |
+  Les modifications exceptionnelles des règles d'approbation passent par un maintainer ou un
+  propriétaire. Les revues devenues sans objet sont écartées par l'équipe nommée plutôt que par
+  l'auteur.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la protection de branche et les réglages d'approbation des merge
+    requests.
+
+    1. Vérifier les réglages sur les branches protégées :
+       - **GitHub** : la règle de ruleset **Require a pull request before merging** active l'option
+         qui restreint qui peut écarter les revues de pull request, avec seulement les
+         administrateurs ou une équipe nommée (protection de branche : **Restrict who can dismiss
+         pull request reviews**).
+       - **GitLab** (Premium) : **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings** > **Prevent editing approval rules in merge requests** est coché,
+         idéalement hérité du groupe de premier niveau ; sur les instances auto-hébergées, **Admin** >
+         **Push rules** > **Merge request approvals** > **Prevent editing approval rules in projects
+         and merge requests** est coché.
+    2. Passer en revue les demandes fusionnées dont les règles d'approbation diffèrent de celles du
+       projet, ou dont des revues bloquantes ont été écartées par des non-administrateurs.
+    3. Échec si un auteur peut modifier les règles d'approbation de sa merge request, ou si
+       n'importe quel écrivain peut écarter des revues sur les branches protégées.
+remediation:
+  manual: |
+    1. Verrouiller les exigences de revue :
+       - **GitHub** : dans le ruleset, réserver aux administrateurs du dépôt ou à une équipe dédiée le
+         droit d'écarter les revues de pull request.
+       - **GitLab** : cocher **Prevent editing approval rules in merge requests** au niveau du groupe
+         de premier niveau ; sur les instances auto-hébergées, cocher aussi **Prevent editing
+         approval rules in projects and merge requests** pour l'instance.
+    2. Documenter comment demander une exception aux règles d'approbation.

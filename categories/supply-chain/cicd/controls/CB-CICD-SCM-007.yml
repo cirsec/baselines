@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-007
+title: Change protected branches only through merged pull requests
+finding:
+  title: Users can push directly to protected branches
+  description: A direct push skips review and required checks, so one compromised developer account or token is enough to put attacker code on the branch that is built and deployed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [branch-protection, pull-requests, direct-push, flow-control]
+
+description: |
+  Nobody pushes directly to the default and release branches. Every change arrives through a pull
+  or merge request that is merged by a defined group (maintainers, a release team or the merge
+  queue). The only exception is a dedicated release bot or app whose pushes are limited to the
+  operations it performs (version bump, changelog) and are logged.
+
+  Required approvals are covered by CB-CICD-SCM-012; who may bypass the rules by
+  CB-CICD-SCM-011.
+rationale: |
+  Review and status checks only apply to changes that go through a pull request. If writers can
+  still push to the protected branch, every review requirement is optional: a stolen token or a
+  developer under pressure can land unreviewed code, including a modified pipeline definition,
+  directly on the branch that deploys to production.
+impact: |
+  Developers who pushed small fixes directly must open pull requests. Release automation that
+  pushes tags or version bumps needs a dedicated identity added as the only exception.
+notes: |
+  On GitLab, users in **Allowed to push and merge** can also merge without being in **Allowed to
+  merge**; keep that list to **No one** or a single bot. On Azure DevOps, a branch with at least
+  one required branch policy already refuses direct pushes, except from identities with
+  **Bypass policies when pushing** (CB-CICD-SCM-011).
+
+audit:
+  manual: |
+    Use a role that can read branch protection settings.
+
+    1. For each repository, open the rule that protects the default and release branches
+       (CB-CICD-SCM-006).
+    2. Check that direct pushes are refused:
+       - **GitHub**: the ruleset enables **Require a pull request before merging** (and
+         **Restrict updates** if only a release app may push), or the branch protection rule
+         enables **Require a pull request before merging** and **Restrict who can push to matching
+         branches** with an empty or bot-only list.
+       - **GitLab**: **Settings** > **Repository** > **Branch rules** > branch details: **Allowed to
+         push and merge** is **No one** (or a deploy key or bot only), and **Allowed to merge** is
+         **Maintainers** or a named group.
+       - **Azure DevOps**: the branch has at least one required branch policy (for example
+         **Require a minimum number of reviewers**), which blocks direct pushes.
+       - **Bitbucket Cloud**: **Branch restrictions** > **Branch permissions**: **Write access** is
+         limited to nobody or the release bot, and **Merge access via pull requests** to a named
+         group.
+       - **Bitbucket Data Center**: **Branch permissions** includes **Prevent changes without a
+         pull request** with no exemption other than the release bot.
+       - **Gitea / Forgejo**: the branch rule uses **Disable push** (or an allowlist restricted to a
+         bot).
+    3. Review recent pushes to protected branches in the audit log and confirm each came from a
+       merged pull request or the release bot.
+    4. Fail if any human user or general-purpose token can push directly to a protected branch.
+
+remediation:
+  manual: |
+    1. Identify automation that pushes directly and give it a dedicated identity (GitHub App,
+       project bot, deploy key with write access) limited to that repository.
+    2. Block direct pushes:
+       - **GitHub**: in the ruleset, enable **Require a pull request before merging** and add the
+         release app to the bypass list only if it must push; in branch protection, enable
+         **Restrict who can push to matching branches**.
+       - **GitLab**: set **Allowed to push and merge** to **No one** (or the bot) and **Allowed to
+         merge** to **Maintainers** or the release group.
+       - **Azure DevOps**: add a required branch policy such as **Require a minimum number of
+         reviewers** to the branch.
+       - **Bitbucket**: restrict **Write access** and set **Merge access via pull requests**
+         (Cloud), or add **Prevent changes without a pull request** (Data Center).
+       - **Gitea / Forgejo**: select **Disable push** in the branch rule.
+    3. Announce the change and point developers to the pull request workflow.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitlab.com/user/project/repository/branches/protected/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use branch permissions
+    url: https://support.atlassian.com/bitbucket-cloud/docs/use-branch-permissions/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitea.com/usage/access-control/protected-branches
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers direct pushes to protected branches; review, bypass and check requirements are separate controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.15"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.17"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-006
+    type: requires
+  - id: CB-CICD-SCM-011
+    type: related
+  - id: CB-CICD-SCM-012
+    type: related
+  - id: CB-CICD-IAM-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

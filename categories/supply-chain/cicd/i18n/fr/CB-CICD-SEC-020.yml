@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-020
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne donner à chaque job et step que les secrets qu'il référence
+finding:
+  title: Les jobs reçoivent tous les secrets du projet au lieu de ceux qu'ils utilisent
+  description: Quand les secrets sont transmis en bloc aux workflows réutilisables, exportés en un seul objet ou injectés dans chaque step, un step de test ou une action tierce compromis lit les identifiants de déploiement en même temps que les siens.
+description: |
+  Chaque pipeline, job et step ne reçoit que les secrets qu'il nomme. Les workflows réutilisables et
+  les modèles reçoivent les secrets par une correspondance explicite, pas en héritant de tous les
+  secrets de l'appelant ; les scripts référencent des secrets individuels, pas tout le contexte des
+  secrets ; et les fonctions de plate-forme qui injectent dans chaque step tous les identifiants
+  rattachés à un compte de service ou à un agent sont désactivées au profit de montages ou de
+  variables par step.
+
+  Les projets qui peuvent atteindre un secret partagé relèvent de CB-CICD-SEC-007 ; la liaison aux
+  environnements protégés, de CB-CICD-SEC-008.
+rationale: |
+  Le nombre de steps qui peuvent lire un secret mesure son exposition réelle. Les steps de test,
+  les analyseurs et les actions tierces exécutent du code que l'équipe ne maîtrise pas ; s'ils
+  reçoivent aussi les identifiants de déploiement, chacun devient un chemin vers la production.
+  Les références explicites permettent aussi de voir, en revue, quel code peut lire quel secret.
+impact: |
+  Les workflows réutilisables doivent déclarer et recevoir explicitement leurs secrets, ce qui
+  ajoute des lignes à chaque appel. Sur Tekton, désactiver l'initialisation intégrée des
+  identifiants impose de lier les identifiants aux tâches par des workspaces ou des variables
+  d'environnement.
+notes: |
+  Le drapeau `disable-creds-init` de Tekton est la mise en œuvre la plus stricte de ce contrôle :
+  avec lui, les identifiants annotés sur le compte de service ne sont plus copiés dans chaque
+  step, et chaque tâche doit lier ceux dont elle a besoin.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline et à la configuration des runners ou
+    agents.
+
+    1. Revoir les fichiers de pipeline et chercher les transmissions de secrets en bloc :
+       - **GitHub** : les appels aux workflows réutilisables utilisent `secrets:` avec des entrées
+         nommées, pas `secrets: inherit` ; aucune expression ne transmet tout le contexte
+         (`${{ toJSON(secrets) }}`) ni ne l'indexe dynamiquement (`secrets[format(...)]`) ; les
+         secrets sont passés dans l'`env:` des steps qui les utilisent plutôt que de tout le job
+         quand c'est possible. zizmor (`secrets-inherit`, `overprovisioned-secrets`) et poutine
+         (job qui expose tous les secrets) signalent ces motifs.
+       - **Buildkite** : les hooks `environment` des agents qui exportent des secrets ne le font
+         que pour le pipeline et le step qui en ont besoin (en vérifiant
+         `BUILDKITE_PIPELINE_SLUG` et `BUILDKITE_STEP_KEY`), et les charges de confiance différente
+         utilisent des clusters séparés.
+       - **Tekton** : la ConfigMap `feature-flags` de `tekton-pipelines` a
+         `disable-creds-init: "true"`, et les identifiants atteignent les tâches par des
+         workspaces adossés à des Secrets ou des `env` liés aux seuls steps qui en ont besoin.
+    2. Échec si un job, un workflow réutilisable ou un step reçoit des secrets qu'il ne référence
+       pas.
+remediation:
+  manual: |
+    1. Remplacer les transmissions en bloc par des références explicites :
+       - **GitHub** : dans chaque appel à un workflow réutilisable, remplacer `secrets: inherit` par
+         un bloc `secrets:` qui liste chaque secret nécessaire, les déclarer sous
+         `on.workflow_call.secrets` dans le workflow appelé, et remplacer `toJSON(secrets)` ou
+         l'indexation dynamique par des secrets nommés. Analyser les workflows avec zizmor en CI.
+       - **Buildkite** : limiter les exports des hooks d'environnement par pipeline et par step, ou
+         déplacer les secrets vers des secrets Buildkite avec politiques d'accès
+         (CB-CICD-SEC-008).
+       - **Tekton** : définir `disable-creds-init: "true"` dans `feature-flags`, puis lier les
+         identifiants aux tâches qui en ont besoin par des workspaces ou `envFrom`.
+    2. Renouveler les secrets qui ont été exposés à des steps qui n'auraient pas dû les recevoir,
+       si l'un de ces steps a exécuté du code non fiable.

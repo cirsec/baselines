@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Renouveler périodiquement les secrets statiques restants et supprimer ceux qui ne servent plus
+finding:
+  title: Des secrets CI statiques et des connexions de service ont plusieurs années ou ne servent plus
+  description: Un secret qui ne change jamais reste valide dans chaque journal, sauvegarde, poste de travail et mémoire d'ancien employé qu'il a atteint, et les secrets inutilisés gardent cette exposition sans aucun bénéfice.
+description: |
+  Chaque secret longue durée qui ne peut pas encore être remplacé par un identifiant fédéré ou émis
+  par la plate-forme (secrets et variables CI, connexions de service, clés de déploiement, secrets
+  de webhook) a un propriétaire et une période de renouvellement d'au plus {{ max_secret_age }}
+  jours. Il est renouvelé immédiatement en cas de soupçon de fuite : alerte d'analyse des secrets,
+  runner ou compte compromis, ou départ d'une personne qui y avait accès.
+
+  Les secrets et connexions de service qu'aucun pipeline n'a utilisés pendant une période de revue
+  sont supprimés, pas seulement laissés en place. Le renouvellement est automatisé quand le système
+  émetteur et le coffre de secrets le permettent.
+
+  Le passage à des identifiants à courte durée de vie relève de CB-CICD-SEC-015 ; l'inventaire qui
+  donne un propriétaire à chaque secret, de CB-CICD-SEC-001 ; la révocation automatique des jetons
+  de plate-forme divulgués, de CB-CICD-IAM-031.
+parameters:
+  max_secret_age: Âge maximal d'un secret statique avant son renouvellement obligatoire.
+rationale: |
+  Les secrets statiques accumulent l'exposition : chaque journal de job, cache, sauvegarde, session
+  de débogage et personne qui les a vus est une source de fuite possible, et personne ne peut être
+  sûr que toutes les copies ont été trouvées après un incident. Le renouvellement régulier borne la
+  durée d'utilité d'une copie volée. Supprimer les secrets inutilisés retire des identifiants qu'on
+  ne remarquerait qu'après leur détournement.
+impact: |
+  Le renouvellement nécessite une procédure testée par secret, et le système émetteur doit
+  accepter deux valeurs valides pendant la bascule, sinon les pipelines échouent brièvement.
+  Supprimer un secret encore utilisé casse les pipelines qui en dépendaient.
+notes: |
+  Azure Pipelines peut désactiver les connexions de service Azure Resource Manager inutilisées
+  depuis 100 jours ; les connexions désactivées doivent alors être supprimées, pas réactivées par
+  défaut. Le jeton de webhook de Woodpecker ne couvre pas le corps de la requête : une URL de
+  webhook divulguée permet à quiconque d'envoyer de faux événements pour le dépôt tant que le
+  secret n'est pas renouvelé.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lister les secrets et connexions de service avec leurs métadonnées
+    (les valeurs ne sont pas nécessaires).
+
+    1. Lister les secrets statiques avec leur date de dernière mise à jour et leur dernier usage
+       quand la plate-forme l'enregistre :
+       - **GitHub** : `GET /orgs/{org}/actions/secrets`, `GET /repos/{owner}/{repo}/actions/secrets`
+         et `GET /repos/{owner}/{repo}/environments/{environment_name}/secrets` renvoient
+         `updated_at` pour chaque secret.
+       - **Azure DevOps** : **Paramètres du projet** > **Connexions de service** > connexion >
+         **Historique d'utilisation** montre le dernier usage ; les groupes de variables liés à
+         Azure Key Vault indiquent la date de renouvellement dans Key Vault.
+       - **Buildkite** : la date de renouvellement est enregistrée dans le coffre qui détient le
+         secret (secrets Buildkite ou gestionnaire externe).
+       - **Woodpecker** : noter la date du dernier **Repair repository** pour chaque dépôt dont
+         l'URL ou le secret de webhook a pu être exposé.
+    2. Comparer chaque date à `{{ max_secret_age }}` jours et aux dates des incidents et départs
+       connus.
+    3. Chercher les secrets et connexions de service sans usage pendant la dernière période de
+       revue.
+    4. Échec si un secret statique a plus de `{{ max_secret_age }}` jours, n'a pas été renouvelé
+       après un soupçon de fuite, ou n'a pas servi pendant la période de revue et existe encore.
+remediation:
+  manual: |
+    1. Doter chaque secret statique d'une procédure de renouvellement : créer une nouvelle valeur
+       chez l'émetteur, mettre à jour le coffre, exécuter les pipelines, révoquer l'ancienne valeur.
+    2. Automatiser le renouvellement quand c'est possible (par exemple avec la fonction de
+       rotation du gestionnaire de secrets ou un pipeline planifié qui renouvelle et met à jour la
+       valeur).
+       - **Azure DevOps** : conserver les secrets dans Azure Key Vault avec rotation et les lier à
+         des groupes de variables ; revoir chaque trimestre l'**historique d'utilisation** des
+         connexions de service et supprimer celles qui ne servent plus.
+       - **GitHub** : mettre à jour la valeur avec `gh secret set` ; préférer l'OIDC
+         (CB-CICD-SEC-015) pour les identifiants cloud afin de ne plus avoir à les renouveler.
+       - **Woodpecker** : lancer **Repair repository** dans les réglages du dépôt pour renouveler le
+         secret de webhook quand l'URL ou le secret a pu fuiter.
+    3. Supprimer les secrets et connexions qui n'ont pas servi pendant la période de revue, après
+       confirmation de leur propriétaire.
+    4. Ajouter le renouvellement au plan de réponse aux incidents (CB-CICD-LOG-009) pour que tout
+       soupçon de fuite le déclenche.

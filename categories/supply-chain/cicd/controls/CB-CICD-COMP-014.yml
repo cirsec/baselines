@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-014
+title: Pin and verify the tools and packages that pipelines install
+finding:
+  title: Pipeline scripts download tools and packages without pinning or verification
+  description: Steps that pipe a remote script into a shell, install the latest version of a tool or install packages outside a lockfile run whatever the remote server returns that day, with the job's secrets in reach.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [pinning, lockfile, checksum, signature, curl-pipe-bash, build-tools]
+
+parameters:
+  - name: install_pinning
+    type: enum
+    description: Rules for installs in pipeline steps. `verified` = installs from lockfiles, downloaded tools and scripts checked by checksum or signature, no remote script piped into a shell; `locked-only` = in addition, no ad hoc package installs in run steps and no unpinned "latest" tool versions.
+    default: verified
+    profile_defaults:
+      hardened: locked-only
+    allowed: [verified, locked-only]
+
+description: |
+  What pipeline scripts download and install is fixed in the repository and checked before it
+  runs. The required level is `{{ install_pinning }}`:
+  - `verified`: dependencies are installed from a committed lockfile in frozen mode (`npm ci`,
+    `yarn --frozen-lockfile`, `pip install --require-hashes`, `go mod verify`); downloaded tools
+    and scripts are fetched at a fixed version and checked against a known checksum or signature
+    before use; no remote script is piped into a shell (`curl ... | bash`, `iex (iwr ...)`).
+  - `locked-only`: in addition, run steps do not install packages outside a manifest
+    (`npm install -g x`, `pip install x`), and setup actions or tasks that install a tool are given
+    an explicit version instead of the latest one.
+
+  Lockfile rules for application dependencies are covered by CB-DEP-LOCK-002 and CB-DEP-LOCK-003,
+  and the separation of install steps from secrets by CB-DEP-CI-001.
+rationale: |
+  A download without verification trusts the server and every network hop at the moment of the
+  build. Install scripts fetched from a URL have been replaced on compromised servers to steal CI
+  secrets. Unpinned "latest" tools change between two runs of the same commit, which hides
+  tampering and breaks reproducibility.
+impact: |
+  Pipelines need to keep checksums or signature keys for the tools they download and update
+  them with each version. Moving ad hoc installs into manifests or runner images takes some
+  rework.
+notes: |
+  A checksum fetched at build time from the same server as the download only protects against
+  transfer errors. Take the checksum or the signing key from the publisher through a separate
+  channel and commit it to the repository.
+
+audit:
+  manual: |
+    Use read access to the repositories.
+
+    1. Search pipeline files and the scripts they call for installs and downloads. Useful tools:
+       poutine `unverified_script_exec`, zizmor `unpinned-tools` and `adhoc-packages`, Checkov
+       `CKV_GHA_3`, `CKV_GHA_4`, `CKV_CIRCLECIPIPELINES_5`, `CKV_CIRCLECIPIPELINES_7`, Scorecard
+       `Pinned-Dependencies`.
+    2. Look for, on every platform (GitHub `run:`, GitLab `script:`, Azure DevOps `script`/`bash`/
+       `pwsh` steps, CircleCI `run:`, and equivalents):
+       - `curl`/`wget` output piped into `sh`, `bash`, `python` or `iex`;
+       - downloads that are executed or unpacked without a checksum (`sha256sum -c`) or
+         signature check;
+       - `npm install`, `yarn install`, `pip install` without the frozen or hash options of a
+         lockfile;
+       - for `locked-only`: global or ad hoc installs (`npm install -g`, `pip install <name>`,
+         `gem install`) and setup actions or tasks without an explicit `version`.
+    3. Fail if any such pattern is found in a pipeline that builds or deploys.
+
+remediation:
+  manual: |
+    1. Replace `curl | bash` with a step that downloads a fixed version, checks its checksum or
+       signature and then runs it.
+    2. Switch installs to frozen lockfile modes (`npm ci`, `yarn install --frozen-lockfile`,
+       `pip install --require-hashes -r requirements.txt`, `go mod download` then `go mod
+       verify`).
+    3. For `locked-only`, move tools into the runner image or into a manifest, and set
+       `version:` on setup actions and tasks.
+    4. Add the audit tools of step 1 as a required check on pipeline changes (CB-CICD-TEST-004).
+
+references:
+  - title: Secure use reference
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-3 Dependency Chain Abuse
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-03-Dependency-Chain-Abuse
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-9 Improper Artifact Integrity Validation
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-09-Improper-Artifact-Integrity-Validation
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: poutine
+    url: https://github.com/boostsecurityio/poutine
+    publisher: BoostSecurity
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.4.4"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.4.2"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.1.7"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(15)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1059
+related_controls:
+  - id: CB-DEP-LOCK-002
+    type: related
+  - id: CB-DEP-LOCK-003
+    type: related
+  - id: CB-DEP-CI-001
+    type: related
+  - id: CB-CICD-COMP-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

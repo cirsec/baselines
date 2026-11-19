@@ -1,0 +1,184 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-002
+title: Inventory CI/CD platforms and keep them on a supported, patched release
+finding:
+  title: CI/CD platforms run unsupported or unpatched releases
+  description: A self-managed SCM, CI server or GitOps controller runs a release with published vulnerabilities; an attacker uses the public advisory to take over the platform, its secrets and every pipeline it runs.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [inventory, patch-management, vulnerability-management, lifecycle, self-managed]
+
+description: |
+  Every CI/CD system is listed in an inventory with its owner, hosting, running version and plugin
+  or extension set: SCM, CI and CD servers, runners and agents, registries, GitOps controllers and
+  the SaaS services in use.
+
+  Each self-managed system runs a release that its vendor still supports. Someone is subscribed to
+  the vendor security advisories and release announcements, and security releases are installed
+  within **{{ critical_patch_days }}** days for vulnerabilities the vendor rates critical, and within
+  the organization's normal patch window for the others. A system that cannot be patched in time is
+  isolated from untrusted networks and users until it is, or removed.
+
+  Plugins and extensions follow the same rule (see also CB-CICD-COMP-003). Runner and build host
+  images are covered by CB-CICD-RUN-021.
+rationale: |
+  CI/CD servers are high-value targets with a steady stream of public advisories (authentication
+  bypass, remote code execution, secret disclosure). Exploits often appear within days of the
+  advisory. A platform that is unknown to the security team, or patched only at the next major
+  upgrade, gives an attacker a known way in to the source code, the secrets and the deployment path.
+impact: |
+  Needs an owner and a maintenance window for each platform. Short patch deadlines may require a
+  staging instance and a tested backup (CB-CICD-PLAT-008) so that upgrades can be applied quickly.
+notes: |
+  On SaaS editions (GitHub.com, GitLab.com, Bitbucket Cloud, Azure DevOps Services, CircleCI Cloud)
+  the vendor patches the platform; the control then applies to the inventory and to self-hosted
+  components such as runners, agents and on-premises connectors. The poutine rule
+  `known_vulnerability_in_build_platform` flags SCM and CI versions with known advisories.
+
+parameters:
+  - name: critical_patch_days
+    type: integer
+    description: Maximum number of days between the publication of a security release fixing a critical vulnerability and its installation.
+    unit: days
+    default: 14
+    minimum: 1
+    maximum: 90
+    profile_defaults:
+      hardened: 3
+
+audit:
+  manual: |
+    Use an account that can read the version of each platform (an administrator view is often
+    needed for self-managed products).
+
+    1. Get the CI/CD inventory and check that each system has an owner, a running version and a
+       hosting location, and that it includes runners, agents and plugins.
+    2. For each self-managed system, compare the running version with the vendor's list of
+       supported releases and with the latest security release:
+       - **GitHub Enterprise Server**: the version shown in the **Site admin** dashboard or by
+         `ghe-version` over the administrative SSH shell; compare with the latest patch release of a
+         supported feature release.
+       - **GitLab self-managed**: **Admin** > **Overview** > **Dashboard** shows the version; **Admin**
+         > **Settings** > **Metrics and profiling** > **Usage statistics** > **Enable version check**
+         is selected so that outdated versions are flagged.
+       - **Jenkins**: **Manage Jenkins** > **About Jenkins** shows the version; compare with the
+         current LTS line and the Jenkins security advisories, and check the plugin manager for
+         plugins with security warnings.
+       - **TeamCity**: **Administration** > **Updates** shows available releases; TeamCity downloads
+         critical security updates automatically but an administrator must still install them.
+       - **Gitea / Forgejo**: `GET /api/v1/version` returns the running version; compare with the
+         project's latest release and security announcements.
+       - Other self-managed products (Azure DevOps Server, Bitbucket Data Center, CircleCI Server,
+         Argo CD, Flux, Spinnaker): compare the installed version with the vendor's supported
+         versions and security advisories.
+    3. For the last critical security release of each product, compare its publication date with
+       the date it was installed (change records, upgrade logs).
+    4. Fail if a CI/CD system is missing from the inventory, runs a release no longer supported by
+       its vendor, or installed a critical security release more than {{ critical_patch_days }}
+       days after publication without a documented isolation measure.
+
+remediation:
+  manual: |
+    1. Build the inventory from the platforms, runners, plugins and SaaS services actually in use,
+       and assign an owner to each.
+    2. Subscribe the owners to the vendor security advisories (GitHub Enterprise Server release
+       notes, GitLab security releases, Jenkins security advisories, TeamCity security bulletins,
+       Gitea and Forgejo release announcements).
+    3. Keep a staging instance and a current backup so upgrades can be tested and rolled back.
+    4. Apply security releases within {{ critical_patch_days }} days for critical vulnerabilities:
+       - **GitHub Enterprise Server**: install the latest patch release (hotpatch) of a supported
+         feature release, following the upgrade process; plan feature upgrades before the release
+         reaches end of support.
+       - **GitLab self-managed**: select **Enable version check** in **Admin** > **Settings** >
+         **Metrics and profiling** > **Usage statistics**, and upgrade to the latest patch release.
+       - **Jenkins**: upgrade to the latest LTS and update or remove plugins with security warnings.
+       - **TeamCity**: approve and install the update in **Administration** > **Updates**.
+       - **Gitea / Forgejo**: replace the binary or image with the latest release of a maintained
+         branch.
+    5. When a patch cannot be applied in time, restrict network access to the system and record
+       the exception with an end date.
+
+references:
+  - title: About upgrades to new releases (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/overview/about-upgrades-to-new-releases
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Hardening - Application recommendations
+    url: https://docs.gitlab.com/security/hardening_application_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Jenkins Security Advisories
+    url: https://www.jenkins.io/security/advisories/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security Notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-7 Insecure System Configuration
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-07-Insecure-System-Configuration
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: partial
+    note: Covers the patching and support status of the platforms; other configuration weaknesses are covered by the other PLAT controls.
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.2"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.6.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "RV.1.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-22
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-PLAT-001
+    type: related
+  - id: CB-CICD-PLAT-003
+    type: related
+  - id: CB-CICD-PLAT-008
+    type: related
+  - id: CB-CICD-COMP-003
+    type: related
+  - id: CB-CICD-RUN-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

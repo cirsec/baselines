@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-003
+title: Block merges that introduce new high-severity security findings
+finding:
+  title: Change requests can merge with new high or critical security findings
+  description: Scan results are only advisory, so a change that adds a serious vulnerability merges as soon as functional checks pass, and the finding waits in a backlog while the code ships.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, merge-gate, code-scanning, policy]
+
+applicability:
+  versions: [github, gitlab]
+
+parameters:
+  - name: blocking_severity
+    type: enum
+    description: Lowest severity of a new finding that blocks the merge.
+    default: high
+    allowed: [critical, high, medium]
+
+description: |
+  On default and release branches, a change request that introduces a new security finding of
+  severity `{{ blocking_severity }}` or above cannot merge until the finding is fixed, or a
+  member of the security team approves an exception. The gate is configured at organization or
+  group level and covers the security scanners in use (static analysis, secret detection,
+  dependency and container scanning where they report into the platform).
+
+  Licence findings are gated by CB-CICD-TEST-007; required status checks in general by
+  CB-CICD-SCM-019.
+rationale: |
+  Scanning without a gate relies on developers acting on results under delivery pressure. A merge
+  gate on new findings stops the most serious issues before they reach a release branch, while
+  leaving existing findings to the normal remediation process.
+impact: |
+  Developers are blocked until findings are fixed or an exception is approved, so false positives
+  need a fast dismissal or approval path. Requires GitHub code scanning (GitHub Code Security for
+  private repositories; organization-level rulesets on GitHub Enterprise plans) or GitLab
+  Ultimate.
+notes: |
+  GitHub code scanning merge protection does not apply to merge queue groups or to Dependabot
+  pull requests analyzed by default setup, and only considers alerts on lines that are part of the
+  pull request diff.
+
+audit:
+  manual: |
+    Use an organization owner or group Owner role in read mode.
+
+    1. Check the gate:
+       - **GitHub**: organization or repository **Settings** > **Rules** > **Rulesets**: an active
+         branch ruleset on the default and release branches has **Require code scanning results**
+         with each tool in use and a security alert threshold of `{{ blocking_severity }}` or
+         stricter.
+       - **GitLab**: top-level group **Secure** > **Policies**: a merge request approval policy
+         with a `scan_finding` rule on newly detected findings, `severity_levels` including
+         `{{ blocking_severity }}` and above, `vulnerabilities_allowed: 0`, and an approval action
+         that requires the security team.
+    2. Look at recent merged change requests with new findings of that severity and check they
+       were fixed or approved by the security team.
+    3. Fail if no gate exists, if it does not cover the default and release branches, or if its
+       threshold is lower than `{{ blocking_severity }}`.
+
+remediation:
+  manual: |
+    1. Make sure scanners report into the platform (CB-CICD-TEST-002).
+    2. Configure the gate:
+       - **GitHub** (organization owner or repository administrator): create a branch ruleset,
+         add **Require code scanning results**, select the tools and set the security alerts
+         threshold; start with the ruleset in **Evaluate** mode where available, then **Active**.
+       - **GitLab** (group Owner, Ultimate): create a merge request approval policy with a
+         `scan_finding` rule for the scanners in use, the chosen severities and an approval action
+         for the security team.
+    3. Document the exception path and how fast the security team answers.
+
+references:
+  - title: Code scanning merge protection
+    url: https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approval policies
+    url: https://docs.gitlab.com/user/application_security/policies/merge_request_approval_policies/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.2.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-002
+    type: related
+  - id: CB-CICD-TEST-007
+    type: related
+  - id: CB-CICD-SCM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

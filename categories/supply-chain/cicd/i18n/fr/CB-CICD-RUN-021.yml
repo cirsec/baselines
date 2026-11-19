@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-021
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Durcir et maintenir à jour les hôtes de runners et les images de build
+finding:
+  title: Le logiciel des runners, les hôtes ou les images de build sont obsolètes
+  description: Des runners sur d'anciennes versions d'agent, des systèmes non patchés ou des images reconstruites il y a des mois portent des vulnérabilités connues qu'un job peut exploiter pour sortir de son bac à sable, prendre le contrôle de l'hôte ou altérer d'autres builds.
+description: |
+  Le logiciel des runners et agents, le système d'exploitation des hôtes de runners et les images dans
+  lesquelles les runners démarrent ou exécutent les jobs sont durcis et maintenus à jour :
+
+  - le logiciel du runner se met à jour automatiquement, ou est mis à jour dans la fenêtre de support de
+    l'éditeur et au plus 30 jours après une version de sécurité ;
+  - hôtes et images suivent un référentiel de durcissement (paquets minimaux, pas de compilateurs ni
+    d'outils dont les jobs n'ont pas besoin, pas d'accès distant entrant) et reçoivent les mises à jour de
+    sécurité ;
+  - les images de runner sont reconstruites régulièrement à partir de bases patchées et ont un âge maximal
+    borné, au-delà duquel elles ne sont plus utilisées.
+
+  Le patch du serveur CI/CD lui-même relève de CB-CICD-PLAT-002 ; le durcissement des hôtes de la
+  plate-forme de CB-CICD-PLAT-017.
+rationale: |
+  Les runners exécutent par nature du code non fiable. Chaque vulnérabilité connue du runner, du runtime
+  de conteneurs ou du noyau est une sortie du bac à sable du job. Les images anciennes accumulent aussi
+  des outils qui facilitent la post-exploitation.
+impact: |
+  Il faut un pipeline d'images et un calendrier de rotation. Désactiver les mises à jour automatiques du
+  runner (courant pour les runners conteneur éphémères) reporte l'obligation de mise à jour sur le
+  pipeline d'images.
+notes: |
+  GitHub exige que les runners auto-hébergés dont les mises à jour automatiques sont désactivées
+  (`--disableupdate`) soient mis à jour dans les 30 jours suivant une nouvelle version. Pour les images
+  personnalisées GitHub des larger runners (GitHub Enterprise Cloud), les politiques de rétention de
+  l'entreprise valent par défaut 20 versions par image, 30 jours de rétention des versions inutilisées et
+  un âge maximal de version de 60 jours (réglable de 7 à 90 jours). Des outils d'audit comme poutine
+  signalent les vulnérabilités connues des versions de plate-forme de build.
+audit:
+  manual: |
+    Utiliser un accès en lecture à l'inventaire des runners, aux pipelines d'images et aux rapports de
+    patch des hôtes.
+
+    1. Lister les versions du logiciel de runner par pool et les comparer à la dernière version publiée.
+    2. Vérifier l'âge des images utilisées et la date du dernier cycle de patch des hôtes.
+    3. Vérifier le référentiel de durcissement appliqué aux hôtes et images de runners (paquets installés,
+       services en écoute, accès distant).
+    4. Par produit :
+       - **GitHub** : les runners gardent les mises à jour automatiques, ou sont enregistrés avec
+         `--disableupdate` et mis à jour par le pipeline d'images dans les 30 jours suivant une version.
+         Sur GitHub Enterprise Cloud avec des images personnalisées, **Enterprise** > **Policies** >
+         **Actions** > **Custom images** limite les organisations qui peuvent en créer et fixe **Maximum
+         version age**.
+       - **Buildkite** : les agents tournent avec une version courante de `buildkite-agent` et les images
+         sont reconstruites avec des systèmes et outils patchés.
+    5. Échec si une version de runner a plus de 30 jours de retard sur une version de sécurité, si une image
+       de runner dépasse l'âge maximal défini, ou si des hôtes manquent des mises à jour de sécurité
+       disponibles.
+remediation:
+  manual: |
+    1. Construire les images de runner dans un pipeline à partir d'une base minimale et durcie ; les
+       reconstruire au moins chaque mois et à chaque version de sécurité.
+    2. Activer les mises à jour automatiques du runner, ou intégrer les mises à niveau du runner au
+       pipeline d'images.
+    3. **GitHub** (images personnalisées GitHub Enterprise Cloud) : en tant que propriétaire d'entreprise,
+       régler **Maximum version age** entre 30 et 60 jours dans la politique de rétention des images
+       personnalisées.
+    4. Remplacer les runners encore sur d'anciennes images, et retirer des images les outils dont les jobs
+       n'ont pas besoin.

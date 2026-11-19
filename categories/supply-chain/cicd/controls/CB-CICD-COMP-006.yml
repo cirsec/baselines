@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-006
+title: Review installed integrations periodically and remove unused ones
+finding:
+  title: Installed apps, OAuth grants and webhooks are never reviewed
+  description: Integrations installed years ago keep broad permissions on repositories and pipelines after their owner left or the service was dropped, and an attacker who takes over one of them inherits that access.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [third-party-apps, oauth, webhooks, integrations, access-review]
+
+description: |
+  The organization keeps an inventory of installed apps, OAuth grants and consumers,
+  integrations and webhooks on its CI/CD and source platforms, with an owner, the permissions
+  granted and the repositories they reach. The inventory is reviewed at least every quarter:
+  - integrations without an owner or no longer used are removed;
+  - permissions and repository access are reduced to what is used (selected repositories rather
+    than all, no write access to code or workflows unless needed);
+  - integration secrets and webhook secrets are rotated when owners change.
+
+  The approval of new integrations is covered by CB-CICD-COMP-005, and webhook transport and
+  signing by CB-CICD-COMP-008.
+rationale: |
+  Integrations accumulate. Each one is a standing credential held by a third party, often with
+  write access to code or pipeline files. Forgotten integrations are rarely monitored, so their
+  compromise or abuse goes unnoticed. A regular review removes access that nobody needs anymore
+  and catches over-broad grants.
+impact: |
+  The review takes time from organization owners and needs the integration owners to answer.
+  Removing an integration that is still used breaks the workflow behind it; suspend it first
+  where the platform allows it.
+
+audit:
+  manual: |
+    Use an organization owner, workspace administrator or instance administrator account in read
+    mode.
+
+    1. Get the latest review record and compare it with the current lists:
+       - **GitHub**: organization **Settings** > **Third-party Access** > **GitHub Apps** (each app
+         **Configure** shows permissions and repository access) and **OAuth app policy**;
+         **Settings** > **Webhooks**.
+       - **GitLab**: **Settings** > **Integrations** and **Settings** > **Webhooks** at project and
+         group level; **Admin** > **Applications** on self-managed instances.
+       - **Bitbucket Cloud**: **Workspace settings** > **Apps and features** > **OAuth consumers**;
+         **Repository settings** > **Webhooks**.
+       - **Other platforms**: the list of installed apps, plugins, OAuth grants and tokens.
+    2. Fail if there is no review in the last three months, if integrations without an owner or
+       recent use remain, or if an integration has access to all repositories or write access to
+       workflow files without a recorded need.
+
+remediation:
+  manual: |
+    1. Export the current lists into an inventory with owner, purpose, permissions and
+       repositories.
+    2. Remove or reduce:
+       - **GitHub** (organization owner): in **Third-party Access** > **GitHub Apps** >
+         **Configure**, switch repository access to **Only select repositories**, suspend or
+         uninstall unused apps, and deny OAuth apps that are no longer needed.
+       - **GitLab** (Maintainer or Owner): disable unused integrations and delete unused webhooks
+         in **Settings** > **Integrations** and **Settings** > **Webhooks**.
+       - **Bitbucket Cloud** (workspace administrator): delete unused OAuth consumers and
+         webhooks.
+    3. Schedule the next review and assign it to an owner.
+
+references:
+  - title: Reviewing and modifying installed GitHub Apps
+    url: https://docs.github.com/en/apps/using-github-apps/reviewing-and-modifying-installed-github-apps
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Project integrations
+    url: https://docs.gitlab.com/user/project/integrations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Use OAuth on Bitbucket Cloud
+    url: https://support.atlassian.com/bitbucket-cloud/docs/use-oauth-on-bitbucket-cloud/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-8 Ungoverned Usage of 3rd Party Services
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: partial
+    note: Covers the review of existing third-party grants; approval of new ones is CB-CICD-COMP-005.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "4.3.4"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(7)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-CICD-COMP-005
+    type: related
+  - id: CB-CICD-COMP-008
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

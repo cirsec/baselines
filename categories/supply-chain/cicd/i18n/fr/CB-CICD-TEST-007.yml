@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Contrôler les licences des dépendances dans le pipeline
+finding:
+  title: Les licences des dépendances ne sont pas contrôlées quand les dépendances changent
+  description: Une dépendance sous une licence que l'organisation n'accepte pas est ajoutée lors d'une modification courante et livrée dans une version, ce qui crée une obligation juridique ou impose une réécriture tardive.
+parameters:
+  licence_gate: Conséquence d'une modification qui ajoute une dépendance sous licence non autorisée. `report` = le résultat est signalé dans la demande de modification et consigné ; `block` = la fusion est bloquée par un ruleset ou une politique.
+description: |
+  Les pipelines détectent les licences des dépendances directes et transitives, les consignent dans
+  le SBOM de chaque version, et les comparent à la politique de licences de l'organisation
+  (autorisées, interdites, à examiner). Quand une demande de modification ajoute ou modifie une
+  dépendance, le résultat est `{{ licence_gate }}` :
+  - `report` : les licences non autorisées sont signalées dans la demande de modification et
+    suivies ;
+  - `block` : la demande de modification ne peut pas être fusionnée tant que la dépendance n'est
+    pas retirée ou qu'une exception n'est pas approuvée.
+
+  Le contrôle de licence fait lors de la première adoption d'une dépendance relève de
+  CB-DEP-VET-002, et la production du SBOM de CB-DEP-INV-001.
+rationale: |
+  Les obligations de licence viennent avec chaque dépendance transitive, et elles changent quand
+  les dépendances sont mises à jour. Contrôler dans le pipeline à chaque modification repère un
+  problème au moment où il est introduit plutôt que lors d'un audit de version, et le SBOM conserve
+  la preuve pour chaque version.
+impact: |
+  L'organisation a besoin d'une politique de licences écrite. Le blocage peut arrêter des
+  correctifs urgents quand une dépendance change de licence ; garder un circuit d'exception. La
+  conformité de licences GitHub nécessite GitHub Enterprise Cloud avec GitHub Code Security ; les
+  politiques d'approbation de licences GitLab nécessitent Ultimate.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts, rulesets et politiques.
+
+    1. Vérifier que les licences sont détectées et consignées dans le SBOM des versions récentes.
+    2. Vérifier le contrôle :
+       - **GitHub** : une politique de licences d'entreprise existe, et pour `block`, un ruleset
+         actif sur la branche par défaut contient **Require license compliance results before
+         merging**.
+       - **GitLab** : l'analyse de licences des fichiers CycloneDX est activée, et pour `block`,
+         une politique d'approbation de merge request (politique d'approbation de licences) refuse
+         les licences non autorisées.
+       - **Autres plates-formes** : un job d'analyse de licences tourne dans les pipelines de
+         demande de modification et échoue ou signale selon `{{ licence_gate }}`.
+    3. Échec si les licences des dépendances ne sont pas contrôlées lors des modifications, ou,
+       quand `{{ licence_gate }}` vaut `block`, si une modification qui ajoute une licence non
+       autorisée peut être fusionnée sans exception approuvée.
+remediation:
+  manual: |
+    1. Écrire la politique de licences avec l'équipe juridique.
+    2. Configurer le contrôle :
+       - **GitHub** (propriétaire d'entreprise) : configurer la politique de licences open source,
+         puis ajouter la règle **Require license compliance results before merging** à un ruleset
+         sur la branche par défaut pour `block`.
+       - **GitLab** (Owner du groupe, Ultimate) : activer l'analyse des dépendances et des licences
+         et créer une politique d'approbation de licences qui refuse les licences non autorisées.
+       - **Autres plates-formes** : ajouter au pipeline un analyseur de licences qui lit les
+         fichiers de verrouillage ou le SBOM.
+    3. Enregistrer les données de licence dans le SBOM de la version.

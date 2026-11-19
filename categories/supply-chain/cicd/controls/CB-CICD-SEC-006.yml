@@ -1,0 +1,156 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-006
+title: Limit who can use and manage stored secrets to named groups
+finding:
+  title: Any project member can use production secret groups or read build credentials
+  description: When a context, variable group or credential store is open to every member, anyone who can start a job or edit a build configuration can make it print or send the production secrets it receives.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [secrets, access-control, contexts, variable-groups, credentials]
+applicability:
+  versions: [circleci, teamcity, azure-devops, jenkins]
+
+description: |
+  Sensitive secret containers (CircleCI contexts, Azure DevOps variable groups and secure files,
+  Jenkins credential folders, TeamCity project credentials) can be used at runtime and
+  administered only by named groups, such as the team that owns the deployment, not by every
+  member of the organization or project. Membership of a project alone does not grant use of
+  production secrets.
+
+  When `{{ secret_management_restriction }}` is `strict`, management of code signing material is
+  also limited to administrators, and the platform's strict mode for build authentication is on, so
+  that users who can view a build configuration cannot reuse the build's own credentials.
+
+  Restricting shared secrets to specific projects or pipelines is covered by CB-CICD-SEC-007;
+  binding them to protected branches by CB-CICD-SEC-008.
+setting:
+  location: CircleCI **Organization Settings** > **Contexts** > context > **Security**; Azure DevOps **Pipelines** > **Library** > **Security**; Jenkins folder credentials and authorization; TeamCity internal properties
+  default_value: "CircleCI: All members; Jenkins: global-scope credentials common; TeamCity strict mode off"
+  recommended_value: "{{ secret_management_restriction }}"
+parameters:
+  - name: secret_management_restriction
+    type: enum
+    description: restricted limits use and management of sensitive secret containers to named groups; strict also limits code signing management to administrators (CircleCI) and turns on strict build authentication (TeamCity).
+    allowed: [restricted, strict]
+    default: restricted
+    profile_defaults:
+      hardened: strict
+rationale: |
+  A secret is exposed to whoever can make a job read it. If a production context or variable group
+  is usable by all members, the effective audience of the production credentials is the whole
+  organization, including contractors and compromised accounts. Restricting use to the deploying
+  team keeps that audience small and auditable. On TeamCity, a user who can view build settings
+  could otherwise reuse build-level authentication to reach projects they cannot see.
+impact: |
+  Jobs triggered by users outside the allowed groups fail when they request the restricted
+  secrets; deployment pipelines must be triggered by members of the owning group or by an
+  approved automation identity.
+notes: |
+  CircleCI security groups are the organization's VCS teams and are supported only for `github`
+  type organizations; only organization administrators can set them. Other organizations rely on
+  project and expression restrictions (CB-CICD-SEC-007, CB-CICD-SEC-008).
+
+audit:
+  manual: |
+    Use an administrator or auditor role that can read secret container permissions.
+
+    1. List the containers that hold production or other sensitive secrets.
+    2. Check who can use and manage each one:
+       - **CircleCI**: **Organization Settings** > **Contexts**: each sensitive context lists one
+         or more security groups, not **All members**.
+       - **Azure DevOps**: **Pipelines** > **Library** > variable group or secure file >
+         **Security**: the **User** and **Administrator** roles are granted to named groups only,
+         not to Contributors or Project Valid Users.
+       - **Jenkins**: sensitive credentials are stored in a folder (not at the root), and the
+         authorization strategy grants `Job/Configure`, `Job/Create` and `Item/Build` on that folder
+         only to the owning group; `Job/Configure` implies `Credentials/UseItem`, so anyone with it
+         can use the folder's credentials.
+       - **TeamCity**: credentials are kept in the project of the team that owns them and the
+         **View build configuration settings** permission on that project is granted to that team
+         only.
+    3. When `{{ secret_management_restriction }}` is `strict`, also check:
+       - **CircleCI**: **Organization Settings** > **Security** > **Code Signing Security
+         Settings** > **Restrict code signing management to organization admins only** is on.
+       - **TeamCity**: the internal property `teamcity.buildAuth.enableStrictMode` is `true`
+         (**Administration** > **Diagnostics** > **Internal Properties**).
+    4. Fail if a sensitive container can be used or managed by all members of the organization or
+       project, or, for `strict`, if a listed hardened setting is off.
+
+remediation:
+  manual: |
+    1. Create a group per owning team (in the identity provider or the platform) and grant it the
+       sensitive containers.
+       - **CircleCI**: as an organization administrator, open **Organization Settings** >
+         **Contexts** > context, add the security groups, then remove **All members**.
+       - **Azure DevOps**: in **Pipelines** > **Library** > item > **Security**, grant **User** to
+         the owning group and **Administrator** to its leads; remove broader groups.
+       - **Jenkins**: move the credentials from the root store to a folder, grant `Job/Configure`,
+         `Job/Create` and `Item/Build` on the folder only to the owning group.
+       - **TeamCity**: move the credentials to the owning team's project and restrict **View build
+         configuration settings** on it.
+    2. When `{{ secret_management_restriction }}` is `strict`:
+       - **CircleCI**: turn on **Restrict code signing management to organization admins only**
+         under **Organization Settings** > **Security**.
+       - **TeamCity**: add `teamcity.buildAuth.enableStrictMode=true` to the internal properties.
+    3. Rotate secrets that were usable by groups that should not have had them.
+
+references:
+  - title: Using contexts
+    url: https://circleci.com/docs/guides/security/contexts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Restrict code signing management
+    url: https://circleci.com/docs/guides/security/restrict-code-signing-management/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage protected resources (approvals, checks and permissions)
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/resources
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Credentials plugin user guide - credentials scopes and permissions
+    url: https://github.com/jenkinsci/credentials-plugin/blob/master/docs/user.adoc
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security notes
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers who can use and manage secret containers; pipeline-level access is covered by CB-CICD-SEC-007.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-007
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-IAM-036
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

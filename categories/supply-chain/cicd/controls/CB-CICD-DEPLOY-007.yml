@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-007
+title: Prevent outdated builds from being deployed to production
+finding:
+  title: An older pipeline run or an old artifact can overwrite the current production deployment
+  description: When deployment jobs are not serialized and nothing checks the age of what is deployed, a delayed older run, a retried job or a deliberately chosen old artifact can roll production back to a version with known vulnerabilities.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [deployment, outdated-deployments, rollback, build-horizon, serialization]
+
+description: |
+  Deployments to a production environment are serialized, and a deployment job from an older
+  pipeline cannot run after a newer one has deployed. Check level: `{{ age_limit }}`.
+
+  - `newest-only`: deployment jobs are serialized per environment and outdated deployment jobs are
+    rejected by the platform; going back to an earlier version is done by deploying it through a
+    new pipeline run, after the decision is recorded.
+  - `build-horizon`: in addition, critical systems refuse artifacts older than a defined build
+    horizon (for example 90 days since build), so that an old artifact built with outdated
+    dependencies and toolchain cannot be redeployed; it must be rebuilt from current sources and
+    dependencies.
+
+  Change windows and exclusive locks are covered by CB-CICD-DEPLOY-006; protected rollback in
+  progressive delivery by CB-CICD-DEPLOY-012.
+rationale: |
+  Pipelines finish in unpredictable order. Without serialization, an older run that was waiting for
+  a runner or an approval can overwrite a newer deployment, silently reintroducing fixed bugs or
+  vulnerabilities. An attacker who can trigger or retry a job can use the same weakness to deploy a
+  known-vulnerable version on purpose. A build horizon also limits how long artifacts built with old,
+  unpatched dependencies stay deployable.
+impact: |
+  Retrying an old deployment job no longer works as a rollback; rollbacks go through a new pipeline
+  run. With a build horizon, long-lived releases must be rebuilt periodically.
+notes: |
+  In GitLab, **Prevent outdated deployment jobs** decides age by job start time, not commit time, so
+  a newer commit's manual job can be blocked if an older pipeline's job was started later. **Allow
+  job retries for rollback deployments** is enabled by default and lets old deployment jobs be
+  retried; GitLab advises clearing it in sensitive projects.
+
+parameters:
+  - name: age_limit
+    type: enum
+    description: What is enforced on deployment age. newest-only serializes deployments and rejects outdated deployment jobs; build-horizon also refuses artifacts older than the organization's build horizon on critical systems.
+    allowed: [newest-only, build-horizon]
+    default: newest-only
+    profile_defaults:
+      hardened: build-horizon
+
+audit:
+  manual: |
+    Use a role that can read pipeline settings and definitions.
+
+    1. List production deployment jobs and how they are triggered and retried.
+    2. Check serialization and outdated job protection:
+       - **GitLab**: production deployment jobs set `resource_group` (for example
+         `resource_group: production`); **Settings** > **CI/CD** > **General pipelines** has **Prevent
+         outdated deployment jobs** selected and **Allow job retries for rollback deployments**
+         cleared.
+       - **Azure DevOps**: production environments have the **Exclusive lock** check
+         (CB-CICD-DEPLOY-006).
+       - **Bitbucket**: only one deployment per environment runs at a time; check that deploying
+         steps use `deployment:` environments.
+       - Other platforms: a concurrency group or lock per environment and a check in the deploy step
+         that the version is newer than the one running.
+    3. With `build-horizon`: check that the deploy step or admission policy compares the artifact's
+       build time (from provenance) with the horizon and fails if it is older.
+    4. Fail if two deployments can run concurrently on production, if an older deployment job can
+       run after a newer one, or (hardened) if an artifact older than the build horizon can be
+       deployed.
+
+remediation:
+  manual: |
+    1. Serialize production deployments and reject outdated jobs:
+       - **GitLab**: add `resource_group: production` to production deployment jobs; in **Settings**
+         > **CI/CD** > **General pipelines**, select **Prevent outdated deployment jobs** and clear
+         **Allow job retries for rollback deployments**.
+       - **Azure DevOps**: add the **Exclusive lock** check to the production environment.
+       - Other platforms: use the platform's concurrency or lock feature per environment.
+    2. Document rollback as a new pipeline run that deploys a chosen version, with approval.
+    3. For `build-horizon`: read the build time from the artifact provenance in the deploy step or
+       admission policy and reject artifacts older than the horizon; schedule periodic rebuilds of
+       long-lived releases.
+
+references:
+  - title: Deployment safety - Prevent outdated deployment jobs
+    url: https://docs.gitlab.com/ci/environments/deployment_safety/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Resource group
+    url: https://docs.gitlab.com/ci/resource_groups/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Define approvals and checks - Exclusive lock
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-2
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+related_controls:
+  - id: CB-CICD-DEPLOY-006
+    type: related
+  - id: CB-CICD-DEPLOY-012
+    type: related
+  - id: CB-CICD-ART-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Construire les artefacts critiques de façon reproductible et les comparer entre builders indépendants
+finding:
+  title: Les artefacts critiques ne peuvent pas être reconstruits à l'identique, et une plate-forme de build compromise passe inaperçue
+  description: Quand une même source ne produit jamais la même sortie, personne ne peut vérifier qu'un binaire publié correspond à sa source, et du code malveillant injecté par un compilateur, un runner ou un service de build compromis est livré sans qu'aucune différence ne soit visible.
+description: |
+  Les artefacts que l'organisation considère comme critiques (par exemple agents, installeurs,
+  micrologiciels, images de base, outils de sécurité) sont construits de façon reproductible :
+  construire la même révision source avec le même environnement de build déclaré donne une sortie
+  identique bit à bit.
+
+  L'environnement de build est enregistré (empreintes de la chaîne de compilation et de l'image de
+  base, options de build, variables d'environnement, locale et fuseau horaire), et les sources de
+  non-déterminisme sont supprimées (horodatages via `SOURCE_DATE_EPOCH` ou équivalent, ordre des
+  fichiers, chemins absolus, identifiants aléatoires, téléchargements non épinglés).
+
+  Au moins une reconstruction indépendante, sur une infrastructure distincte avec des identifiants
+  distincts (une autre plate-forme CI, un autre compte cloud ou un builder hors ligne), est exécutée
+  pour chaque version d'un artefact critique, et les empreintes sont comparées avant publication. Une
+  divergence bloque la publication jusqu'à explication.
+rationale: |
+  Signatures et provenance prouvent quel pipeline a construit un artefact, pas que ce pipeline était
+  honnête. Si la plate-forme de build, une image de runner ou le compilateur est compromis, la sortie
+  signée peut contenir du code absent de la source. Des builds reproductibles comparés entre
+  infrastructures indépendantes rendent ce type d'altération détectable, car un attaquant devrait
+  compromettre chaque builder de la même manière.
+impact: |
+  Rendre un build reproductible peut demander un travail important sur la chaîne de compilation et
+  les scripts de build, et certains écosystèmes ou outils propriétaires s'y prêtent mal. Exploiter un
+  second builder a un coût d'infrastructure et de maintenance. Le contrôle est donc limité aux
+  artefacts critiques.
+notes: |
+  Aucune des plates-formes CI/CD du périmètre ne propose de réglage qui rende les builds
+  reproductibles ; c'est une propriété des scripts de build et de la chaîne de compilation. Des étapes
+  de build hermétiques et épinglées (CB-CICD-PIPE-023, CB-CICD-RUN-024) en sont en pratique des
+  prérequis.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de build et les enregistrements de versions.
+
+    1. Obtenir la liste des artefacts classés critiques.
+    2. Pour chacun, vérifier que l'environnement de build est enregistré (empreintes de la chaîne de
+       compilation et des images, options, environnement) et qu'une procédure de reproductibilité
+       existe.
+    3. Prendre la dernière version et vérifier qu'une reconstruction indépendante a été exécutée sur
+       une infrastructure distincte et que l'empreinte de sa sortie correspond à l'artefact publié.
+    4. Éventuellement, reconstruire soi-même une version à partir de l'environnement enregistré et
+       comparer les empreintes.
+    5. Échec si un artefact critique n'a pas de reconstruction indépendante pour sa dernière version,
+       ou si une divergence d'empreinte a été publiée sans explication.
+remediation:
+  manual: |
+    1. Épingler et enregistrer chaque entrée du build : révision source, empreintes de la chaîne de
+       compilation et de l'image de base, dépendances par fichier de verrouillage, options de build.
+    2. Supprimer le non-déterminisme : poser `SOURCE_DATE_EPOCH` (ou l'équivalent de l'écosystème),
+       trier les listes de fichiers, retirer les chemins absolus et identifiants de build, éviter
+       l'accès réseau pendant le build.
+    3. Reconstruire deux fois sur la même plate-forme et comparer les sorties (par exemple avec
+       diffoscope) jusqu'à ce qu'elles soient identiques.
+    4. Mettre en place un builder indépendant sur une infrastructure et des identifiants distincts,
+       l'exécuter à chaque version, et ajouter une barrière de publication qui compare les empreintes.

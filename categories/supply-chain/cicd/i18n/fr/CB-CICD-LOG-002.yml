@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Enregistrer l'adresse IP source du client et les requêtes API dans les événements d'audit
+finding:
+  title: Les événements d'audit n'indiquent pas d'où viennent les actions
+  description: Les événements d'audit n'ont pas l'adresse IP du client, ou les appels API faits avec des jetons ne sont pas journalisés ; les enquêteurs ne peuvent pas distinguer un jeton volé utilisé depuis l'infrastructure d'un attaquant de l'automatisation normale.
+description: |
+  Les événements d'audit des plates-formes CI/CD incluent l'adresse IP source réelle du client, pas
+  seulement celle d'un proxy ou d'une passerelle :
+
+  - GitHub Enterprise Cloud : la divulgation de l'IP source est activée pour l'entreprise (elle
+    s'applique alors à chaque organisation de l'entreprise).
+  - Argo CD : le serveur d'API journalise l'adresse du client (`server.enable.source.ip.logging`).
+
+  Avec `ip_logging_scope` à `source-ip-and-api` (ici **{{ ip_logging_scope }}**), les événements de
+  requêtes API sont aussi capturés (**API Request Events** de GitHub, diffusés vers le SIEM), et les
+  adresses client ne sont lues dans les en-têtes transmis que si la requête vient d'un proxy de
+  confiance listé (`server.trusted.proxies` d'Argo CD réglé sur les adresses de l'ingress ou du
+  répartiteur de charge, pas sur tout le réseau des pods).
+rationale: |
+  La plupart des intrusions CI/CD utilisent des identifiants valides mais volés. L'adresse source
+  est souvent le seul champ qui distingue un attaquant du propriétaire légitime d'un jeton, et les
+  événements de requêtes API montrent ce qu'un jeton a lu ou modifié, pas seulement qu'il existait.
+  Faire confiance aux en-têtes transmis depuis n'importe quelle source permet à un attaquant
+  d'inscrire l'adresse de son choix dans le journal : la liste des proxys doit être étroite.
+impact: |
+  Les adresses IP sont des données personnelles : la conservation de ces journaux et leur accès
+  doivent suivre les règles de protection des données de l'organisation. Les événements de requêtes
+  API ajoutent du volume au flux d'audit.
+notes: |
+  Sur GitHub, les adresses IP ne sont pas affichées pour certains événements, par exemple les
+  événements `api.request` sans contexte de dépôt, et les actions de comptes personnels sur des
+  dépôts publics quand Enterprise Managed Users n'est pas utilisé. GitHub ne diffuse que les points
+  d'accès API pertinents pour la sécurité.
+parameters:
+  ip_logging_scope: Détail exigé dans les événements d'audit. `source-ip` exige l'IP source du client ; `source-ip-and-api` exige en plus les événements de requêtes API et une IP client lue dans les en-têtes transmis uniquement derrière des proxys de confiance listés.
+audit:
+  manual: |
+    Utiliser un propriétaire d'entreprise (GitHub) ou un accès en lecture à la configuration et aux
+    journaux d'Argo CD.
+
+    1. **GitHub Enterprise Cloud** : dans **Settings** > **Audit log** > **Settings** de
+       l'entreprise, vérifier que **Enable source IP disclosure** est coché sous « Disclose actor IP
+       addresses in audit logs » ; avec `source-ip-and-api`, vérifier que **Enable API Request
+       Events** est coché sous « API Requests » et qu'un flux est configuré (CB-CICD-LOG-003).
+    2. **Argo CD** : dans `argocd-cmd-params-cm`, vérifier `server.enable.source.ip.logging: "true"` ;
+       vérifier dans les journaux d'`argocd-server` que `source.ip` montre des adresses client. Avec
+       `source-ip-and-api`, vérifier que `server.trusted.proxies` ne liste que les adresses de
+       l'ingress ou du répartiteur de charge et que `server.client.ip.header` n'est défini que si
+       chaque proxy de confiance écrase cet en-tête.
+    3. Échec si les événements d'audit ne portent aucune adresse client, si l'adresse journalisée est
+       toujours celle du proxy, ou (avec `source-ip-and-api`) si les événements de requêtes API ne
+       sont pas capturés ou si les en-têtes transmis sont acceptés depuis une plage large.
+remediation:
+  manual: |
+    1. **GitHub Enterprise Cloud** (propriétaire d'entreprise) : aller dans **Settings** > **Audit
+       log** > **Settings** de l'entreprise, cocher **Enable source IP disclosure** ; pour
+       `source-ip-and-api`, cocher aussi **Enable API Request Events** et diffuser le journal
+       d'audit.
+    2. **Argo CD** : poser `server.enable.source.ip.logging: "true"` dans `argocd-cmd-params-cm` ;
+       pour `source-ip-and-api`, définir `server.trusted.proxies` avec les adresses de l'ingress ou du
+       répartiteur de charge et, seulement s'ils le posent tous, `server.client.ip.header` ;
+       redémarrer `argocd-server`.
+    3. Mettre à jour le registre des traitements et la durée de conservation des journaux pour les
+       données personnelles qu'ils contiennent désormais.

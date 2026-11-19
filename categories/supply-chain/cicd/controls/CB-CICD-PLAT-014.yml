@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-014
+title: Disable unused GitLab features and access protocols
+finding:
+  title: Unused GitLab protocols and features stay enabled
+  description: Git access protocols, import sources, project export, incoming email and the container registry are enabled although nobody uses them, widening the attack surface with paths that are neither monitored nor needed.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [attack-surface, gitlab, import-export, incoming-email, container-registry, hardening]
+applicability:
+  versions: [gitlab]
+
+description: |
+  On a hardened GitLab Self-Managed instance, features that move data in or out of the instance are
+  enabled only when the organization uses them:
+
+  - **Enabled Git access protocols** is set to **Only SSH** or **Only HTTP(S)** when one of the two
+    is not used.
+  - **Import sources** lists only the sources actually used; **Project export** and **Allow
+    migrating GitLab groups and projects by direct transfer** are disabled unless needed.
+  - Incoming email (reply by email, Service Desk) is not configured; if it is required, it uses a
+    dedicated mailbox with sub-addressing, and accounts sending to it use MFA.
+  - The container registry is disabled when unused (it is enabled automatically when Let's Encrypt
+    is configured), or restricted to localhost on a standalone system.
+
+  Outbound filtering and Gravatar are covered by CB-CICD-PLAT-010; unused plugins and integrations
+  by CB-CICD-COMP-004.
+rationale: |
+  Each of these features is an extra way to bring content into the instance (imported projects with
+  their own `.gitlab-ci.yml`, email-created issues) or to take data out of it (project export,
+  direct transfer, registry pulls). When a feature is not used, nobody watches it, so it becomes a
+  quiet path for exfiltration or for planting a pipeline. Disabling it removes the path instead of
+  relying on monitoring.
+impact: |
+  Users who relied on a disabled protocol, import source or export must ask an administrator.
+  Imported projects' pipeline files should be reviewed before their pipelines are allowed to run.
+
+audit:
+  manual: |
+    Use an administrator account on GitLab Self-Managed and read access to `/etc/gitlab/gitlab.rb`.
+
+    1. In **Admin** > **Settings** > **General**, check **Visibility and access controls** >
+       **Enabled Git access protocols**, and **Import and export settings** > **Import sources**,
+       **Project export** and **Allow migrating GitLab groups and projects by direct transfer**,
+       against the uses documented by the instance owner.
+    2. In `/etc/gitlab/gitlab.rb`, check whether `incoming_email` or `service_desk_email` is enabled,
+       and whether the container registry is enabled (`registry_external_url`, `registry['enable']`).
+    3. If the registry is used, check in **Admin** > **Settings** > **CI/CD** > **Container
+       registry** that it is not enabled automatically for every new project.
+    4. Fail if a protocol, import source, export feature, incoming email or the container registry
+       is enabled without a documented use.
+
+remediation:
+  manual: |
+    Use an administrator account; announce the change to users of the affected features.
+
+    1. In **Admin** > **Settings** > **General**:
+       - in **Visibility and access controls**, set **Enabled Git access protocols** to **Only
+         SSH** or **Only HTTP(S)** if one is unused;
+       - in **Import and export settings**, clear the **Import sources** that are not used;
+       - disable **Project export** and direct transfer unless needed;
+       - select **Save changes**.
+    2. In `/etc/gitlab/gitlab.rb`, remove or disable `incoming_email` and `service_desk_email` if not
+       needed; if needed, use a dedicated mailbox with sub-addressing and MFA on sender accounts.
+    3. Disable the container registry if unused (`registry['enable'] = false`), or bind it to
+       localhost on a standalone system, then run `gitlab-ctl reconfigure`.
+    4. Review the `.gitlab-ci.yml` of imported projects before enabling their pipelines.
+
+references:
+  - title: Hardening - Application recommendations
+    url: https://docs.gitlab.com/security/hardening_application_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Hardening - Configuration recommendations
+    url: https://docs.gitlab.com/security/hardening_configuration_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Import and export settings
+    url: https://docs.gitlab.com/administration/settings/import_and_export_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Visibility and access controls
+    url: https://docs.gitlab.com/administration/settings/visibility_and_access_controls/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1567
+related_controls:
+  - id: CB-CICD-PLAT-010
+    type: related
+  - id: CB-CICD-COMP-004
+    type: related
+  - id: CB-CICD-PLAT-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

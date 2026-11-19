@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-036
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre qui peut modifier les builds ou agir sous les identités de build
+finding:
+  title: De nombreux principaux peuvent modifier les builds, surcharger leurs paramètres ou agir sous l'identité de build
+  description: Le droit de modifier un projet de build, un déclencheur ou un pipeline, de surcharger ses commandes de build ou de transmettre son rôle revient à exécuter du code arbitraire avec les identifiants du build, et il est pourtant souvent accordé avec de larges rôles de développeur.
+description: |
+  Créer ou modifier des projets de build, déclencheurs, pipelines et connexions de dépôts, lancer des
+  builds avec des commandes, un environnement ou un rôle surchargés, et usurper des identités de build
+  (transmission de rôle, action en tant que compte de service) sont réservés aux administrateurs de
+  pipelines ou au pipeline d'infrastructure as code qui les gère après revue. Les développeurs
+  déclenchent les builds par des changements de sources et le pipeline normal, pas en modifiant la
+  définition du build dans la console cloud.
+
+  La protection des définitions de pipelines stockées dans les dépôts relève de CB-CICD-PIPE-005 ;
+  l'identité sous laquelle chaque build tourne de CB-CICD-IAM-034 ; les objets de niveau plate-forme
+  de CB-CICD-IAM-017.
+rationale: |
+  Sur les services de build cloud, la définition du build vit dans la plate-forme, hors de la revue de
+  code. Quiconque peut mettre à jour un projet CodeBuild, lancer un build avec un `buildspecOverride`
+  ou transmettre un rôle, modifier un déclencheur Cloud Build en détenant
+  `iam.serviceAccounts.actAs`, ou créer un `TaskRun` Tekton dans un espace de noms de build peut
+  exécuter ses propres commandes avec l'identité du build et ses secrets, et produire des artefacts
+  d'apparence légitime.
+impact: |
+  Les développeurs qui ajustaient les builds dans la console doivent passer par les administrateurs
+  de pipelines ou par le dépôt d'infrastructure as code. Les builds de débogage avec surcharges ont
+  besoin d'un projet séparé avec un rôle peu privilégié.
+audit:
+  manual: |
+    Utiliser un rôle cloud ou de cluster qui peut lire les politiques IAM et les liaisons de rôles.
+
+    1. **AWS CodeBuild** : lister les principaux autorisés à `codebuild:CreateProject`,
+       `codebuild:UpdateProject`, `codebuild:StartBuild` et `iam:PassRole` sur les rôles de build (IAM
+       Access Analyzer ou revue des politiques). `StartBuild` accepte `buildspecOverride`,
+       `environmentVariablesOverride`, `privilegedModeOverride` et `serviceRoleOverride` (ce dernier
+       exige aussi `iam:PassRole`) ; pour les non-administrateurs, une instruction de refus avec la
+       clé de condition `codebuild:source.buildspec` (opérateur `Null`) bloque les surcharges de
+       buildspec.
+    2. **AWS CodePipeline** : les principaux autorisés à `codepipeline:CreatePipeline`,
+       `codepipeline:UpdatePipeline` et `iam:PassRole` sur les rôles de pipeline sont des
+       administrateurs de pipelines ou le rôle de déploiement de l'infrastructure as code.
+    3. **Google Cloud Build** : les principaux qui ont Cloud Build Editor
+       (`roles/cloudbuild.builds.editor`) et aussi `iam.serviceAccounts.actAs` sur un compte de
+       service de build (par exemple Service Account User accordé sur ce compte) peuvent créer,
+       modifier et lancer des déclencheurs sous son identité ; cette combinaison est réservée aux
+       administrateurs de pipelines, et Service Account User est accordé par compte de service, pas
+       sur tout le projet. Cloud Build Connection Admin (`roles/cloudbuild.connectionAdmin`) est
+       réservé aux administrateurs.
+    4. **Tekton** : dans les espaces de noms de build, seuls les comptes de service CI et des
+       utilisateurs de confiance peuvent créer des objets `TaskRun` et `PipelineRun` ; les
+       ClusterRoles de Tekton s'agrègent au rôle Kubernetes `edit`, si bien que chaque liaison `edit`
+       dans ces espaces de noms l'accorde.
+    5. **Argo CD** : le RBAC Kubernetes sur l'espace de noms d'Argo CD (secrets, ConfigMaps, objets
+       `Application` et `AppProject`) est réservé aux administrateurs de la plate-forme ;
+       `argocd login --core` contourne l'authentification et le RBAC propres d'Argo CD, le RBAC
+       Kubernetes est donc le seul contrôle.
+    6. Échec si d'autres principaux que les administrateurs de pipelines ou le pipeline IaC revu
+       peuvent modifier des définitions de build, surcharger des paramètres de build ou agir sous une
+       identité de build.
+remediation:
+  manual: |
+    1. Gérer les projets de build, déclencheurs et pipelines comme du code, déployé par un rôle dédié
+       après revue.
+    2. **AWS** : retirer `codebuild:UpdateProject`, `codepipeline:UpdatePipeline` et `iam:PassRole`
+       sur les rôles de build des politiques des développeurs ; ajouter un refus sur
+       `codebuild:StartBuild` quand `codebuild:source.buildspec` est présent (et sur les autres
+       surcharges) pour les non-administrateurs, par IAM ou par une politique de contrôle de service.
+    3. **Google Cloud Build** : n'accorder Service Account User sur les comptes de service de build
+       qu'aux administrateurs de pipelines, et retirer les attributions à l'échelle du projet ; garder
+       Cloud Build Editor pour ceux qui en ont besoin.
+    4. **Tekton** : retirer les liaisons `edit` dans les espaces de noms de build aux personnes qui ne
+       doivent pas lancer d'exécutions, ou créer un rôle personnalisé sans les ressources Tekton ;
+       imposer Pod Security Admission dans ces espaces de noms.
+    5. **Argo CD** : réserver l'accès Kubernetes à l'espace de noms d'Argo CD aux administrateurs de la
+       plate-forme.

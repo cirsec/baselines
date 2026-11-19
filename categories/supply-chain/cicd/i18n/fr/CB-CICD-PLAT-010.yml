@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les requêtes sortantes de la plate-forme, de ses webhooks et de ses extensions
+finding:
+  title: Les webhooks, imports et extensions peuvent joindre le réseau interne
+  description: N'importe quel membre d'un projet peut diriger un webhook, un import de dépôt, un miroir ou une extension vers une adresse interne, et le serveur de la plate-forme fait la requête à sa place, atteignant des services internes et les métadonnées cloud qu'il ne devrait pas exposer (falsification de requête côté serveur).
+description: |
+  Les requêtes sortantes que la plate-forme émet pour le compte des utilisateurs (webhooks,
+  intégrations, hooks système, imports et miroirs de dépôts, extensions de configuration de
+  pipeline) ne peuvent pas joindre les adresses de bouclage, privées ou lien-local, sauf des hôtes
+  internes précis explicitement listés. La protection contre le DNS rebinding reste active, et les
+  imports et migrations sont désactivés s'ils ne servent pas.
+
+  Avec `outbound_policy` à `allowlist-only` (ici **{{ outbound_policy }}**), toute requête sortante
+  est refusée si sa destination ne figure pas sur une liste d'autorisation, et les appels
+  facultatifs vers des services tiers (avatars Gravatar, statistiques d'usage) sont coupés.
+
+  La signature et le TLS des envois de webhooks relèvent de CB-CICD-COMP-008 ; les flux sortants des
+  runners de CB-CICD-RUN-023.
+rationale: |
+  Les URL de webhook, sources d'import et points d'accès d'extension sont choisis par les
+  utilisateurs, mais la requête part du serveur de la plate-forme, qui côtoie généralement bases de
+  données, API internes et points de métadonnées cloud. Sans filtrage, un mainteneur de projet peut
+  scanner le réseau interne, lire des services HTTP internes ou voler les identifiants de
+  l'instance. Les extensions Woodpecker sont appelées avant l'approbation du pipeline et peuvent
+  recevoir des identifiants Git : une extension dirigée vers un hôte choisi par l'attaquant les
+  divulgue.
+impact: |
+  Les intégrations avec des services internes (CI interne, messagerie ou outil de tickets) doivent
+  être ajoutées à la liste d'autorisation. Avec `allowlist-only`, chaque nouvelle intégration
+  demande une modification de la liste, et les entrées par nom DNS peuvent devoir être mises à jour
+  quand les fournisseurs changent d'adresses.
+parameters:
+  outbound_policy: Niveau de filtrage sortant. `block-local` refuse les requêtes vers les adresses de bouclage, privées et lien-local sauf hôte listé ; `allowlist-only` refuse toute destination absente d'une liste d'autorisation explicite et coupe les appels tiers facultatifs.
+audit:
+  manual: |
+    Utiliser un compte administrateur (GitLab) ou un accès en lecture au fichier de configuration
+    ou à l'environnement du serveur (Gitea, Forgejo, Woodpecker).
+
+    1. Vérifier les réglages sortants de chaque plate-forme :
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **Network** > **Outbound requests** :
+         **Allow requests to the local network from webhooks and integrations** et **Allow requests
+         to the local network from system hooks** sont décochés (celui des hooks système est coché
+         par défaut), **Enforce DNS rebinding attack protection** est coché, et la liste
+         d'autorisation locale ne contient que des hôtes internes nommés. Avec `allowlist-only`,
+         **Block all requests, except for IP addresses, IP ranges, and domain names defined in the
+         allowlist** est coché, **Admin** > **Settings** > **General** > **Account and limit** >
+         **Gravatar enabled** est décoché, et le service ping est coupé dans **Metrics and
+         profiling**. La politique legitify `webhooks_are_allowed_to_be_sent_to_local_network`
+         signale le premier réglage.
+       - **Gitea** : `app.ini` `[security] ALLOWED_HOST_LIST` (webhooks et clients OAuth2) et
+         `[migrations] ALLOWED_HOST_LIST` (imports et miroirs) ne contiennent ni `loopback`, ni
+         `private`, ni `*`, seulement les hôtes nommés ou CIDR nécessaires ; avec `allowlist-only`,
+         `EGRESS_MODE = strict` dans les deux sections ; `[repository] DISABLE_MIGRATIONS = true` si
+         les imports ne servent pas ; `[migrations] SKIP_TLS_VERIFY` vaut `false`.
+       - **Forgejo** : `app.ini` `[webhook] ALLOWED_HOST_LIST` vaut `external` (défaut) ou une liste
+         plus étroite, sans `private`, `loopback` ni `*` sauf si un hôte interne nommé l'exige ;
+         `[migrations] ALLOW_LOCALNETWORKS = false` et `ALLOWED_DOMAINS` liste les hébergeurs de
+         code utilisés (vide signifie que tout domaine est permis, ce qui échoue en
+         `allowlist-only`) ; `[repository] DISABLE_MIGRATIONS = true` si les imports ne servent pas.
+       - **Woodpecker** : `WOODPECKER_EXTENSIONS_ALLOWED_HOSTS` vaut `external` (défaut) ou une
+         liste explicite d'hôtes ou CIDR, et ne contient `loopback` ou `private` que si l'extension
+         tourne elle-même en local ; avec `allowlist-only`, c'est une liste explicite.
+    2. Noter que les listes de Gitea et Forgejo ne s'appliquent qu'aux connexions directes : quand
+       un proxy est configuré pour les webhooks ou migrations, vérifier que le proxy applique la même
+       restriction.
+    3. Échec si webhooks, hooks système, imports, miroirs ou extensions peuvent joindre le bouclage
+       ou les réseaux privés au-delà des hôtes nommés, si la protection contre le DNS rebinding est
+       coupée, ou (avec `allowlist-only`) si un chemin sortant n'est pas limité à une liste
+       d'autorisation.
+remediation:
+  manual: |
+    Utiliser un compte administrateur et lister les hôtes internes dont les intégrations ont
+    légitimement besoin.
+
+    1. **GitLab** : dans **Admin** > **Settings** > **Network** > **Outbound requests**, décocher
+       les deux cases **Allow requests to the local network**, garder **Enforce DNS rebinding attack
+       protection** coché, et ajouter les hôtes internes nécessaires à la liste d'autorisation. Pour
+       `allowlist-only`, cocher **Block all requests, except for IP addresses, IP ranges, and domain
+       names defined in the allowlist** (GitLab le refuse tant qu'une URL configurée serait bloquée :
+       ajouter d'abord ces hôtes), décocher **Gravatar enabled** et couper le service ping.
+    2. **Gitea** : définir `[security] ALLOWED_HOST_LIST` et `[migrations] ALLOWED_HOST_LIST` avec
+       les hôtes nommés ou CIDR nécessaires, sans `private`, `loopback` ni `*` ; pour
+       `allowlist-only`, poser `EGRESS_MODE = strict` dans les deux sections. Poser
+       `[repository] DISABLE_MIGRATIONS = true` si les imports ne servent pas.
+    3. **Forgejo** : garder `[webhook] ALLOWED_HOST_LIST = external` ou le restreindre ; définir
+       `[migrations] ALLOWED_DOMAINS` avec les hébergeurs de code utilisés et garder
+       `ALLOW_LOCALNETWORKS = false` ; désactiver les migrations si elles ne servent pas.
+    4. **Woodpecker** : définir `WOODPECKER_EXTENSIONS_ALLOWED_HOSTS` avec les seuls hôtes
+       d'extension, et vérifier les signatures des requêtes dans les extensions.
+    5. Redémarrer les services et tester un webhook vers une adresse interne : il doit être refusé.

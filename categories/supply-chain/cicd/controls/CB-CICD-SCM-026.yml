@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-026
+title: Publish a security policy and accept private vulnerability reports on public repositories
+finding:
+  title: Public repositories have no security policy or private reporting channel
+  description: Without a published policy and a private channel, a researcher who finds a vulnerability either gives up or opens a public issue, disclosing the flaw to attackers before a fix exists.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [security-policy, vulnerability-disclosure, private-vulnerability-reporting, open-source]
+
+applicability:
+  versions: [github]
+
+description: |
+  Every public repository publishes a security policy (`SECURITY.md`) that says which versions are
+  supported and how to report a vulnerability privately, and has GitHub private vulnerability
+  reporting enabled so reports arrive as draft security advisories visible only to maintainers.
+
+  The policy can be a default `SECURITY.md` in the organization's `.github` repository, which
+  applies to every repository that has none of its own. Handling of received reports follows the
+  organization's incident and vulnerability management process (CB-CICD-LOG-009).
+rationale: |
+  Public code is read by researchers and attackers alike. A clear policy and a private channel
+  make it likely that a vulnerability reaches the maintainers first, and give them time to fix it
+  before disclosure. Reports filed as public issues expose users of the project, including
+  pipelines that consume its actions or packages.
+impact: |
+  Maintainers must watch and triage incoming reports within the time stated in the policy.
+
+audit:
+  manual: |
+    Use an organization owner role or a token that can read repository settings.
+
+    1. List the organization's public repositories.
+    2. For each, check that a security policy is shown in the repository's **Security** tab
+       (`SECURITY.md` in the root, `.github/` or `docs/`, or the organization default). Scorecard's
+       `Security-Policy` check and Allstar's `security` policy help at scale.
+    3. Check that **Settings** > **Advanced Security** > **Private vulnerability reporting** is
+       enabled, or that the organization's security configuration enables it for public
+       repositories.
+    4. Fail if a public repository has no security policy or does not accept private vulnerability
+       reports.
+
+remediation:
+  manual: |
+    1. Write a security policy stating supported versions, how to report privately, and expected
+       response times; publish it as the default `SECURITY.md` in the organization's `.github`
+       repository, or per repository from **Security** > **Security policy** > **Start setup**.
+    2. Enable private vulnerability reporting for all public repositories through an organization
+       security configuration, or per repository in **Settings** > **Advanced Security** >
+       **Private vulnerability reporting** > **Enable**.
+    3. Assign maintainers to triage reports and publish advisories once fixed.
+
+references:
+  - title: Adding a security policy to your repository
+    url: https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/add-security-policy
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuring private vulnerability reporting for a repository
+    url: https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OpenSSF Scorecard checks
+    url: https://github.com/ossf/scorecard/blob/main/docs/checks.md
+    publisher: OpenSSF
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.2.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: RA-5(11)
+    relation: related
+related_controls:
+  - id: CB-CICD-LOG-009
+    type: related
+  - id: CB-CICD-SCM-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

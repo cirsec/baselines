@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-010
+title: Protect release tags against creation, move and deletion
+finding:
+  title: Release tags can be created, moved or deleted by any writer
+  description: Anyone with write access can create a release tag that triggers a production pipeline, or move an existing tag to a malicious commit so that every consumer pinned to that tag silently receives the new code.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [tag-protection, releases, tag-hijacking, rulesets]
+
+description: |
+  Tags that identify releases (for example `v*`) are protected: only the release team or the
+  release automation can create them, and nobody can move (update or force-push) or delete them
+  once they exist. The protection applies to every repository that publishes releases or is
+  consumed by tag, including repositories of reusable CI components and actions.
+
+  Immutable release records and artifacts are covered by CB-CICD-ART-012; pinning consumed
+  components to immutable references by CB-CICD-COMP-011.
+rationale: |
+  Tags are mutable by default in Git. Several supply chain attacks on CI components worked by
+  pointing existing version tags at a malicious commit: every workflow that referenced the
+  component by tag ran the attacker's code on its next run. On platforms that give protected
+  variables and runners to protected tags, whoever can create such a tag can also reach
+  production secrets.
+impact: |
+  Release managers can no longer fix a wrong tag by moving it; they publish a new version
+  instead. Automation that creates tags needs to be the allowed creator.
+notes: |
+  GitLab protected tags limit creation and deletion to the **Allowed to create** list; deletion is
+  only possible through the UI or API. Protected tags on Gitea and Forgejo with an empty allowed
+  list block creation and modification for everyone. Azure DevOps has no tag rule: the **Create
+  tag** and **Force push** repository permissions are the only levers.
+
+audit:
+  manual: |
+    Use a role that can read repository rules and protected tag settings.
+
+    1. List repositories that publish releases or are consumed by tag, and their release tag
+       pattern.
+    2. Check the tag protection:
+       - **GitHub**: a tag ruleset (repository or organization **Rules** > **Rulesets**) targeting
+         the release patterns is **Active** and enables **Restrict creations**, **Restrict
+         updates**, **Restrict deletions** and **Block force pushes**, with only the release team
+         or app in the bypass list.
+       - **GitLab**: **Settings** > **Repository** > **Protected tags** lists the release pattern
+         (for example `v*`) with **Allowed to create** set to Maintainers or the release group,
+         and the push rule **Do not allow users to remove Git tags with `git push`** is enabled
+         (Premium).
+       - **Gitea / Forgejo**: **Settings** > **Tags** has a protected tag rule for the release
+         pattern with only the release users or teams allowed.
+       - **Azure DevOps**: on the repository **Security** page, **Create tag** is limited to the
+         release group and **Force push (rewrite history, delete branches and tags)** is not
+         granted.
+    3. Compare existing release tags with the commits recorded at release time (release notes,
+       provenance) to detect tags that were moved.
+    4. Fail if a release tag can be created by any writer, or moved or deleted by anyone.
+
+remediation:
+  manual: |
+    1. Protect the release tag patterns:
+       - **GitHub**: create a tag ruleset targeting the release patterns, enable **Restrict
+         creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**, add
+         the release app or team to the bypass list for creation, and set it to **Active**. Enable
+         immutable releases where available.
+       - **GitLab**: add a protected tag for the release pattern with **Allowed to create** set to
+         the release group, and enable the push rule that blocks tag removal.
+       - **Gitea / Forgejo**: add a protected tag rule in **Settings** > **Tags** with the release
+         users or teams.
+       - **Azure DevOps**: limit **Create tag** to the release group and keep **Force push** unset.
+    2. Have the release pipeline create tags with its own identity.
+    3. If a tag was moved, publish a new version, inform consumers, and investigate the change.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected tags
+    url: https://docs.gitlab.com/user/project/protected_tags/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Push rules
+    url: https://docs.gitlab.com/user/project/repository/push_rules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Branch and tag protection
+    url: https://forgejo.org/docs/latest/user/protection/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set Git repository permissions
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/set-git-repository-permissions
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track requirements
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: partial
+    note: Covers the requirement that tags cannot be moved or deleted; other Source L2 requirements are separate controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-ART-012
+    type: related
+  - id: CB-CICD-COMP-011
+    type: related
+  - id: CB-CICD-SCM-009
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

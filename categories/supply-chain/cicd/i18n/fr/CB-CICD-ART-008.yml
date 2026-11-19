@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Distribuer les artefacts via The Update Framework avec des délégations limitées et expirantes
+finding:
+  title: Les artefacts distribués et leurs métadonnées peuvent être rejoués, figés ou remplacés sans que les clients le remarquent
+  description: Quand les clients ne vérifient qu'une signature par fichier, un attaquant qui contrôle le miroir ou le serveur de téléchargement peut servir une ancienne version vulnérable, retenir les mises à jour, ou utiliser une seule clé de publication compromise pour signer des artefacts qu'elle n'était pas censée couvrir.
+description: |
+  Les artefacts que l'organisation distribue à des clients hors de la plate-forme de build (agents,
+  installeurs, extensions, canaux de mise à jour, miroirs internes de logiciels critiques) sont servis
+  par un mécanisme fondé sur The Update Framework (TUF) ou une conception équivalente :
+
+  - les clients vérifient l'intégrité et la fraîcheur à partir de métadonnées signées (timestamp,
+    snapshot, targets) qui expirent, de sorte qu'un dépôt figé ou rejoué est détecté ;
+  - les responsabilités de signature sont réparties entre des rôles aux clés et seuils distincts, les
+    clés racines étant conservées hors ligne ;
+  - chaque partie (équipe, pipeline, fournisseur) n'est déléguée que pour les noms ou chemins
+    d'artefacts qu'elle publie, et les délégations expirent et doivent être renouvelées.
+
+  Les métadonnées in-toto (layouts et attestations) sont distribuées par le même canal quand elles sont
+  utilisées. La signature des artefacts individuels relève de CB-CICD-ART-005 ; la garde des clés de
+  CB-CICD-ART-007.
+rationale: |
+  Une signature par fichier n'empêche pas un miroir ou un intermédiaire de servir une version
+  ancienne mais valablement signée comportant des vulnérabilités connues, ou de masquer une mise à
+  jour de sécurité. Les métadonnées expirantes de TUF détectent ces attaques par retour arrière ou
+  gel, et les délégations limitées empêchent une seule clé d'éditeur compromise de signer des
+  artefacts qui ne lui appartiennent pas.
+impact: |
+  Exploiter un dépôt TUF ajoute des rôles, des clés, le renouvellement des expirations et la prise en
+  charge côté client. La plupart des écosystèmes de paquets et des plates-formes CI ne fournissent pas
+  TUF pour les artefacts propres de l'organisation : cela suppose en général d'exploiter un service ou
+  une bibliothèque de distribution compatible TUF. Ne s'applique que là où l'organisation distribue
+  des logiciels à des clients.
+notes: |
+  Aucune plate-forme CI/CD du périmètre ne propose de réglage de dépôt TUF pour les artefacts de
+  l'utilisateur. Les clients Sigstore utilisent TUF pour distribuer leur propre racine de confiance,
+  ce qui constitue une implémentation de référence utile.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire la configuration du service de distribution et ses métadonnées.
+
+    1. Lister les canaux par lesquels l'organisation distribue des logiciels à des clients (serveurs
+       de mise à jour, dépôts d'extensions, miroirs internes).
+    2. Pour chaque canal, vérifier que les clients vérifient des métadonnées signées et expirantes
+       pour l'intégrité et la fraîcheur, pas seulement une signature ou une somme de contrôle par
+       fichier.
+    3. Vérifier l'organisation des rôles et des clés : clés distinctes pour les rôles root, targets,
+       snapshot et timestamp ; clés racines hors ligne ; seuils pour le rôle root.
+    4. Vérifier les délégations : chaque éditeur ne peut signer que les chemins ou noms qui lui
+       appartiennent, et les délégations ont une date d'expiration renouvelée.
+    5. Échec si un canal de distribution laisse les clients accepter des métadonnées périmées, ou si
+       une seule clé d'éditeur peut signer n'importe quel artefact du dépôt.
+remediation:
+  manual: |
+    1. Choisir une implémentation TUF ou un service de distribution qui s'appuie dessus pour chaque
+       canal destiné aux clients.
+    2. Créer les rôles root, targets, snapshot et timestamp avec des clés distinctes, conserver les
+       clés racines hors ligne, et fixer une expiration courte pour les métadonnées timestamp et
+       snapshot.
+    3. Créer un rôle targets délégué par équipe ou pipeline de publication, limité à ses chemins, avec
+       une date d'expiration, et faire signer le pipeline de publication uniquement via ce rôle (clés
+       dans un KMS, CB-CICD-ART-007).
+    4. Mettre à jour les clients pour qu'ils vérifient via la bibliothèque cliente TUF, et tester que
+       les métadonnées expirées ou rejouées sont rejetées.

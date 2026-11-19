@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-016
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Évaluer périodiquement la posture de sécurité CI/CD avec des outils automatisés
+finding:
+  title: Les réglages des plates-formes et dépôts CI/CD ne sont jamais vérifiés automatiquement
+  description: Protection de branches, permissions des workflows, jetons et réglages d'organisation dérivent après la mise en place initiale, et personne ne s'en aperçoit avant qu'un attaquant exploite un réglage affaibli.
+description: |
+  Les réglages de sécurité des plates-formes et dépôts CI/CD sont vérifiés selon un calendrier (au
+  moins hebdomadaire) par un outil automatisé de posture, par exemple OpenSSF Scorecard et Allstar
+  sur GitHub, legitify sur GitHub et GitLab, ou des règles de politique en code exécutées contre
+  l'API de la plate-forme. Les constats sont enregistrés dans un outil de suivi avec un responsable
+  et une échéance, et leur tendance est revue.
+
+  Avec `posture_level` à `enforced` (ici **{{ posture_level }}**), l'organisation fixe aussi un
+  score minimal pour les dépôts critiques (par exemple un score Scorecard de 7 ou le seuil de la
+  politique Scorecard d'Allstar) et utilise la correction automatique quand l'outil la propose
+  (action `fix` d'Allstar pour les politiques qui l'implémentent).
+
+  La revue manuelle des définitions de pipeline relève de CB-CICD-PIPE-007, et les tests
+  automatisés des contrôles de sécurité des pipelines de CB-CICD-TEST-009.
+rationale: |
+  Beaucoup de faiblesses CI/CD sont des configurations qui évoluent : une règle de protection
+  retirée pour une correction urgente, un nouveau dépôt créé avec les valeurs par défaut, une
+  application dotée d'un accès large. Les audits ponctuels ratent ces dérives. Des vérifications
+  automatisées planifiées les repèrent en quelques jours, et le suivi des constats garantit leur
+  correction.
+impact: |
+  Les outils d'analyse ont besoin d'un accès en lecture à l'organisation (application GitHub ou
+  jeton aux droits de lecture), et les constats d'un responsable. Les modes issue ou fix d'Allstar
+  créent des tickets ou modifient des réglages dans les dépôts, ce qu'il faut annoncer aux
+  responsables des dépôts.
+notes: |
+  L'application GitHub Allstar hébergée par l'OpenSSF a été retirée ; Allstar tourne désormais comme
+  GitHub Action depuis le dépôt `.allstar` de l'organisation, ou comme service auto-hébergé.
+parameters:
+  posture_level: Gestion de posture exigée. `scheduled-scan` exige des analyses automatisées planifiées avec suivi des constats ; `enforced` exige en plus un score minimal pour les dépôts critiques et la correction automatique quand elle existe.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration de l'outil d'analyse, à ses résultats et à
+    l'outil de suivi.
+
+    1. Identifier les outils de posture utilisés, leur périmètre (organisations, groupes, dépôts) et
+       leur calendrier.
+    2. **GitHub** : vérifier que `ossf/scorecard-action` tourne selon un calendrier dans les dépôts du
+       périmètre, ou qu'Allstar tourne depuis le dépôt `.allstar` de l'organisation (en GitHub Action
+       ou en service) avec les politiques activées ; avec `enforced`, vérifier le `threshold` de
+       `scorecard.yaml` et que l'`action` vaut `issue` ou `fix` quand elle existe. legitify signale
+       la politique `scorecard_score_too_low` pour les dépôts sous le seuil.
+    3. Pour les autres plates-formes, vérifier que legitify ou des contrôles équivalents de politique
+       en code tournent selon un calendrier contre l'API de la plate-forme.
+    4. Prendre les trois derniers rapports et vérifier que les constats ont été enregistrés avec un
+       responsable et que les anciens ont été clos ou acceptés.
+    5. Échec si aucun contrôle de posture automatisé ne tourne selon un calendrier, si les constats
+       ne sont pas suivis, ou (avec `enforced`) si les dépôts critiques n'ont pas de score minimal ou
+       sont en dessous sans exception acceptée.
+remediation:
+  manual: |
+    1. Choisir un outil de posture pour chaque plate-forme et lui donner un accès en lecture seule.
+    2. **GitHub** : ajouter `ossf/scorecard-action` avec un déclencheur `schedule` hebdomadaire aux
+       dépôts du périmètre, ou installer Allstar comme GitHub Action dans un dépôt `.allstar` avec
+       les politiques voulues ; pour `enforced`, fixer un `threshold` dans `scorecard.yaml` et
+       utiliser `action: issue` ou `fix`.
+    3. Pour GitLab et les autres plates-formes, exécuter legitify ou des contrôles de politique en
+       code depuis un pipeline planifié et exporter les résultats.
+    4. Envoyer les constats dans l'outil de suivi avec responsables et échéances, et revoir la
+       tendance chaque mois.

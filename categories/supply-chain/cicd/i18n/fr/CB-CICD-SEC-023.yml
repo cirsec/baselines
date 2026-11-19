@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-023
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Manipuler les secrets dans les scripts de job sans les exposer
+finding:
+  title: Des scripts de job affichent des secrets, les passent en ligne de commande ou les stockent sous forme structurée
+  description: Les secrets affichés, passés en arguments, regroupés dans du JSON ou transformés avant usage échappent au masquage des journaux et apparaissent dans les journaux, les listes de processus et les messages d'erreur lisibles par tous ceux qui ont accès au pipeline.
+description: |
+  Les scripts des jobs reçoivent les secrets par des variables d'environnement ou des fichiers et
+  les transmettent aux outils par ces mêmes canaux ou par l'entrée standard (par exemple
+  `--password-stdin`), jamais en arguments de ligne de commande, et ne les affichent jamais.
+  Chaque secret contient une seule valeur : pas de document JSON, XML ou YAML à plusieurs champs,
+  et pas de valeur multiligne sauf si la plate-forme les prend en charge.
+
+  Toute valeur dérivée d'un secret pendant le job (un JWT signé, une forme encodée en base64 ou en
+  URL, un jeton renvoyé par une commande de connexion) est déclarée au mécanisme de masquage de la
+  plate-forme avant de pouvoir être affichée. Les commandes qui renvoient des secrets dans leur
+  sortie sont exécutées avec cette sortie supprimée.
+
+  Les réglages de masquage au niveau de la plate-forme relèvent de CB-CICD-SEC-022.
+rationale: |
+  Le masquage des journaux ne remplace que les occurrences exactes des valeurs secrètes connues.
+  Un secret contenu dans un bloc JSON, une valeur que le script encode, ou un jeton obtenu par une
+  commande de connexion n'est pas connu du masquage et s'affiche en clair. Les arguments de ligne
+  de commande sont visibles des autres processus du runner et souvent repris dans les messages
+  d'erreur. Une manipulation soigneuse dans les scripts est ce qui rend le masquage efficace.
+impact: |
+  Les secrets structurés existants doivent être séparés en un secret par valeur, et les scripts
+  qui passent des secrets en arguments demandent de petites modifications.
+notes: |
+  Le masquage est approximatif et ne constitue une frontière de sécurité sur aucune plate-forme :
+  un script qui veut exfiltrer un secret peut toujours le faire. Ce contrôle ne prévient que
+  l'exposition accidentelle.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline et aux scripts.
+
+    1. Revoir les scripts et steps de pipeline qui utilisent des secrets :
+       - pas d'`echo`, `printenv`, `env` ni `set -x` autour de l'usage d'un secret ; aucun secret
+         passé en argument de ligne de commande quand l'outil accepte des variables
+         d'environnement, des fichiers ou l'entrée standard ;
+       - aucun secret dont la valeur est un document JSON, XML ou YAML à plusieurs champs ;
+       - chaque identifiant dérivé est déclaré au masquage.
+    2. Vérifier chaque plate-forme :
+       - **GitHub** : les valeurs dérivées sont masquées avec `echo "::add-mask::$VALEUR"` ou
+         `core.setSecret()` avant usage ; aucun step n'utilise `fromJSON(secrets.X).champ` sur un
+         secret structuré. L'audit zizmor `unredacted-secrets` signale les secrets structurés.
+       - **Azure DevOps** : les variables secrètes sont passées aux steps par `env:` (elles ne sont
+         pas exposées aux scripts autrement) plutôt qu'interpolées en `$(SECRET)` dans des lignes
+         de commande ; les appels Azure CLI qui renvoient des secrets utilisent `--output none` ;
+         aucune commande de journalisation ne définit un secret à partir d'une valeur littérale.
+    3. Revoir un échantillon de journaux à la recherche de valeurs qui auraient dû être masquées.
+    4. Échec si un script affiche un secret, le passe en ligne de commande, utilise un secret
+       structuré, ou utilise un identifiant dérivé sans le déclarer au masquage.
+remediation:
+  manual: |
+    1. Séparer les secrets structurés en un secret par valeur et modifier les jobs qui les
+       utilisent.
+    2. Modifier les scripts pour lire les secrets dans des variables d'environnement ou des
+       fichiers et les transmettre aux outils par l'environnement, des fichiers ou l'entrée
+       standard (par exemple
+       `echo "$TOKEN" | docker login --username user --password-stdin registry`).
+    3. Déclarer les valeurs dérivées au masquage dès leur création :
+       - **GitHub** : `echo "::add-mask::$JWT"` dans les steps shell, `core.setSecret(jwt)` dans
+         les actions JavaScript.
+       - **Azure DevOps** : passer explicitement les secrets avec `env:` sur chaque step, ajouter
+         `--output none` aux appels Azure CLI qui renvoient des secrets.
+    4. Retirer `set -x` et les affichages de débogage des steps qui manipulent des secrets.

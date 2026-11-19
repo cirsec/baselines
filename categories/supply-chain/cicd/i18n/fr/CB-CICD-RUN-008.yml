@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les jobs hors du contrôleur CI et de son namespace
+finding:
+  title: Des builds peuvent tourner sur le contrôleur CI ou l'atteindre
+  description: Un job qui tourne sur l'hôte du contrôleur, dans son namespace ou sur ses nœuds peut lire les données et secrets du contrôleur ou modifier le contrôleur lui-même, ce qui transforme un pipeline en contrôle de tout le système CI.
+parameters:
+  controller_isolation: Degré de séparation entre le contrôleur et les builds. no-builds signifie aucun exécuteur ni agent sur le contrôleur et aucune charge des locataires dans son namespace ; dedicated-nodes place aussi les contrôleurs sur des nœuds où les pods de build et des locataires ne peuvent pas être planifiés.
+description: |
+  Le contrôleur ou serveur CI/CD (contrôleur Jenkins, serveur TeamCity, contrôleur Argo Workflows,
+  contrôleurs Flux) n'exécute aucun build : il n'a pas d'exécuteur, pas d'agent sur le même hôte ou sous
+  un utilisateur capable de lire ses données, et les utilisateurs ne peuvent pas créer de charges dans le
+  namespace du contrôleur. Les agents ne peuvent pas appeler de code côté contrôleur au-delà de ce que
+  permettent les protections agent-vers-contrôleur de la plate-forme.
+
+  Avec `{{ controller_isolation }}` à `dedicated-nodes`, les contrôleurs tournent aussi sur des nœuds qui
+  leur sont réservés (taints, pools de nœuds ou clusters séparés), pour qu'aucun pod de locataire ou de
+  build ne partage leur noyau.
+rationale: |
+  Le contrôleur détient les identifiants, la configuration et souvent tous les secrets stockés de la
+  plate-forme. Un build qui tourne à côté a le même accès au système de fichiers que le processus du
+  contrôleur. Dans Kubernetes, un utilisateur qui peut créer des workflows ou des pods dans le namespace
+  du contrôleur peut modifier le contrôleur, et un pod sur le même nœud peut l'attaquer par le noyau
+  partagé.
+impact: |
+  Les petites installations Jenkins ou TeamCity qui construisent sur le serveur ont besoin d'au moins un
+  agent séparé (autre machine, ou processus d'agent sous un autre utilisateur système sans accès aux
+  répertoires du contrôleur). Les nœuds dédiés ajoutent un coût aux clusters Kubernetes.
+notes: |
+  Jenkins construit sur le nœud intégré par défaut. Le contrôle d'accès agent-vers-contrôleur est
+  toujours actif depuis Jenkins 2.326 et pouvait être désactivé en 2.325 et avant : mettre à jour les
+  contrôleurs plus anciens.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur en lecture sur la plate-forme CI et un accès en lecture au cluster
+    (namespaces, RBAC, placement sur les nœuds) quand les contrôleurs tournent sur Kubernetes.
+
+    1. Vérifier si des builds peuvent tourner sur l'hôte du contrôleur ou sous un compte capable de lire le
+       répertoire de données du contrôleur.
+    2. Vérifier qui peut créer des pods, workflows ou autres charges dans le namespace du contrôleur.
+    3. Par produit :
+       - **Jenkins** : **Manage Jenkins** > **Nodes** > **Built-In Node** > **Configure** : **Number of
+         executors** vaut `0`. Contrôleurs antérieurs à 2.326 : **Manage Jenkins** > **Security** : le
+         contrôle d'accès agent-vers-contrôleur est activé sans règle d'autorisation ajoutée.
+       - **TeamCity** : aucun agent de build ne tourne sur la machine du serveur, ou seulement sous un
+         utilisateur système qui ne peut lire ni le TeamCity Data Directory ni le répertoire d'installation.
+       - **Argo Workflows** : dans une installation par namespace, le namespace géré n'est pas celui du
+         contrôleur (en général `argo`), et les utilisateurs ne peuvent pas créer de workflows dans le
+         namespace du contrôleur.
+       - **Flux** : les contrôleurs de `flux-system` tournent sur des nœuds non partagés avec les charges
+         des locataires quand `{{ controller_isolation }}` vaut `dedicated-nodes` (taints et tolerations,
+         pools de nœuds, sandboxing RuntimeClass pour les pods des locataires).
+    4. Échec si un build peut tourner sur le contrôleur ou dans son namespace ; avec
+       `{{ controller_isolation }}` à `dedicated-nodes`, échec aussi si des pods de build ou de locataires
+       peuvent être planifiés sur les nœuds des contrôleurs.
+remediation:
+  manual: |
+    1. Fournir des agents ou runners pour tous les builds, puis retirer la capacité de build du
+       contrôleur :
+       - **Jenkins** : mettre **Number of executors** du nœud intégré à `0`, ou le restreindre avec le
+         plugin Job Restrictions ; passer en 2.326 ou plus récent.
+       - **TeamCity** : déplacer les agents hors de la machine du serveur.
+       - **Argo Workflows** : installer avec un namespace géré distinct de celui du contrôleur et retirer
+         les droits de création de workflows dans le namespace du contrôleur.
+    2. Retirer les liaisons RBAC des locataires et utilisateurs qui permettent de créer des charges dans
+       les namespaces des contrôleurs.
+    3. Pour `dedicated-nodes` : poser un taint sur un pool de nœuds réservé aux contrôleurs CI, ajouter les
+       tolerations correspondantes aux seuls déploiements des contrôleurs, et l'imposer par une politique
+       d'admission.

@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-001
+title: Generate signed build provenance on the build platform for every release artifact
+finding:
+  title: Release artifacts have no build provenance, or provenance written by the build script itself
+  description: Without platform-signed provenance, a consumer cannot tell which repository, commit and pipeline produced an artifact, so a binary or image built on a laptop or by a tampered job looks the same as a genuine release.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [provenance, slsa, attestation, release, supply-chain]
+
+description: |
+  Every release artifact (package, binary, archive, container image) has build provenance in the
+  SLSA provenance format. The provenance identifies the artifact by digest and records the builder,
+  the build definition (repository, commit, pipeline or workflow file) and the top-level inputs.
+
+  The provenance is generated and signed by the build platform, or by a platform service such as a
+  Sigstore-backed attestation feature, not assembled and signed by a user-defined step with a key the
+  job can read. The required level is SLSA Build {{ slsa_build_level }}: L2 means signed provenance
+  produced by the hosted platform; L3 adds the requirement that user steps cannot forge it, which is
+  detailed in CB-CICD-ART-002.
+
+  Publishing provenance to consumers is covered by CB-CICD-ART-004, and verifying it before
+  deployment by CB-CICD-ART-006. Test builds that are never released do not need provenance.
+rationale: |
+  Provenance turns "this file came from our pipeline" into a verifiable claim. Without it, an
+  attacker who steals a publishing credential, or a developer who builds and uploads by hand, can
+  ship an artifact that nobody can tell apart from a real release. Provenance signed by the platform
+  lets deployment gates and consumers reject artifacts that were not built from the expected
+  repository and pipeline, and gives incident responders the exact inputs of a suspect build.
+impact: |
+  Release pipelines need a small change (an attestation step, a configuration flag or a different
+  push method) and permission to obtain an OIDC token. Private repositories on some platforms need a
+  paid plan. Provenance alone gives no protection until it is verified (CB-CICD-ART-006).
+notes: |
+  GitLab runner-generated artifact metadata (`RUNNER_GENERATE_ARTIFACTS_METADATA`) is produced by the
+  runner and is unsigned on its own; GitLab documents signing it with its SLSA CI/CD component. The
+  GitLab SLSA level 3 attestation (`ATTEST_BUILD_ARTIFACTS`, `ATTEST_CONTAINER_IMAGES`) is an
+  Ultimate experiment behind a feature flag and is not ready for production use. Google Cloud Build
+  only generates provenance for images listed in the `images` field and stored in Artifact Registry,
+  not for images pushed by an explicit `docker push` step.
+
+parameters:
+  - name: slsa_build_level
+    type: enum
+    description: Minimum SLSA Build level of the provenance. L2 is signed provenance from the hosted build platform; L3 also requires that build steps cannot forge it.
+    allowed: [L2, L3]
+    default: L2
+    profile_defaults:
+      hardened: L3
+
+audit:
+  manual: |
+    Use a role that can read pipeline definitions, release assets and registry metadata.
+
+    1. List the artifacts published by the last few releases (packages, binaries, images).
+    2. For each one, find its provenance and check that it names the artifact digest, the builder,
+       the source repository and commit, and the pipeline or workflow file.
+    3. Check how the provenance is produced:
+       - **GitHub**: the release workflow calls `actions/attest`
+         with `permissions: id-token: write` and `attestations: write`; check with
+         `gh attestation verify <artifact> --owner <org>`. Artifact attestations on private and
+         internal repositories need GitHub Enterprise Cloud.
+       - **GitLab**: the build job sets `RUNNER_GENERATE_ARTIFACTS_METADATA: "true"` and signs the
+         statement (GitLab SLSA CI/CD component), or uses `ATTEST_BUILD_ARTIFACTS` /
+         `ATTEST_CONTAINER_IMAGES` (Ultimate, experiment).
+       - **Google Cloud Build**: release builds list the image in `images:` (no `docker push` step)
+         and set `options: requestedVerifyOption: VERIFIED`; check with
+         `gcloud artifacts docker images describe <image>@sha256:<digest> --show-provenance`.
+       - **Tekton**: the `chains-config` ConfigMap sets `artifacts.taskrun.format` and
+         `artifacts.pipelinerun.format` to `slsa/v2alpha4`, `artifacts.*.storage` includes `oci`,
+         and `artifacts.*.signer` is not `none`.
+       - **Buildkite**: packages in Buildkite Package Registries are published with SLSA provenance
+         (Enterprise plan), or the pipeline produces and signs provenance with an external tool.
+    4. Fail if a release artifact has no provenance, if the provenance is unsigned, or if it is
+       signed with a key that the build steps can read. In the hardened profile, also fail unless
+       the provenance meets CB-CICD-ART-002.
+
+remediation:
+  manual: |
+    1. Pick the provenance mechanism built into the platform and enable it in every release
+       pipeline:
+       - **GitHub**: add a step `uses: actions/attest@<sha>` with `subject-path` (or
+         `subject-name` and `subject-digest` for images) and grant `id-token: write`,
+         `attestations: write` (and `packages: write` for images) to that job only.
+       - **GitLab**: set `RUNNER_GENERATE_ARTIFACTS_METADATA: "true"` on the release job and sign the
+         statement with the GitLab SLSA CI/CD component; on Ultimate, evaluate `ATTEST_BUILD_ARTIFACTS`
+         once it leaves experiment status.
+       - **Google Cloud Build**: replace `docker push` steps with the `images:` field and set
+         `options: requestedVerifyOption: VERIFIED` so the build fails if provenance cannot be
+         generated.
+       - **Tekton**: edit the `chains-config` ConfigMap in the `tekton-chains` namespace and set
+         `artifacts.taskrun.format: slsa/v2alpha4`, `artifacts.pipelinerun.format: slsa/v2alpha4`
+         and `artifacts.pipelinerun.storage: oci` (plus `tekton` if wanted).
+       - **Buildkite**: enable SLSA provenance on Package Registries (Enterprise), or sign
+         provenance with cosign from a step that obtains a keyless OIDC identity.
+    2. Remove any user step that writes and signs its own provenance with a stored key.
+    3. Publish and verify the provenance (CB-CICD-ART-004, CB-CICD-ART-006).
+
+references:
+  - title: Artifact attestations
+    url: https://docs.github.com/en/actions/concepts/security/artifact-attestations
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Supply-chain Levels for Software Artifacts (SLSA)
+    url: https://docs.gitlab.com/ci/pipeline_security/slsa/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Generate and validate build provenance
+    url: https://docs.cloud.google.com/build/docs/securing-builds/generate-validate-build-provenance
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton Chains configuration
+    url: https://tekton.dev/docs/chains/config/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Build track basics
+    url: https://slsa.dev/spec/v1.2/build-track-basics
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-9 Improper Artifact Integrity Validation
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-09-Improper-Artifact-Integrity-Validation
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: partial
+    note: Covers the generation of provenance; verification is in CB-CICD-ART-006.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.3.2"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L2
+    relation: equivalent
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L3
+    relation: partial
+    note: The hardened profile requires L3 provenance; the isolation part of L3 is covered by CB-CICD-ART-002 and the RUN controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-ART-002
+    type: related
+  - id: CB-CICD-ART-004
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+  - id: CB-CICD-RUN-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

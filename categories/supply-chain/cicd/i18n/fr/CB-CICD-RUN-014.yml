@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Isoler les builds concurrents les uns des autres
+finding:
+  title: Des builds concurrents partagent un réseau ou un noyau
+  description: Quand des jobs qui tournent en même temps partagent un réseau de conteneurs, le réseau de l'hôte ou un noyau, un job peut atteindre les services d'un autre, intercepter son trafic ou exploiter le noyau partagé pour lire sa mémoire et ses fichiers.
+parameters:
+  isolation_strength: Isolation minimale entre jobs concurrents. container signifie un réseau de conteneurs et un système de fichiers séparés par job ; vm signifie une machine virtuelle séparée par job pour les builds critiques, sans noyau partagé.
+description: |
+  Les builds qui tournent en même temps ne peuvent pas s'influencer. Chaque job a son propre réseau (ni
+  réseau de l'hôte, ni réseau partagé avec d'autres jobs), son propre système de fichiers et son propre
+  espace de processus. Avec `{{ isolation_strength }}` à `vm`, les builds de release et autres builds
+  critiques tournent dans leur propre machine virtuelle (ou microVM), pas dans un conteneur qui partage le
+  noyau de l'hôte avec d'autres jobs.
+
+  La réutilisation d'un même environnement par des jobs successifs relève de CB-CICD-RUN-012 ; les
+  montages et sockets de l'hôte de CB-CICD-RUN-017.
+rationale: |
+  SLSA Build L3 exige que des builds qui se chevauchent ne puissent pas s'influencer. Des conteneurs sur
+  un réseau partagé peuvent atteindre les services et caches des autres ; des conteneurs sur le réseau de
+  l'hôte peuvent atteindre tous les services locaux de l'hôte du runner. Un noyau partagé est une seule
+  frontière, qu'un exploit noyau ou un conteneur mal configuré franchit.
+impact: |
+  L'isolation par VM par job coûte plus cher et démarre plus lentement. Les jobs qui comptaient sur
+  l'accès à d'autres conteneurs d'un réseau partagé doivent déclarer leurs services dans le job.
+notes: |
+  Sur les runners Forgejo et Gitea, `container.network` vaut `""` par défaut, ce qui crée un nouveau
+  réseau par job ; `host` supprime l'isolation entre jobs et avec l'hôte, `bridge` et les noms de réseau
+  personnalisés permettent aux jobs concurrents de s'atteindre.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de configuration et à l'infrastructure des runners.
+
+    1. Pour chaque type de runner, vérifier si plusieurs jobs tournent en même temps sur un hôte et ce qui
+       les sépare (réseau, système de fichiers, noyau).
+    2. Par produit :
+       - **Gitea / Forgejo** : le `config.yml` du runner a `container.network` vide (`""`), pas `host`,
+         `bridge` ou un réseau personnalisé partagé.
+       - Autres runners à base de conteneurs : les jobs ne sont pas lancés avec le réseau de l'hôte et ne
+         partagent pas un réseau défini par l'utilisateur avec d'autres jobs.
+    3. Avec `{{ isolation_strength }}` à `vm`, vérifier que les builds critiques tournent sur des runners
+       qui démarrent une VM par job.
+    4. Échec si des jobs concurrents partagent un réseau ou le réseau de l'hôte ; avec
+       `{{ isolation_strength }}` à `vm`, échec aussi si des builds critiques partagent un noyau avec
+       d'autres jobs.
+remediation:
+  manual: |
+    1. Retirer les réseaux de l'hôte et partagés de la configuration des runners :
+       - **Gitea / Forgejo** : poser `container.network: ""` dans le `config.yml` du runner, ou limiter
+         `runner.capacity` à `1` quand un réseau personnalisé est inévitable.
+    2. Réduire la concurrence des runners ou passer à un job par instance de runner (CB-CICD-RUN-012).
+    3. Pour `vm` : exécuter les builds critiques sur des runners qui créent une VM ou une microVM par job
+       (instance cloud par job, exécuteurs à base de VM, runners hébergés).

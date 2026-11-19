@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-012
+title: Make sure component references resolve to the genuine upstream
+finding:
+  title: Pinned action references point to forks, look-alike owners or ambiguous refs
+  description: A commit SHA that only exists in a fork, a typo in the owner name or an owner account that was renamed and taken over makes a workflow run attacker code even though the reference looks pinned.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [pinning, impostor-commit, typosquatting, repo-jacking, actions]
+
+applicability:
+  versions: [github]
+
+parameters:
+  - name: ref_integrity
+    type: enum
+    description: Checks applied to action references. `genuine-upstream` = no impostor commits, typosquatted owners or repo-jacked owners; `exact-match` = in addition, no ambiguous tag or branch names and version comments match the pinned SHA.
+    default: genuine-upstream
+    profile_defaults:
+      hardened: exact-match
+    allowed: [genuine-upstream, exact-match]
+
+description: |
+  Action and reusable workflow references in GitHub workflows point to code from the intended
+  upstream repository. The required level is `{{ ref_integrity }}`:
+  - `genuine-upstream`: each pinned commit is reachable from a branch or tag of the named
+    repository (not a commit that only exists in a fork); owner and repository names are the
+    exact intended ones, not look-alikes; references do not go through a redirect left by a
+    renamed or deleted owner.
+  - `exact-match`: in addition, references do not use a name that exists both as a tag and a
+    branch, and the version comment next to a SHA (`# v4.2.0`) names the tag that points to that
+    SHA.
+
+  Pinning itself is covered by CB-CICD-COMP-011.
+rationale: |
+  GitHub serves a commit through the parent repository's name even when it only exists in a
+  fork, so an attacker can open a fork, push a commit and have it referenced as
+  `owner/repo@<sha>`. Typosquatted owners and taken-over names of renamed accounts serve attacker
+  code under a familiar-looking reference. Reviewers trust the version comment; when it does not
+  match the SHA, the review approves something else.
+impact: |
+  Fixing findings means updating references to the canonical owner and to SHAs from the upstream
+  release tags. The checks need a tool or a lockfile; manual review alone does not scale.
+notes: |
+  The GitHub Actions lockfile (CB-CICD-COMP-011, level `lockfile`) records `owner_id` and
+  `repo_id` and rejects at run time commits that are only in forks or not reachable from the
+  locked ref; a changed `owner_id` or `repo_id` in a lockfile diff must be investigated, and
+  `--accept-moved` should not be used in automation.
+
+audit:
+  manual: |
+    Use read access to the repositories; zizmor needs a GitHub token with read access to public
+    repositories for its online audits.
+
+    1. Run zizmor with online audits on the workflows: `impostor-commit`, `typosquat-uses` and,
+       for `exact-match`, `ref-confusion`, `ref-version-mismatch` and `stale-action-refs`.
+    2. Check that owners in `uses:` are on the allowlist of CB-CICD-COMP-001 and that none of them
+       redirects to another owner (open `https://github.com/<owner>/<repo>` and compare the final
+       URL).
+    3. Where an `actions.lock` exists, review changes of `owner_id` or `repo_id` in its history.
+    4. Fail if a reference resolves to a fork-only commit, a look-alike or redirected owner, or,
+       when `{{ ref_integrity }}` is `exact-match`, to an ambiguous ref or a SHA whose version
+       comment names another release.
+
+remediation:
+  manual: |
+    1. Replace each flagged reference with the SHA of the intended release tag in the canonical
+       upstream repository, and fix the version comment.
+    2. Add zizmor (or an equivalent) as a required check on changes to `.github/workflows/**`
+       (CB-CICD-TEST-004).
+    3. Adopt the Actions lockfile so that repository identity and commit reachability are checked
+       at run time.
+
+references:
+  - title: Workflow dependency lockfiles
+    url: https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure use reference (using third-party actions)
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audit rules
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-3 Dependency Chain Abuse
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-03-Dependency-Chain-Abuse
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-011
+    type: related
+  - id: CB-CICD-COMP-001
+    type: related
+  - id: CB-CICD-TEST-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

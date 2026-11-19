@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-008
+title: Keep jobs off the CI controller and out of its namespace
+finding:
+  title: Builds can run on the CI controller or reach into it
+  description: A job that runs on the controller host, in the controller's namespace or on its nodes can read the controller's data and secrets or modify the controller itself, turning one pipeline into control of the whole CI system.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [controller, isolation, jenkins, kubernetes, runners]
+
+parameters:
+  - name: controller_isolation
+    type: enum
+    description: How far the controller is separated from builds. no-builds means no executors or agents on the controller and no tenant workloads in its namespace; dedicated-nodes also places controllers on nodes that tenant and build pods cannot be scheduled on.
+    allowed: [no-builds, dedicated-nodes]
+    default: no-builds
+    profile_defaults:
+      hardened: dedicated-nodes
+
+description: |
+  The CI/CD controller or server (Jenkins controller, TeamCity server, Argo Workflows controller,
+  Flux controllers) runs no build: it has no executors, no agent on the same host or under a user
+  that can read its data, and users cannot create workloads in the controller's namespace. Agents
+  cannot call controller-side code beyond what the platform's agent-to-controller protections allow.
+
+  With `{{ controller_isolation }}` set to `dedicated-nodes`, controllers also run on nodes
+  reserved for them (taints, node pools or separate clusters), so that no tenant or build pod shares
+  their kernel.
+rationale: |
+  The controller holds the platform's credentials, configuration and often every stored secret. A
+  build running next to it has the same file-system access as the controller process. In Kubernetes,
+  a user who can create workflows or pods in the controller's namespace can modify the controller,
+  and a pod on the same node can attack it through the shared kernel.
+impact: |
+  Small Jenkins or TeamCity installations that build on the server need at least one separate agent
+  (another machine, or an agent process under another OS user without access to the controller's
+  directories). Dedicated nodes add cost to Kubernetes clusters.
+notes: |
+  Jenkins builds on the built-in node by default. Agent-to-controller access control is always on
+  since Jenkins 2.326 and could be turned off in 2.325 and earlier: upgrade older controllers.
+
+audit:
+  manual: |
+    Use an administrator read role on the CI platform and read access to the cluster (namespaces,
+    RBAC, node placement) where controllers run on Kubernetes.
+
+    1. Check whether builds can run on the controller host or under an account that can read the
+       controller's data directory.
+    2. Check who can create pods, workflows or other workloads in the controller's namespace.
+    3. Per product:
+       - **Jenkins**: **Manage Jenkins** > **Nodes** > **Built-In Node** > **Configure**: **Number of
+         executors** is `0`. Controllers older than 2.326: **Manage Jenkins** > **Security**: agent
+         to controller access control is enabled with no added allow rules.
+       - **TeamCity**: no build agent runs on the server machine, or only under an OS user that
+         cannot read the TeamCity Data Directory and home directory.
+       - **Argo Workflows**: in a namespace install, the managed namespace is not the controller's
+         namespace (typically `argo`), and users cannot create workflows in the controller's
+         namespace.
+       - **Flux**: `flux-system` controllers run on nodes not shared with tenant workloads when
+         `{{ controller_isolation }}` is `dedicated-nodes` (taints and tolerations, node pools,
+         RuntimeClass sandboxing for tenant pods).
+    4. Fail if any build can run on the controller or in its namespace; with `{{ controller_isolation }}`
+       set to `dedicated-nodes`, also fail if build or tenant pods can be scheduled on controller
+       nodes.
+remediation:
+  manual: |
+    1. Provide agents or runners for all builds, then remove build capacity from the controller:
+       - **Jenkins**: set the built-in node's **Number of executors** to `0`, or restrict it with the
+         Job Restrictions plugin; upgrade to 2.326 or later.
+       - **TeamCity**: move agents off the server machine.
+       - **Argo Workflows**: install with a managed namespace distinct from the controller's and
+         remove workflow creation rights in the controller namespace.
+    2. Remove tenant and user RBAC bindings that allow creating workloads in controller namespaces.
+    3. For `dedicated-nodes`: taint a node pool for CI controllers, add matching tolerations to the
+       controller deployments only, and enforce it with admission policy.
+
+references:
+  - title: Jenkins controller isolation
+    url: https://www.jenkins.io/doc/book/security/controller-isolation/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity security notes (Protect your server machine)
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows security
+    url: https://argo-workflows.readthedocs.io/en/latest/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security best practices (Node isolation)
+    url: https://fluxcd.io/flux/security/best-practices/
+    publisher: Flux project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-7 Insecure System Configuration
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-07-Insecure-System-Configuration
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1611
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-PLAT-007
+    type: related
+  - id: CB-CICD-PLAT-017
+    type: related
+  - id: CB-CICD-RUN-018
+    type: related
+  - id: CB-CICD-IAM-035
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

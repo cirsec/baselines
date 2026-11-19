@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-023
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Donner aux collaborateurs externes le moindre privilège et un accès limité dans le temps
+finding:
+  title: Collaborateurs externes et invités gardent un large accès après la fin de leur mission
+  description: Les prestataires et invités avec des droits d'admin ou d'écriture que personne ne revoit les gardent après la fin de la mission, et leurs comptes échappent à la MFA et au processus de départ de l'organisation.
+description: |
+  Les collaborateurs externes, invités et prestataires n'ont accès qu'aux dépôts et projets sur
+  lesquels ils travaillent, avec le rôle le plus bas qui convient (lecture ou écriture, jamais admin
+  ou propriétaire), une date de fin enregistrée à l'octroi de l'accès, et un parrain dans
+  l'organisation. Leur accès est revu au moins chaque trimestre et retiré à la fin du travail.
+
+  Qui peut les inviter relève de CB-CICD-IAM-022.
+rationale: |
+  Les comptes externes sont gérés par quelqu'un d'autre : leur MFA, la sécurité de leur poste et leur
+  départ échappent à l'organisation. Les collaborateurs oubliés de longue date avec des droits
+  d'écriture ou d'admin sont un constat récurrent des audits SCM, et un compte de prestataire
+  compromis est un point d'entrée courant dans la chaîne d'approvisionnement.
+impact: |
+  Les parrains doivent demander les renouvellements. Les prestataires qui ont besoin d'un accès
+  durable doivent plutôt obtenir un compte géré dans le fournisseur d'identité.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Lister les utilisateurs externes et leurs accès :
+       - **GitHub** : **Organization** > **People** > **Outside collaborators**
+         (`GET /orgs/{org}/outside_collaborators`), puis les dépôts et le rôle de chacun. La politique
+         « outside collaborators » d'Allstar peut signaler en continu les accès admin ou push.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Utilisateurs** filtré sur les
+         invités ; vérifier que **Stratégies** > **External guest access** est désactivé sauf besoin
+         métier, et que les invités appartiennent à un groupe dédié.
+       - **Autres plates-formes** : lister les membres dont l'identité ne vient pas du fournisseur
+         d'identité ou du domaine de l'entreprise.
+    2. Pour chaque utilisateur externe, vérifier le parrain, la date de fin et le rôle.
+    3. Échec si un utilisateur externe a des droits d'admin ou de propriétaire, n'a ni date de fin ni
+       parrain enregistrés, ou a gardé l'accès après la fin du travail.
+remediation:
+  manual: |
+    1. Abaisser les utilisateurs externes au rôle le plus bas par dépôt ou projet, et retirer les
+       droits d'admin.
+    2. Enregistrer un parrain et une date de fin pour chacun ; placer les invités dans un groupe dédié.
+    3. **Azure DevOps** : désactiver **External guest access** quand aucun invité n'est nécessaire ;
+       sinon gérer les invités par Entra (avec un package d'accès à expiration ou une revue d'accès
+       quand c'est disponible).
+    4. **GitHub** : activer la politique « outside collaborators » d'Allstar, ou revoir
+       `/orgs/{org}/outside_collaborators` chaque trimestre.
+    5. Retirer l'accès à la date de fin et à chaque revue quand il n'est plus justifié.

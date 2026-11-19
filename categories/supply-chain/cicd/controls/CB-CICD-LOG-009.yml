@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-009
+title: Prepare and rehearse a CI/CD incident response runbook
+finding:
+  title: There is no tested plan for a CI/CD compromise
+  description: When a token leaks, a runner is compromised or a malicious workflow or dependency is found, responders improvise, revoke the wrong credentials, leave secrets in public logs and let builds keep running while the attacker still has access.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [incident-response, runbook, credential-rotation, containment, exercise]
+
+description: |
+  A written runbook covers the CI/CD incident scenarios that the organization can face, at least:
+  a leaked token or secret (in a log, a repository or an artifact), a compromised runner or build
+  host, a malicious change to a pipeline or workflow, a compromised third-party component or
+  dependency, and a compromised CI/CD administrator account.
+
+  For each scenario the runbook gives, per platform in use, the steps and the role allowed to:
+
+  - stop the damage: disable or cancel affected pipelines and triggers, take runners offline,
+    suspend accounts, restrict access (for example an IP allow list);
+  - revoke and rotate credentials: personal and group tokens, runner and agent tokens, CI/CD
+    variables and secrets, deploy keys, cloud credentials reachable from the pipelines;
+  - remove exposed data: delete job logs and artifacts that contain secrets;
+  - investigate with the audit logs (CB-CICD-LOG-003) and decide what must be rebuilt;
+  - inform the vendor, affected users and, where required, authorities.
+
+  The runbook names a break-glass administrator account per platform, is tested in an exercise at
+  least once a year, and is updated after each exercise or real incident. Dependency-specific
+  response is also covered by the DEP standard (CB-DEP-IR-001).
+rationale: |
+  CI/CD incidents move fast: a leaked token is often abused within minutes, and every running build
+  can spread the compromise. Containment steps differ per platform (revoking a Buildkite agent token
+  does not disconnect running agents; deleting GitHub run logs needs a separate action; GitLab
+  maintainers can read protected variables), so they must be known in advance. A rehearsed runbook
+  shortens the window between detection and containment and avoids missing a credential.
+impact: |
+  Needs time to write the runbook per platform and to run a yearly exercise. Rotating many secrets
+  during an incident can break deployments; the runbook should list the owners to contact.
+
+audit:
+  manual: |
+    Ask for the CI/CD incident runbook, the last exercise report and the list of break-glass
+    accounts.
+
+    1. Check that the runbook covers the scenarios listed above and the platforms in use.
+    2. Check that each scenario has concrete steps per platform, for example:
+       - **GitHub**: revoke credentials, enable an IP allow list, suspend users, disable or restrict
+         GitHub Actions through policy; delete run logs that contain secrets (run menu **Delete all
+         logs**, or `DELETE /repos/{owner}/{repo}/actions/runs/{run_id}/logs`); on GitHub Enterprise
+         Cloud, the enterprise emergency actions to revoke SSO sessions and delete user tokens and
+         keys.
+       - **GitLab**: revoke or rotate personal, group and project access tokens, runner tokens,
+         trigger tokens and deploy keys; rotate CI/CD variables that maintainers could read; review
+         audit events for the exposure window.
+       - **Buildkite**: remove the compromised user, revoke agent tokens and also stop the agents
+         already connected, remove the organization from compromised API tokens, rotate secrets,
+         disable incoming webhooks and cancel running builds.
+    3. Check that a break-glass account exists for each platform and that its use is tested.
+    4. Read the last exercise report: date (within 12 months), scenario, gaps found and their
+       follow-up.
+    5. Fail if there is no runbook, if it lacks a listed scenario or a platform in use, or if it was
+       not exercised in the last 12 months.
+
+remediation:
+  manual: |
+    1. Write the runbook with the security team and the platform owners, starting from the vendor
+       incident guides (GitHub "Prepare for a security incident", GitLab "Responding to security
+       incidents", Buildkite "Incident response").
+    2. For each scenario and platform, list the exact containment, revocation, log purge and
+       investigation steps, the role needed, and the owners to contact for rotated secrets.
+    3. Keep an inventory of credentials reachable from each pipeline (CB-CICD-SEC-001) so they can be
+       rotated quickly.
+    4. Create and test a break-glass account per platform.
+    5. Run a tabletop or technical exercise at least once a year (for example a leaked runner token
+       or a malicious workflow change) and update the runbook with the lessons learned.
+
+references:
+  - title: Prepare for a security incident (GitHub)
+    url: https://docs.github.com/en/code-security/tutorials/secure-your-organization/prepare-for-a-security-incident
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using workflow run logs (GitHub Actions)
+    url: https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Responding to security incidents (GitLab)
+    url: https://docs.gitlab.com/security/responding_to_security_incidents/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Incident response (Buildkite)
+    url: https://buildkite.com/docs/platform/security/incident-response
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure Supply Chain Consumption Framework (S2C2F)
+    url: https://github.com/ossf/s2c2f
+    publisher: OpenSSF
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.6.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-8
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IR-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-DEP-IR-001
+    type: related
+  - id: CB-CICD-SEC-001
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-IAM-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

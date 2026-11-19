@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-012
+title: Disable code-execution admin features or restrict them to audited break-glass use
+finding:
+  title: Platform features that run arbitrary code on the server are broadly available
+  description: Script consoles, web terminals, server-side Git hooks, local path imports or kubeconfig exec plugins are enabled for more than a few administrators; one stolen account runs commands on the CI/CD server, reads every stored secret and pivots into the clusters.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [script-console, web-terminal, git-hooks, code-execution, administration, break-glass]
+applicability:
+  versions: [jenkins, argo-cd, gitea, forgejo, flux]
+
+description: |
+  Features that execute arbitrary code or read files on the platform server or in managed
+  clusters are disabled. When a feature is needed for operations, it is limited to named
+  administrators used as break-glass, and every use is logged and reviewed:
+
+  - Jenkins script console (`/script`, `/computer/<agent>/script`): only the few holders of
+    **Overall/Administer** can use it, and its use is logged by the audit trail (CB-CICD-LOG-001).
+    The SSH server (sshd plugin) is disabled unless needed, and CLI access uses the current client
+    over HTTP or WebSocket with API tokens.
+  - Argo CD web terminal: `exec.enabled` is `"false"`, or the `exec, create` RBAC permission is
+    granted only to a break-glass role.
+  - Flux: helm-controller and kustomize-controller do not run with `--insecure-kubeconfig-exec`
+    or `--insecure-kubeconfig-tls`.
+  - Gitea and Forgejo: custom server-side Git hooks stay disabled (`DISABLE_GIT_HOOKS = true`) and
+    importing local server paths is not allowed (`IMPORT_LOCAL_PATHS = false`).
+
+  Who holds platform administrator rights is covered by CB-CICD-IAM-018; interactive access to
+  running builds by CB-CICD-RUN-025.
+rationale: |
+  These features turn a platform account into code execution on the server. The Jenkins script
+  console can create processes, read host files and decrypt every stored credential. Gitea's Git
+  hook privilege runs code as the service user, which can then become administrator. An Argo CD
+  web terminal inherits the pod's service account token. Kubeconfig exec plugins let a tenant run
+  a binary inside the Flux controller. Each one makes a single phished account a full compromise
+  of the CI/CD chain.
+impact: |
+  Administrators lose quick interactive fixes and must go through configuration as code or a
+  break-glass procedure. Teams that relied on server-side hooks must move the logic to CI checks
+  or push rules.
+
+audit:
+  manual: |
+    Use an administrator account with read access to the platform configuration and RBAC.
+
+    1. Check each product:
+       - **Jenkins**: list who has **Overall/Administer** (or the equivalent role in the
+         authorization strategy) and check that it is a short list of named administrators; check
+         that the audit trail logs `/script` requests; in **Manage Jenkins** > **Security**, the
+         **SSH Server** port is disabled unless documented; CLI clients are current and use HTTP or
+         WebSocket mode.
+       - **Argo CD**: `argocd-cm` `exec.enabled` is absent or `"false"` (default); if `"true"`, the
+         `argocd-rbac-cm` policy grants `exec, create` only to a break-glass role.
+       - **Flux**: `kubectl describe pod -n flux-system -l app=helm-controller` (and
+         `app=kustomize-controller`) shows no `--insecure-kubeconfig-exec=true` or
+         `--insecure-kubeconfig-tls=true` argument.
+       - **Gitea / Forgejo**: `app.ini` `[security] DISABLE_GIT_HOOKS = true` (default) and
+         `IMPORT_LOCAL_PATHS = false` (default); no user has the Git hook privilege.
+    2. Review the audit log for uses of these features in the last 90 days and check each one
+       against a ticket or incident.
+    3. Fail if a code-execution feature is enabled for users other than named break-glass
+       administrators, or if its use is not logged.
+
+remediation:
+  manual: |
+    Use a platform administrator account; apply the changes through configuration as code where
+    available (CB-CICD-PLAT-015).
+
+    1. **Jenkins**: reduce **Overall/Administer** to a few named accounts (or a break-glass account),
+       install and configure the audit trail plugin, disable the SSH server in **Manage Jenkins** >
+       **Security** if it is not used, and update CLI clients.
+    2. **Argo CD**: set `exec.enabled: "false"` in `argocd-cm`, or remove `exec, create` from every
+       role except a break-glass role in `argocd-rbac-cm`.
+    3. **Flux**: remove `--insecure-kubeconfig-exec` and `--insecure-kubeconfig-tls` from the
+       controller arguments (bootstrap patches or Helm values).
+    4. **Gitea / Forgejo**: set `DISABLE_GIT_HOOKS = true` and `IMPORT_LOCAL_PATHS = false` under
+       `[security]`, and remove the Git hook privilege from users.
+    5. Document the break-glass procedure and the review of each use.
+
+references:
+  - title: Script Console
+    url: https://www.jenkins.io/doc/book/managing/script-console/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Exposed Services and Ports
+    url: https://www.jenkins.io/doc/book/security/services/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Web-based Terminal
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/web_based_terminal/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security best practices
+    url: https://fluxcd.io/flux/security/best-practices/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(9)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-IAM-017
+    type: related
+  - id: CB-CICD-IAM-018
+    type: related
+  - id: CB-CICD-RUN-025
+    type: related
+  - id: CB-CICD-LOG-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

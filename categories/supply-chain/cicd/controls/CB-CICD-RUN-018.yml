@@ -1,0 +1,172 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-018
+title: Run agents and job containers as least-privileged non-root users
+finding:
+  title: Agents or job containers run as root or as privileged identities
+  description: An agent running as root or under an identity with rights on the CI platform, or job containers running as root with default capabilities, let any job escalate on the runner host or call the platform with more rights than the job token gives.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [runners, agents, non-root, capabilities, pod-security, kubernetes]
+
+parameters:
+  - name: runtime_profile
+    type: enum
+    description: Runtime restrictions for agents and job containers. non-root means dedicated non-root users without sudo and no added capabilities (Pod Security Admission restricted, or baseline where builds need root); locked-down adds a read-only root file system or read-only agent folders and enforced seccomp and AppArmor or SELinux profiles.
+    allowed: [non-root, locked-down]
+    default: non-root
+    profile_defaults:
+      hardened: locked-down
+
+description: |
+  Agent and runner processes run under a dedicated local service account that is not root, has no
+  sudo rights, cannot read controller data, and is not an identity known to the CI platform or the
+  directory. Job containers run as a non-root user with Linux capabilities dropped and privilege
+  escalation disabled; on Kubernetes, the namespaces that run builds enforce Pod Security Admission
+  `restricted` (or `baseline` for builds that genuinely need root) through admission policy, not only
+  through defaults.
+
+  With `{{ runtime_profile }}` set to `locked-down`, containers also use a read-only root file system
+  (or read-only mounts for agent tools and tasks) and enforced seccomp and AppArmor or SELinux
+  profiles.
+
+  Privileged mode is covered by CB-CICD-RUN-016, host mounts by CB-CICD-RUN-017, Kubernetes service
+  accounts by CB-CICD-RUN-019.
+rationale: |
+  The job inherits everything the agent can do. An agent running under an Entra-backed account can call
+  Azure DevOps APIs directly and take over the organization; an agent running as root lets any job
+  install persistence on the host. Root in a container with default capabilities makes escapes easier.
+impact: |
+  Some build steps assume root (installing packages, writing to system paths). Images must be adapted,
+  or those steps moved to image build time. Read-only root file systems need writable `emptyDir` or
+  temporary volumes for build output.
+notes: |
+  Argo Workflows pods run as root by default; a non-root executor image (`argoexec:<version>-nonroot`,
+  UID 8737) exists but is not the default. Tekton's `set-security-context` (default `true`) only
+  applies to containers Tekton injects, not to user Steps and Sidecars, and Tekton treats `podTemplate`
+  privilege escalation as the cluster's responsibility. Flux controllers ship with a restricted
+  security context; check that patches do not loosen it.
+
+audit:
+  manual: |
+    Use read access to runner hosts or manifests, and to the cluster namespaces and admission settings
+    where builds run on Kubernetes.
+
+    1. For each runner type, check the OS account of the agent process and its group memberships and
+       sudo rights.
+    2. Check the user, capabilities and security context of job containers.
+    3. Per product:
+       - **Azure DevOps**: Windows agents run as `NT AUTHORITY\NETWORK SERVICE`, Local Service or a
+         gMSA; Linux and macOS agents run as a dedicated non-root user without sudo. The agent identity
+         is not an Entra ID account and is not in **Project Collection Service Accounts**. Container
+         jobs set `resources.containers[].mountReadOnly` with `externals`, `tasks` and `tools` set to
+         `true` when `{{ runtime_profile }}` is `locked-down`.
+       - **GitLab**: `config.toml` `[runners.docker]` sets `user` to a non-root user and `cap_drop`
+         (for example `["ALL"]` with a minimal `cap_add`); Kubernetes runners set a non-root security
+         context.
+       - **Jenkins**: agents run as a non-root user without sudo and without access to the controller's
+         home directory.
+       - **Argo Workflows**: workflows or workflow defaults (`workflow-controller-configmap`) set
+         `securityContext.runAsNonRoot: true` and the non-root executor image.
+       - **Tekton**: build namespaces carry `pod-security.kubernetes.io/enforce: restricted` (or
+         `baseline`), or an admission policy blocks privileged steps and `podTemplate` escalation;
+         `feature-flags` keeps `set-security-context: "true"` and, for `locked-down`,
+         `set-security-context-read-only-root-filesystem: "true"`.
+       - **Flux**: controller deployments keep their default security context (all capabilities
+         dropped, read-only root file system, `RuntimeDefault` seccomp, run as non-root).
+    4. Fail if an agent runs as root, with sudo, or under a platform or directory identity, or if job
+       containers run as root with default capabilities where admission policy could prevent it; with
+       `{{ runtime_profile }}` set to `locked-down`, also fail if root file systems or agent folders are
+       writable or seccomp and AppArmor or SELinux profiles are not enforced.
+remediation:
+  manual: |
+    1. Reinstall agents under a dedicated local service account without sudo, and remove any platform
+       or directory identity from the agent host.
+    2. Per product:
+       - **Azure DevOps**: reconfigure agents to run as Network Service, a gMSA or a dedicated non-root
+         user; add `mountReadOnly` for `externals`, `tasks` and `tools` to container resources.
+       - **GitLab**: set `user`, `cap_drop = ["ALL"]` and the minimal `cap_add` in `[runners.docker]`,
+         and a non-root security context for Kubernetes runners.
+       - **Argo Workflows**: set `runAsNonRoot` and `runAsUser` in workflow defaults and switch the
+         executor image to the non-root variant.
+       - **Tekton**: label build namespaces with Pod Security Admission `restricted` and add an
+         admission policy for `podTemplate`; enable `set-security-context-read-only-root-filesystem`
+         when hardening.
+       - **Jenkins**: run agent processes and agent containers as a non-root user.
+    3. Fix images and steps that fail under non-root, then enforce the policy.
+
+references:
+  - title: Secure your pipelines - other security considerations (agent accounts, lock down containers)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/security/misc
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Self-managed runner security (Usage of Docker executor)
+    url: https://docs.gitlab.com/runner/security/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Workflows - Workflow pod security context
+    url: https://argo-workflows.readthedocs.io/en/latest/workflow-pod-security-context/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton additional configuration options (set-security-context)
+    url: https://tekton.dev/docs/pipelines/additional-configs/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security (Pod security standard)
+    url: https://fluxcd.io/flux/security/
+    publisher: Flux project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Jenkins controller isolation (agents on the same system)
+    url: https://www.jenkins.io/doc/book/security/controller-isolation/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1611
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-RUN-016
+    type: related
+  - id: CB-CICD-RUN-017
+    type: related
+  - id: CB-CICD-RUN-019
+    type: related
+  - id: CB-CICD-PLAT-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

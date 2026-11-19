@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver l'accès anonyme aux plates-formes CI/CD
+finding:
+  title: Des utilisateurs non authentifiés peuvent parcourir projets, pipelines ou exécutions
+  description: L'accès anonyme expose le code source, les définitions de pipelines, les journaux de build et l'historique des déploiements à quiconque atteint la plate-forme, ce qui aide un attaquant à trouver des secrets et des pipelines faibles.
+parameters:
+  signin_required_for: Contenu qui exige une connexion. `private-content` bloque l'accès anonyme aux projets, pipelines et exécutions non publics ; `everything` exige une connexion pour chaque page et chaque appel d'API.
+description: |
+  Les utilisateurs non authentifiés ne voient ni les projets privés, ni les pipelines, exécutions,
+  journaux ou API de la plate-forme : l'accès invité et anonyme est désactivé, les fonctions d'accès
+  public sont désactivées, et les nouveaux projets et groupes sont privés par défaut. Avec
+  `{{ signin_required_for }}` réglé sur `everything`, les instances internes exigent une connexion
+  pour chaque page et chaque appel d'API, y compris les pages d'exploration et les dépôts publics.
+
+  La visibilité des journaux de jobs pour les non-membres connectés relève de CB-CICD-PIPE-022, les
+  artefacts de build publics de CB-CICD-ART-010.
+rationale: |
+  Un accès anonyme en lecture suffit pour récolter les secrets affichés dans les journaux,
+  cartographier les cibles de déploiement et trouver les pipelines qui exécutent du code non fiable.
+  Les plates-formes qui l'autorisent par projet rendent l'exposition accidentelle facile : un projet
+  passé en public, ou un drapeau de fonctionnalité activé, et son historique est publié. Exiger la
+  connexion partout règle la question sur les instances internes.
+impact: |
+  Les badges de statut publics, les URL de clonage anonymes et les tableaux de bord non authentifiés
+  cessent de fonctionner. Les projets open source hébergés sur la même instance ont besoin d'une
+  instance publique séparée ou d'une exception.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou un accès en lecture à la configuration de la plate-forme.
+
+    1. Vérifier l'accès anonyme et public :
+       - **Argo CD** : `argocd-cm` ne pose pas `users.anonymous.enabled: "true"` ; s'il le fait,
+         `policy.default` dans `argocd-rbac-cm` n'accorde rien.
+       - **TeamCity** : **Administration** > **Authentication** : la connexion invité est désactivée.
+       - **Harness** : **Account Settings** > **Authentication** > **Allow public access to
+         resources** est désactivé (la fonction dépend du drapeau `PL_ALLOW_TO_SET_PUBLIC_ACCESS`), et
+         aucun pipeline n'est marqué public.
+       - **Gitea / Forgejo** : avec `everything`, `[service] REQUIRE_SIGNIN_VIEW = true`.
+       - **Bitbucket Data Center** : `bitbucket.properties` pose `feature.public.access=false`, ou
+         aucun projet ni dépôt n'a l'accès public activé.
+       - **GitHub Enterprise Server** : **Management Console** > **Private mode** est activé.
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Visibility and access
+         controls** : **Default project visibility** et **Default group visibility** valent Private,
+         et **Restricted visibility levels** inclut Public (et Internal quand `everything`
+         s'applique).
+    2. Depuis un navigateur sans session, ouvrir l'URL de la plate-forme, la page d'exploration et un
+       point d'accès d'API de liste.
+    3. Échec si du contenu non public est accessible sans connexion, ou, avec `everything`, si une
+       page ou un appel d'API répond sans authentification.
+remediation:
+  manual: |
+    1. Lister les projets qui dépendent de l'accès anonyme et convenir des exceptions.
+    2. Appliquer le réglage (rôle d'administrateur) :
+       - **Argo CD** : retirer `users.anonymous.enabled` ou le mettre à `"false"`.
+       - **TeamCity** : désactiver la connexion invité dans **Administration** > **Authentication**.
+       - **Harness** : désactiver **Allow public access to resources**.
+       - **Gitea / Forgejo** : poser `REQUIRE_SIGNIN_VIEW = true` dans `[service]` et redémarrer.
+       - **Bitbucket Data Center** : poser `feature.public.access=false` dans `bitbucket.properties`
+         et redémarrer.
+       - **GitHub Enterprise Server** : activer **Private mode** dans la Management Console.
+       - **GitLab auto-hébergé** : régler les visibilités par défaut sur Private et ajouter Public aux
+         **Restricted visibility levels**.
+    3. Passer les projets publics existants en privé ou en interne.

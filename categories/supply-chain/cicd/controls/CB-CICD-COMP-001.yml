@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-001
+title: Allow only approved third-party CI components to run
+finding:
+  title: Pipelines can run any third-party action, orb, plugin or task
+  description: Any member who edits a pipeline can pull in a component from an unknown publisher, which then runs with the job's secrets and token; an attacker only needs one popular or look-alike component to reach many pipelines.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [third-party-components, allowlist, actions, plugins, orbs, supply-chain]
+
+description: |
+  Third-party components that pipelines execute (GitHub actions and reusable workflows, CircleCI
+  orbs, Buildkite plugins, Azure Pipelines Marketplace tasks, GitLab CI/CD catalog components, Argo
+  Workflows executor plugins, TeamCity server plugins) are restricted to an allowlist kept at
+  organization or instance level. The allowlist holds components owned by the organization,
+  components published by the platform vendor and individually reviewed third-party components.
+  Components from other publishers are blocked until they are reviewed and added.
+
+  A publisher badge such as GitHub "verified creator" or a certified orb is not enough on its own:
+  it says who published the component, not that its code was reviewed.
+
+  How allowed components are pinned is covered by CB-CICD-COMP-011, and how vulnerable or
+  compromised components are removed by CB-CICD-COMP-003.
+rationale: |
+  A third-party component runs inside the job with the same access as the pipeline: secrets,
+  job token, cloud credentials and the source code. Compromised or malicious components have
+  been used to dump CI secrets from thousands of repositories at once. An allowlist reduces the
+  number of publishers the organization trusts to the few it has reviewed, and makes adding a new
+  one a deliberate decision.
+impact: |
+  Teams need a request and review path to add a component, otherwise they copy code into
+  scripts instead. Existing pipelines that use components outside the allowlist fail until the
+  components are reviewed or replaced. Plan an inventory of components in use before switching
+  the policy on.
+notes: |
+  On GitHub, actions referenced with `./` from the same repository are never restricted by the
+  policy. After a workflow is onboarded to a lockfile, the allowlist is checked against the locked
+  commit SHAs, so allowlist entries pinned to tags stop matching. Buildkite enforces the allowlist
+  per agent: every agent of every queue needs the same setting.
+
+audit:
+  manual: |
+    Use a role that can read organization or instance settings (organization owner, project
+    collection administrator, instance administrator); no write access is needed.
+
+    1. List the third-party components used by pipelines (for example with zizmor
+       `forbidden-uses`, poutine or a search for `uses:`, `orbs:`, `plugins:` and `task:` keywords).
+    2. Check the platform setting that restricts which components can run:
+       - **GitHub**: enterprise, organization or repository **Settings** > **Actions** >
+         **General** > **Policies**, or REST `GET /orgs/{org}/actions/permissions` and
+         `GET /orgs/{org}/actions/permissions/selected-actions`. The policy is **Allow enterprise,
+         and select non-enterprise, actions and reusable workflows** with only GitHub-created
+         actions and explicit `OWNER/REPO` patterns; **Allow Marketplace actions by verified
+         creators** is not used as the only filter.
+       - **Azure DevOps**: **Organization settings** > **Pipelines** > **Settings** > **Task
+         restrictions**: **Disable Marketplace tasks** is on, and the extra tasks needed are
+         installed as reviewed private tasks.
+       - **CircleCI**: **Organization Settings** > **Security**: uncertified orbs are not allowed;
+         **Organization Settings** > **Orbs** > **Allowed URL Orb prefixes** lists only internal
+         prefixes.
+       - **Buildkite**: every agent sets `allowed-plugins` (or `BUILDKITE_ALLOWED_PLUGINS`) with
+         anchored patterns of reviewed sources, or `no-plugins=true`.
+       - **GitLab**: **Admin** > **Settings** > **CI/CD** > **Catalog**: the **CI/CD Catalog
+         publishing allowlist** lists only approved component projects (GitLab Premium or
+         Ultimate, self-managed or Dedicated, 18.7 and later).
+       - **TeamCity**: **Server Administration** > **Plugins** lists only reviewed plugins from
+         trusted sources.
+       - **Argo Workflows**: the workflow controller sets `ARGO_EXECUTOR_PLUGINS` only when
+         executor plugins are needed, and each plugin ConfigMap belongs to a reviewed plugin that
+         checks the `Authorization` token.
+    3. Fail if pipelines can run third-party components that were not reviewed, or if the only
+       restriction is a publisher badge (verified creator, certified orb).
+
+remediation:
+  manual: |
+    1. Inventory the components in use, review the ones that are kept and agree on a request
+       process for new ones.
+    2. Switch the platform to an allowlist:
+       - **GitHub** (organization owner or enterprise owner): **Settings** > **Actions** >
+         **General** > **Policies** > **Allow enterprise, and select non-enterprise, actions and
+         reusable workflows**, tick **Allow actions created by GitHub**, add the reviewed
+         `OWNER/REPO@*` patterns, or call `PUT /orgs/{org}/actions/permissions` with
+         `allowed_actions: selected`.
+       - **Azure DevOps** (Project Collection Administrator): turn on **Disable Marketplace
+         tasks** in **Organization settings** > **Pipelines** > **Settings** > **Task
+         restrictions**; install the reviewed tasks with `tfx` as private tasks. Do not disable
+         built-in tasks.
+       - **CircleCI** (organization admin): turn off uncertified orbs in **Organization
+         Settings** > **Security**, publish reviewed orbs in a private namespace or as URL orbs
+         and allow only internal URL prefixes in **Organization Settings** > **Orbs**.
+       - **Buildkite**: set `allowed-plugins` with `^` and `$` anchors on every agent, for
+         example `^github\.com/my-org/.*$`.
+       - **GitLab** (administrator): fill the **CI/CD Catalog publishing allowlist**.
+       - **TeamCity**: uninstall plugins that were not reviewed.
+       - **Argo Workflows**: leave `ARGO_EXECUTOR_PLUGINS` unset unless needed and install only
+         reviewed executor plugins.
+    3. Fork or mirror the reviewed third-party components into the organization when the review
+       has to cover a frozen copy.
+  rollback: |
+    Add the blocked component to the allowlist after a review; do not switch back to "allow all".
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Task types and usage (task restrictions)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/process/tasks
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing URL orb allow-lists
+    url: https://circleci.com/docs/orbs/use/managing-url-orbs-allow-lists/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite agent security
+    url: https://buildkite.com/docs/agent/self-hosted/security
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Continuous integration and deployment admin settings (CI/CD Catalog publishing)
+    url: https://docs.gitlab.com/administration/settings/continuous_integration/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-8 Ungoverned Usage of 3rd Party Services
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-08-Ungoverned-Usage-of-3rd-Party-Services
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7(5)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-003
+    type: related
+  - id: CB-CICD-COMP-011
+    type: related
+  - id: CB-CICD-COMP-012
+    type: related
+  - id: CB-CICD-COMP-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-008
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter des tests dynamiques et de non-régression de sécurité avant publication
+finding:
+  title: Les applications sont publiées sans test dynamique ni test de non-régression de sécurité
+  description: Des failles qui n'apparaissent que dans l'application en fonctionnement, comme un contrôle d'accès défaillant entre profils d'utilisateurs ou des en-têtes de sécurité manquants, partent en production car aucun test n'exerce l'application déployée avant publication.
+description: |
+  Avant la publication d'une application déployable, le pipeline la teste en fonctionnement dans
+  un environnement de test :
+  - un test dynamique de sécurité applicative (DAST) tourne contre l'application déployée, avec
+    authentification pour atteindre les parties protégées ;
+  - des tests de non-régression de sécurité, écrits par l'équipe, vérifient le comportement de
+    sécurité qui compte pour l'application, dont le cloisonnement entre profils d'utilisateurs et
+    entre clients (un utilisateur ne peut ni lire ni modifier les données d'un autre, un rôle peu
+    privilégié ne peut pas appeler de fonctions d'administration), ainsi que les corrections des
+    vulnérabilités passées ;
+  - les échecs de ces tests arrêtent la publication ou exigent une décision consignée.
+
+  L'analyse statique relève de CB-CICD-TEST-002.
+rationale: |
+  Les failles de contrôle d'accès, de gestion de session et de configuration dépendent du
+  comportement de l'application en fonctionnement et sont rarement visibles des outils statiques.
+  Le contrôle d'accès défaillant entre utilisateurs est l'une des failles web graves les plus
+  courantes. Des tests de non-régression qui codent ces règles, et des analyses dynamiques, les
+  repèrent avant chaque publication et empêchent le retour de vulnérabilités corrigées.
+impact: |
+  Les équipes ont besoin d'un environnement de test avec des comptes et des données réalistes, et
+  de temps pour écrire et maintenir les tests de sécurité. Les analyses dynamiques allongent les
+  pipelines de publication ; lancer les plus longues de façon planifiée et les essentielles à
+  chaque publication.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux pipelines de publication et à leurs résultats de test.
+
+    1. Pour chaque application déployable, trouver le pipeline de publication et vérifier qu'il
+       déploie dans un environnement de test et exécute un job DAST (par exemple OWASP ZAP ou DAST
+       GitLab) et une suite de tests de non-régression de sécurité.
+    2. Vérifier que la suite de non-régression couvre le cloisonnement entre profils d'utilisateurs
+       ou clients et les vulnérabilités corrigées dans l'année écoulée.
+    3. Échec si une application est publiée sans test dynamique ou sans tests de non-régression
+       de sécurité, ou si les échecs de ces tests n'arrêtent pas la publication.
+remediation:
+  manual: |
+    1. Ajouter une étape de test après le déploiement dans l'environnement de test : une analyse
+       DAST authentifiée et la suite de non-régression de sécurité.
+    2. Écrire des tests de non-régression sur le contrôle d'accès entre profils, rôles et clients,
+       et ajouter un test pour chaque vulnérabilité corrigée.
+    3. Rendre les échecs bloquants pour la publication, avec un circuit de décision consignée pour
+       les exceptions.

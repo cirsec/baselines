@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Supprimer les runners obsolètes et inutilisés
+finding:
+  title: Des runners hors ligne et inutilisés sont toujours enregistrés
+  description: Des runners qui ne se sont pas connectés depuis des semaines gardent des identifiants valides et leur place dans la flotte ; un hôte oublié ou une configuration copiée peut revenir et recevoir des jobs sans que personne ne le remarque.
+description: |
+  L'inventaire des runners, agents et delegates est revu au moins chaque trimestre. Les runners hors
+  ligne, sans job depuis une période définie ou sans propriétaire sont supprimés sur la plate-forme, ce
+  qui révoque leurs identifiants. Quand la plate-forme propose un nettoyage automatique des runners
+  obsolètes, il est activé.
+rationale: |
+  Chaque runner enregistré est un identifiant qui peut recevoir des jobs. Les entrées obsolètes masquent
+  la flotte réelle, maintiennent en vie les identifiants de machines retirées et rendent difficile le
+  repérage d'un runner qui ne devrait pas être là.
+impact: |
+  Les runners rarement utilisés (builds de release annuels, reprise d'activité) ont besoin d'un
+  propriétaire et d'une exception, ou seront réenregistrés au besoin.
+notes: |
+  Le nettoyage des runners obsolètes de GitLab est un réglage de groupe disponible avec GitLab Ultimate ;
+  il supprime les runners de groupe inactifs depuis plus de sept jours.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de la plate-forme en lecture.
+
+    1. Exporter la liste des runners et agents à tous les niveaux avec leur statut, leur dernier contact et
+       leur propriétaire (GitLab **Admin** > **CI/CD** > **Runners** avec les filtres stale et offline,
+       GitHub **Settings** > **Actions** > **Runners** au niveau organisation et dépôt, pools d'agents
+       Azure DevOps, clusters Buildkite).
+    2. Vérifier la date de la dernière revue et les suppressions qui en ont résulté.
+    3. **GitLab** (Ultimate) : dans chaque groupe, **Settings** > **CI/CD** > **Runners** > **Enable stale
+       runner cleanup** est activé.
+    4. Échec si des runners hors ligne depuis plus de 90 jours, ou sans propriétaire, sont encore
+       enregistrés, ou si aucune revue n'a eu lieu au dernier trimestre.
+remediation:
+  manual: |
+    1. Supprimer les runners obsolètes ou sans propriétaire, d'abord sur la plate-forme, puis sur leurs
+       hôtes.
+    2. **GitLab** : en tant que propriétaire de groupe sur GitLab Ultimate, activer **Enable stale runner
+       cleanup**.
+    3. Enregistrer un propriétaire pour chaque runner restant et planifier une revue trimestrielle de
+       l'inventaire.

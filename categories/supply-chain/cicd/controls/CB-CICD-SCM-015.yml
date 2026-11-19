@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-015
+title: Prevent review requirements from being weakened inside a pull request
+finding:
+  title: Approval rules can be edited or reviews dismissed from within a pull request
+  description: An author who can lower the approval rules of their own merge request, or any writer who can dismiss a blocking review, can merge a change that the configured review process would have stopped.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [code-review, approval-rules, review-dismissal, flow-control]
+
+applicability:
+  versions: [github, gitlab]
+
+description: |
+  The review requirements configured for a protected branch cannot be relaxed for a single pull
+  or merge request:
+
+  - approval rules (number of approvals, eligible approvers) cannot be edited in a merge request;
+  - only administrators or a named team can dismiss a submitted review, so a "changes requested"
+    review cannot be cleared by any writer.
+
+  The required number of approvals is set by CB-CICD-SCM-012; who may bypass the rules entirely by
+  CB-CICD-SCM-011.
+rationale: |
+  On GitLab, approval rules can be overridden per merge request by default, which lets the author
+  remove the rule that would require a security reviewer. On GitHub, anyone with write access can
+  dismiss a review that requests changes, which removes the block it creates. Both turn a mandatory
+  control into a suggestion.
+impact: |
+  Exceptional changes to approval rules go through a maintainer or owner. Reviews that are no
+  longer relevant are dismissed by the named team instead of by the author.
+
+audit:
+  manual: |
+    Use a role that can read branch protection and merge request approval settings.
+
+    1. Check the settings on protected branches:
+       - **GitHub**: the ruleset rule **Require a pull request before merging** enables the option
+         to restrict who can dismiss pull request reviews, with only administrators or a named
+         team (branch protection: **Restrict who can dismiss pull request reviews**).
+       - **GitLab** (Premium): **Settings** > **Merge requests** > **Merge request approvals** >
+         **Approval settings** > **Prevent editing approval rules in merge requests** is selected,
+         ideally inherited from the top-level group; on self-managed instances, **Admin** > **Push
+         rules** > **Merge request approvals** > **Prevent editing approval rules in projects and
+         merge requests** is selected.
+    2. Review merged requests whose approval rules differ from the project rules, or whose
+       blocking reviews were dismissed by non-administrators.
+    3. Fail if an author can edit approval rules in their merge request, or if any writer can
+       dismiss reviews on protected branches.
+
+remediation:
+  manual: |
+    1. Lock review requirements:
+       - **GitHub**: in the ruleset, restrict who can dismiss pull request reviews to repository
+         administrators or a dedicated team.
+       - **GitLab**: select **Prevent editing approval rules in merge requests** at top-level group
+         level; on self-managed instances, also select **Prevent editing approval rules in projects
+         and merge requests** for the instance.
+    2. Document how to request an exception to the approval rules.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approval settings
+    url: https://docs.gitlab.com/user/project/merge_requests/approvals/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approvals for your instance
+    url: https://docs.gitlab.com/administration/merge_requests_approvals/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers per-request weakening of review rules; other flow-control mechanisms are separate controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: requires
+  - id: CB-CICD-SCM-013
+    type: related
+  - id: CB-CICD-SCM-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

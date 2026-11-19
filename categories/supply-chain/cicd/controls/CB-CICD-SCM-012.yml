@@ -1,0 +1,191 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-012
+title: Require independent approval before merging to protected branches
+finding:
+  title: Pull requests can be merged into protected branches without an approving review
+  description: Without a required approval, a single developer, or an attacker holding one developer's token, can merge any change, including a modified pipeline or a backdoor, into the code that is built and released.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [code-review, approvals, four-eyes, flow-control, pull-requests]
+
+description: |
+  A pull or merge request into a default or release branch can only be merged after
+  `{{ required_approvals }}` approving review(s) from people with write access who are not the
+  author. Approvals from the platform's automation token or from AI agents acting under their own
+  identity do not count toward this number (CB-CICD-SCM-013).
+
+  The rule is enforced by the platform (blocking), not shown as a warning. Self-approval and
+  last-pusher approval are covered by CB-CICD-SCM-013, reset of approvals on new commits by
+  CB-CICD-SCM-014, and code owner review of sensitive paths by CB-CICD-SCM-018.
+rationale: |
+  Independent review is the main barrier between one compromised or malicious account and the
+  production code base. It also catches honest mistakes in pipeline definitions that would expose
+  secrets. Two approvals on critical repositories mean that two people must be fooled, or two
+  accounts compromised, before code ships.
+impact: |
+  Each change waits for a reviewer, which slows small teams; agree on review turnaround times.
+  Repositories maintained by one person need a second reviewer from another team. Bots that
+  merge their own pull requests (dependency updates) need a review rule or a narrowly scoped
+  exception.
+notes: |
+  GitHub adds one required approval by default for pull requests opened by Copilot without a
+  human attribution (preview setting **Require an additional approval for unattributed Copilot pull
+  requests**); keep it enabled. On GitLab, required approvals need Premium; the Free tier only has
+  optional approvals. On Bitbucket Cloud, merge checks only block the merge with Premium (**Prevent
+  a merge with unresolved merge checks**); on Standard they are warnings. On Azure DevOps,
+  approvals from requestors do not count unless **Allow requestors to approve their own changes**
+  is selected.
+
+parameters:
+  - name: required_approvals
+    type: integer
+    description: Minimum number of approving reviews from people other than the author.
+    unit: approvals
+    default: 1
+    profile_defaults:
+      hardened: 2
+    minimum: 1
+    maximum: 10
+
+audit:
+  manual: |
+    Use a role that can read branch protection, merge request and branch policy settings.
+
+    1. For each repository, check the review requirement on default and release branches:
+       - **GitHub**: the ruleset rule **Require a pull request before merging** has **Required
+         approvals** of at least `{{ required_approvals }}` (or the branch protection rule
+         **Require a pull request before merging** > **Require approvals**). Scorecard `Code-Review` and legitify help at scale.
+       - **GitLab** (Premium): **Settings** > **Merge requests** > **Merge request approvals**:
+         approval rules targeting the protected branches require at least
+         `{{ required_approvals }}` approvals, or a merge request approval policy enforces it.
+       - **Azure DevOps**: branch policy **Require a minimum number of reviewers** is on with at
+         least `{{ required_approvals }}` reviewers (repository or cross-repository policy).
+       - **Bitbucket Cloud**: **Branch restrictions** > merge checks: **Minimum number of
+         approvals** is at least `{{ required_approvals }}` and **Prevent a merge with unresolved
+         merge checks** is selected (Premium).
+       - **Bitbucket Data Center**: **Repository settings** (or **Project settings**) > **Merge
+         checks** > **Minimum approvals** is enabled with at least `{{ required_approvals }}`.
+       - **Gitea / Forgejo**: the branch rule's **Required approvals** is at least
+         `{{ required_approvals }}`.
+    2. Sample recently merged pull requests and confirm each had the required approvals from
+       someone other than the author.
+    3. Fail if a protected branch accepts merges with fewer than `{{ required_approvals }}`
+       independent approvals, or if the check is only a warning.
+
+remediation:
+  manual: |
+    1. Make sure every repository has at least two people able to review, borrowing reviewers
+       from another team where needed.
+    2. Set the requirement:
+       - **GitHub**: in the ruleset, enable **Require a pull request before merging** and set
+         **Required approvals** to `{{ required_approvals }}`.
+       - **GitLab**: add an approval rule for the protected branches with
+         `{{ required_approvals }}` required approvals, or a merge request approval policy at
+         group level.
+       - **Azure DevOps**: turn on **Require a minimum number of reviewers** with
+         `{{ required_approvals }}` reviewers, as a cross-repository policy where possible.
+       - **Bitbucket Cloud**: set **Minimum number of approvals** and enable **Prevent a merge with
+         unresolved merge checks** (Premium).
+       - **Bitbucket Data Center**: enable the **Minimum approvals** merge check.
+       - **Gitea / Forgejo**: set **Required approvals** in the branch rule, optionally restricted
+         to an allowlist of reviewers.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge request approval rules
+    url: https://docs.gitlab.com/user/project/merge_requests/approvals/rules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Suggest or require checks before a merge
+    url: https://support.atlassian.com/bitbucket-cloud/docs/suggest-or-require-checks-before-a-merge/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Checks for merging pull requests
+    url: https://confluence.atlassian.com/bitbucketserver/checks-for-merging-pull-requests-776640039.html
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track - Two-party review
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers mandatory review before merge; push and bypass restrictions are separate controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.7.2"
+    relation: partial
+    note: Enforces that a peer review takes place; the depth and method of the review are not checked.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.3"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.9"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.10"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.11"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L4
+    relation: partial
+    note: One independent approval already gives two parties; SLSA Source L4 also needs the final revision approved (CB-CICD-SCM-014) and the lower source levels.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-007
+    type: related
+  - id: CB-CICD-SCM-013
+    type: related
+  - id: CB-CICD-SCM-014
+    type: related
+  - id: CB-CICD-SCM-018
+    type: related
+  - id: CB-CICD-DEPLOY-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

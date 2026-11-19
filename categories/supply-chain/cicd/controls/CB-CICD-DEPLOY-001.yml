@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-001
+title: Separate production deployment from build, pull request and non-production pipelines
+finding:
+  title: Production deployments share pipelines, identities or infrastructure with pull request and test builds
+  description: When the same project, runner pool or credentials serve both untrusted builds and production deployments, any code that reaches a test or pull request build can use the production credentials or tamper with the deployment.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [deployment, separation, production, least-privilege, environments]
+
+description: |
+  Deployment to production runs separately from the builds that process untrusted or unreviewed
+  code, at level `{{ separation_level }}`:
+
+  - `pipeline`: production deployment runs in its own project, pipeline or job definition, with its
+    own identity and credentials, distinct from the ones used by pull request, test and
+    non-production builds; the roles that can change or run it are separate from the developer roles
+    of the application project. Builds of pull requests and tests have no write access to production
+    resources.
+  - `infrastructure`: in addition, critical systems have dedicated production CI/CD infrastructure:
+    their own runner or agent pool, their own cloud account or subscription for deployment
+    identities and artifact storage, and their own CD project or instance, with no network path or
+    trust relationship from the build and non-production side except artifact promotion.
+
+  Which branches and people can deploy is covered by CB-CICD-DEPLOY-002; runner sharing in general
+  by CB-CICD-RUN-010; deployment secrets by CB-CICD-SEC-008.
+rationale: |
+  Build pipelines run code that changes all the time, including from pull requests and
+  dependencies. If production credentials, runners or permissions are reachable from those builds,
+  a single malicious change or dependency can deploy to or exfiltrate from production without going
+  through review and approval. Separating the deployment path keeps a compromise of the build or test
+  side from turning into a production compromise.
+impact: |
+  Teams maintain an extra project, pipeline or account per application and a promotion step between
+  them. Dedicated production infrastructure costs more and needs its own administration.
+notes: |
+  In GitLab, every Maintainer of a project can read its unprotected CI/CD variables and change its
+  pipeline; GitLab documents a separate CD project connected by multi-project pipelines to keep
+  production secrets and CD configuration away from the development project's Maintainers. AWS
+  CodePipeline cross-account deployments require a customer-managed KMS key for the artifact store.
+
+parameters:
+  - name: separation_level
+    type: enum
+    description: Degree of separation of production deployment. pipeline means a separate deploy project or pipeline with its own identity and roles; infrastructure also requires dedicated production runners, cloud account or subscription and CD project.
+    allowed: [pipeline, infrastructure]
+    default: pipeline
+    profile_defaults:
+      hardened: infrastructure
+
+audit:
+  manual: |
+    Use a role that can read project, pipeline, runner and cloud account configuration.
+
+    1. For each production application, identify the pipeline that deploys it, the identity and
+       credentials it uses, and where it runs.
+    2. Check that pull request, test and non-production builds use other projects or pipelines,
+       other identities and no production credentials:
+       - **AWS CodeBuild / CodePipeline**: projects that accept webhook pull request builds have a
+         service role with no write access to production; the deploy project has its own role and
+         its webhook filter group uses `ACTOR_ACCOUNT_ID` to allow only trusted users. With
+         `infrastructure`, deploy actions use a `roleArn` in a separate production account.
+       - **GitLab**: production deployment and its secrets live in a separate CD project triggered
+         with `trigger: project:` (multi-project pipeline); the development project's Maintainers are
+         not Maintainers of the CD project.
+       - **Azure DevOps**: production stages run on a dedicated agent pool and use service
+         connections to a production subscription that non-production pipelines cannot use.
+    3. With `infrastructure`: check that production runners, cloud accounts or subscriptions and the
+       CD project are dedicated, and that the only link from the build side is artifact promotion.
+    4. Fail if a pull request or test build can use production credentials or runners, or if the
+       same identity builds untrusted code and deploys to production.
+
+remediation:
+  manual: |
+    1. Split each application's pipeline into a build and test part and a deployment part with its
+       own identity:
+       - **AWS CodeBuild**: create one project for pull request and test builds with a read-only
+         service role, and a separate deploy project with the write role and an `ACTOR_ACCOUNT_ID`
+         webhook filter; for `infrastructure`, move deployment targets to a separate account reached
+         through a cross-account `roleArn` and a customer-managed KMS key.
+       - **GitLab**: create a CD project that holds production variables and deployment jobs, give
+         it its own members, and trigger it from the development project with `trigger: project:`.
+       - **Azure DevOps**: create a dedicated agent pool and production service connections, and
+         grant them only to the production pipeline (**Project settings** > **Agent pools** and
+         **Service connections** > **Security**).
+    2. Remove production credentials from build and test projects and rotate them.
+    3. For `infrastructure`, move production runners, deployment identities and artifact storage to
+       a dedicated account or subscription with its own administrators.
+
+references:
+  - title: Best practices for using webhooks with AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/webhooks.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Create a pipeline in CodePipeline that uses resources from another AWS account
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-create-cross-account.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Deployment safety - Separate project for deployments
+    url: https://docs.gitlab.com/ci/environments/deployment_safety/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: partial
+    note: Covers the separation of deployment from build and test; other pipeline permission issues are IAM and RUN controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-32
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-4(1)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078.004
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-DEPLOY-002
+    type: related
+  - id: CB-CICD-RUN-010
+    type: related
+  - id: CB-CICD-SEC-008
+    type: related
+  - id: CB-CICD-IAM-034
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

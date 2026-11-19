@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-029
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Attester le démarrage des environnements de build des pipelines critiques
+finding:
+  title: Des builds critiques tournent dans des environnements dont l'état initial n'est pas attesté
+  description: Sans démarrage mesuré ni attestation, rien ne prouve que l'environnement de build d'une release critique a démarré depuis l'image attendue ; un hyperviseur, une chaîne de démarrage ou un agent altéré passe inaperçu.
+description: |
+  Les pipelines critiques (releases de logiciels distribués aux clients, pipelines de signature) tournent
+  dans des environnements de build dont le démarrage est mesuré et attesté avant qu'un build leur soit
+  attribué :
+
+  - la VM utilise Secure Boot et un TPM virtuel ; l'agent de build obtient une attestation signée
+    (quote) des mesures de démarrage (chargeur d'amorçage, noyau, agent, système de fichiers racine) et la
+    plate-forme la vérifie contre des valeurs de référence signées avant d'attribuer le build (SLSA
+    BuildEnv L2) ;
+  - quand le risque le justifie, les builds tournent dans des VM confidentielles attestées par le
+    matériel, pour que l'intégrité de l'environnement ne dépende pas de la confiance dans l'hôte cloud
+    (SLSA BuildEnv L3).
+
+  Il s'appuie sur CB-CICD-RUN-028 (provenance des images vérifiée).
+rationale: |
+  La provenance de l'image prouve ce qui aurait dû démarrer ; l'attestation de démarrage prouve ce qui a
+  démarré. Pour les pipelines dont la compromission toucherait de nombreux utilisateurs en aval, elle
+  comble le manque laissé par une chaîne de démarrage ou une plate-forme de calcul altérée.
+impact: |
+  Peu de plates-formes CI/CD le prennent en charge directement ; il faut généralement une flotte de
+  runners dédiée sur des VM cloud avec vTPM et Secure Boot (ou du calcul confidentiel), et un service
+  d'attestation dans le provisionnement des runners. À réserver aux pipelines les plus critiques.
+notes: |
+  La piste environnement de build de SLSA est un brouillon et ne fait pas partie de SLSA v1.2. Les runners
+  à base de conteneurs peuvent nécessiter des modifications de l'orchestrateur pour produire ces
+  attestations.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration de l'infrastructure des runners et au code de
+    provisionnement des pipelines critiques.
+
+    1. Identifier les pipelines critiques et les runners qu'ils utilisent.
+    2. Vérifier que ces runners sont des VM avec Secure Boot et un vTPM (ou des VM confidentielles)
+       activés.
+    3. Vérifier que le provisionnement demande une attestation à l'agent après le démarrage et la vérifie
+       contre des valeurs de référence signées avant l'attribution d'un job, et que le résultat de la
+       vérification est consigné.
+    4. Échec si des pipelines critiques tournent sur des environnements dont le démarrage n'est pas mesuré
+       et vérifié avant l'attribution.
+remediation:
+  manual: |
+    1. Construire une flotte de runners dédiée aux pipelines critiques sur des VM avec Secure Boot et vTPM,
+       ou sur des VM confidentielles.
+    2. Générer dans le pipeline d'images des valeurs de référence signées pour les composants de l'image de
+       runner (CB-CICD-RUN-028).
+    3. Ajouter au provisionnement une étape d'attestation qui vérifie l'attestation de démarrage avant
+       d'enregistrer le runner pour un job, et consigner le résultat pour la provenance.
+    4. Router les pipelines critiques uniquement vers cette flotte (CB-CICD-RUN-011).

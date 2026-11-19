@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-011
+title: Encrypt artifact stores at rest and in transit, with customer-managed keys for critical stores
+finding:
+  title: Artifact stores accept unencrypted or plain-HTTP writes, or rely on keys the organization cannot control
+  description: Artifacts written without encryption or over plain HTTP can be read or altered by anyone with access to the storage or the network path, and provider-managed keys cannot be restricted, rotated or revoked by the organization when a store is exposed.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [encryption, kms, artifacts, s3, customer-managed-keys, tls]
+
+description: |
+  Every store that holds build artifacts, test or report exports, and packages is encrypted at rest,
+  and rejects writes that are not encrypted or not sent over TLS. The key used is
+  `{{ encryption_key }}`:
+
+  - `provider-managed`: the storage service's own key is acceptable, as long as encryption is
+    enforced and unencrypted or non-TLS requests are denied.
+  - `customer-managed`: stores of critical pipelines and confidential artifacts use a
+    customer-managed key in the organization's KMS, with automatic rotation, a key policy limited to
+    the pipeline and deployment roles, and logged use.
+
+  Artifacts that are distributed outside the organization and must stay confidential are encrypted
+  before distribution, not only at rest in the store.
+
+  Access control on the same stores is covered by CB-CICD-ART-010; transport security of the
+  platform itself by CB-CICD-PLAT-004.
+rationale: |
+  Encryption at rest protects artifacts in backups, snapshots and storage media; enforcing TLS
+  protects them on the network. A customer-managed key adds a second, independent access check: a
+  leaked storage credential is useless without permission to use the key, and the organization can
+  disable the key to cut off access to an exposed store, which is impossible with a provider-managed
+  key.
+impact: |
+  Customer-managed keys cost money, need key policies to be maintained, and a mistaken key policy or
+  a disabled key makes artifacts unreadable. Some keys cannot be changed after a store is created,
+  which means recreating the store and migrating artifacts.
+notes: |
+  CodePipeline creates its artifact bucket with SSE-KMS and the AWS managed `aws/s3` key only when
+  the pipeline is created with the console wizard; pipelines created with the CLI or CloudFormation
+  need encryption configured manually. CodePipeline supports symmetric KMS keys only, and a
+  customer-managed key is required for cross-account pipelines. The AWS managed key cannot be
+  changed or deleted. The CodeArtifact domain key is chosen when the domain is created.
+
+parameters:
+  - name: encryption_key
+    type: enum
+    description: Key protecting artifact stores. provider-managed accepts the storage service's key with encryption and TLS enforced; customer-managed requires a rotated customer-managed KMS key for critical stores.
+    allowed: [provider-managed, customer-managed]
+    default: provider-managed
+    profile_defaults:
+      hardened: customer-managed
+
+audit:
+  manual: |
+    Use a role that can read storage, pipeline and KMS key configuration.
+
+    1. List the stores that hold artifacts, reports and packages for each platform.
+    2. For each store, check that encryption at rest is on and that the store denies unencrypted
+       and non-TLS requests.
+    3. AWS CodeSuite:
+       - **CodePipeline**: the artifact bucket policy has a `Deny` on `s3:PutObject` when
+         `s3:x-amz-server-side-encryption` is not `aws:kms`, and a `Deny` on `s3:*` when
+         `aws:SecureTransport` is `false`; with `customer-managed`, `aws codepipeline get-pipeline`
+         shows `artifactStore.encryptionKey` with `type: KMS` and a customer-managed key ARN.
+       - **CodeBuild**: in the project's **Artifacts** section, **Remove artifacts encryption** is not
+         selected; with `customer-managed`, **Encryption key** holds a customer-managed key ARN.
+       - **CodeArtifact**: with `customer-managed`, `aws codeartifact describe-domain` shows an
+         `encryptionKey` that is a customer-managed key.
+    4. Other platforms and self-hosted stores: check the bucket or volume encryption setting and the
+       TLS requirement of the object storage endpoint.
+    5. With `customer-managed`: check that automatic rotation is on and the key policy only allows
+       the pipeline and deployment roles.
+    6. Fail if a store accepts unencrypted or non-TLS writes, or, with `customer-managed`, if a
+       critical store uses a provider-managed key.
+
+remediation:
+  manual: |
+    1. Turn on default encryption for every artifact bucket and add bucket policy statements that
+       deny unencrypted uploads and requests without TLS (for CodePipeline, the two `Deny`
+       statements shown in its documentation).
+    2. For `customer-managed`:
+       - create a symmetric customer-managed KMS key per environment or pipeline group, with
+         automatic rotation on and a key policy limited to the pipeline and deployment roles;
+       - **CodePipeline**: set `artifactStore.encryptionKey` (`id` = key ARN, `type: KMS`) with
+         `aws codepipeline update-pipeline`;
+       - **CodeBuild**: set **Encryption key** to the key ARN in the project's **Artifacts**
+         settings;
+       - **CodeArtifact**: create a new domain with `aws codeartifact create-domain --encryption-key
+         <key ARN>` and migrate packages, since the key is chosen at creation.
+    3. Encrypt confidential artifacts before distributing them outside the organization.
+
+references:
+  - title: Configure server-side encryption for artifacts stored in Amazon S3 for CodePipeline
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/S3-artifact-encryption.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change build project settings in AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/change-project.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Create a domain - CodeArtifact
+    url: https://docs.aws.amazon.com/codeartifact/latest/ug/domain-create.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CNCF Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/tree/main/community/working-groups/supply-chain-security/supply-chain-security-paper
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+related_controls:
+  - id: CB-CICD-ART-010
+    type: related
+  - id: CB-CICD-PLAT-004
+    type: related
+  - id: CB-CICD-SEC-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,140 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-008
+title: Review CI/CD audit logs and access on a fixed schedule
+finding:
+  title: Nobody reviews CI/CD audit logs and API access
+  description: Audit logs and token lists are collected but never read; slow, low-noise abuse such as an extra token, a forgotten integration or cross-project job token use goes unnoticed because it never triggers an alert.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [log-review, access-review, audit-log, tokens, accountability]
+
+description: |
+  At least every **{{ review_interval_days }}** days, a named person reviews for each CI/CD platform:
+
+  - a summary of audit events, focused on administrative, permission, credential and protection
+    changes, looking for actions without a matching change ticket;
+  - the API access tokens and integrations with access to the organization (owner, scopes, expiry,
+    last use);
+  - authentication activity of tokens and programmatic identities.
+
+  With `review_scope` set to `include-job-token-logs` (**{{ review_scope }}** here), the review also
+  covers cross-project job token authentication logs (for example the GitLab job token
+  authentication log) before allowlist entries are added or kept.
+
+  The review is recorded (date, reviewer, findings, actions). Real-time alerting is covered by
+  CB-CICD-LOG-006; periodic review of identities and their rights by CB-CICD-IAM-026.
+rationale: |
+  Alerts catch known patterns; a periodic human review catches what does not match a rule: a token
+  that is used from an unusual place, an app installed months ago and never used, a project that
+  starts pulling from another project with its job token. Recording the review also shows auditors
+  that logs are actually used.
+impact: |
+  Takes reviewer time every period. Some data sources need a higher edition (for example the
+  Buildkite audit log is an Enterprise plan feature).
+
+parameters:
+  - name: review_interval_days
+    type: integer
+    description: Maximum number of days between two reviews of CI/CD audit logs and API access.
+    unit: days
+    default: 30
+    minimum: 7
+    maximum: 90
+  - name: review_scope
+    type: enum
+    description: What the periodic review covers. `audit-and-api-access` covers audit events, API tokens and integrations, and token authentication activity; `include-job-token-logs` also covers cross-project job token authentication logs.
+    allowed: [audit-and-api-access, include-job-token-logs]
+    default: audit-and-api-access
+    profile_defaults:
+      hardened: include-job-token-logs
+
+audit:
+  manual: |
+    Ask for the review records of the last three periods, and use read access to the platforms.
+
+    1. Check that a review was recorded for each platform at least every {{ review_interval_days }}
+       days, with the reviewer, the sources looked at and the actions decided.
+    2. Check that the review covers the platform's sources:
+       - **Buildkite**: **Organization Settings** > **Audit** > **Audit Log** (Enterprise plan; events
+         searchable for 90 days in the search bar, exportable through the **Query & Export** tab),
+         and the API access audit of tokens with access to the organization.
+       - **GitLab** (with `include-job-token-logs`): for projects that other projects access with job
+         tokens, **Settings** > **CI/CD** > **Job token permissions** > **Authentication log**
+         (downloadable as CSV) is reviewed before allowlist entries are added or kept.
+       - Other platforms: the audit log in the SIEM (CB-CICD-LOG-003) and the list of tokens,
+         deploy keys and installed apps.
+    3. Pick one finding from a past review and check that the action was completed.
+    4. Fail if a review is missing for a period, does not cover API access and tokens, or (with
+       `include-job-token-logs`) does not cover job token authentication logs.
+
+remediation:
+  manual: |
+    1. Name a reviewer and a deputy per platform and add the review to their recurring tasks every
+       {{ review_interval_days }} days.
+    2. Prepare saved searches or SIEM reports for the review: administrative and credential changes,
+       new tokens and integrations, token use from new addresses.
+    3. Include the platform-specific sources:
+       - **Buildkite**: export the audit log with **Query & Export** and review the API access audit.
+       - **GitLab** (for `include-job-token-logs`): download the job token **Authentication log** CSV
+         of projects with an allowlist and remove entries that are no longer used.
+    4. Record each review and track its actions to closure.
+
+references:
+  - title: Audit log (Buildkite)
+    url: https://buildkite.com/docs/platform/audit-log
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security checklist (Buildkite)
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab CI/CD job token
+    url: https://docs.gitlab.com/ci/jobs/ci_job_token/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-10 Insufficient Logging and Visibility
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-10
+    relation: partial
+    note: Covers the periodic review of logs and access; recording, centralization and alerting are covered by the other LOG controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(4)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+  - id: CB-CICD-SEC-013
+    type: related
+  - id: CB-CICD-COMP-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

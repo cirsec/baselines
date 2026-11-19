@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que l'identité du pipeline de publication à publier dans les registres de versions
+finding:
+  title: Les développeurs et d'autres comptes peuvent pousser directement dans les registres, flux ou tags d'image protégés des versions
+  description: Quand des personnes ou des pipelines sans rapport peuvent téléverser des paquets ou écraser des tags de version, un jeton de développeur volé ou un projet annexe compromis suffit à remplacer une version, en contournant la revue et le pipeline de build.
+description: |
+  Les registres, flux de paquets et dépôts de conteneurs qui contiennent les artefacts publiés sont
+  des registres internes ou privés sous le contrôle de l'organisation, et n'acceptent de nouvelles
+  versions et de tags de version que de l'identité de service CI/CD du dépôt source qui les construit.
+  Les comptes humains et les autres pipelines ont au plus un accès en lecture.
+
+  Quand un artefact doit être téléversé par un autre compte (par exemple un correctif construit hors
+  CI), le téléversement est relu et approuvé par une seconde personne avant utilisation.
+
+  Le même registre stocke aussi les signatures et attestations des artefacts (CB-CICD-ART-004). Les
+  identifiants en lecture seule pour consommer des paquets relèvent de CB-DEP-CI-002 ; la visibilité
+  des sorties de build de CB-CICD-ART-010.
+rationale: |
+  Le registre de versions est la dernière étape avant le déploiement. Si la publication est ouverte à
+  tous les développeurs ou à tous les pipelines de l'organisation, un seul jeton volé, un poste
+  compromis ou une fusion malveillante dans un dépôt sans rapport peut remplacer une version.
+  Restreindre la publication à l'identité de publication du dépôt propriétaire fait du pipeline de
+  build, avec ses revues et contrôles, le seul point d'entrée.
+impact: |
+  Les équipes qui publient à la main doivent déplacer la publication dans le pipeline. Certains
+  écosystèmes demandent un flux ou un dépôt par projet pour délimiter les droits de publication. Les
+  téléversements d'urgence demandent une procédure documentée et relue.
+notes: |
+  Dans Azure Artifacts, les identités de service de build du projet et de l'organisation reçoivent
+  **Feed and Upstream Reader (Collaborator)** par défaut ; la publication exige **Feed Publisher
+  (Contributor)**, à n'accorder qu'à l'identité de build du projet producteur. Les règles de
+  protection de paquets GitLab bloquent les pushs avec des jetons de déploiement vers les paquets
+  protégés ; les tags de conteneur protégés sont limités à 5 règles par projet.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les permissions des registres, flux et paquets.
+
+    1. Lister les registres, flux et dépôts d'images qui contiennent des artefacts publiés.
+    2. Pour chacun, lister qui peut publier, écraser ou supprimer des versions et des tags.
+    3. Vérifier les réglages de la plate-forme :
+       - **Azure DevOps** : **Artifacts** > flux > **Feed settings** > **Permissions** : seule
+         l'identité de service de build du projet producteur a **Feed Publisher (Contributor)** ou
+         plus ; les utilisateurs et groupes ont **Feed Reader** ou **Feed and Upstream Reader
+         (Collaborator)**.
+       - **GitHub** : dans **Settings** > **Packages** de l'organisation, la création de paquets est
+         limitée aux visibilités privée ou interne ; chaque paquet de version a **Inherit access from
+         repository** activé ou, sous **Manage Actions access**, seul le dépôt source en écriture ;
+         aucun utilisateur n'a **Write** ou **Admin** sur le paquet en dehors des mainteneurs.
+       - **GitLab** : **Settings** > **Packages and registries** > **Container registry** >
+         **Protected container tags** protège les motifs de tags de version (par exemple `^v.*`) avec
+         **Minimum role allowed to push** et **to delete** réglés sur Maintainer ou plus ; **Package
+         registry** > **Protected packages** contient des règles pour les noms de paquets publiés.
+    4. Relire le journal d'audit du registre pour repérer les publications récentes par d'autres
+       comptes que l'identité de publication.
+    5. Échec si un compte humain ou un autre pipeline peut publier ou écraser une version ou un tag de
+       version sans revue par une seconde personne.
+remediation:
+  manual: |
+    1. Donner à chaque dépôt producteur sa propre identité de publication et retirer les droits de
+       publication aux personnes et aux pipelines sans rapport :
+       - **Azure DevOps** : dans **Feed settings** > **Permissions**, régler utilisateurs et
+         groupes sur **Feed Reader**, et n'accorder **Feed Publisher (Contributor)** qu'à
+         l'identité de service de build du projet producteur.
+       - **GitHub** : activer **Inherit access from repository** sur les paquets de version (ou régler
+         la valeur par défaut de l'organisation sous **Settings** > **Packages**), publier avec
+         `GITHUB_TOKEN` depuis le dépôt source, et retirer l'accès direct en écriture des
+         utilisateurs.
+       - **GitLab** : ajouter des règles **Protected container tags** pour les tags de version et
+         **Protected packages** pour les paquets publiés, avec Maintainer ou plus comme rôle minimal
+         pour pousser et supprimer, et publier depuis des pipelines de branches protégées.
+    2. Déplacer les étapes de publication manuelles dans le pipeline de publication.
+    3. Documenter la procédure de téléversement d'urgence avec approbation par une seconde personne et
+       trace d'audit.

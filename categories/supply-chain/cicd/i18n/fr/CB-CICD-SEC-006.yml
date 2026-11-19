@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter l'usage et la gestion des secrets stockés à des groupes nommés
+finding:
+  title: Tout membre du projet peut utiliser les groupes de secrets de production ou lire les identifiants de build
+  description: Quand un contexte, un groupe de variables ou un magasin d'identifiants est ouvert à tous les membres, quiconque peut lancer un job ou modifier une configuration de build peut lui faire afficher ou envoyer les secrets de production qu'il reçoit.
+description: |
+  Les conteneurs de secrets sensibles (contextes CircleCI, groupes de variables et fichiers
+  sécurisés Azure DevOps, dossiers d'identifiants Jenkins, identifiants de projet TeamCity) ne
+  peuvent être utilisés à l'exécution et administrés que par des groupes nommés, par exemple
+  l'équipe propriétaire du déploiement, et non par tous les membres de l'organisation ou du projet.
+  Être membre d'un projet ne donne pas, à soi seul, l'usage des secrets de production.
+
+  Quand `{{ secret_management_restriction }}` vaut `strict`, la gestion du matériel de signature de
+  code est aussi réservée aux administrateurs, et le mode strict d'authentification des builds de
+  la plate-forme est activé, pour que les utilisateurs qui peuvent voir une configuration de build
+  ne puissent pas réutiliser les identifiants propres au build.
+
+  La restriction des secrets partagés à des projets ou pipelines précis relève de CB-CICD-SEC-007 ;
+  leur liaison aux branches protégées, de CB-CICD-SEC-008.
+setting:
+  location: CircleCI **Organization Settings** > **Contexts** > contexte > **Security** ; Azure DevOps **Pipelines** > **Bibliothèque** > **Sécurité** ; dossiers d'identifiants et autorisations Jenkins ; propriétés internes TeamCity
+  recommended_value: "{{ secret_management_restriction }}"
+parameters:
+  secret_management_restriction: restricted limite l'usage et la gestion des conteneurs de secrets sensibles à des groupes nommés ; strict réserve en plus la gestion de la signature de code aux administrateurs (CircleCI) et active l'authentification stricte des builds (TeamCity).
+rationale: |
+  Un secret est exposé à quiconque peut faire en sorte qu'un job le lise. Si un contexte ou un
+  groupe de variables de production est utilisable par tous les membres, le public réel des
+  identifiants de production est toute l'organisation, prestataires et comptes compromis compris.
+  Restreindre l'usage à l'équipe qui déploie garde ce public réduit et auditable. Sur TeamCity, un
+  utilisateur qui peut voir les réglages d'un build pourrait sinon réutiliser l'authentification
+  du build pour atteindre des projets qu'il ne voit pas.
+impact: |
+  Les jobs déclenchés par des utilisateurs hors des groupes autorisés échouent quand ils demandent
+  les secrets restreints ; les pipelines de déploiement doivent être déclenchés par des membres du
+  groupe propriétaire ou par une identité d'automatisation approuvée.
+notes: |
+  Les groupes de sécurité CircleCI sont les équipes VCS de l'organisation et ne sont pris en charge
+  que pour les organisations de type `github` ; seuls les administrateurs de l'organisation peuvent
+  les définir. Les autres organisations s'appuient sur les restrictions par projet et par
+  expression (CB-CICD-SEC-007, CB-CICD-SEC-008).
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou d'auditeur qui peut lire les permissions des conteneurs de
+    secrets.
+
+    1. Lister les conteneurs qui contiennent des secrets de production ou autrement sensibles.
+    2. Vérifier qui peut utiliser et gérer chacun :
+       - **CircleCI** : **Organization Settings** > **Contexts** : chaque contexte sensible liste un
+         ou plusieurs groupes de sécurité, pas **All members**.
+       - **Azure DevOps** : **Pipelines** > **Bibliothèque** > groupe de variables ou fichier
+         sécurisé > **Sécurité** : les rôles **Utilisateur** et **Administrateur** ne sont accordés
+         qu'à des groupes nommés, pas aux Contributeurs ni aux Utilisateurs valides du projet.
+       - **Jenkins** : les identifiants sensibles sont stockés dans un dossier (pas à la racine), et
+         la stratégie d'autorisation n'accorde `Job/Configure`, `Job/Create` et `Item/Build` sur ce
+         dossier qu'au groupe propriétaire ; `Job/Configure` implique `Credentials/UseItem`, donc
+         quiconque le détient peut utiliser les identifiants du dossier.
+       - **TeamCity** : les identifiants sont conservés dans le projet de l'équipe qui les possède
+         et la permission **View build configuration settings** sur ce projet n'est accordée qu'à
+         cette équipe.
+    3. Quand `{{ secret_management_restriction }}` vaut `strict`, vérifier aussi :
+       - **CircleCI** : **Organization Settings** > **Security** > **Code Signing Security
+         Settings** > **Restrict code signing management to organization admins only** est activé.
+       - **TeamCity** : la propriété interne `teamcity.buildAuth.enableStrictMode` vaut `true`
+         (**Administration** > **Diagnostics** > **Internal Properties**).
+    4. Échec si un conteneur sensible peut être utilisé ou géré par tous les membres de
+       l'organisation ou du projet, ou, pour `strict`, si un des réglages renforcés listés est
+       désactivé.
+remediation:
+  manual: |
+    1. Créer un groupe par équipe propriétaire (dans le fournisseur d'identité ou la plate-forme)
+       et lui accorder les conteneurs sensibles.
+       - **CircleCI** : en tant qu'administrateur de l'organisation, ouvrir **Organization
+         Settings** > **Contexts** > contexte, ajouter les groupes de sécurité, puis retirer **All
+         members**.
+       - **Azure DevOps** : dans **Pipelines** > **Bibliothèque** > élément > **Sécurité**,
+         accorder **Utilisateur** au groupe propriétaire et **Administrateur** à ses responsables ;
+         retirer les groupes plus larges.
+       - **Jenkins** : déplacer les identifiants du magasin racine vers un dossier, et n'accorder
+         `Job/Configure`, `Job/Create` et `Item/Build` sur ce dossier qu'au groupe propriétaire.
+       - **TeamCity** : déplacer les identifiants dans le projet de l'équipe propriétaire et y
+         restreindre **View build configuration settings**.
+    2. Quand `{{ secret_management_restriction }}` vaut `strict` :
+       - **CircleCI** : activer **Restrict code signing management to organization admins only**
+         sous **Organization Settings** > **Security**.
+       - **TeamCity** : ajouter `teamcity.buildAuth.enableStrictMode=true` aux propriétés internes.
+    3. Renouveler les secrets qui étaient utilisables par des groupes qui n'auraient pas dû y avoir
+       accès.

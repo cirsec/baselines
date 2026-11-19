@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-023
+title: Handle secrets in job scripts without exposing them
+finding:
+  title: Job scripts print secrets, pass them on command lines or store them as structured blobs
+  description: Secrets echoed, passed as arguments, bundled in JSON or transformed before use escape log masking and show up in logs, process listings and error messages readable by everyone with access to the pipeline.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, scripting, log-masking, redaction]
+
+description: |
+  Scripts in jobs receive secrets through environment variables or files and pass them to tools
+  through the same channels or standard input (for example `--password-stdin`), never as
+  command-line arguments, and never print them. Each secret holds a single value: no JSON, XML or
+  YAML documents with several fields, and no multi-line values unless the platform supports them.
+
+  Any value derived from a secret during the job (a signed JWT, a base64 or URL-encoded form, a
+  token returned by a login command) is registered with the platform's masking mechanism before
+  it can be printed. Commands that echo secrets in their output are run with that output
+  suppressed.
+
+  Platform-level masking settings are covered by CB-CICD-SEC-022.
+rationale: |
+  Log masking only replaces exact matches of known secret values. A secret inside a JSON blob, a
+  value that the script encodes, or a token obtained from a login command is not known to the
+  masker and is printed in clear. Command-line arguments are visible to other processes on the
+  runner and are often echoed in error messages. Careful handling in scripts is what makes masking
+  effective.
+impact: |
+  Existing structured secrets must be split into one secret per value, and scripts that pass
+  secrets as arguments need small changes.
+notes: |
+  Masking is best effort and not a security boundary on any platform: a script that wants to
+  exfiltrate a secret can always do so. This control prevents accidental exposure only.
+
+audit:
+  manual: |
+    Use read access to pipeline files and scripts.
+
+    1. Review the scripts and pipeline steps that use secrets:
+       - no `echo`, `printenv`, `env` or `set -x` around secret use; no secret passed as a
+         command-line argument where the tool accepts environment variables, files or standard
+         input;
+       - no secret whose value is a JSON, XML or YAML document with several fields;
+       - every derived credential is registered for masking.
+    2. Check each platform:
+       - **GitHub**: derived values are masked with `echo "::add-mask::$VALUE"` or `core.setSecret()`
+         before use; no step uses `fromJSON(secrets.X).field` on a structured secret. zizmor's
+         `unredacted-secrets` audit flags structured secrets.
+       - **Azure DevOps**: secret variables are mapped into steps with `env:` (they are not
+         exposed to scripts otherwise) rather than interpolated as `$(SECRET)` in command lines;
+         Azure CLI calls that return secrets use `--output none`; no logging command sets a secret
+         from a literal value.
+    3. Review a sample of logs for values that should have been masked.
+    4. Fail if a script prints a secret, passes it on a command line, uses a structured secret, or
+       uses a derived credential without registering it for masking.
+
+remediation:
+  manual: |
+    1. Split structured secrets into one secret per value and update the jobs that use them.
+    2. Change scripts to read secrets from environment variables or files and pass them to tools
+       through environment, files or standard input (for example
+       `echo "$TOKEN" | docker login --username user --password-stdin registry`).
+    3. Register derived values for masking immediately after creating them:
+       - **GitHub**: `echo "::add-mask::$JWT"` in shell steps, `core.setSecret(jwt)` in
+         JavaScript actions.
+       - **Azure DevOps**: map secrets explicitly with `env:` on each step, add `--output none` to
+         Azure CLI calls that return secrets.
+    4. Remove `set -x` and debug printing from steps that handle secrets.
+
+references:
+  - title: Secure use reference - using secrets
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Workflow commands - masking a value in a log
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protect secrets in Azure Pipelines
+    url: https://learn.microsoft.com/azure/devops/pipelines/security/secrets
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set secret variables
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/set-secret-variables
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: zizmor audits
+    url: https://docs.zizmor.sh/audits/
+    publisher: zizmor
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(7)
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers how job scripts handle secret values.
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-022
+    type: related
+  - id: CB-CICD-SEC-021
+    type: related
+  - id: CB-CICD-PIPE-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

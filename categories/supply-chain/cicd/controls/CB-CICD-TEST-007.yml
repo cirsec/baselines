@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-007
+title: Check dependency licences in the pipeline
+finding:
+  title: Dependency licences are not checked when dependencies change
+  description: A dependency under a licence the organization does not accept is added in a routine change and ships in a release, which creates a legal obligation or forces a late rewrite.
+status: draft
+profiles: [baseline]
+risk:
+  severity: low
+assessment: manual
+tags: [security-testing, licence-compliance, dependencies, sbom]
+
+parameters:
+  - name: licence_gate
+    type: enum
+    description: What happens when a change adds a dependency with a disallowed licence. `report` = the finding is reported in the change request and recorded; `block` = the merge is blocked by a ruleset or policy.
+    default: report
+    profile_defaults:
+      hardened: block
+    allowed: [report, block]
+
+description: |
+  Pipelines detect the licences of direct and transitive dependencies, record them in the SBOM
+  of each release, and compare them with the organization's licence policy (allowed, denied, to
+  review). When a change request adds or changes a dependency, the result is `{{ licence_gate }}`:
+  - `report`: disallowed licences are reported in the change request and tracked;
+  - `block`: the change request cannot merge until the dependency is removed or an exception is
+    approved.
+
+  The licence check made when a new dependency is first adopted is covered by CB-DEP-VET-002, and
+  SBOM production by CB-DEP-INV-001.
+rationale: |
+  Licence obligations come with every transitive dependency, and they change when dependencies
+  are updated. Checking in the pipeline on each change catches a problem when it is introduced
+  instead of during a release audit, and the SBOM keeps the evidence for each release.
+impact: |
+  The organization needs a written licence policy. Blocking can stop urgent fixes when a
+  dependency changes licence; keep an exception path. GitHub licence compliance requires GitHub
+  Enterprise Cloud with GitHub Code Security; GitLab licence approval policies require Ultimate.
+
+audit:
+  manual: |
+    Use read access to the repositories, rulesets and policies.
+
+    1. Check that licences are detected and recorded in the SBOM of recent releases.
+    2. Check the gate:
+       - **GitHub**: an enterprise licence policy exists, and for `block`, an active ruleset on the
+         default branch has **Require license compliance results before merging**.
+       - **GitLab**: licence scanning of CycloneDX files is enabled, and for `block`, a merge
+         request approval policy (licence approval policy) denies the disallowed licences.
+       - **Other platforms**: a licence scanning job runs in change request pipelines and fails or
+         reports according to `{{ licence_gate }}`.
+    3. Fail if dependency licences are not checked on changes, or, when `{{ licence_gate }}` is
+       `block`, if a change that adds a disallowed licence can merge without an approved
+       exception.
+
+remediation:
+  manual: |
+    1. Write the licence policy with the legal team.
+    2. Configure the check:
+       - **GitHub** (enterprise owner): configure the open source licence policy, then add the
+         **Require license compliance results before merging** rule to a ruleset on the default
+         branch for `block`.
+       - **GitLab** (group Owner, Ultimate): enable dependency and licence scanning and create a
+         licence approval policy that denies the disallowed licences.
+       - **Other platforms**: add a licence scanner to the pipeline that reads the lockfiles or the
+         SBOM.
+    3. Store licence data in the release SBOM.
+
+references:
+  - title: Configuring open source license policies
+    url: https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/configure-license-policies
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: License approval policies
+    url: https://docs.gitlab.com/user/compliance/license_approval_policies/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: License scanning of CycloneDX files
+    url: https://docs.gitlab.com/user/compliance/license_scanning_of_cyclonedx_files/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.2.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-10
+    relation: related
+related_controls:
+  - id: CB-DEP-VET-002
+    type: related
+  - id: CB-DEP-INV-001
+    type: related
+  - id: CB-CICD-TEST-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

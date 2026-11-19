@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-027
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Superviser l'activité des runners et leurs connexions sortantes
+finding:
+  title: L'activité des runners n'est pas supervisée
+  description: Sans journaux de runner conservés hors de l'hôte et sans supervision du poste ou des sorties réseau, un job qui vole des secrets, ouvre un reverse shell ou altère le runner ne laisse aucune trace une fois le runner détruit ou nettoyé.
+description: |
+  L'infrastructure de build est supervisée comme les autres hôtes de production :
+
+  - les journaux applicatifs des runners et agents (attribution des jobs, connexions, erreurs) sont
+    transmis à un stockage central de journaux avant la destruction des runners éphémères ;
+  - les hôtes ou nœuds de runners font tourner un EDR ou une supervision de sécurité à l'exécution ;
+  - les connexions sortantes des runners passent par un proxy supervisé ou une supervision des sorties qui
+    enregistre les destinations, et les destinations inattendues déclenchent des alertes.
+
+  Les journaux d'audit de la plate-forme CI relèvent de CB-CICD-LOG-001 et CB-CICD-LOG-003 ; la
+  segmentation réseau des runners de CB-CICD-RUN-023.
+rationale: |
+  La plupart des compromissions CI se terminent par des données qui quittent le runner : secrets, code
+  source, clés de signature. Les runners sont aussi de courte durée : les preuves disparaissent avec eux si
+  elles n'ont pas été expédiées ailleurs. Superviser les processus et les sorties sur le runner est
+  souvent le seul moyen de voir l'attaque pendant qu'elle a lieu.
+impact: |
+  Les agents EDR et les proxys ajoutent un coût et peuvent ralentir les builds. Un proxy nécessite une
+  liste d'autorisation maintenue avec les équipes de build.
+notes: |
+  GitHub recommande de transmettre les journaux applicatifs des runners vers un stockage externe avant de
+  déployer des runners éphémères autoscalés. Buildkite précise que les variables d'environnement de proxy
+  ne suffisent pas à forcer tout le trafic de build à passer par le proxy : les restrictions de sortie
+  doivent être configurées à part.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux plates-formes de journalisation et de supervision et aux images de
+    runners.
+
+    1. Vérifier que les journaux des runners et agents de chaque type de runner arrivent dans le stockage
+       central, avec une rétention qui couvre l'investigation d'incident.
+    2. Vérifier que les hôtes ou nœuds de runners font tourner l'agent EDR ou de supervision à l'exécution
+       de l'organisation et que ses alertes sont routées vers l'équipe sécurité.
+    3. Vérifier comment les sorties des runners sont supervisées (journaux de proxy, journaux de flux, outil
+       de supervision des sorties) et que des alertes existent pour les destinations inattendues.
+    4. Par produit :
+       - **GitHub** : les journaux `_diag` des runners auto-hébergés (`Runner_*.log`, `Worker_*.log`) sont
+         transmis avant la destruction des runners ; les runners hébergés par GitHub peuvent utiliser un
+         outil de supervision des sorties comme StepSecurity Harden-Runner.
+       - **Buildkite** : les agents tournent derrière un proxy supervisé (`http_proxy`, `https_proxy`)
+         combiné à des restrictions de sortie au niveau du réseau.
+    5. Échec si les journaux des runners restent uniquement sur le runner, si les runners n'ont pas de
+       supervision du poste, ou si les connexions sortantes ne sont ni journalisées ni soumises à alerte.
+remediation:
+  manual: |
+    1. Ajouter aux images de runners un transmetteur de journaux qui envoie les journaux des runners et
+       agents vers la plate-forme centrale.
+    2. Installer l'agent EDR ou de supervision à l'exécution sur les hôtes de runners et les nœuds
+       Kubernetes, avec des règles adaptées aux charges de build.
+    3. Faire passer les sorties des runners par un proxy journalisé ou capturer les journaux de flux, et
+       créer des alertes pour les destinations hors de l'ensemble attendu.
+    4. **Buildkite** : poser `http_proxy` et `https_proxy` pour le service de l'agent et bloquer les sorties
+       directes au niveau du réseau.

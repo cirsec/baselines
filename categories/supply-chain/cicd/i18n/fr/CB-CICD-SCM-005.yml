@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver tout le code, les définitions de pipeline et la configuration en gestion de versions
+finding:
+  title: Du code, des définitions de pipeline ou de la configuration de déploiement vivent hors de la gestion de versions
+  description: Des scripts gardés sur un serveur de build, des pipelines modifiés dans un formulaire web ou une configuration recopiée à la main changent sans revue ni historique, si bien qu'une modification malveillante ou erronée ne peut être ni détectée, ni attribuée, ni annulée.
+description: |
+  Tout ce qui détermine ce qui est construit et déployé est stocké dans un système de gestion de
+  versions géré par l'organisation : code source applicatif, définitions de pipeline et modèles
+  partagés, scripts de build et de déploiement, infrastructure as code, définitions d'images de
+  conteneurs et de runners, configuration des environnements et des applications GitOps. Chaque
+  modification a un auteur, une date et un diff qu'on peut relire.
+
+  Les accès sont accordés par type de code : les dépôts qui contiennent des modèles de pipeline, de
+  l'infrastructure ou de la configuration de déploiement ont leur propre liste d'écrivains, plus
+  restreinte. Les pipelines définis uniquement dans une interface web relèvent de CB-CICD-PIPE-001 ;
+  la configuration de la plate-forme as code de CB-CICD-PLAT-015.
+rationale: |
+  La gestion de versions rend possibles tous les autres contrôles de source de ce référentiel :
+  protection de branche, revue, commits signés et audit ne s'appliquent qu'à ce qui est dans un
+  dépôt. Un script stocké sur un runner ou un pipeline modifié dans un formulaire peut être changé
+  par quiconque a accès à ce serveur ou à cet écran, ne laisse aucune trace relisible, et ne peut
+  pas être restauré dans un état sain connu après un incident.
+impact: |
+  Rapatrier scripts et configuration dans des dépôts demande un certain effort, et les secrets
+  qu'ils contenaient doivent d'abord être déplacés vers un coffre de secrets (CB-CICD-SEC-021).
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les dépôts et la configuration des pipelines.
+
+    1. Pour un échantillon d'applications, lister ce qui est nécessaire pour les construire et les
+       déployer : sources, définition de pipeline, modèles inclus, scripts de build,
+       infrastructure, images et configuration des environnements.
+    2. Vérifier que chaque élément est stocké dans un dépôt du système de gestion de versions de
+       l'organisation, et que les pipelines chargent scripts et modèles depuis des dépôts plutôt que
+       depuis des fichiers sur des serveurs de build, des partages réseau ou des réglages en ligne.
+    3. Vérifier que les dépôts de modèles, d'infrastructure ou de configuration de déploiement ont
+       leur propre liste d'accès en écriture, plus restreinte que celle des dépôts applicatifs.
+    4. Échec si un élément nécessaire pour construire ou déployer une application de production
+       n'est pas en gestion de versions, ou est modifié en dehors.
+remediation:
+  manual: |
+    1. Importer dans des dépôts les scripts, modèles, infrastructure et configuration trouvés hors
+       gestion de versions, en retirant d'abord tout secret qu'ils contiennent.
+    2. Modifier les pipelines pour qu'ils chargent ces fichiers depuis les dépôts, figés sur une
+       révision revue.
+    3. Donner aux dépôts de modèles, d'infrastructure et de déploiement un groupe propriétaire dédié
+       et leur appliquer la protection de branche et la revue par les propriétaires du code
+       (CB-CICD-SCM-006, CB-CICD-SCM-018).
+    4. Supprimer les copies présentes sur les serveurs de build et les emplacements partagés.

@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger pour chaque déploiement en production l'approbation d'une autre personne que son initiateur
+finding:
+  title: Les déploiements en production s'exécutent sans approbation, ou la personne qui les a déclenchés peut les approuver
+  description: Sans approbation indépendante, une seule personne, ou un seul compte volé, peut pousser une modification et l'envoyer seule en production, et rien n'arrête un déploiement lancé par erreur ou par un attaquant.
+description: |
+  Chaque déploiement en production attend une approbation explicite d'un groupe d'approbateurs
+  désigné avant de s'exécuter. La personne qui a déclenché le déploiement, ou qui a écrit la
+  modification déployée, ne peut pas être l'approbateur ; l'approbation d'au moins un autre membre du
+  groupe est exigée. Les approbations en attente expirent après un délai raisonnable.
+
+  L'approbation de la modification de code elle-même (revue de pull request) relève de
+  CB-CICD-SCM-012 et CB-CICD-SCM-013 ; ce contrôle ajoute l'approbation de la mise en production. Qui
+  peut contourner les approbations relève de CB-CICD-DEPLOY-004.
+rationale: |
+  La revue de code protège ce qui est fusionné, mais les déploiements peuvent être déclenchés par de
+  nombreux chemins : relances, pipelines manuels, retours arrière, changements de paramètres. Une
+  étape d'approbation liée à l'environnement de production, avec séparation entre initiateur et
+  approbateur, garantit qu'un seul compte compromis ou une seule personne négligente ne peut pas
+  mettre une modification en production. Elle crée aussi une trace de qui a accepté chaque version.
+impact: |
+  Les déploiements attendent un approbateur, ce qui ralentit les mises en production et demande une
+  astreinte d'approbateurs. Les équipes avec un seul mainteneur ont besoin d'un second approbateur
+  d'une autre équipe. Certaines plates-formes exigent une offre payante pour les approbations
+  d'environnement sur les dépôts privés.
+notes: |
+  Les relecteurs obligatoires GitHub sur les dépôts privés exigent GitHub Enterprise (sur Free, Pro et
+  Team ils ne sont disponibles que pour les dépôts publics) ; un seul des relecteurs listés doit
+  approuver. Les approbations de déploiement GitLab exigent Premium ; par défaut l'initiateur du
+  pipeline ne peut pas approuver, et les administrateurs GitLab peuvent approuver tout déploiement.
+  Dans Azure DevOps, quand un groupe est approbateur, l'approbation d'un seul membre suffit. Google
+  Cloud Build ne permet pas d'approuver des builds en attente depuis plus de deux mois. Dans CircleCI,
+  tout membre du projet peut approuver un job `hold` ; c'est le contexte restreint du job de
+  déploiement qui limite l'approbation à son groupe de sécurité. L'option **Disallow the executor from
+  approving the pipeline** de Harness ne s'applique qu'aux exécutions manuelles, pas aux
+  déclenchements par webhook ou Git.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages des environnements, des pipelines et de l'IAM.
+
+    1. Lister tous les chemins qui déploient en production (pipelines, déclencheurs, procédures
+       manuelles).
+    2. Pour chaque chemin, vérifier qu'une approbation d'un groupe désigné est exigée et que
+       l'initiateur ne peut pas approuver :
+       - **GitHub** : **Settings** > **Environments** > production a **Required reviewers** réglé sur
+         une équipe d'approbateurs et **Prevent self-review** coché.
+       - **GitLab** : **Settings** > **CI/CD** > **Protected environments** > production a une règle
+         d'approbation exigeant au moins une approbation d'un groupe autre que les déployeurs, et
+         **Allow pipeline triggerer to approve deployment** est décoché.
+       - **Azure DevOps** : **Pipelines** > **Environnements** > production > **Approbations et
+         vérifications** contient une vérification **Approbations** avec un groupe d'approbateurs,
+         l'interdiction pour les approbateurs d'approuver leurs propres exécutions, et un délai
+         d'expiration.
+       - **AWS CodePipeline** : une action d'approbation manuelle (`category: Approval`,
+         `provider: Manual`) s'exécute avant l'action de déploiement en production, et
+         `codepipeline:PutApprovalResult` sur cette action n'est accordé qu'au groupe d'approbateurs,
+         pas aux personnes ou rôles qui modifient ou lancent le pipeline.
+       - **Google Cloud Build** : les déclencheurs qui déploient en production ont **Approval** activé
+         (`gcloud builds triggers describe` montre `approvalConfig.approvalRequired: true`) et le rôle
+         **Cloud Build Approver** n'est détenu que par le groupe d'approbateurs.
+       - **Spinnaker** : les pipelines de production ont une étape **Manual Judgment** avant l'étape
+         de déploiement.
+       - **Harness** : les étapes de production sont précédées d'une étape **Approval** avec des
+         **User Groups** d'approbateurs, un **Number of approvers that are required at this step**
+         d'au moins 1, et **Disallow the executor from approving the pipeline** activé.
+       - **Bitbucket** : le step de production utilise `deployment: production` avec
+         `trigger: manual`, et les permissions de déploiement restreignent qui peut promouvoir
+         (Premium).
+       - **CircleCI** : les jobs de déploiement en production ont un `requires` vers un job
+         `type: approval` et utilisent un contexte restreint au groupe de sécurité des approbateurs.
+    3. Relire les déploiements récents en production et vérifier que l'approbateur diffère de
+       l'initiateur.
+    4. Échec si un déploiement en production peut s'exécuter sans approbation, ou si l'initiateur peut
+       approuver son propre déploiement.
+remediation:
+  manual: |
+    1. Créer un groupe d'approbateurs distinct des déployeurs de chaque application.
+    2. Ajouter la barrière d'approbation :
+       - **GitHub** : dans l'environnement de production, ajouter l'équipe d'approbateurs sous
+         **Required reviewers** et cocher **Prevent self-review**.
+       - **GitLab** : ajouter une règle d'approbation à l'environnement de production protégé
+         (`required_approval_count` d'au moins 1 pour le groupe d'approbateurs) et laisser **Allow
+         pipeline triggerer to approve deployment** décoché.
+       - **Azure DevOps** : ajouter une vérification **Approbations** à l'environnement de production
+         avec le groupe d'approbateurs, interdire l'approbation de ses propres exécutions et fixer un
+         délai d'expiration.
+       - **AWS CodePipeline** : ajouter une action d'approbation manuelle avant l'action de
+         déploiement et n'accorder `codepipeline:PutApprovalResult` sur l'ARN de cette action qu'au
+         rôle d'approbateur.
+       - **Google Cloud Build** : activer l'approbation sur les déclencheurs qui déploient
+         (`gcloud builds triggers update ... --require-approval`) et n'accorder **Cloud Build
+         Approver** qu'aux approbateurs.
+       - **Spinnaker** : ajouter une étape **Manual Judgment** avant les étapes de déploiement en
+         production.
+       - **Harness** : ajouter une étape **Harness Approval** avec les groupes d'utilisateurs
+         approbateurs et activer **Disallow the executor from approving the pipeline**.
+       - **Bitbucket** : poser `trigger: manual` sur le step de déploiement en production et
+         restreindre les permissions de déploiement.
+       - **CircleCI** : ajouter un job `type: approval` avant les jobs de déploiement et placer le job
+         de déploiement dans un contexte restreint au groupe de sécurité des approbateurs.
+    3. Consigner la procédure d'urgence (qui approuve la nuit, comment le contournement est tracé,
+       CB-CICD-DEPLOY-004).

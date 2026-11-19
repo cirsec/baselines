@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-016
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Accorder les accès par des groupes du fournisseur d'identité associés à des rôles de moindre privilège
+finding:
+  title: Les permissions CI/CD sont accordées à des individus ou par des rôles intégrés trop larges
+  description: Les permissions accordées personne par personne dérivent avec le temps et ne sont jamais retirées, et les rôles intégrés larges donnent aux développeurs des droits sur les pipelines, les secrets ou les réglages dont leur travail n'a pas besoin.
+description: |
+  L'accès aux plates-formes SCM et CI/CD suit des rôles fonctionnels (par exemple développeur,
+  mainteneur, approbateur, responsable de livraison, administrateur de plate-forme). Chaque rôle est
+  attribué à un groupe, de préférence synchronisé depuis le fournisseur d'identité, jamais directement
+  à des utilisateurs. Les rôles personnalisés accordent moins que les rôles d'administration intégrés,
+  et les rôles d'administration sont attribués à la portée la plus étroite (projet plutôt
+  qu'organisation).
+
+  Les permissions de base relèvent de CB-CICD-IAM-015, le nombre d'administrateurs de CB-CICD-IAM-018
+  et CB-CICD-IAM-019, la revue périodique de CB-CICD-IAM-026.
+rationale: |
+  L'accès en écriture aux sources et aux pipelines équivaut à exécuter du code dans le build ; il doit
+  donc être donné délibérément. Les rôles par groupes rendent cela visible et révisable, et retirer
+  quelqu'un d'un groupe du fournisseur d'identité retire son accès partout. Les attributions directes
+  par utilisateur et les rôles d'administration à l'échelle de l'organisation sont ce que les revues
+  d'accès retrouvent des années après la fin du besoin.
+impact: |
+  Les rôles et groupes doivent être conçus et les attributions directes existantes migrées. Certaines
+  plates-formes évaluent les permissions de façon additive : une attribution large oubliée annule les
+  attributions étroites.
+notes: |
+  Le RBAC de Harness est additif : une liaison de rôle large au niveau du compte l'emporte sur des
+  liaisons de projet plus étroites. Sur TeamCity, un utilisateur qui peut modifier un projet peut dans
+  certains cas lire les artefacts ou déclencher des builds d'autres projets ; réserver la
+  modification de projet aux mainteneurs de confiance.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou d'auditeur qui peut lire les permissions.
+
+    1. Documenter les rôles et le groupe qui porte chacun.
+    2. Vérifier que les permissions sont accordées à des groupes :
+       - **Azure DevOps** : **Paramètres de l'organisation** et **Paramètres du projet** >
+         **Autorisations** : les utilisateurs sont membres de groupes (Contributors, Readers, groupes
+         personnalisés adossés à des groupes Entra), et aucun utilisateur n'a d'autorisation explicite
+         posée directement ; les niveaux d'accès viennent de règles de groupe.
+       - **CircleCI** : **Organization Settings** > **People** et **Groups** : Admin est limité aux
+         administrateurs de la plate-forme, les autres membres sont Contributor ou Viewer, et les rôles
+         viennent de groupes (association de groupes SSO quand elle est disponible).
+       - **Harness** : **Access Control** : les liaisons de rôles visent des groupes d'utilisateurs,
+         les liaisons Account Admin sont peu nombreuses, et des rôles personnalisés de projet avec des
+         groupes de ressources servent au travail courant.
+       - **TeamCity** : le mode d'autorisation par projet est activé ; les rôles sont attribués à des
+         groupes d'utilisateurs par projet, et des rôles personnalisés remplacent Project
+         Administrator quand c'est possible.
+       - **GitHub / GitLab / Bitbucket** : l'accès aux dépôts et projets est accordé à des équipes ou
+         groupes, pas à des collaborateurs individuels, sauf exceptions documentées.
+    3. Échec si l'accès est accordé surtout à des individus, ou si des rôles plus larges que
+       nécessaire (administrateur de l'organisation ou du compte) servent au travail courant.
+remediation:
+  manual: |
+    1. Créer les groupes dans le fournisseur d'identité et les synchroniser vers les plates-formes.
+    2. Attribuer les rôles aux groupes à la portée la plus étroite :
+       - **Azure DevOps** : ajouter les groupes Entra aux groupes de projet et créer des règles de
+         groupe pour les niveaux d'accès ; retirer les autorisations explicites par utilisateur.
+       - **CircleCI** : créer des groupes, leur attribuer Contributor ou Viewer, et associer les
+         groupes SSO.
+       - **Harness** : créer des rôles de projet et des groupes de ressources, les lier à des groupes
+         d'utilisateurs, et retirer les liaisons larges au niveau du compte.
+       - **TeamCity** : passer en autorisation par projet, créer des rôles personnalisés et les
+         attribuer aux groupes par projet.
+    3. Déplacer les attributions directes existantes dans des groupes, puis retirer les attributions
+       directes.

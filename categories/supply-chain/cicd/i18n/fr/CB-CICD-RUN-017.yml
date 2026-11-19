@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les sockets et chemins de l'hôte et les surcharges de spécification de pod hors de portée des jobs
+finding:
+  title: Des jobs peuvent monter le socket du moteur de conteneurs ou des chemins de l'hôte
+  description: Un job qui atteint le socket Docker ou un répertoire de l'hôte peut lancer des conteneurs privilégiés, lire les conteneurs et secrets des autres jobs et prendre le contrôle de l'hôte du runner, sans avoir lui-même besoin du mode privilégié.
+description: |
+  Les jobs ne peuvent atteindre ni le moteur de conteneurs ni le système de fichiers de l'hôte du runner :
+
+  - le socket Docker ou Podman de l'hôte n'est pas monté dans les conteneurs de job, de service ou
+    d'étape, et le point d'accès du moteur ne leur est pas partagé ; les jobs qui doivent construire des
+    images utilisent un moteur par job (Docker-in-Docker sur un runner dédié, builder rootless, VM) ;
+  - aucun chemin de l'hôte n'est monté dans les jobs, sauf des chemins en lecture seule sans secrets
+    listés par l'équipe plate-forme ;
+  - les auteurs de pipeline ne peuvent pas surcharger la spécification de pod définie par le contrôleur
+    de runners sur Kubernetes.
+rationale: |
+  Le socket du moteur de conteneurs équivaut à root sur l'hôte : qui peut lui parler peut lancer un
+  conteneur privilégié, monter le système de fichiers de l'hôte ou entrer dans les conteneurs des autres
+  jobs, y compris sur Forgejo l'instance Forgejo elle-même quand elle partage le moteur. Les volumes de
+  l'hôte sont lisibles et modifiables par tout job qui les monte : leur contenu ne peut être ni
+  confidentiel ni considéré comme une entrée de build fiable.
+impact: |
+  Les pipelines qui utilisent le Docker de l'hôte pour construire des images doivent passer à un moteur
+  par job ou à un builder rootless, ce qui fait perdre le cache d'images de l'hôte.
+notes: |
+  GitLab documente le montage du socket Docker comme moyen d'éviter le mode privilégié, mais partager le
+  démon désactive l'isolation des conteneurs : les jobs voient et peuvent arrêter les conteneurs des
+  autres. Sur les runners Gitea et Forgejo, `container.docker_host` à `-` permet au runner de trouver le
+  moteur sans le monter dans les jobs.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de configuration et aux manifestes de déploiement des
+    runners.
+
+    1. Lister les volumes, sockets et patchs de spécification de pod que les runners ajoutent aux jobs.
+    2. Par produit :
+       - **GitLab** : `config.toml` `[runners.docker]` `volumes` ne contient ni `/var/run/docker.sock` ni
+         d'autres chemins de l'hôte contenant des secrets ; les runners Kubernetes n'ont pas de
+         `[[runners.kubernetes.volumes.host_path]]` pour le socket.
+       - **Gitea / Forgejo** : le `config.yml` du runner a `container.valid_volumes: []` (défaut) ou
+         seulement des chemins en lecture seule sans secrets ; `container.docker_host` vaut `-` ou un point
+         d'accès Docker-in-Docker propre au runner, pas le socket de l'hôte.
+       - **Buildkite** : Agent Stack for Kubernetes tourne avec `prohibit-kubernetes-plugin: true`, pour
+         que les pipelines ne puissent pas surcharger la spécification de pod définie par le contrôleur.
+    3. Chercher dans les définitions de pipeline les montages de socket et volumes de l'hôte
+       (`/var/run/docker.sock`, `hostPath`, `-v /`).
+    4. Échec si un job peut monter le socket du moteur de conteneurs de l'hôte, un chemin de l'hôte
+       inscriptible ou contenant des secrets, ou surcharger la spécification de pod du runner.
+remediation:
+  manual: |
+    1. Fournir un moyen pris en charge de construire des images sans le moteur de l'hôte (builder
+       rootless, Docker-in-Docker par job sur un runner dédié).
+    2. Par produit :
+       - **GitLab** : retirer `/var/run/docker.sock` et les chemins de l'hôte de `volumes` et des volumes
+         Kubernetes `host_path` sur les runners partagés.
+       - **Gitea / Forgejo** : poser `container.valid_volumes: []` et `container.docker_host: "-"`, ou
+         utiliser Docker-in-Docker par runner, LXC ou une VM quand les jobs ont besoin de Docker.
+       - **Buildkite** : poser `prohibit-kubernetes-plugin: true` dans la configuration du contrôleur
+         Agent Stack for Kubernetes.
+    3. Sur les runners Kubernetes, imposer Pod Security Admission `baseline` ou `restricted`, qui rejette
+       les volumes `hostPath`.

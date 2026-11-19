@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-012
+title: Use ephemeral self-hosted runners that run one job each
+finding:
+  title: Self-hosted runners persist between jobs
+  description: A runner that serves job after job keeps files, processes, caches and credentials from earlier runs, so one malicious job can steal data from later jobs or plant a backdoor that survives until the host is rebuilt.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, ephemeral, isolation, slsa]
+
+parameters:
+  - name: ephemeral_scope
+    type: enum
+    description: Which self-hosted runners must be ephemeral. untrusted-or-shared covers runners that run pull request or fork code, or serve several projects; all covers every self-hosted runner.
+    allowed: [untrusted-or-shared, all]
+    default: untrusted-or-shared
+    profile_defaults:
+      hardened: all
+
+description: |
+  Self-hosted runners in the scope set by `{{ ephemeral_scope }}` are ephemeral: each job runs in a
+  virtual machine or container created for it from a clean image, and the environment is destroyed
+  when the job ends. The runner registers for a single job (ephemeral or just-in-time registration,
+  one-job mode, single-use autoscaled instances) so the platform cannot send it a second one.
+
+  - `untrusted-or-shared`: runners that run code from pull requests, forks or other untrusted sources,
+    and runners shared by several projects;
+  - `all`: every self-hosted runner, including those dedicated to one trusted project.
+
+  Persistent runners that remain are covered by CB-CICD-RUN-013 (clean workspace).
+rationale: |
+  Builds on the same machine are not isolated from each other. Secrets passed on command lines are
+  visible to other processes, files survive in workspaces and caches, and a compromised job can
+  modify the runner software itself. Making each environment single-use removes the persistence that
+  turns one bad job into a standing compromise, and is what SLSA Build L3 expects of an isolated
+  build environment.
+impact: |
+  Provisioning a fresh environment per job adds start-up time and requires autoscaling (Actions
+  Runner Controller, docker-autoscaler, cloud agent profiles, Kubernetes executors). Caches must be
+  moved to shared storage designed for it (CB-DEP-CI-004). Runner logs must be shipped off-host
+  before the environment is destroyed (CB-CICD-RUN-027).
+notes: |
+  GitHub does not recommend autoscaling with persistent runners, as jobs may land on a runner that is
+  shutting down; registration tokens expire after one hour and must not be baked into images. With
+  Forgejo's `host` execution, the runner state file is readable by jobs, so ephemeral mode is the only
+  protection against runner impersonation. Re-using hardware for just-in-time runners still needs
+  automation that wipes it. Cloud build services with reserved or warm capacity that keep instances
+  between builds count as persistent runners for this control.
+
+audit:
+  manual: |
+    Use an administrator read role on runner settings and read access to runner provisioning code.
+
+    1. List self-hosted runners in scope with how they are provisioned and how many jobs each instance
+       runs before it is destroyed.
+    2. Per product:
+       - **GitHub**: runners are registered with `config.sh --ephemeral`, with a just-in-time
+         configuration from the REST API, or through Actions Runner Controller runner scale sets.
+       - **GitLab**: autoscaled runners use `MaxBuilds = 1` (Docker Machine) or `max_use_count = 1`
+         (docker-autoscaler); static hosts run only trusted jobs and set `FF_ENABLE_JOB_CLEANUP`.
+       - **Gitea**: runners are registered with `act_runner register --ephemeral`.
+       - **Forgejo**: runners are registered with `--ephemeral` and run with `forgejo-runner one-job`.
+       - **Woodpecker**: autoscaled agents set `WOODPECKER_AGENT_SINGLE_WORKFLOW=true` (default
+         `false`).
+       - **Azure DevOps**: pull request and fork builds use Microsoft-hosted agents; self-hosted agents
+         do not persist state between jobs.
+       - **Jenkins**: untrusted jobs run on agents provisioned by a cloud (Kubernetes, EC2) for one
+         build, not on static shared agents.
+       - **TeamCity**: untrusted builds run on disposable cloud agents.
+       - **Buildkite**: agents run with `--disconnect-after-job` on a VM or container created per job.
+       - **CircleCI**: container runner creates an ephemeral pod per job; machine runners in scope are
+         recreated after each job.
+       - **AWS CodeBuild**: runner projects start a build per job on on-demand compute.
+    3. Fail if a runner in the scope set by `{{ ephemeral_scope }}` can run more than one job in the same
+       environment.
+remediation:
+  manual: |
+    1. Build a runner image and an autoscaler that creates one environment per job and deletes it
+       after the job.
+    2. Per product:
+       - **GitHub**: register runners with `--ephemeral` or just-in-time configurations, or deploy
+         Actions Runner Controller runner scale sets.
+       - **GitLab**: use docker-autoscaler with `max_use_count = 1` (or Docker Machine with
+         `MaxBuilds = 1`), or the Kubernetes executor.
+       - **Gitea / Forgejo**: register with `--ephemeral` and start one runner per job
+         (`forgejo-runner one-job` on Forgejo).
+       - **Woodpecker**: set `WOODPECKER_AGENT_SINGLE_WORKFLOW=true` on autoscaled agents.
+       - **Azure DevOps**: move pull request builds to Microsoft-hosted pools.
+       - **Jenkins / TeamCity**: configure cloud agents that are created for one build and terminated
+         after it.
+       - **Buildkite**: start agents with `--disconnect-after-job` and destroy the instance when the
+         agent exits.
+    3. Remove the persistent runners once the ephemeral ones carry the load.
+
+references:
+  - title: Self-hosted runners reference (Ephemeral runners for autoscaling)
+    url: https://docs.github.com/en/actions/reference/runners/self-hosted-runners
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Self-managed runner security
+    url: https://docs.gitlab.com/runner/security/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Forgejo Actions deployments (Ephemeral runners)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist (self-hosted agents)
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TeamCity security notes (Use disposable, network-protected build agents)
+    url: https://www.jetbrains.com/help/teamcity/security-notes.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA v1.2 - Producing artifacts (Isolation strength)
+    url: https://slsa.dev/spec/v1.2/build-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Build-L3
+    relation: partial
+    note: Gives the ephemeral environment that Build L3 isolation relies on; L3 also needs isolated provenance generation and secrets.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-4
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-RUN-013
+    type: related
+  - id: CB-CICD-RUN-009
+    type: related
+  - id: CB-CICD-RUN-027
+    type: related
+  - id: CB-DEP-CI-004
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

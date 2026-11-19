@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-011
+title: Pin CI components and includes to immutable references
+finding:
+  title: Pipelines reference actions, orbs, plugins or templates by mutable tags or branches
+  description: A tag, branch or "latest" reference can be moved by whoever controls the upstream repository, so a single malicious push changes the code that runs in every pipeline using it, with no change in the pipeline file.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [pinning, immutable-references, actions, orbs, plugins, templates, lockfile]
+
+parameters:
+  - name: pinning
+    type: enum
+    description: Pinning level. `immutable-ref` = full commit SHA, digest or exact version, enforced by platform policy where available; `lockfile` = in addition, transitive components are locked by a lockfile that the platform requires, and shared library versions cannot be overridden.
+    default: immutable-ref
+    profile_defaults:
+      hardened: lockfile
+    allowed: [immutable-ref, lockfile]
+
+description: |
+  Every external piece of pipeline code is referenced in a way that cannot change without a
+  change to the pipeline file: actions, reusable workflows, orbs, plugins, included files,
+  templates, catalog components, shared libraries and remote tasks. The required level is
+  `{{ pinning }}`:
+  - `immutable-ref`: references use a full commit SHA, an image digest or an exact released
+    version (never a branch, `latest`, `volatile`, a `dev:` orb version or a partial version);
+    remote includes are avoided or carry an integrity hash; the platform policy that enforces
+    SHA pinning is on where it exists.
+  - `lockfile`: in addition, components used indirectly by other components are locked as well
+    (GitHub Actions lockfile with the **Require lockfile** policy active), and implicitly loaded
+    shared libraries use a fixed version that pipelines cannot override.
+
+  Container image references are covered by CB-CICD-COMP-013, tools installed by pipeline
+  scripts by CB-CICD-COMP-014, and checks that pinned references point to the genuine upstream by
+  CB-CICD-COMP-012.
+rationale: |
+  Tags and branches are pointers that the upstream owner, or anyone who compromises the upstream
+  account, can move. Mass secret theft through retagged actions has shown that pinning to a tag
+  offers no protection. A commit SHA or digest names one exact content, so a compromise upstream
+  does not reach pipelines until someone reviews and accepts the new reference. Nested components
+  stay mutable unless they are locked too.
+impact: |
+  Pinned references must be updated on purpose; pair pinning with an update bot
+  (CB-CICD-COMP-009) or components fall behind on fixes. Lockfile enforcement blocks workflows
+  that are not onboarded, so pilot it before activation.
+notes: |
+  On GitHub, Dependabot alerts do not fire for SHA-pinned actions, but version updates update the
+  SHAs. The Actions lockfile does not cover reusable workflows called with `jobs.<id>.uses`: pin
+  them by SHA. Docker and composite actions can still fetch unpinned content at run time.
+  CircleCI `dev:` orb versions are mutable development versions.
+
+audit:
+  manual: |
+    Use read access to the repositories and to the organization settings.
+
+    1. Search the pipeline definitions for mutable references (zizmor `unpinned-uses`, Scorecard
+       `Pinned-Dependencies`, Checkov `CKV_CIRCLECIPIPELINES_3` and `CKV_CIRCLECIPIPELINES_4`,
+       poutine `unpinnable_action` help).
+    2. Check each platform in use:
+       - **GitHub**: `uses:` in steps and jobs end with a 40-character SHA (a `# vX.Y.Z` comment
+         may follow); enterprise or organization **Settings** > **Actions** > **General** >
+         **Policies** > **Require actions to be pinned to a full-length commit SHA** is on. For
+         `lockfile`: `.github/workflows/actions.lock` exists, `gh actions-lock --verify` runs as a
+         required check, and the **Require lockfile** workflow execution policy is **Active**
+         (GitHub Enterprise Cloud).
+       - **GitLab**: `include:project` uses `ref:` with a commit SHA or protected tag;
+         `include:component` uses a full version, not `~latest` or a partial version;
+         `include:remote` is absent or has `integrity: sha256-...`.
+       - **Azure DevOps**: `resources.repositories[].ref` used by `template@alias` points to a
+         protected tag or commit, not a branch.
+       - **CircleCI**: `orbs:` use `x.y.z`, never `volatile`, a partial version or `dev:`.
+       - **Buildkite**: `plugins:` use `name#<commit SHA>`.
+       - **Jenkins**: **Manage Jenkins** > **System** > **Global Trusted Pipeline Libraries**:
+         **Default version** is a tag or commit and, for `lockfile`, **Allow default version to be
+         overridden** is cleared.
+       - **Tekton**: bundle resolver references use a digest; git resolver `revision` is a commit
+         SHA.
+       - **Flux**: kustomize-controller runs with `--no-remote-bases=true`.
+    3. Fail if any reference is mutable, if a remote include has no integrity hash, if the SHA
+       pinning policy is available but off, or, when `{{ pinning }}` is `lockfile`, if the
+       lockfile is missing, unverified or not enforced, or library versions can be overridden.
+
+remediation:
+  manual: |
+    1. Replace mutable references with a SHA, digest or exact version, keeping the human-readable
+       version in a comment; tools such as zizmor (`--fix`) or the update bot can do it in bulk.
+    2. Enforce it:
+       - **GitHub** (enterprise or organization owner): turn on **Require actions to be pinned to
+         a full-length commit SHA**. For `lockfile`: generate `actions.lock` with `gh actions-lock`,
+         add a verify job as a required check, protect the file with code owners, then create a
+         **Require lockfile** policy in **Settings** > **Actions** > **Policies**, start in
+         **Evaluate** mode and switch to **Active**.
+       - **GitLab**: change `include:` entries to SHA or full version, prefer `include:local` over
+         `include:remote`, and add `integrity:` to the remote includes that remain.
+       - **Azure DevOps**: set `ref: refs/tags/<version>` or a commit on template repositories,
+         with the tag protected.
+       - **CircleCI**: set exact orb versions.
+       - **Buildkite**: use `plugin#<sha>` references.
+       - **Jenkins** (administrator): set **Default version** to a tag or commit and clear **Allow
+         default version to be overridden**.
+       - **Tekton**: reference bundles by digest and git resolver tasks by commit SHA.
+       - **Flux** (cluster administrator): add `--no-remote-bases=true` to the kustomize-controller
+         arguments and vendor remote bases into the repository.
+    3. Keep an update bot on the pinned references (CB-CICD-COMP-009).
+
+references:
+  - title: Secure use reference (using third-party actions)
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Workflow dependency lockfiles
+    url: https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: CI/CD YAML syntax reference (include)
+    url: https://docs.gitlab.com/ci/yaml/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Orb concepts (orb versions)
+    url: https://circleci.com/docs/orbs/use/orb-concepts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Extending with shared libraries
+    url: https://www.jenkins.io/doc/book/pipeline/shared-libraries/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security best practices
+    url: https://fluxcd.io/flux/security/best-practices/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "3.1.7"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-009
+    type: related
+  - id: CB-CICD-COMP-012
+    type: related
+  - id: CB-CICD-COMP-013
+    type: related
+  - id: CB-CICD-PIPE-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

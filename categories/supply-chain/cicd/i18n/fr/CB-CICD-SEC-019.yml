@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-019
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Vérifier les certificats TLS et les clés d'hôte SSH des connexions aux dépôts
+finding:
+  title: Des outils CI/CD ou GitOps se connectent aux serveurs Git sans vérifier leur identité
+  description: Si la vérification des certificats ou des clés d'hôte est désactivée, un attaquant placé sur le chemin réseau peut se faire passer pour le serveur Git, fournir du code ou des manifestes modifiés au build ou au cluster, et capturer les identifiants utilisés pour la connexion.
+description: |
+  Les serveurs CI/CD, moteurs de pipeline et contrôleurs GitOps qui récupèrent du contenu sur des
+  serveurs Git vérifient l'identité du serveur à chaque connexion : les certificats TLS sont validés
+  par des autorités de certification publiques ou privées déclarées, et les connexions SSH
+  vérifient la clé d'hôte du serveur par rapport à une entrée `known_hosts` fixée. Les options qui
+  désactivent la vérification TLS ou des clés d'hôte ne sont pas utilisées, et les clés privées
+  stockées sur le serveur pour l'accès SSH sont protégées par une phrase de passe.
+
+  Les versions TLS et suites de chiffrement de la plate-forme elle-même relèvent de
+  CB-CICD-PLAT-004 ; le périmètre en lecture seule des identifiants, de CB-CICD-SEC-014.
+rationale: |
+  Les connexions aux dépôts transportent le code qui sera construit ou déployé et les identifiants
+  qui authentifient l'outil. Si l'outil accepte n'importe quel certificat ou clé d'hôte, un
+  attaquant DNS ou réseau peut lui fournir des sources altérées, qui deviennent un livrable ou
+  l'état d'un cluster, et récupérer ses identifiants. Fixer les hôtes connus et valider les
+  certificats ferme cette voie à faible coût.
+impact: |
+  Les serveurs Git privés ont besoin que leur certificat d'autorité ou leurs clés d'hôte soient
+  déclarés dans chaque outil, et ceux-ci doivent être mis à jour quand l'autorité de certification
+  ou la clé d'hôte du serveur change.
+notes: |
+  TeamCity stocke sur disque les clés privées SSH téléversées sans chiffrement supplémentaire,
+  d'où la nécessité que les clés elles-mêmes aient une phrase de passe. Flux exige une entrée
+  `known_hosts` dans les secrets SSH utilisés par les objets `GitRepository` et n'a pas d'option
+  pour ignorer la vérification TLS.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration des dépôts des outils.
+
+    1. Lister les connexions aux dépôts de chaque outil et vérifier :
+       - **Argo CD** : les secrets de dépôt (`argocd.argoproj.io/secret-type: repository` ou
+         `repo-creds`) ne définissent pas `insecure: "true"` ; `argocd repo list` ne montre aucun
+         dépôt ajouté avec `--insecure-skip-server-verification` ; les autorités privées sont
+         déclarées dans la ConfigMap `argocd-tls-certs-cm` et les clés d'hôte de chaque dépôt SSH
+         dans `argocd-ssh-known-hosts-cm`.
+       - **Tekton** : la ConfigMap `feature-flags` de l'espace de noms `tekton-pipelines` définit
+         `require-git-ssh-secret-known-hosts: "true"`, et les secrets SSH Git contiennent
+         `known_hosts`.
+       - **TeamCity** : **Project** > **SSH Keys** ne contient que des clés protégées par phrase de
+         passe ; le serveur et les agents tiennent un fichier `.ssh/known_hosts` pour chaque hôte
+         Git et la vérification des clés d'hôte n'est pas désactivée dans les racines VCS.
+       - **Flux** : les secrets référencés par `GitRepository.spec.secretRef` pour SSH contiennent
+         `known_hosts` ; les dépôts HTTPS avec une autorité privée la référencent par `ca.crt`.
+    2. Échec si une connexion ignore la vérification TLS ou de clé d'hôte SSH, si un secret SSH Git
+       n'a pas d'entrée `known_hosts` alors que l'outil le permet, ou si une clé privée SSH stockée
+       sur le serveur n'a pas de phrase de passe.
+remediation:
+  manual: |
+    1. Récupérer les certificats d'autorité et clés d'hôte SSH des serveurs Git par un canal de
+       confiance (les administrateurs du serveur ou les empreintes publiées par le fournisseur).
+    2. Configurer chaque outil :
+       - **Argo CD** : ajouter les autorités avec `argocd cert add-tls` ou la ConfigMap
+         `argocd-tls-certs-cm` et les clés d'hôte avec `argocd cert add-ssh` ou
+         `argocd-ssh-known-hosts-cm`, puis retirer `insecure` des secrets de dépôt.
+       - **Tekton** : ajouter `known_hosts` aux secrets SSH Git, puis définir
+         `require-git-ssh-secret-known-hosts: "true"` dans `feature-flags`.
+       - **TeamCity** : remplacer les clés SSH téléversées par des clés protégées par phrase de
+         passe et tenir `.ssh/known_hosts` à jour sur le serveur et les agents.
+       - **Flux** : recréer les secrets SSH avec `flux create secret git`, qui enregistre
+         `known_hosts`, et ajouter `ca.crt` pour les autorités privées.
+  rollback: |
+    Si une connexion échoue après l'activation de la vérification, corriger l'autorité ou la clé
+    d'hôte déclarée ; ne pas réactiver les options de contournement.

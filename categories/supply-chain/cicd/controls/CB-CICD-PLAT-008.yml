@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-008
+title: Back up platform data and secret keys separately and test restores
+finding:
+  title: CI/CD platform data or encryption keys are not backed up, or restores were never tested
+  description: After ransomware, a destructive intrusion or a failed upgrade, repositories, pipeline settings and stored secrets cannot be recovered, or the backup restores but its encrypted values are unreadable because the key file was not saved.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [backup, restore, resilience, key-management, self-managed]
+
+description: |
+  Self-managed CI/CD platforms are backed up on a schedule: repositories, database, configuration
+  files and object storage (artifacts, packages, LFS, CI logs when they are kept there). Backups go
+  to a location that the platform and its administrators cannot modify or delete from the platform
+  itself, and at least one copy is offline or immutable.
+
+  Encryption keys and secret files (for example GitLab `gitlab-secrets.json`, Gitea and Forgejo
+  `SECRET_KEY`) are backed up separately from the data, encrypted, and with stricter access, so
+  that a stolen data backup does not also give the keys that decrypt the stored secrets.
+
+  A restore is tested at least once a year and after major upgrades, on an isolated instance, and
+  the result (time taken, data checked) is recorded. A high availability replica does not replace
+  a backup, because it replicates deletion and corruption.
+rationale: |
+  The CI/CD platform holds the organization's source code history, pipeline definitions, access
+  rules and secrets. Destructive attacks on SCM and CI servers happen, and so do failed upgrades.
+  A backup that misses the key file restores a platform whose CI variables, runner tokens and 2FA
+  secrets cannot be decrypted; a backup stored where the platform's administrators can delete it
+  disappears with the platform in an intrusion.
+impact: |
+  Needs storage, a backup host or service, and time for periodic restore tests. The backup host
+  holds a full copy of the code and must itself be hardened and access-controlled.
+
+audit:
+  manual: |
+    Use an account that can read the backup configuration and job history, and ask for the last
+    restore test report.
+
+    1. Check the backup schedule, retention and destination for each self-managed platform, and
+       the date of the last successful run.
+    2. Check that key material is in a separate, encrypted backup with restricted access:
+       - **GitHub Enterprise Server**: the backup service is configured in the **Management
+         Console** with scheduled backups, or the legacy backup utilities (`ghe-backup`) run on a
+         separate, hardened host; the snapshots are copied off the backup volume.
+       - **GitLab (Linux package)**: `gitlab-backup create` runs on a schedule, and
+         `/etc/gitlab/gitlab-secrets.json` and `/etc/gitlab/gitlab.rb` are backed up separately,
+         since the application backup does not include them.
+       - **Gitea / Forgejo**: `gitea dump` / `forgejo dump` (or equivalent database and repository
+         backups) runs on a schedule, and `app.ini` and the secret key files are backed up
+         separately.
+    3. Check that at least one copy is offline or immutable (object lock, write-once storage,
+       separate account) and cannot be deleted with the platform's credentials.
+    4. Read the last restore test report and check its date and scope.
+    5. Fail if a platform has no scheduled backup, if key material is missing from the backups or
+       stored with the data under the same access, if no copy is protected from deletion by the
+       platform's administrators, or if no restore was tested in the last 12 months.
+
+remediation:
+  manual: |
+    1. Set up scheduled backups for each platform:
+       - **GitHub Enterprise Server**: configure the backup service in the **Management Console**
+         (or the backup utilities on a separate host) and copy snapshots to separate storage.
+       - **GitLab (Linux package)**: schedule `gitlab-backup create` and a separate encrypted copy
+         of `/etc/gitlab/gitlab-secrets.json` and `/etc/gitlab/gitlab.rb`.
+       - **Gitea / Forgejo**: schedule `gitea dump -c /path/to/app.ini` / `forgejo dump`, and back up
+         `app.ini` and the key files referenced by `*_URI` separately.
+    2. Store one copy in immutable or offline storage under an account that platform administrators
+       do not control.
+    3. Restrict access to the key backup to a small group, separate from the data backup operators.
+    4. Restore to an isolated instance at least once a year and after major upgrades, check that
+       repositories, pipeline settings and stored secrets are usable, and record the result.
+
+references:
+  - title: About the backup service for GitHub Enterprise Server
+    url: https://docs.github.com/en/enterprise-server@latest/admin/backing-up-and-restoring-your-instance/configuring-backups-on-your-instance
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Back up GitLab
+    url: https://docs.gitlab.com/administration/backup_restore/backup_gitlab/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Backup and Restore
+    url: https://docs.gitea.com/administration/backup-and-restore
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo CLI
+    url: https://forgejo.org/docs/latest/admin/command-line/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CP-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CP-9(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CP-10
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1485
+  - framework: mitre-attack
+    id: T1486
+related_controls:
+  - id: CB-CICD-PLAT-007
+    type: related
+  - id: CB-CICD-SEC-005
+    type: related
+  - id: CB-CICD-PLAT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

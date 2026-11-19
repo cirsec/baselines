@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-026
+title: Never trust shared hosted-runner IP ranges as an identity
+finding:
+  title: Target systems trust CI jobs by their hosted-runner IP address
+  description: Hosted runner egress ranges are shared by every customer of the CI service, so a firewall or API that admits them lets any other customer's job reach the system as if it were the organization's pipeline.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [hosted-runners, ip-allowlist, authentication, oidc]
+
+description: |
+  Systems that CI jobs call (cloud accounts, registries, internal APIs, databases) authenticate the job
+  with credentials or a federated identity token (CB-CICD-SEC-015), never by the source IP ranges of the
+  CI service's hosted runners alone. Where an IP allowlist is also needed, it is an extra layer on top
+  of authentication, and the platform feature that routes jobs through published IP ranges is enabled
+  only on the jobs that need it.
+rationale: |
+  Published hosted-runner IP ranges identify the CI vendor, not the organization: every customer's jobs
+  leave from the same addresses. An allowlist that admits them without authentication is open to
+  anyone with an account on that CI service.
+impact: |
+  Systems protected only by IP allowlists need authentication added before the allowlist can be
+  relaxed. Static IP features often cost extra and slow jobs down, so limiting them to the jobs that
+  need them also saves cost.
+notes: |
+  CircleCI's IP ranges feature is opt-in per job (`circleci_ip_ranges: true`); the ranges are shared by
+  all CircleCI customers who use the feature, and macOS jobs are always restricted to them. Buildkite
+  hosted agent IP ranges are shared between Buildkite customers; Buildkite recommends OIDC for
+  authenticating hosted jobs and the Meta API for the platform's own addresses.
+
+audit:
+  manual: |
+    Use read access to firewall and network policies of target systems, and to pipeline definitions.
+
+    1. List firewall rules, security groups and API allowlists that include the CI vendor's published IP
+       ranges.
+    2. For each, check that the target system also requires a credential or token from the job.
+    3. Per product:
+       - **CircleCI**: list jobs with `circleci_ip_ranges: true` and check each one calls an
+         IP-restricted system.
+       - **Buildkite**: services called from hosted agents authenticate them with OIDC tokens, not by
+         hosted agent IP ranges.
+    4. Fail if a system admits CI jobs based on shared hosted-runner IP ranges without other
+       authentication, or if the IP ranges feature is enabled on jobs that do not need it.
+remediation:
+  manual: |
+    1. Add authentication to the target system (OIDC federation, scoped credentials), then keep the IP
+       allowlist only as an additional layer.
+    2. **CircleCI**: remove `circleci_ip_ranges: true` from jobs that do not reach IP-restricted systems.
+    3. **Buildkite**: configure target services to validate Buildkite OIDC tokens for hosted jobs.
+    4. Prefer self-hosted runners with organization-owned egress addresses for systems that must stay
+       IP-restricted.
+
+references:
+  - title: IP ranges
+    url: https://circleci.com/docs/guides/security/ip-ranges/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite hosted agents network security
+    url: https://buildkite.com/docs/agent/buildkite-hosted/network-security
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist (Use OIDC for Buildkite hosted agents)
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1199
+related_controls:
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-SEC-016
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

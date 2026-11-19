@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-017
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Écrire les conditions et commandes de pipeline avec des constructions sûres et sans ambiguïté
+finding:
+  title: Des workflows utilisent des gardes usurpables, des conditions toujours vraies ou des commandes obsolètes non sûres
+  description: Une condition comme `github.actor == 'dependabot[bot]'` peut être satisfaite par un attaquant qui déclenche l'exécution autrement, un `if:` mal formé est toujours vrai, et les commandes `set-env` réactivées permettent à n'importe quelle ligne de journal de modifier l'environnement ; des gardes qui semblent protéger ne protègent pas.
+description: |
+  Les conditions et commandes qui jouent un rôle de sécurité dans les fichiers de pipeline sont
+  écrites pour signifier ce qu'elles paraissent signifier. Le niveau attendu est
+  `{{ construct_strictness }}` :
+
+  - `sound` : les commandes de workflow obsolètes et non sûres restent désactivées
+    (`ACTIONS_ALLOW_UNSECURE_COMMANDS` n'est jamais défini) ; les gardes ne reposent pas sur le nom
+    de l'acteur qui a déclenché l'exécution mais sur l'événement et l'auteur de la pull request ; les
+    conditions `if:` forment une seule expression et utilisent des comparaisons exactes (pas de
+    `contains()` de sous-chaîne sur des chaînes, pas de ternaire `a && b || c` détourné) ;
+  - `strict` : en plus, la syntaxe des workflows est simple et vérifiable (pas d'expressions ou de
+    références obscurcies, pas de fonctionnalité détournée), les actions locales sont appelées avec
+    la syntaxe d'auto-référence `$/` au lieu de `./`, et les outils de sécurité sont appelés par
+    chemin absolu.
+
+  L'injection de valeurs non fiables relève de CB-CICD-PIPE-015.
+rationale: |
+  Les relecteurs font confiance à ce que disent les conditions. Une vérification sur le nom de
+  l'acteur est satisfaite chaque fois que le bot est celui qui a déclenché l'exécution, y compris
+  quand un attaquant la relance, ce qui mène à des fusions automatiques en « adjoint confus ». Un
+  scalaire de bloc YAML autour de `${{ }}` produit une chaîne non vide, toujours vraie. Une action
+  locale `./` exécute ce qui se trouve dans l'espace de travail, éventuellement du code non fiable
+  récupéré. S'appuyer sur `PATH` permet à une étape précédente de substituer un outil.
+impact: |
+  Certains workflows doivent être réécrits ; la logique propre à Dependabot doit vérifier l'auteur
+  de la pull request et le type d'événement. La syntaxe `$/` est récente et doit être prise en
+  charge par le runner utilisé.
+parameters:
+  construct_strictness: sound interdit les commandes non sûres, les vérifications d'acteur usurpables et les conditions bancales ; strict exige aussi une syntaxe simple, les actions locales en $/ et des chemins d'outils absolus.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline. zizmor (`insecure-commands`,
+    `bot-conditions`, `unsound-condition`, `unsound-contains`, `self-repository`, `obfuscation`,
+    `misfeature`), poutine (`if_always_true`, `confused_deputy_auto_merge`) et Checkov (`CKV_GHA_1`)
+    couvrent ces motifs.
+
+    1. **GitHub** :
+       - rechercher `ACTIONS_ALLOW_UNSECURE_COMMANDS` dans `env:` à tous les niveaux ;
+       - rechercher des conditions sur `github.actor` ou `github.triggering_actor` qui protègent des
+         étapes privilégiées (fusion automatique, secrets, publication) ;
+       - rechercher `if: |` ou `if: >` autour de `${{ }}`, `contains('...', github.*)` sur des
+         chaînes, et des expressions `cond && a || b` ;
+       - pour `strict`, rechercher les actions locales `uses: ./` et les références obscurcies.
+    2. **Azure DevOps** (pour `strict`) : les scripts critiques pour la sécurité appellent les outils
+       par chemin complet plutôt que par le `PATH` de l'agent.
+    3. Échec si des commandes non sûres sont activées, si une étape privilégiée est protégée par une
+       vérification de nom d'acteur, si une condition est toujours vraie, ou, pour
+       `{{ construct_strictness }}` = `strict`, si des actions locales utilisent `./` ou si des
+       outils de sécurité sont résolus par le `PATH`.
+remediation:
+  manual: |
+    1. Retirer `ACTIONS_ALLOW_UNSECURE_COMMANDS` et utiliser les fichiers `$GITHUB_ENV` et
+       `$GITHUB_PATH`.
+    2. Remplacer les gardes sur le nom d'acteur par des vérifications de l'événement et de
+       `github.event.pull_request.user.login`, ou par des secrets propres à Dependabot.
+    3. Écrire chaque `if:` comme une seule expression nue ou une seule expression `${{ }}` ; utiliser
+       `contains(fromJSON('["a","b"]'), valeur)` pour l'appartenance à une liste.
+    4. Pour `strict`, réécrire `uses: ./...` en `uses: $/...`, supprimer les expressions obscurcies,
+       et appeler les outils de sécurité par chemin absolu dans les scripts Azure Pipelines.

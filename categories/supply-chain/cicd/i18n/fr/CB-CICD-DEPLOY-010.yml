@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire passer les écritures Git automatisées par une branche relue
+finding:
+  title: Les contrôleurs d'automatisation d'images poussent directement sur la branche que la production synchronise
+  description: Quand un contrôleur committe de nouveaux tags d'image directement sur la branche de production avec une clé d'écriture à large portée, quiconque peut pousser un tag d'image correspondant, ou vole cette clé, modifie la production sans revue.
+description: |
+  Les contrôleurs qui écrivent d'eux-mêmes dans le dépôt GitOps (automatisation de mise à jour des
+  images, incrémenteurs de tags, autres fonctions d'écriture en retour) poussent leurs commits sur une
+  branche séparée, et la modification n'atteint la branche que la production réconcilie qu'au travers
+  d'une merge request ou pull request relue, sous la même protection de branche que les changements
+  humains.
+
+  L'identifiant que le contrôleur utilise pour pousser est limité à ce seul dépôt (une clé de
+  déploiement ou un jeton à granularité fine avec accès en écriture au seul dépôt d'automatisation,
+  idéalement à la seule branche d'automatisation), pas un jeton valable pour tout le compte.
+
+  La protection de la branche de production relève de CB-CICD-SCM-006 et CB-CICD-SCM-007.
+rationale: |
+  L'automatisation des images est pratique mais fait du registre de conteneurs un moyen de modifier la
+  production : un nouveau tag qui correspond à la politique est committé et déployé sans que personne
+  ne regarde. Envoyer le commit sur une branche qui exige une revue rétablit le contrôle humain, et
+  limiter la clé d'écriture réduit ce qu'un attaquant peut faire si le contrôleur ou son secret est
+  compromis.
+impact: |
+  Les nouvelles versions d'image attendent un relecteur avant d'atteindre la production, ce qui
+  ralentit les mises à jour automatiques. Quelqu'un doit relire et fusionner les merge requests de
+  l'automatisation.
+notes: |
+  Dans Flux, si `spec.git.push` n'est pas défini, `ImageUpdateAutomation` pousse sur la branche de
+  checkout (`spec.git.checkout`). Poser `spec.git.push.branch` envoie les commits sur une autre
+  branche, créée à partir de la branche de checkout si nécessaire ; `spec.git.push.refspec` avec des
+  options de push peut ouvrir des merge requests ou pull requests sur GitLab, Gitea et Forgejo.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les ressources des contrôleurs GitOps et les réglages des dépôts.
+
+    1. Lister les contrôleurs qui écrivent dans les dépôts GitOps
+       (`kubectl get imageupdateautomations -A` pour Flux, et tout autre outil d'écriture en retour).
+    2. Pour chaque `ImageUpdateAutomation` Flux, vérifier que `spec.git.push.branch` (ou
+       `spec.git.push.refspec`) désigne une branche différente de `spec.git.checkout.ref.branch`, et
+       que la source `GitRepository` de production suit la branche protégée, pas la branche
+       d'automatisation.
+    3. Vérifier que la branche de production exige une fusion relue pour les changements venant de la
+       branche d'automatisation, et que l'identité d'automatisation ne peut pas contourner cette
+       exigence.
+    4. Vérifier l'identifiant contenu dans le secret référencé par le `GitRepository` utilisé pour
+       l'écriture : c'est une clé de déploiement ou un jeton à granularité fine limité à ce dépôt.
+    5. Échec si un contrôleur pousse directement sur une branche que la production réconcilie, ou si
+       son identifiant d'écriture atteint d'autres dépôts.
+remediation:
+  manual: |
+    1. Modifier chaque automatisation pour qu'elle pousse sur sa propre branche :
+       - **Flux** : poser `spec.git.push.branch: <branche-automatisation>` sur
+         l'`ImageUpdateAutomation` (ou un `spec.git.push.refspec` avec des options de push pour ouvrir
+         une merge request ou pull request quand le fournisseur Git le permet).
+    2. Protéger la branche de production pour que la branche d'automatisation ne puisse y être
+       fusionnée que par une merge request ou pull request relue ; automatiser la création de cette
+       demande si nécessaire.
+    3. Remplacer l'identifiant d'écriture par une clé de déploiement ou un jeton à granularité fine
+       limité au dépôt GitOps, et révoquer l'ancien.

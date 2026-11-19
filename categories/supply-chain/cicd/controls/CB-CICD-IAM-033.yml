@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-033
+title: Require strong, expiring and centrally controlled SSH keys
+finding:
+  title: SSH keys for Git access are weak, never expire or are not centrally controlled
+  description: User SSH keys and deploy keys are long-lived credentials outside SSO and token policies; a weak or forgotten key gives clone and often push access for years.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [ssh-keys, ssh-certificates, deploy-keys, key-expiry, git-access]
+
+applicability:
+  versions: [gitlab, azure-devops, github]
+
+parameters:
+  - name: ssh_policy
+    type: enum
+    description: SSH requirement. `strong-expiring-keys` requires RSA of at least 2048 bits or Ed25519/ECDSA keys, no DSA, and an enforced expiry; `certificates-only` also requires SSH certificates from an organization CA, disables SSH where it is not used and disables deploy keys.
+    default: strong-expiring-keys
+    profile_defaults:
+      hardened: certificates-only
+    allowed: [strong-expiring-keys, certificates-only]
+
+description: |
+  SSH keys used for Git access use strong algorithms (Ed25519 or ECDSA, including security-key
+  variants, or RSA of at least 2048 bits, never DSA) and expire, with the expiry enforced by the
+  platform where it can. With `{{ ssh_policy }}` set to `certificates-only`, users authenticate with
+  short-lived SSH certificates issued by an organization certificate authority, SSH is disabled where
+  nobody needs it, and deploy keys are replaced by app identities.
+
+  Token lifetime is covered by CB-CICD-IAM-028; read-only machine credentials for CI checkouts by
+  CB-CICD-SEC-014.
+rationale: |
+  SSH keys are often older than the person's current role, copied between laptops, and not covered
+  by the PAT policies, SSO or conditional access of the platform. Deploy keys are not tied to a user,
+  never expire, and a write deploy key pushes without review. Weak algorithms make keys forgeable over
+  time. Expiry and certificates bound the life of a stolen key.
+impact: |
+  Existing non-compliant keys are disabled (GitLab disables keys that break a type restriction). Users
+  need a process to renew keys; certificates need a CA and tooling to issue them. Disabling deploy keys
+  on GitHub disables existing ones in every repository and breaks automation that uses them.
+
+audit:
+  manual: |
+    Use an administrator or owner role.
+
+    1. Check the SSH settings:
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **Visibility and access
+         controls**: **DSA SSH keys** is forbidden, **RSA SSH keys** requires at least 2048
+         bits; **Account and limit** > **Limit the lifetime of SSH keys** is set (Ultimate).
+       - **Azure DevOps**: **Organization settings** > **Policies** > **Validate SSH key expiration**
+         is on (default on; when off, expired keys keep working). With `certificates-only` and no SSH
+         use, **SSH authentication** is off.
+       - **GitHub** (`certificates-only`): **Enterprise settings** or **Organization settings** >
+         **Authentication security** > **SSH certificate authorities** has the organization CA and
+         **Require SSH Certificates** is selected (GitHub Enterprise Cloud or Server); the deploy keys
+         policy (enterprise **Policies** > **Repositories**, or organization **Member privileges**)
+         disables deploy keys.
+    2. List existing keys and deploy keys with their algorithm, size and age where the platform shows
+       them (GitLab credentials inventory, GitHub deploy keys per repository).
+    3. Fail if DSA or short RSA keys are accepted, if key expiry is not enforced, or, with
+       `certificates-only`, if plain keys or deploy keys are still accepted.
+
+remediation:
+  manual: |
+    1. **GitLab self-managed**: set the key type restrictions (forbid DSA, RSA at least 2048, allow
+       Ed25519 and ECDSA) and set **Limit the lifetime of SSH keys**.
+    2. **Azure DevOps**: keep **Validate SSH key expiration** on; turn **SSH authentication** off if
+       Git over HTTPS with Entra tokens covers all uses.
+    3. **GitHub** (`certificates-only`): add the SSH CA, select **Require SSH Certificates**, tell
+       users to use the certificate SSH URL, and disable deploy keys after moving automations to
+       GitHub Apps.
+    4. Ask users to replace weak or old keys and remove keys that fail the policy.
+  rollback: |
+    Clear **Require SSH Certificates** or re-allow deploy keys if critical automation breaks, then
+    migrate it.
+
+references:
+  - title: Configure SSH key restrictions (GitLab)
+    url: https://docs.gitlab.com/security/ssh_keys_restrictions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitLab account and limit settings - SSH key lifetime
+    url: https://docs.gitlab.com/administration/settings/account_and_limit_settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change application connection and security policies for your organization
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/change-application-access-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing your organization's SSH certificate authorities
+    url: https://docs.github.com/en/enterprise-cloud@latest/organizations/managing-git-access-to-your-organizations-repositories/managing-your-organizations-ssh-certificate-authorities
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enforcing repository management policies in your enterprise - deploy keys
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-repository-management-policies-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5(2)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.004
+related_controls:
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-SEC-014
+    type: related
+  - id: CB-CICD-IAM-027
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

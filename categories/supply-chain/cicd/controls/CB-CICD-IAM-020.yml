@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-020
+title: Require step-up or just-in-time elevation for administrative privileges
+finding:
+  title: Administrator rights are active in every session without re-authentication
+  description: When administrator rights are always on, a stolen administrator session or token can change instance settings, runners and permissions immediately, without any further check.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [admin-mode, just-in-time, pim, privileged-access, step-up]
+
+applicability:
+  versions: [gitlab, azure-devops]
+
+parameters:
+  - name: admin_elevation
+    type: enum
+    description: How administrators get their rights. `reauthentication` keeps the role assigned but requires a fresh authentication before administrative actions; `just-in-time` makes the role eligible only and grants it for a limited time after approval.
+    default: reauthentication
+    profile_defaults:
+      hardened: just-in-time
+    allowed: [reauthentication, just-in-time]
+
+description: |
+  Administrative rights on CI/CD platforms are not active in everyday sessions. With
+  `{{ admin_elevation }}` set to `reauthentication`, administrators re-authenticate before an
+  administrative action; with `just-in-time`, administrator group membership is eligible rather than
+  permanent, activated for a limited time with a justification and an approval, and logged.
+
+  The number of administrators is covered by CB-CICD-IAM-018, dedicated administration workstations
+  by CB-CICD-IAM-021.
+rationale: |
+  Administrators use the same browser and the same session for code review and for instance
+  administration. Step-up authentication makes a stolen session cookie or personal token insufficient
+  for administrative actions; just-in-time elevation removes standing administrator membership, so
+  a compromised account has nothing to abuse most of the time.
+impact: |
+  Administrators re-authenticate or request activation before administrative work, and some API
+  calls with personal tokens need an admin-mode scope. Just-in-time elevation on Azure DevOps needs
+  Microsoft Entra ID P2 and an approver available.
+
+audit:
+  manual: |
+    Use an administrator role on the platform, or a Privileged Role Reader role in Entra.
+
+    1. **GitLab self-managed**: **Admin** > **Settings** > **General** > **Sign-in restrictions** >
+       **Admin Mode** is enabled (`admin_mode: true`); it applies to every administrator.
+    2. **Azure DevOps** (`just-in-time`): Project Collection Administrators and Project Administrators
+       contain an Entra group managed by Privileged Identity Management for Groups, with eligible (not
+       active permanent) assignments, approval and a maximum activation duration.
+    3. Fail if administrators can perform administrative actions without re-authentication, or, with
+       `just-in-time`, if administrator membership is permanent.
+
+remediation:
+  manual: |
+    1. **GitLab self-managed**: select **Admin Mode** in **Sign-in restrictions** (instance
+       administrator), and tell administrators to use **Enter Admin Mode** for administrative tasks.
+    2. **Azure DevOps** (`just-in-time`): create an Entra security group, put it under PIM for Groups
+       with eligible assignments, approval and a short activation, add it to Project Collection
+       Administrators, then remove direct permanent members.
+    3. Keep one break-glass account outside PIM (CB-CICD-IAM-003).
+
+references:
+  - title: GitLab sign-in restrictions - Admin Mode
+    url: https://docs.gitlab.com/administration/settings/sign_in_restrictions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Azure DevOps security overview
+    url: https://learn.microsoft.com/azure/devops/organizations/security/security-overview
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Privileged Identity Management for Groups
+    url: https://learn.microsoft.com/entra/id-governance/privileged-identity-management/concept-pim-for-groups
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2(7)
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R29"
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-IAM-018
+    type: related
+  - id: CB-CICD-IAM-021
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

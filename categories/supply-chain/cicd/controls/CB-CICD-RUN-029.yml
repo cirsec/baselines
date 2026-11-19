@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-029
+title: Attest the boot of build environments for critical pipelines
+finding:
+  title: Critical builds run in environments whose initial state is not attested
+  description: Without measured boot and attestation, nothing proves that the build environment of a critical release started from the expected image, so a tampered hypervisor, boot chain or agent goes undetected.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [build-environment, attestation, measured-boot, confidential-computing, slsa]
+
+description: |
+  Critical pipelines (releases of software distributed to customers, signing pipelines) run in build
+  environments whose boot is measured and attested before a build is dispatched to them:
+
+  - the VM uses Secure Boot and a virtual TPM; the build agent obtains a signed quote of the boot
+    measurements (bootloader, kernel, agent, root file system) and the platform verifies it against
+    signed reference values before dispatching the build (SLSA BuildEnv L2);
+  - where the risk justifies it, builds run in hardware-attested confidential VMs, so that the
+    environment's integrity does not depend on trusting the cloud host (SLSA BuildEnv L3).
+
+  It builds on CB-CICD-RUN-028 (verified image provenance).
+rationale: |
+  Image provenance proves what should have booted; boot attestation proves what did boot. For the
+  pipelines whose compromise would affect many downstream users, it closes the gap left by a tampered
+  boot chain or compute platform.
+impact: |
+  Few CI/CD platforms support this directly; it usually requires a custom runner fleet on cloud VMs with
+  vTPM and Secure Boot (or confidential computing), and an attestation service in runner provisioning.
+  Reserve it for the most critical pipelines.
+notes: |
+  The SLSA build environment track is a draft and is not part of SLSA v1.2. Container-based runners may
+  need orchestrator changes to produce these attestations.
+
+audit:
+  manual: |
+    Use read access to runner infrastructure configuration and provisioning code for critical pipelines.
+
+    1. Identify the critical pipelines and the runners they use.
+    2. Check that those runners are VMs with Secure Boot and a vTPM (or confidential VMs) enabled.
+    3. Check that provisioning requests a quote from the agent after boot and verifies it against signed
+       reference values before a job is assigned, and that the verification result is recorded.
+    4. Fail if critical pipelines run on environments whose boot is not measured and verified before
+       dispatch.
+remediation:
+  manual: |
+    1. Build a dedicated runner fleet for critical pipelines on VMs with Secure Boot and vTPM, or on
+       confidential VMs.
+    2. Generate signed reference values for the runner image components in the image pipeline
+       (CB-CICD-RUN-028).
+    3. Add an attestation step to provisioning that verifies the boot quote before registering the
+       runner for a job, and record the result for provenance.
+    4. Route critical pipelines to that fleet only (CB-CICD-RUN-011).
+
+references:
+  - title: SLSA build environment track (BuildEnv L2 and L3)
+    url: https://slsa.dev/spec/draft/attested-build-env-levels
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+  - title: Shielded VM (Secure Boot, vTPM, integrity monitoring)
+    url: https://docs.cloud.google.com/compute/shielded-vm/docs/shielded-vm
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7(9)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1542
+related_controls:
+  - id: CB-CICD-RUN-028
+    type: related
+  - id: CB-CICD-RUN-011
+    type: related
+  - id: CB-CICD-RUN-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

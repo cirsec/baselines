@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-013
+title: Restrict creation of new CI/CD organizations to approved administrators
+finding:
+  title: Any user of the corporate tenant can create a new CI/CD organization
+  description: Organizations created outside governance escape the policies, audit streaming and access reviews of the official ones, and can hold code and pipelines that nobody monitors.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [organization-creation, shadow-it, tenant-policy, governance]
+
+applicability:
+  versions: [azure-devops]
+
+description: |
+  Only an allowlisted group of administrators can create new Azure DevOps organizations connected to
+  the corporate Microsoft Entra tenant. Requests for a new organization go through a process that
+  applies the standard policies (SSO, PAT policies, audit streaming) before it is used.
+
+  Repository and project creation inside an organization is covered by CB-CICD-SCM-001.
+rationale: |
+  By default any member of an Entra tenant can create an Azure DevOps organization. Such shadow
+  organizations use corporate identities but none of the organization-level policies, are not in
+  the inventory, and are a common place for forgotten pipelines with service connections to
+  production.
+impact: |
+  Teams must request new organizations. Existing organizations are not affected.
+
+audit:
+  manual: |
+    Use an account with the Azure DevOps Administrator role in Microsoft Entra.
+
+    1. In any organization connected to the tenant, open **Organization settings** > **Microsoft
+       Entra ID** and check that the tenant policy **Restrict organization creation** is on, with an
+       allowlist limited to the administrators group and a custom error message pointing to the
+       request process.
+    2. List the organizations connected to the tenant and compare them with the inventory.
+    3. Fail if the policy is off or the allowlist contains broad groups.
+
+remediation:
+  manual: |
+    1. With the Azure DevOps Administrator role, open **Organization settings** > **Microsoft
+       Entra ID** and turn on **Restrict organization creation**.
+    2. Add the allowed administrators group to the allowlist and set the error message.
+    3. Review organizations created before the policy and bring them under governance or delete them.
+
+references:
+  - title: Restrict organization creation via Microsoft Entra tenant policy
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/azure-ad-tenant-policy-restrict-org-creation
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Change application connection and security policies for your organization
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/change-application-access-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-8
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-001
+    type: related
+  - id: CB-CICD-PLAT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

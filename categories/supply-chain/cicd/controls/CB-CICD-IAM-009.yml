@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-009
+title: Disable self-registration on self-managed CI/CD platforms
+finding:
+  title: Anyone who reaches the platform can create an account
+  description: Open sign-up lets an outsider create an account, see internal and public projects, and on many platforms run jobs on shared runners or inherit default permissions.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [sign-up, registration, self-managed, account-creation]
+
+description: |
+  Accounts on self-managed SCM and CI/CD platforms are created only through the identity provider
+  (SSO auto-provisioning restricted to the organization) or by an administrator. Open self-registration
+  is disabled. If sign-up must stay open, it requires a confirmed email address in a corporate domain,
+  administrator approval where available, and anti-automation (captcha).
+
+  Restricting membership of SaaS organizations to corporate domains is covered by CB-CICD-IAM-010.
+rationale: |
+  An account is the first step for most attacks on a CI/CD platform: with it, a user sees internal
+  projects, can fork them, opens merge requests that run pipelines, and on Forgejo or Gitea with
+  Actions can run code on shared runners. On Jenkins, open sign-up combined with the "Logged-in users
+  can do anything" strategy makes every new account an administrator.
+impact: |
+  New users must be provisioned through the identity provider or by an administrator. Public
+  community instances that rely on sign-up need the restricted variant instead.
+
+audit:
+  manual: |
+    Use an instance administrator role or read access to the platform configuration.
+
+    1. Check the registration settings:
+       - **GitLab self-managed**: **Admin** > **Settings** > **General** > **New user account
+         restrictions**: **Allow new user accounts** is cleared (`signup_enabled: false`); if it
+         is selected, **Require admin approval for new user accounts** is selected, **Email
+         confirmation settings** is **Hard**, and an allowlist of corporate domains is set.
+       - **Gitea / Forgejo**: `[service] DISABLE_REGISTRATION = true` (Forgejo default `false`), or
+         `ALLOW_ONLY_EXTERNAL_REGISTRATION = true` with an identity provider restricted to the
+         organization; when registration stays open, `REGISTER_EMAIL_CONFIRM = true`,
+         `ENABLE_CAPTCHA = true` and `EMAIL_DOMAIN_ALLOWLIST` lists corporate domains.
+         `[oauth2_client] ENABLE_AUTO_REGISTRATION = true` is only used with a provider restricted to
+         the organization.
+       - **Jenkins**: the security realm is not **Jenkins' own user database** with sign-up allowed
+         (`allowsSignup: true` under `jenkins.securityRealm.local` in configuration as code).
+       - **Woodpecker**: `WOODPECKER_OPEN=false` (default), or when it is `true`, approved
+         organizations are set (`WOODPECKER_ORGS` or per-forge allowed organizations) so that only
+         members of those organizations can register.
+    2. Try to open the sign-up page anonymously.
+    3. Fail if an outsider can create an account without administrator approval or a corporate
+       identity.
+
+remediation:
+  manual: |
+    1. Disable open registration (instance administrator):
+       - **GitLab self-managed**: clear **Allow new user accounts**, or select **Require admin approval for
+         new user accounts**, set **Email confirmation settings** to **Hard** and add allowed domains.
+       - **Gitea / Forgejo**: set `DISABLE_REGISTRATION = true`, or `ALLOW_ONLY_EXTERNAL_REGISTRATION
+         = true` with an organization-only identity provider, then restart.
+       - **Jenkins**: switch the security realm to the identity provider, or turn off sign-up for
+         Jenkins' own user database.
+       - **Woodpecker**: set `WOODPECKER_OPEN=false`, or restrict it to approved organizations.
+    2. Review accounts created while sign-up was open and remove the unknown ones.
+
+references:
+  - title: GitLab sign-up restrictions
+    url: https://docs.gitlab.com/administration/settings/sign_up_restrictions/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Access Control (Jenkins)
+    url: https://www.jenkins.io/doc/book/security/access-control/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Woodpecker server configuration
+    url: https://woodpecker-ci.org/docs/administration/configuration/server
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: legitify
+    url: https://github.com/Legit-Labs/legitify
+    publisher: Legit Security
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-2
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1136
+related_controls:
+  - id: CB-CICD-IAM-001
+    type: related
+  - id: CB-CICD-IAM-010
+    type: related
+  - id: CB-CICD-IAM-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

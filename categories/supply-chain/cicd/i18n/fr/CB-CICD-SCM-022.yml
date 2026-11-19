@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-022
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'accepter que des commits attribués à des utilisateurs vérifiés de la plate-forme
+finding:
+  title: Les commits peuvent revendiquer n'importe quelle identité d'auteur ou de committer
+  description: Git permet à chacun d'écrire n'importe quel nom et adresse dans un commit ; un commit poussé peut donc usurper l'identité d'un mainteneur de confiance et tromper les relecteurs, l'audit et toute règle qui se fie au champ auteur.
+description: |
+  Les règles de push de GitLab rejettent les commits dont l'adresse du committer n'est pas une
+  adresse vérifiée de l'utilisateur qui pousse, dont l'auteur n'est pas un utilisateur GitLab, ou
+  dont le nom du committer ne correspond pas au nom de celui qui pousse. Les règles sont posées au
+  niveau de l'instance ou du groupe de premier niveau et présentes dans chaque projet.
+
+  Les signatures cryptographiques de commits relèvent de CB-CICD-SCM-023.
+rationale: |
+  Les métadonnées d'un commit sont du texte libre. Sans ces règles de push, un développeur, ou un
+  attaquant muni du jeton d'un développeur, peut pousser des commits qui affichent une autre
+  personne comme auteur et committer. Les relecteurs accordent plus de confiance aux noms familiers,
+  et les équipes de réponse à incident suivent une fausse piste. Rattacher les commits à des comptes
+  vérifiés de la plate-forme rend l'historique attribuable sans imposer à chaque développeur de
+  gérer des clés de signature.
+impact: |
+  Les développeurs doivent commiter avec une adresse vérifiée dans leur compte GitLab. Les commits
+  importés d'autres systèmes ou écrits par des outils avec une identité générique sont rejetés
+  jusqu'à ce que l'identité soit corrigée ou que l'outil utilise un compte GitLab.
+notes: |
+  Les règles de push nécessitent GitLab Premium. Les règles de push de l'instance ne sont copiées que
+  dans les projets créés après leur mise en place ; les projets existants gardent leurs propres
+  règles et doivent être mis à jour un par un ou via l'API.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur, d'Owner de groupe ou de Maintainer de projet.
+
+    1. Vérifier les règles de push à chaque niveau :
+       - **Instance** : **Admin** > **Push rules**.
+       - **Groupe** : **Settings** > **Repository** > **Pre-defined push rules**.
+       - **Projet** : **Settings** > **Repository** > **Push rules**.
+    2. Vérifier que **Reject unverified users**, **Check whether the commit author is a GitLab user**
+       et **Reject inconsistent user name** sont cochés.
+    3. Contrôler un échantillon de projets existants, puisque les règles d'instance ne s'appliquent
+       pas aux projets créés avant elles.
+    4. Échec si un projet accepte des commits d'identités non vérifiées ou étrangères à GitLab.
+remediation:
+  manual: |
+    1. Demander aux développeurs d'ajouter et de vérifier l'adresse qu'ils utilisent dans Git, et
+       donner aux outils un compte GitLab (compte de service ou bot de projet).
+    2. Cocher **Reject unverified users**, **Check whether the commit author is a GitLab user** et
+       **Reject inconsistent user name** au niveau de l'instance et du groupe de premier niveau.
+    3. Appliquer les mêmes règles aux projets existants via les réglages du projet ou l'API des
+       règles de push.
+  rollback: |
+    Décocher les règles de push sur le projet concerné si un import légitime est bloqué, puis les
+    remettre une fois l'import terminé.

@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-007
+title: Alert on-call staff when GitOps reconciliation fails or health degrades
+finding:
+  title: GitOps sync failures and degraded applications go unnoticed
+  description: Argo CD or Flux fails to reconcile, or an application turns degraded, and nobody is notified; production silently drifts from Git, and tampering in the cluster or a blocked security fix stays invisible.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [gitops, alerting, drift-detection, argo-cd, flux, reconciliation]
+applicability:
+  versions: [argo-cd, flux]
+
+description: |
+  GitOps controllers notify the team on call when reconciliation fails or application health
+  degrades, through the controller's own notification system:
+
+  - Argo CD: the notifications engine has at least the `on-sync-failed` and `on-health-degraded`
+    triggers subscribed for production applications (per application or project annotation, or as
+    default subscriptions in `argocd-notifications-cm`), sending to the on-call channel. Service
+    credentials are kept in `argocd-notifications-secret`.
+  - Flux: the notification-controller has a `Provider` for the on-call channel and an `Alert` with
+    `eventSeverity: error` covering the `Kustomization`, `HelmRelease` and source objects
+    (`GitRepository`, `OCIRepository`, `HelmRepository`) of production.
+
+  Alerts are acknowledged and investigated: a failure may come from an error in Git, but also from
+  a change made directly in the cluster, a source that cannot be verified, or a blocked rollout.
+
+  Detection of drift for non-GitOps deployments is covered by CB-CICD-DEPLOY-011.
+rationale: |
+  A GitOps controller is the system that keeps production equal to Git. When it fails silently,
+  production keeps whatever state it has, including manual or malicious changes, and security
+  fixes merged in Git never arrive. Failures of signature or source verification also surface as
+  reconciliation errors, so they are often the first sign that a source was tampered with.
+impact: |
+  Needs an on-call destination and a short triage procedure. Noisy applications may need tuning of
+  their health checks.
+
+audit:
+  manual: |
+    Use read access to the GitOps controller namespaces (`argocd`, `flux-system`) and to the
+    notification destination.
+
+    1. **Argo CD**: in `argocd-notifications-cm`, check that the `on-sync-failed` and
+       `on-health-degraded` triggers exist and that production applications are subscribed
+       (`notifications.argoproj.io/subscribe.on-sync-failed.<service>` annotations on the Application
+       or AppProject, or the `subscriptions` field); check that the service token is in
+       `argocd-notifications-secret`, not in the ConfigMap.
+    2. **Flux**: `kubectl get providers,alerts -A` shows an `Alert` with `eventSeverity: error` whose
+       `eventSources` include the production `Kustomization`, `HelmRelease` and source objects, linked
+       to a `Provider` for the on-call channel.
+    3. Check that a recent failure (or a test, for example a deliberately broken branch in a test
+       application) produced a notification that someone acknowledged.
+    4. Fail if production applications or sources have no failure notification, or if notifications
+       go to a channel nobody watches.
+
+remediation:
+  manual: |
+    1. **Argo CD**: install the triggers and templates from the notifications catalog, configure the
+       service (Slack, PagerDuty, webhook...) with its token in `argocd-notifications-secret`, and
+       subscribe production applications to `on-sync-failed` and `on-health-degraded`, preferably
+       through default `subscriptions` in `argocd-notifications-cm` or AppProject annotations.
+    2. **Flux**: create a `Provider` for the on-call channel with its secret, and an `Alert` with
+       `eventSeverity: error` and `eventSources` for the production `Kustomization`, `HelmRelease`
+       and source objects (`name: '*'` per namespace if needed).
+    3. Write a short triage procedure: compare cluster and Git, check recent audit events, and
+       escalate as a security incident if the cause is not an error in Git.
+
+references:
+  - title: Notifications Overview (Argo CD)
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Triggers and Templates Catalog (Argo CD)
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/notifications/catalog/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Alerts (Flux notification-controller)
+    url: https://fluxcd.io/flux/components/notification/alerts/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3(5)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1565.001
+related_controls:
+  - id: CB-CICD-DEPLOY-011
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-SCM-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

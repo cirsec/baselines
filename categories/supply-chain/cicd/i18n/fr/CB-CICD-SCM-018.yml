@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-018
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger la revue des propriétaires du code pour les fichiers de pipeline et les chemins sensibles
+finding:
+  title: Les modifications des définitions de pipeline et des fichiers sensibles ne demandent aucune revue de leurs propriétaires
+  description: N'importe quel approbateur peut accepter une modification d'un fichier de workflow, d'un modèle CI partagé ou d'un module d'authentification ; un pipeline peut donc être modifié pour divulguer des secrets ou sauter des vérifications sans que l'équipe qui en est responsable voie le changement.
+description: |
+  Chaque dépôt désigne des propriétaires pour les chemins dont les modifications portent le plus de
+  risque, et une fusion vers une branche protégée exige leur approbation quand ces chemins changent.
+  Au minimum, des propriétaires sont définis pour :
+
+  - les définitions de pipeline et les fichiers CI inclus (`.github/workflows/`, `.gitlab-ci.yml` et
+    ses inclusions, `azure-pipelines*.yml`, `Jenkinsfile`, modèles partagés) ;
+  - le fichier de propriété lui-même (`CODEOWNERS`) ;
+  - l'infrastructure as code, les fichiers de build de conteneurs et les manifestes de
+    déploiement ;
+  - le code sensible pour la sécurité (authentification, autorisation, cryptographie, traitement
+    des entrées).
+
+  Les propriétaires sont des équipes qui ont l'expertise pour relire ce type de modification
+  (plate-forme, sécurité, mainteneurs du composant), pas des individus, pour que les revues restent
+  possibles en cas d'absence. L'exigence générale d'approbation relève de CB-CICD-SCM-012.
+rationale: |
+  La règle d'approbation générique accepte n'importe quel relecteur ayant un accès en écriture,
+  souvent un collègue peu familier de la CI/CD ou du code de sécurité. Les définitions de pipeline
+  sont le chemin le plus direct d'une modification de code vers les secrets et la production ;
+  exiger l'approbation de leurs propriétaires garantit qu'une personne qui comprend ces risques lit
+  la modification. Protéger le fichier CODEOWNERS empêche un auteur de retirer l'exigence dans la
+  même pull request.
+impact: |
+  Les équipes propriétaires reçoivent davantage de demandes de revue et doivent garder des délais
+  de réponse raisonnables. Le fichier de propriété doit être entretenu au fil des changements
+  d'équipes et de chemins.
+notes: |
+  Sur GitHub, quand un chemin a plusieurs propriétaires, l'approbation de l'un d'eux suffit ; l'option
+  de ruleset **Required reviewers** (approbations d'équipe par chemin) donne un contrôle plus fin là
+  où elle est disponible. GitHub lit `CODEOWNERS` dans `.github/`, à la racine du dépôt ou dans
+  `docs/`. Sur GitLab, l'approbation des propriétaires du code sur les branches protégées nécessite
+  Premium. Azure Repos n'a pas de fichier CODEOWNERS : la stratégie de branche **Réviseurs inclus
+  automatiquement** avec un filtre de chemin joue ce rôle.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire le contenu des dépôts et les réglages de protection de branche.
+
+    1. Vérifier que chaque dépôt a une définition de propriété qui couvre les fichiers de pipeline,
+       le fichier de propriété lui-même, l'infrastructure et les chemins sensibles, attribués à des
+       équipes.
+    2. Vérifier que l'approbation des propriétaires est exigée sur les branches protégées :
+       - **GitHub** : la règle de ruleset **Require a pull request before merging** active **Require
+         review from Code Owners** (ou des **Required reviewers** par chemin), et un fichier
+         `CODEOWNERS` valide existe. La politique `codeowners` d'Allstar et legitify aident à grande
+         échelle.
+       - **GitLab** (Premium) : un fichier `CODEOWNERS` couvre `.gitlab-ci.yml` et les fichiers CI
+         inclus, et **Settings** > **Repository** > **Branch rules** > **Code owner approval** est
+         activé pour les branches protégées.
+       - **Azure DevOps** : la stratégie de branche **Réviseurs inclus automatiquement** liste le
+         groupe propriétaire comme **Obligatoire** avec un filtre de chemin tel que
+         `/azure-pipelines*.yml;/templates/*`.
+    3. Échec si les définitions de pipeline ou le fichier de propriété peuvent être modifiés sur une
+       branche protégée sans l'approbation de leurs propriétaires.
+remediation:
+  manual: |
+    1. Rédiger le fichier de propriété avec des équipes propriétaires pour les fichiers de pipeline,
+       les modèles CI, le fichier de propriété, l'infrastructure et les chemins sensibles.
+    2. Exiger l'approbation des propriétaires :
+       - **GitHub** : activer **Require review from Code Owners** dans le ruleset, ou ajouter des
+         **Required reviewers** pour les chemins sensibles.
+       - **GitLab** : activer **Code owner approval** pour chaque branche protégée.
+       - **Azure DevOps** : ajouter une stratégie **Réviseurs inclus automatiquement** avec le groupe
+         propriétaire, réglée sur **Obligatoire**, et un filtre de chemin pour les fichiers de
+         pipeline et d'infrastructure.
+    3. Donner aux équipes propriétaires un accès en écriture au dépôt pour que leurs approbations
+       comptent.

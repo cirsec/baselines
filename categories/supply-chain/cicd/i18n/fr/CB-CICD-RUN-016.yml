@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-016
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter les conteneurs de job sans mode privilégié
+finding:
+  title: Des conteneurs de job tournent en mode privilégié
+  description: Un conteneur de job, de service ou de plugin privilégié a un accès quasi complet à l'hôte du runner ; quiconque peut modifier un pipeline obtient root sur le runner, ses identifiants et tous les autres jobs qu'il sert.
+description: |
+  Les conteneurs de job, de service et de plugin tournent sans mode privilégié et sans espaces de noms de
+  l'hôte (`--pid=host` et équivalents). Les images de conteneur sont construites avec des outils qui n'ont
+  pas besoin de privilèges (BuildKit rootless, Buildah, builders de type Kaniko) plutôt qu'avec
+  Docker-in-Docker privilégié.
+
+  Quand des builds privilégiés sont inévitables, ils ne tournent que sur des runners dédiés, éphémères
+  (CB-CICD-RUN-012), qui n'acceptent que des jobs de références protégées (CB-CICD-RUN-011) et ne
+  construisent jamais de code non fiable. Le montage du socket Docker ou de chemins de l'hôte relève de
+  CB-CICD-RUN-017.
+rationale: |
+  Le mode privilégié désactive l'essentiel de l'isolation des conteneurs : le job peut accéder aux
+  périphériques de l'hôte, charger des modules noyau et s'échapper vers l'hôte. Sur un runner, cela
+  signifie root sur la machine qui détient l'identifiant du runner et exécute les jobs d'autres équipes.
+impact: |
+  Les pipelines qui construisent des images avec Docker-in-Docker privilégié doivent passer à un builder
+  rootless ou à des runners privilégiés dédiés. Certaines suites de tests qui ont besoin de services
+  privilégiés doivent passer sur des runners dédiés.
+notes: |
+  Sur GitLab, `services_privileged` prend par défaut la valeur de `privileged` ;
+  `allowed_privileged_services` limite les images de service autorisées en mode privilégié. Sur
+  Woodpecker, seuls les administrateurs d'instance peuvent marquer un dépôt comme trusted, ce qui autorise
+  `privileged` et les volumes de l'hôte dans ses étapes ; les plugins listés dans
+  `WOODPECKER_PLUGINS_PRIVILEGED` tournent en privilégié pour tous les dépôts, d'où des tags exacts. Sur
+  AWS CodeBuild, le mode privilégié ne sert qu'à lancer le démon Docker pour construire des images.
+audit:
+  manual: |
+    Utiliser un accès en lecture à la configuration des runners et aux réglages des projets de build.
+
+    1. Lister les runners, projets et pipelines qui autorisent des conteneurs privilégiés.
+    2. Par produit :
+       - **GitLab** : `config.toml` `[runners.docker]` a `privileged = false` et pas de
+         `services_privileged = true` ; pas de `--pid=host`. Les runners privilégiés éventuels sont
+         protégés, éphémères et dédiés.
+       - **Gitea / Forgejo** : le `config.yml` du runner a `container.privileged: false` (défaut).
+       - **Woodpecker** : peu de dépôts ont l'option de sécurité **Trusted** (**Repository settings**,
+         posée par les administrateurs d'instance) ; `WOODPECKER_PLUGINS_PRIVILEGED` est vide ou liste des
+         tags d'image exacts.
+       - **AWS CodeBuild** : `aws codebuild batch-get-projects` montre `environment.privilegedMode` à
+         `false` (défaut) sauf sur des projets dédiés à la construction d'images qui ne construisent jamais
+         de code de pull request.
+    3. Chercher dans les définitions de pipeline les demandes de privilèges (par exemple services
+       `docker:dind`, `privileged: true` dans des spécifications d'étape ou de pod).
+    4. Échec si un runner ou un projet de build qui exécute des jobs non fiables ou multi-projets autorise
+       des conteneurs privilégiés.
+remediation:
+  manual: |
+    1. Passer la construction d'images à un builder rootless.
+    2. Par produit :
+       - **GitLab** : poser `privileged = false` sur les runners partagés ; garder un runner séparé,
+         protégé et éphémère pour les jobs qui ont encore besoin de privilèges, avec
+         `allowed_privileged_services` limité.
+       - **Gitea / Forgejo** : garder `container.privileged: false` ; donner aux builds privilégiés un
+         runner dédié sur une VM jetable.
+       - **Woodpecker** : retirer **Trusted** des dépôts qui n'en ont pas besoin et réduire
+         `WOODPECKER_PLUGINS_PRIVILEGED` à des images épinglées.
+       - **AWS CodeBuild** : poser `privilegedMode` à `false` sur les projets qui ne construisent pas
+         d'images, et séparer les projets de construction d'images des builds de pull requests.
+    3. Ajouter une politique d'admission (Pod Security Admission `baseline` ou `restricted`) sur les
+       runners Kubernetes pour rejeter les pods privilégiés (CB-CICD-RUN-018).

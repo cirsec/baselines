@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-010
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Séparer les pools de runners par projet et par niveau de confiance
+finding:
+  title: Des runners sont partagés entre projets de sensibilités différentes
+  description: Quand un même pool de runners sert tous les dépôts, un job d'un projet peu sûr peut lire l'espace de travail, les caches ou les identifiants laissés par un build de production sur le même hôte, ou les altérer pour le suivant.
+parameters:
+  runner_sharing: Mode de partage des pools de runners. selected-projects signifie que chaque pool partagé est limité aux projets qui en ont besoin et que les runners d'instance sont désactivés pour les groupes sensibles ; dedicated signifie un pool par projet et par environnement, imposé par une politique de la plate-forme.
+description: |
+  Les pools, groupes, clusters de runners et pools d'agents ne sont accordés qu'aux dépôts ou projets qui
+  en ont besoin, et les pools sont séparés par niveau de confiance : code public et privé, développement
+  et production, builds non fiables et builds de release. Les runners disponibles pour toute l'instance
+  sont désactivés pour les groupes qui manipulent des secrets de production.
+
+  Avec `{{ runner_sharing }}` à `dedicated`, chaque projet sensible et chaque environnement a son propre
+  pool, et une politique de la plate-forme empêche les autres projets de le cibler.
+
+  Qui peut enregistrer des runners relève de CB-CICD-RUN-002 ; la restriction des runners privilégiés aux
+  références protégées de CB-CICD-RUN-011.
+rationale: |
+  Les builds sur un même runner ne sont pas isolés les uns des autres tant que le runner n'est pas
+  éphémère : un job peut lire les fichiers, processus et identifiants du précédent, ou laisser quelque
+  chose au suivant. Les pools partagés font du projet le moins protégé une porte d'entrée vers le plus
+  protégé.
+impact: |
+  Plus de pools signifie plus de capacité à gérer et une utilisation plus faible. Commencer par séparer
+  la production et les charges non fiables, puis affiner.
+notes: |
+  Sur Buildkite, les queues routent les jobs au sein d'un cluster mais ne sont pas une frontière
+  d'isolation : seuls les clusters isolent agents, pipelines et secrets de cluster. Sur GitLab, les
+  runners d'instance sont activés par défaut pour chaque projet sur GitLab.com. Sur Woodpecker, les agents
+  d'instance prennent aussi les workflows d'une organisation, sauf si celle-ci n'autorise que ses propres
+  agents. Sur TeamCity, garder le pool d'agents **Default** vide, car un projet peut y retomber. Les
+  restrictions de resource class de runners CircleCI par config policies nécessitent le plan Scale.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur d'organisation ou d'instance en lecture.
+
+    1. Lister les pools de runners avec les projets autorisés à les utiliser et le niveau de confiance de
+       chaque projet.
+    2. Par produit :
+       - **GitHub** : **Organization** > **Settings** > **Actions** > **Runner groups** : le **Repository
+         access** de chaque groupe est **Selected repositories**, pas **All repositories** (le groupe par
+         défaut autorise tous les dépôts). Même vérification pour les groupes d'entreprise et l'accès des
+         organisations.
+       - **GitLab** : les runners qui servent des projets sensibles sont des runners de groupe ou de
+         projet, avec **Lock to current projects** pour les runners de projet ; les groupes sensibles ont
+         **Enable instance runners for this group** désactivé et n'autorisent pas les projets à passer
+         outre. **Admin** > **Settings** > **CI/CD** > **Enable instance runners for new projects** reflète
+         la politique.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Pools d'agents** : les pools sensibles
+         sont limités à un projet ou accordés à un seul projet ; les agents de production sont dans un pool
+         séparé.
+       - **TeamCity** : **Administration** > **Agent Pools** : un pool par frontière de confiance et le
+         pool **Default** n'a pas d'agent.
+       - **Buildkite** : chaque pipeline et chaque agent appartient à un cluster ; les charges de
+         production et non fiables sont dans des clusters séparés ; les règles de cluster sont revues.
+       - **CircleCI** : les resource classes de runners auto-hébergés sont séparées par équipe ou
+         environnement ; avec le plan Scale, une config policy limite les resource classes sensibles aux
+         projets autorisés.
+       - **Gitea / Forgejo** : les dépôts sensibles utilisent des runners enregistrés au niveau du dépôt
+         ou de l'organisation, pas des runners globaux enregistrés depuis l'administration du site.
+       - **Woodpecker** : les organisations sensibles activent **Organization settings** > **Agents** >
+         **Organization agents only**.
+       - **Flux** : dans les clusters partagés, des instances de contrôleur séparées (sharding avec des
+         valeurs `--watch-label-selector` uniques) servent les ressources de la plate-forme et des
+         locataires.
+    3. Échec si un pool est partagé entre projets de niveaux de confiance différents, ou si un groupe
+       sensible peut utiliser des runners d'instance ; avec `{{ runner_sharing }}` à `dedicated`, échec
+       aussi si un projet ou un environnement sensible n'a pas son propre pool.
+remediation:
+  manual: |
+    1. Classer les projets par niveau de confiance et définir les pools cibles.
+    2. Créer les pools et les restreindre :
+       - **GitHub** : régler le **Repository access** de chaque groupe de runners sur **Selected
+         repositories** (ou `visibility: selected` via l'API REST) et sortir les runners du groupe par
+         défaut.
+       - **GitLab** : enregistrer des runners de groupe ou de projet pour les groupes sensibles, verrouiller
+         les runners de projet sur leurs projets, et désactiver les runners d'instance sur ces groupes.
+       - **Azure DevOps** : créer un pool par projet (ou par environnement) et retirer l'accès des autres
+         projets.
+       - **TeamCity** : créer des pools d'agents par frontière de confiance, y affecter les projets, et
+         vider le pool **Default**.
+       - **Buildkite** : migrer les agents hors cluster vers des clusters et placer les pipelines de
+         production et non fiables dans des clusters séparés.
+       - **CircleCI** : créer des resource classes par équipe ou environnement et ajouter une config policy
+         qui les restreint.
+       - **Gitea / Forgejo** : enregistrer les runners au niveau du dépôt ou de l'organisation pour le code
+         sensible.
+       - **Woodpecker** : activer **Organization agents only** et donner à l'organisation ses propres
+         agents.
+    3. Déplacer les jobs vers les nouveaux pools, puis supprimer les anciens runners partagés
+       (CB-CICD-RUN-006).

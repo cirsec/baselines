@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-022
+title: Keep long-lived credentials off runner hosts
+finding:
+  title: Runner hosts store credentials that every job can use
+  description: SSH keys, cloud keys, registry logins or broad instance roles kept on a runner host are available to every job that runs there, so anyone able to trigger a workflow can steal or use them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [runners, credentials, instance-role, registry, secrets]
+
+description: |
+  Runner hosts and images hold no credential that outlives a job or is shared across jobs: no SSH
+  private keys, no cloud access keys, no authenticated `docker login` or `podman login` session of the
+  runner user, no `.netrc` or package registry tokens, and no instance role, managed identity or node
+  service account with permissions beyond what the runner itself needs to operate. Jobs get the
+  credentials they need per job, through the platform's secrets or federated identity
+  (CB-CICD-SEC-015).
+
+  The runner's own platform credential is covered by CB-CICD-RUN-005; access to the instance metadata
+  endpoint by CB-CICD-RUN-023.
+rationale: |
+  Any user who can run a workflow on a runner has the access of that runner's user: everything stored
+  on the host, and everything its cloud identity can do. Host-level credentials bypass the per-job
+  scoping, approvals and environment protections set on platform secrets.
+impact: |
+  Jobs that relied on host credentials (deploy keys in the runner user's home, a registry login done at
+  provisioning) must request them per job.
+notes: |
+  On Forgejo and Gitea runners, workflows can pull any image that the container engine's logged-in
+  sessions can access, because authors choose images with `container:`.
+
+audit:
+  manual: |
+    Use administrative read access to a sample of runner hosts or images, and read access to their cloud
+    identities.
+
+    1. On each runner type, list credential files of the runner user and system: `~/.ssh/`,
+       `~/.docker/config.json`, `~/.netrc`, cloud CLI configuration, package manager configuration,
+       environment files.
+    2. List the instance role, managed identity or node service account attached to runner hosts and
+       review its permissions.
+    3. Per product:
+       - **GitHub**: self-hosted runner hosts hold no private SSH keys or API tokens and their cloud
+         identity is limited to what the runner needs.
+       - **Gitea / Forgejo**: Docker or Podman on runner hosts is not logged into registries that
+         require authentication.
+    4. Fail if a runner host or image holds a long-lived credential usable by jobs, or its cloud identity
+       grants more than the runner's own operation needs.
+remediation:
+  manual: |
+    1. Remove credentials from runner hosts and images, log out container engines, and rotate every
+       credential found.
+    2. Reduce the runner instance role or identity to the minimum (often none), and give jobs per-job
+       credentials through platform secrets or OIDC federation (CB-CICD-SEC-015).
+    3. Rebuild images from a pipeline that checks for credentials before publishing them.
+
+references:
+  - title: Secure use reference (Hardening for self-hosted runners)
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Forgejo Actions deployments (Private registry access)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Self-managed runner security (static hosts and credentials)
+    url: https://docs.gitlab.com/runner/security/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers credentials stored on runner hosts only.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+  - framework: mitre-attack
+    id: T1552.004
+  - framework: mitre-attack
+    id: T1078.004
+related_controls:
+  - id: CB-CICD-SEC-015
+    type: related
+  - id: CB-CICD-RUN-005
+    type: related
+  - id: CB-CICD-RUN-023
+    type: related
+  - id: CB-CICD-SEC-024
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

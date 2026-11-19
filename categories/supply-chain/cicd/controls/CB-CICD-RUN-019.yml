@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-019
+title: Give Kubernetes build pods dedicated least-privilege service accounts
+finding:
+  title: Build pods run with the namespace default or an over-privileged service account
+  description: Build and workflow pods that use the default service account, a cluster-wide role or a namespace shared with the runner controller let any step call the Kubernetes API with those rights, read secrets of other pipelines or tamper with the controller.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [kubernetes, service-accounts, rbac, namespaces, runners]
+
+applicability:
+  versions: [argo-workflows, github, tekton]
+
+parameters:
+  - name: sa_token
+    type: enum
+    description: How Kubernetes API credentials reach build pods. dedicated-account means a dedicated least-privilege service account per pipeline or namespace; no-token also stops mounting the service account token into the main build containers.
+    allowed: [dedicated-account, no-token]
+    default: dedicated-account
+    profile_defaults:
+      hardened: no-token
+
+description: |
+  Build and workflow pods, and the controllers that create them (Actions Runner Controller, Tekton
+  and Argo Workflows controllers, Kubernetes delegates), run in namespaces separated by trust domain:
+  runner controllers apart from runner pods, untrusted pull request pipelines apart from release
+  pipelines. Each pipeline or namespace uses a dedicated service account bound by namespace-scoped
+  RBAC to the permissions it needs. The namespace `default` service account and `cluster-admin` are
+  never used by builds.
+
+  With `{{ sa_token }}` set to `no-token`, the service account token is not mounted into the
+  containers that run build steps.
+
+  Cloud identities attached to those service accounts are covered by CB-CICD-SEC-015; identities of
+  deployment controllers by CB-CICD-DEPLOY-009.
+rationale: |
+  Every step of a build can read the token mounted in its pod. With the default service account or a
+  broad role, a malicious dependency or pipeline change can list secrets, create pods in other
+  namespaces or patch the controller. Separating namespaces keeps a compromised pull request pipeline
+  away from release credentials.
+impact: |
+  Pipelines that call the Kubernetes API (deploy steps, cluster tests) need explicit roles. Turning off
+  token mounting in Argo Workflows requires naming an executor service account.
+notes: |
+  Argo Workflows pods use the `default` service account unless the workflow names one, and the main
+  container has the token mounted; there is no restriction on which service account in the namespace a
+  workflow may use. Tekton task runs use the namespace `default` service account when none is set.
+  GitHub recommends running Actions Runner Controller runner pods in a namespace other than the
+  controller's, one namespace per organization or per runner scale set, and GitHub App credentials
+  stored in a Kubernetes secret.
+
+audit:
+  manual: |
+    Use a cluster role that can read namespaces, service accounts, roles and bindings, and the build
+    resources (`get`/`list` only).
+
+    1. Map namespaces to trust domains and check that controllers, untrusted builds and release builds
+       are not in the same namespace.
+    2. For each build namespace, list service accounts and their role bindings; look for bindings to
+       `cluster-admin`, cluster roles with wildcard verbs, or roles on `secrets` across namespaces.
+    3. Per product:
+       - **Tekton**: `PipelineRun` `spec.taskRunTemplate.serviceAccountName` (and `TaskRun`
+         `spec.serviceAccountName`) names a dedicated service account; release and pull request
+         pipelines run in different namespaces.
+       - **Argo Workflows**: `Workflow` `spec.serviceAccountName` (or workflow defaults) names a
+         dedicated service account; with `{{ sa_token }}` set to `no-token`,
+         `spec.automountServiceAccountToken: false` with `spec.executor.serviceAccountName` set. Checkov
+         rules `CKV_ARGO_1` and `CKV_ARGO_2` help.
+       - **GitHub** (Actions Runner Controller): runner scale sets are installed in namespaces separate
+         from the controller (`arc-systems` and `arc-runners` in the examples), authenticate with a
+         GitHub App stored in a Kubernetes secret, and runner pods do not get cluster-wide roles.
+    4. Fail if a build pod uses the namespace `default` service account, any build service account is
+       bound to `cluster-admin` or a cluster-wide role it does not need, or controllers share a namespace
+       with build pods; with `{{ sa_token }}` set to `no-token`, also fail if build containers mount a
+       service account token.
+remediation:
+  manual: |
+    1. Create one namespace per trust domain and move controllers, untrusted pipelines and release
+       pipelines apart.
+    2. Create a service account per pipeline or namespace, with a `Role` and `RoleBinding` limited to
+       what the pipeline needs, and remove `cluster-admin` and broad cluster role bindings.
+    3. Per product:
+       - **Tekton**: set `serviceAccountName` on every `PipelineRun` and `TaskRun`, or through trigger
+         templates.
+       - **Argo Workflows**: set `serviceAccountName` in workflow defaults, and for `no-token` set
+         `automountServiceAccountToken: false` with an `executor.serviceAccountName`.
+       - **GitHub**: reinstall runner scale sets in their own namespaces with GitHub App credentials in
+         a Kubernetes secret.
+    4. Add an admission policy that rejects build pods using the `default` service account.
+
+references:
+  - title: Argo Workflows security (Workflow pod permissions)
+    url: https://argo-workflows.readthedocs.io/en/latest/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton PipelineRuns (Specifying custom ServiceAccount credentials)
+    url: https://tekton.dev/docs/pipelines/pipelineruns/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Deploying runner scale sets with Actions Runner Controller
+    url: https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/deploy-runner-scale-sets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-5 Insufficient PBAC
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-05-Insufficient-PBAC
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+  - framework: mitre-attack
+    id: T1610
+related_controls:
+  - id: CB-CICD-IAM-034
+    type: related
+  - id: CB-CICD-IAM-035
+    type: related
+  - id: CB-CICD-DEPLOY-009
+    type: related
+  - id: CB-CICD-RUN-018
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

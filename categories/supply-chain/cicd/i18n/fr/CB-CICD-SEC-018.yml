@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-018
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Garder les secrets GitOps chiffrés dans Git ou les injecter sur le cluster de destination
+finding:
+  title: Les secrets livrés par GitOps sont en clair dans Git ou injectés lors du rendu des manifestes
+  description: Quiconque peut lire le dépôt de configuration, son historique ou le cache du contrôleur GitOps peut lire les secrets qu'il déploie, et une seule fuite du dépôt expose tous les environnements qu'il gère.
+description: |
+  Les secrets que déploie un contrôleur GitOps n'apparaissent jamais en clair dans Git, historique
+  compris. Ils sont soit stockés chiffrés (SOPS avec une clé KMS, age ou PGP, Sealed Secrets) et
+  déchiffrés par le contrôleur ou un opérateur au moment de la réconciliation sur le cluster, soit
+  créés sur le cluster de destination par un opérateur qui les lit dans un gestionnaire de secrets
+  (par exemple External Secrets Operator), Git ne contenant qu'une référence.
+
+  Les plugins qui injectent des valeurs secrètes dans les manifestes pendant leur rendu par le
+  contrôleur sont évités, car les manifestes rendus, secrets compris, sont mis en cache et servis
+  par le contrôleur.
+
+  Quand `{{ key_isolation }}` vaut `per-tenant`, chaque tenant (équipe, classe d'environnement) a
+  sa propre clé de chiffrement de clés et sa propre politique d'accès, pour que la clé d'un tenant
+  ne puisse pas déchiffrer les secrets d'un autre.
+
+  La recherche de secrets versionnés dans les dépôts relève de CB-CICD-SEC-009 ; les identités des
+  contrôleurs GitOps, de CB-CICD-IAM-035.
+parameters:
+  key_isolation: encrypted exige que les secrets GitOps soient chiffrés dans Git ou injectés sur le cluster de destination ; per-tenant exige en plus une clé de chiffrement de clés avec sa propre politique d'accès par tenant.
+rationale: |
+  Le GitOps fait du dépôt la source de vérité : il est copié chez chaque développeur, job CI et
+  miroir qui le lit. Des secrets en clair y sont exposés à tous, pour toujours, puisque
+  l'historique les conserve. Le chiffrement dans Git ou l'injection sur le cluster gardent la
+  valeur secrète hors du dépôt. L'injection au rendu est plus faible : Argo CD stocke les
+  manifestes générés dans son cache Redis et les expose via le repo-server, donc quiconque atteint
+  ces composants lit les secrets. Des clés partagées entre tenants transforment la compromission
+  d'un tenant en accès à tous.
+impact: |
+  Les équipes ont besoin d'outils pour chiffrer les secrets (SOPS, kubeseal) ou déclarer des
+  références pour un opérateur, et un opérateur ou une clé de déchiffrement doit être géré sur
+  chaque cluster. Les clés par tenant multiplient les clés et politiques à gérer.
+notes: |
+  Argo CD recommande la gestion des secrets sur le cluster de destination et documente les risques
+  des Config Management Plugins qui injectent des secrets ; si un tel plugin est conservé,
+  restreindre l'accès réseau à Redis et au repo-server.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts GitOps et à la configuration du contrôleur.
+
+    1. Analyser les dépôts GitOps, historique compris, pour y trouver des manifestes `Secret`
+       Kubernetes avec `data` ou `stringData` en clair et d'autres identifiants (gitleaks,
+       TruffleHog).
+    2. Vérifier comment les secrets arrivent sur les clusters :
+       - **Argo CD** : les applications déploient des ressources `SealedSecret`, `ExternalSecret` ou
+         similaires réconciliées par un opérateur sur le cluster de destination ; aucun Config
+         Management Plugin ni plugin vault n'injecte de valeurs secrètes dans les manifestes au
+         rendu. Si c'est le cas, des politiques réseau restreignent l'accès à Redis et au
+         repo-server.
+       - **Flux** : les objets `Kustomization` qui appliquent des secrets définissent
+         `spec.decryption.provider: sops` avec un `spec.decryption.secretRef` (ou une identité KMS
+         cloud), et les fichiers dans Git sont chiffrés par SOPS ; ou les secrets viennent d'un
+         opérateur comme External Secrets.
+    3. Quand `{{ key_isolation }}` vaut `per-tenant`, vérifier que la clé SOPS ou Sealed Secrets de
+       chaque tenant est distincte, que les politiques des clés KMS ou les secrets de clé age ne
+       sont lisibles que par l'identité du contrôleur de ce tenant, et que les clés de niveau
+       cluster ne servent qu'aux secrets partagés volontairement.
+    4. Échec si un secret en clair existe dans un dépôt GitOps ou son historique, si des secrets
+       sont injectés au rendu sans restriction du cache du contrôleur, ou, pour `per-tenant`, si
+       des tenants partagent une clé de chiffrement de clés.
+remediation:
+  manual: |
+    1. Choisir une approche par plate-forme : SOPS (avec une clé KMS cloud ou age), Sealed
+       Secrets, ou un opérateur qui lit un gestionnaire de secrets sur le cluster de destination.
+    2. Convertir les secrets existants :
+       - **Argo CD** : remplacer les manifestes `Secret` en clair et l'injection au rendu par des
+         ressources `SealedSecret` ou `ExternalSecret` ; retirer les plugins qui injectent des
+         secrets.
+       - **Flux** : chiffrer les fichiers avec SOPS, ajouter à la `Kustomization` un
+         `spec.decryption` avec le fournisseur `sops` et la référence de clé, et garder la clé de
+         déchiffrement hors de Git.
+    3. Pour `per-tenant`, créer une clé KMS ou age par tenant, restreindre sa politique à
+       l'identité du contrôleur de ce tenant, et pointer la `Kustomization` ou le contrôleur
+       Sealed Secrets de chaque tenant vers sa propre clé.
+    4. Renouveler tout secret qui a été en clair dans Git, puis réécrire ou archiver l'historique si
+       la politique l'exige.

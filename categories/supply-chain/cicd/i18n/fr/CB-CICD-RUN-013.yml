@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Démarrer chaque job depuis un espace de travail propre sur les runners réutilisés
+finding:
+  title: Les jobs sur des runners réutilisés héritent de l'espace de travail du job précédent
+  description: Quand un runner réutilise les répertoires de checkout et de build, un job peut lire les fichiers, l'historique Git et les résultats laissés par le job d'un autre projet, ou laisser des sources et binaires modifiés que le build suivant reprendra.
+description: |
+  Sur les runners réutilisés entre les jobs, chaque job démarre d'un checkout propre : le répertoire des
+  sources est supprimé ou cloné de zéro, les répertoires de sortie du build sont recréés, et aucun volume
+  inscriptible n'est partagé entre jobs de pipelines différents. Les builds de release et de déploiement,
+  et les builds de code non fiable, utilisent toujours un checkout propre.
+
+  Ce contrôle ne s'applique qu'aux runners non éphémères ; CB-CICD-RUN-012 le rend inutile. Les caches de
+  dépendances relèvent de CB-DEP-CI-004.
+rationale: |
+  Un checkout incrémental garde tout ce que le job précédent a écrit : sources modifiées, fichiers en trop
+  que le build reprend, objets Git d'autres branches, sous-modules. Un job malveillant peut y déposer du
+  code qui finira dans la release suivante, et un job ultérieur peut lire des données qu'il ne devrait pas
+  voir.
+impact: |
+  Les checkouts propres sont plus lents pour les gros dépôts. Les clones superficiels et des caches dédiés
+  réduisent le coût.
+notes: |
+  La stratégie `fetch` de GitLab réutilise la copie de travail et n'est sûre que si toutes les personnes
+  ayant accès à l'environnement partagé sont de confiance. Les checkouts YAML d'Azure Pipelines ont
+  `clean: true` par défaut, mais le réglage du pipeline et les paramètres d'exécution peuvent le changer.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux définitions de pipeline et aux réglages des projets.
+
+    1. Lister les runners persistants et les pipelines qui les utilisent.
+    2. Par produit :
+       - **GitLab** : les jobs sur des runners persistants partagés utilisent `GIT_STRATEGY: clone` (dans
+         `.gitlab-ci.yml` ou le réglage de projet **Settings** > **CI/CD** > **General pipelines** > **Git
+         strategy**) ; les hôtes statiques posent `FF_ENABLE_JOB_CLEANUP`.
+       - **Azure DevOps** : les jobs de release et de pull request sur des agents auto-hébergés posent
+         `workspace: clean: all` sur le job, et les étapes `checkout` gardent `clean: true`.
+       - **TeamCity** : les configurations de build de release et de déploiement imposent un checkout
+         propre.
+       - **Buildkite** : les steps qui construisent du code non fiable posent
+         `BUILDKITE_CLEAN_CHECKOUT: true`.
+       - **Tekton** : les workspaces inscriptibles utilisent un `volumeClaimTemplate` par exécution, pas un
+         `persistentVolumeClaim` partagé par les pipeline runs.
+    3. Échec si un build de release, de déploiement ou non fiable sur un runner réutilisé démarre depuis
+       l'espace de travail d'un job précédent, ou si des pipelines de niveaux de confiance différents
+       partagent un volume inscriptible.
+remediation:
+  manual: |
+    1. Préférer des runners éphémères (CB-CICD-RUN-012). Là où les runners restent persistants :
+       - **GitLab** : poser `GIT_STRATEGY: clone` pour les jobs sur runners partagés et activer
+         `FF_ENABLE_JOB_CLEANUP` sur les runners statiques.
+       - **Azure DevOps** : ajouter `workspace: clean: all` aux jobs de release et de pull request.
+       - **TeamCity** : activer le checkout propre pour les configurations de build de release et de
+         déploiement.
+       - **Buildkite** : poser `BUILDKITE_CLEAN_CHECKOUT: true` dans l'`env` des steps non fiables.
+       - **Tekton** : remplacer les workspaces `persistentVolumeClaim` partagés par des
+         `volumeClaimTemplate`.
+    2. Retirer les volumes d'hôte inscriptibles partagés entre jobs (CB-CICD-RUN-017).

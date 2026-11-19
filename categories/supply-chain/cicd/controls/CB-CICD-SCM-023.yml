@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-023
+title: Require signed commits on protected branches
+finding:
+  title: Protected branches accept unsigned commits
+  description: Without signatures, nothing proves that a commit on a release branch was written by the person it names, so a stolen token or a compromised mirror can introduce commits that look legitimate.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [commit-signing, signed-commits, provenance, integrity]
+
+applicability:
+  versions: [github, gitlab, gitea, forgejo]
+
+description: |
+  Commits pushed to default and release branches carry a valid cryptographic signature (GPG, SSH
+  or S/MIME, or a platform-issued signature for web and bot commits) that the platform verifies,
+  and pushes containing unsigned or unverifiable commits are rejected. Signing keys are registered
+  on the developers' platform accounts, so a signature ties a commit to a known collaborator;
+  developers protect their keys and use multi-factor authentication on the account that holds
+  them.
+
+  Verification of signatures by pipelines and GitOps controllers before building or deploying is
+  covered by CB-CICD-SCM-024; identity checks without signatures by CB-CICD-SCM-022.
+rationale: |
+  Git author fields can be forged, and platform access tokens are a common target. A required
+  signature means that pushing a commit attributed to a maintainer also requires that maintainer's
+  private key. Signed history is also what downstream verification (pipelines, Argo CD, Flux) can
+  check, giving source integrity beyond the platform's own access control.
+impact: |
+  Every developer must set up a signing key and register it, and tools that commit (release bots,
+  dependency updaters) must sign their commits or commit through the platform API. Collaborators who
+  push an unsigned commit must rewrite and force-push their own branch before merging.
+notes: |
+  On GitHub, commits made in the web interface, and commits made by a GitHub App through the API
+  without custom author, committer or signature information, are signed by GitHub. Users who enable
+  vigilant mode see unsigned commits that claim their identity flagged as unverified. On GitLab,
+  **Reject unsigned commits** (Premium) still accepts commits created through the GitLab UI or API
+  without signatures; the Web IDE is blocked by default in projects with this rule. On Gitea and
+  Forgejo, the `[repository.signing] DEFAULT_TRUST_MODEL` decides which signatures count as
+  verified; `collaborator` or `collaboratorcommitter` ties them to repository collaborators.
+
+audit:
+  manual: |
+    Use a role that can read branch protection or push rules.
+
+    1. Check the signing requirement on default and release branches:
+       - **GitHub**: the ruleset enables **Require signed commits** (branch protection: **Require
+         signed commits**). legitify and Checkov flag repositories without it.
+       - **GitLab** (Premium): push rule **Reject unsigned commits** is selected at instance
+         (**Admin** > **Push rules**), group (**Settings** > **Repository** > **Pre-defined push
+         rules**) or project (**Settings** > **Repository** > **Push rules**) level.
+       - **Gitea / Forgejo**: the branch rule enables **Require signed commits**, and `app.ini`
+         `[repository.signing] DEFAULT_TRUST_MODEL` is `collaborator` or `collaboratorcommitter`.
+    2. Inspect recent commits on protected branches (`git log --show-signature` or the platform's
+       verification badge) and confirm they are verified.
+    3. Fail if a protected branch accepts unsigned or unverified commits from developers or bots.
+
+remediation:
+  manual: |
+    1. Help developers create signing keys and register them on their accounts; configure bots to
+       sign or to commit through the platform API.
+    2. Require signatures:
+       - **GitHub**: enable **Require signed commits** in the ruleset for the protected branches.
+       - **GitLab**: select **Reject unsigned commits** in the push rules at group or instance
+         level, and in existing projects.
+       - **Gitea / Forgejo**: enable **Require signed commits** in the branch rule and set
+         `DEFAULT_TRUST_MODEL` to `collaborator` or `collaboratorcommitter`.
+    3. Check that the merge method used for pull requests produces verified commits on the target
+       branch.
+
+references:
+  - title: About commit signature verification
+    url: https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Push rules
+    url: https://docs.gitlab.com/user/project/repository/push_rules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GPG Commit Signatures
+    url: https://docs.gitea.com/administration/signing
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-9 Improper Artifact Integrity Validation
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-09-Improper-Artifact-Integrity-Validation
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: partial
+    note: Covers integrity of source commits; artifact signing and verification are covered by other controls.
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.1.1"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.12"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L2
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-SCM-022
+    type: related
+  - id: CB-CICD-SCM-024
+    type: related
+  - id: CB-CICD-IAM-006
+    type: related
+  - id: CB-CICD-PIPE-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

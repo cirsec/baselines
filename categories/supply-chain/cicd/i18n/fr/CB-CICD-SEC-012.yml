@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Rendre le jeton de job intégré en lecture seule par défaut et accorder les droits d'écriture par job
+finding:
+  title: Le jeton injecté dans chaque job peut écrire dans le dépôt par défaut
+  description: N'importe quel step de n'importe quel workflow, y compris les actions tierces et le code de test, peut pousser des commits, créer des releases ou approuver des modifications avec le jeton de job ; une seule dépendance compromise peut ainsi altérer le dépôt.
+description: |
+  Le jeton que la plate-forme injecte dans chaque job (`GITHUB_TOKEN`, `GITEA_TOKEN`, et le jeton
+  GitHub limité au workflow que Buildkite peut émettre) est en lecture seule ou restreint par
+  défaut au niveau entreprise, organisation et dépôt. Les jobs qui doivent écrire déclarent les
+  portées précises dans le fichier de pipeline, au niveau du job, et chaque workflow définit des
+  `permissions:` explicites au niveau supérieur qui n'accordent rien ou seulement la lecture.
+
+  Quand la plate-forme le propose, un maximum configuré plafonne ce que les fichiers de pipeline
+  peuvent demander, pour qu'un workflow modifié ne puisse pas élever ses propres permissions
+  au-delà de la politique du propriétaire.
+
+  L'usage inter-projets des jetons de job relève de CB-CICD-SEC-013 ; le choix du jeton de job
+  plutôt que de jetons personnels, de CB-CICD-SEC-002.
+rationale: |
+  Chaque action, script et dépendance d'un job peut lire le jeton de job. Avec des droits
+  d'écriture par défaut, une seule action compromise peut pousser du code malveillant, modifier
+  des releases ou des étiquettes, ou changer des fichiers de workflow, ce qui transforme une
+  compromission de dépendance en compromission du code source. Des valeurs par défaut en lecture
+  seule limitent cela à lire ce que le job pouvait déjà lire, et les portées par job rendent chaque
+  droit d'écriture visible en revue.
+impact: |
+  Les workflows qui poussent, commentent, publient des paquets ou créent des releases échouent
+  tant qu'ils ne déclarent pas les `permissions:` nécessaires. Les entreprises et organisations
+  GitHub créées avant février 2023 sont encore en lecture et écriture par défaut et doivent être
+  modifiées.
+notes: |
+  Sur GitHub, les utilisateurs qui ont un accès en écriture à un dépôt peuvent toujours élever les
+  permissions dans un fichier de workflow avec `permissions:` ; la revue des modifications de
+  workflow (CB-CICD-SCM-018) et leur analyse (CB-CICD-TEST-004) couvrent ce point. Sur Gitea, les
+  pull requests de forks reçoivent toujours un jeton en lecture seule sans OIDC, quels que soient
+  les réglages.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur qui peut lire les réglages Actions, et un
+    accès en lecture aux fichiers de workflow.
+
+    1. Vérifier les permissions par défaut du jeton :
+       - **GitHub** : **Enterprise** > **Policies** > **Actions**, **Organization** > **Settings** >
+         **Actions** > **General** et, pour chaque dépôt, **Settings** > **Actions** > **General** >
+         **Workflow permissions** valent **Read repository contents and packages permissions**
+         (API : `GET /orgs/{org}/actions/permissions/workflow` renvoie
+         `default_workflow_permissions: read`).
+       - **Gitea** : **Settings** > **Actions** > **General** de l'utilisateur ou de l'organisation
+         et de chaque dépôt qui le surcharge : le mode de permission par défaut est **Restricted**,
+         et les permissions maximales du jeton sont `read` (ou aucune) pour chaque unité et pour
+         `id-token`, sauf là où un dépôt a besoin de plus.
+       - **Buildkite** : les réglages du pipeline n'activent pas les jetons d'accès GitHub limités
+         au workflow, sauf si toutes les personnes qui peuvent créer un build sur un commit
+         quelconque sont de confiance, car les permissions du jeton sont lues dans le fichier de
+         workflow de ce commit.
+    2. Revoir les fichiers de workflow : chacun déclare des `permissions:` au niveau supérieur
+       (`{}` ou lecture seule) et n'accorde des portées d'écriture qu'aux jobs qui en ont besoin.
+       zizmor (`excessive-permissions`, `undocumented-permissions`) et le contrôle
+       Token-Permissions de Scorecard signalent les permissions absentes ou trop larges.
+    3. Échec si le jeton de job par défaut peut écrire, si le maximum Gitea permet l'écriture sur
+       des unités dont aucun workflow n'a besoin, ou si un workflow accorde des portées d'écriture
+       au niveau supérieur ou à des jobs qui ne les utilisent pas.
+remediation:
+  manual: |
+    1. Régler des valeurs par défaut en lecture seule au niveau le plus haut, puis aux niveaux
+       organisation et dépôt là où elles sont surchargées :
+       - **GitHub** : choisir **Read repository contents and packages permissions** sous **Workflow
+         permissions** (politique d'entreprise, organisation, dépôts), ou appeler
+         `PUT /orgs/{org}/actions/permissions/workflow` avec `default_workflow_permissions: read`.
+       - **Gitea** : régler le mode de permission par défaut sur **Restricted** et abaisser les
+         permissions maximales du jeton pour le propriétaire ; ne laisser les dépôts s'en écarter
+         avec **Override owner-level configuration** que si c'est justifié.
+       - **Buildkite** : laisser désactivés les jetons d'accès GitHub limités au workflow.
+    2. Ajouter `permissions: {}` (ou `contents: read`) en tête de chaque workflow et déclarer les
+       portées d'écriture nécessaires sur les jobs qui les utilisent, par exemple
+       `contents: write` sur le seul job de release.
+    3. Analyser les workflows en CI avec zizmor pour que les nouveaux workflows restent conformes.

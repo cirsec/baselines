@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-030
+title: Require approval for tokens that access the organization
+finding:
+  title: Any member can create a token that reaches organization resources without approval
+  description: When members create access tokens freely, owners do not know which tokens can read or change organization code, and a compromised member can mint a token that survives a password reset.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [personal-access-tokens, approval, token-creation, governance]
+
+applicability:
+  versions: [github, azure-devops, buildkite]
+
+parameters:
+  - name: token_creation
+    type: enum
+    description: How token creation is governed. `owner-approval` requires owners to approve tokens that target the organization; `restricted-group` also limits who can create tokens to administrators or an allowlisted group.
+    default: owner-approval
+    profile_defaults:
+      hardened: restricted-group
+    allowed: [owner-approval, restricted-group]
+
+description: |
+  Personal access tokens that access organization resources are visible to owners and, with
+  `{{ token_creation }}` set to `owner-approval`, approved by them before they work. With
+  `restricted-group`, only administrators or an allowlisted group can create tokens at all, and other
+  users rely on SSO, OAuth or non-human identities.
+
+  Token lifetime and scope are covered by CB-CICD-IAM-028 and CB-CICD-IAM-029.
+rationale: |
+  A personal token outlives a password reset and an MFA re-enrolment, so it is what an attacker
+  creates first after taking over an account. Owner approval makes new tokens visible and lets owners
+  refuse broad ones; restricting creation removes the capability from accounts that never need it.
+impact: |
+  Owners must handle approval requests. With `restricted-group`, users outside the group lose the
+  ability to create tokens: on Azure DevOps, Git Credential Manager stops minting PATs and users switch
+  to OAuth.
+
+audit:
+  manual: |
+    Use an owner or administrator role.
+
+    1. Check the approval or restriction:
+       - **GitHub**: **Enterprise settings** > **Policies** > **Personal access tokens** >
+         **Fine-grained tokens** > **Require approval** is enforced, or **Organization settings** >
+         **Personal access tokens** > **Settings** > **Fine-grained tokens** > **Require approval of
+         fine-grained personal access tokens** is set to require administrator approval
+         (organizations require approval by default but can turn it off).
+       - **Azure DevOps** (`restricted-group`): **Organization settings** > **Policies** > **Restrict
+         personal access token (PAT) creation** is on, with an Entra allowlist and, if needed,
+         **Allow creation of PAT with packaging scope only** (Entra-backed organizations only).
+       - **Buildkite** (`restricted-group`): the organization API settings have
+         `restrict_user_api_token_creation` set to `true`, so only administrators can create API
+         access tokens.
+    2. Fail if tokens reach organization resources without owner approval, or, with
+       `restricted-group`, if any member can create tokens.
+
+remediation:
+  manual: |
+    1. **GitHub**: at enterprise level, set **Require approval** for fine-grained tokens so
+       organizations cannot disable it, and have owners review the approval requests they receive.
+    2. **Azure DevOps** (`restricted-group`): turn on **Restrict personal access token (PAT) creation**,
+       add the Entra group of allowed users, and select packaging-only PATs for others if they need
+       feeds.
+    3. **Buildkite** (`restricted-group`): set `restrict_user_api_token_creation` to `true` through
+       the organization API settings endpoint.
+
+references:
+  - title: Enforcing policies for personal access tokens in your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-personal-access-tokens-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Setting a personal access token policy for your organization
+    url: https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/setting-a-personal-access-token-policy-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage personal access tokens using policies (Azure DevOps)
+    url: https://learn.microsoft.com/azure/devops/organizations/accounts/manage-pats-with-policies-for-administrators
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite organization API settings
+    url: https://buildkite.com/docs/apis/rest-api/organizations/api-settings
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: IA-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers governance of user-issued token creation only.
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-CICD-IAM-028
+    type: related
+  - id: CB-CICD-IAM-029
+    type: related
+  - id: CB-CICD-IAM-026
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

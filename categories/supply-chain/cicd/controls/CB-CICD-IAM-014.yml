@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-014
+title: Enforce an explicit authorization model on CI/CD servers
+finding:
+  title: The CI/CD server runs without role-based authorization
+  description: When every signed-in user can do anything, or every user acts with the server's own service identity, any account on the platform can change pipelines, read credentials or deploy.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [authorization, rbac, matrix-auth, fiat, sso]
+
+applicability:
+  versions: [jenkins, spinnaker, argo-workflows]
+
+description: |
+  The platform runs with an explicit authorization strategy: permissions are granted per role or
+  group (matrix, role-based or RBAC rules), every pipeline, application and account has explicit
+  owners, and resources without permissions are not open to everyone. Modes where any authenticated
+  user is an administrator, where authorization is disabled, or where every user acts with a shared
+  server identity are not used.
+
+  Default permissions for all members are covered by CB-CICD-IAM-015, role design by
+  CB-CICD-IAM-016.
+rationale: |
+  These servers ship with permissive defaults for an easy first run. Jenkins' setup wizard leaves
+  "Logged-in users can do anything", Spinnaker has authorization disabled and treats resources
+  without permissions as unrestricted, and Argo Workflows in `server` mode gives every UI user the
+  permissions of the argo-server service account. On a shared server this means any account can run
+  code with the server's credentials.
+impact: |
+  Enabling authorization denies access to users who relied on the open mode. Map groups to roles
+  before switching, and keep an administrator group able to sign in.
+
+audit:
+  manual: |
+    Use an administrator role or read access to the server configuration.
+
+    1. Check the authorization model:
+       - **Jenkins**: **Manage Jenkins** > **Security** > **Authorization** is **Matrix-based
+         security**, **Project-based Matrix Authorization Strategy** or a role-based strategy, not
+         **Logged-in users can do anything** or **Anyone can do anything**
+         (`jenkins.authorizationStrategy: unsecured` in configuration as code).
+       - **Spinnaker**: Fiat authorization is enabled with a role provider (Google Groups, GitHub
+         Teams, LDAP, SAML or file), and every cloud account and application declares `READ` and
+         `WRITE` permissions; no account or application is left without permissions.
+       - **Argo Workflows**: `argo server` runs with `--auth-mode sso` (and `client` for CLI use),
+         never `server` alone on a shared deployment; `workflow-controller-configmap` has
+         `sso.rbac.enabled: true`, service accounts carry `workflows.argoproj.io/rbac-rule`
+         annotations, and the fallback rule (`"true"`, lowest precedence) maps to a read-only service
+         account.
+    2. Fail if any authenticated user gets administrative rights by default, if authorization is
+       disabled, or if users act with a shared server identity.
+
+remediation:
+  manual: |
+    1. Map identity provider groups to roles (administrators, pipeline maintainers, developers,
+       viewers).
+    2. Enable the authorization model:
+       - **Jenkins**: install Matrix Authorization Strategy or Role-based Authorization Strategy,
+         grant `Overall/Administer` to the administrators group only, then switch
+         **Authorization** away from **Logged-in users can do anything**.
+       - **Spinnaker**: enable Fiat, configure the role provider, then add `permissions` with `READ`
+         and `WRITE` roles to every account and application.
+       - **Argo Workflows**: start `argo server` with `--auth-mode sso`, set `sso.rbac.enabled: true`,
+         annotate one service account per group with `rbac-rule` and `rbac-rule-precedence`, and map
+         the fallback rule to a read-only service account.
+    3. Test with a non-administrator account before removing the open mode.
+
+references:
+  - title: Access Control (Jenkins)
+    url: https://www.jenkins.io/doc/book/security/access-control/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Spinnaker authorization (RBAC)
+    url: https://spinnaker.io/docs/setup/other_config/security/authorization/
+    publisher: Spinnaker
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Server SSO
+    url: https://argo-workflows.readthedocs.io/en/latest/argo-server-sso/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Argo Server auth mode
+    url: https://argo-workflows.readthedocs.io/en/latest/argo-server-auth-mode/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-02
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-05
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-IAM-015
+    type: related
+  - id: CB-CICD-IAM-016
+    type: related
+  - id: CB-CICD-IAM-009
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

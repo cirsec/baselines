@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conditionner les déploiements en production à des vérifications de politique automatisées
+finding:
+  title: Les environnements de production ne reposent que sur l'approbation humaine, sans vérification automatisée
+  description: Sans barrières automatisées, un déploiement qui évite le modèle de pipeline approuvé, n'a pas de ticket de changement, ou arrive pendant que des alertes sont actives passe dès que quelqu'un clique sur approuver.
+description: |
+  Les environnements de production et les ressources qu'ils utilisent imposent des vérifications
+  automatisées avant tout déploiement, en plus de l'approbation humaine :
+
+  - le pipeline qui déploie étend un modèle approuvé stocké dans un dépôt et une référence protégés ;
+  - un système externe confirme qu'un enregistrement de changement approuvé existe, et que la
+    supervision ne montre aucune alerte active pour le service (barrières de gestion des changements
+    et de santé) ;
+  - une temporisation ou un délai équivalent est appliqué quand une période de réflexion est exigée ;
+  - quand c'est pris en charge, l'artefact est évalué par rapport à une politique avant déploiement.
+
+  L'approbation par une personne relève de CB-CICD-DEPLOY-003 ; la vérification des signatures et de
+  la provenance des artefacts de CB-CICD-ART-006 ; les modèles de pipeline obligatoires en général de
+  CB-CICD-PIPE-003.
+rationale: |
+  Les approbateurs humains laissent passer des choses, surtout sous pression, et ne voient pas qu'un
+  pipeline a été discrètement modifié pour sauter une étape de sécurité. Les barrières automatisées
+  vérifient des faits que personne ne contrôlerait à chaque fois : que l'exécution utilise le modèle
+  validé, qu'un changement a été approuvé par le processus normal, et que la production est saine. Un
+  pipeline qui abandonne ses étapes de sécurité ou un déploiement non planifié est alors arrêté par
+  la plate-forme.
+impact: |
+  Les barrières demandent un travail d'intégration (GitHub Apps, fonctions Azure ou points d'accès
+  REST, requêtes de supervision) et peuvent bloquer les déploiements quand le système externe est
+  indisponible : une procédure de contournement est nécessaire (CB-CICD-DEPLOY-004). Les pipelines
+  doivent être convertis pour étendre le modèle exigé.
+notes: |
+  Sur GitHub, les temporisations et les règles de protection de déploiement personnalisées sur les
+  dépôts privés exigent GitHub Enterprise (sur Free, Pro et Team, elles ne sont disponibles que pour
+  les dépôts publics) ; les règles personnalisées sont fournies par des GitHub Apps installées sur le
+  dépôt. Dans Azure Pipelines, la vérification **Required template** ne s'applique qu'aux pipelines
+  qui utilisent `extends`, et **Evaluate artifact** ne fonctionne qu'avec des images de conteneur.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les vérifications des environnements et ressources.
+
+    1. Lister les environnements de production et les connexions de service, pools d'agents et autres
+       ressources utilisés par les déploiements en production.
+    2. Vérifier les barrières automatisées :
+       - **Azure DevOps** : sur l'environnement et les connexions de service de production,
+         **Approbations et vérifications** contient **Required template** (dépôt, référence et chemin
+         du modèle approuvé), et au moins une vérification **Invoke REST API**, **Invoke Azure
+         Function** ou **Query Azure Monitor alerts** qui contrôle l'approbation du changement ou la
+         santé du service ; **Evaluate artifact** est utilisé pour les images de conteneur quand une
+         politique d'artefact existe.
+       - **GitHub** : **Settings** > **Environments** > production a une règle de protection de
+         déploiement personnalisée activée (GitHub App) qui vérifie la gestion des changements ou la
+         supervision, et un **Wait timer** quand la politique en exige un.
+    3. Vérifier que le modèle référencé par **Required template** se trouve dans un dépôt et une
+       référence protégés, et que le service externe de barrière est lui-même à accès contrôlé.
+    4. Échec si les déploiements en production ne sont conditionnés que par une approbation humaine,
+       ou si un pipeline qui n'étend pas le modèle approuvé peut déployer en production.
+remediation:
+  manual: |
+    1. Définir avec les équipes changement et exploitation les conditions automatisées d'un
+       déploiement en production (modèle approuvé, enregistrement de changement, santé).
+    2. Configurer les barrières :
+       - **Azure DevOps** : sur l'environnement et les connexions de service de production, ouvrir
+         **Approbations et vérifications**, ajouter **Required template** avec le dépôt, la référence
+         et le chemin du modèle, puis ajouter **Invoke REST API** ou **Invoke Azure Function** pour le
+         système de gestion des changements et **Query Azure Monitor alerts** pour la santé du
+         service.
+       - **GitHub** : installer ou développer une GitHub App qui implémente une règle de protection de
+         déploiement personnalisée, l'activer dans **Settings** > **Environments** > production, et
+         régler un **Wait timer** si nécessaire.
+    3. Convertir les pipelines de production pour qu'ils étendent le modèle approuvé.
+    4. Documenter la procédure de contournement en cas d'indisponibilité d'une barrière
+       (CB-CICD-DEPLOY-004).

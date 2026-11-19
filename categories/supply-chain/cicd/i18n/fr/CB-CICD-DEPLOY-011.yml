@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire passer chaque changement de production par le pipeline et détecter les dérives
+finding:
+  title: Des personnes modifient directement la production et personne ne remarque qu'elle ne correspond plus à son état déclaré
+  description: Quand des ingénieurs conservent un accès en écriture aux environnements de production, les changements contournent la revue, l'approbation et les contrôles du pipeline, et un attaquant muni d'un compte administrateur volé peut modifier la production et rester caché faute de détection des dérives.
+description: |
+  Les humains n'ont aucun accès permanent en écriture aux environnements de production (clusters,
+  comptes cloud, serveurs, schémas de bases de données gérés comme du code). Chaque changement de
+  production est un changement de code ou de configuration dans la gestion de versions, relu et livré
+  par le pipeline ou le contrôleur GitOps.
+
+  L'état déclaré est comparé en continu à ce qui s'exécute en production. Une dérive est soit annulée
+  automatiquement (réconciliation auto-réparatrice), soit remontée en alerte à l'équipe responsable,
+  et analysée comme un possible incident.
+
+  L'accès d'urgence à la production passe par une procédure d'urgence (limitée dans le temps,
+  journalisée et revue), et tout changement fait ainsi est ensuite reporté dans la gestion de
+  versions. L'accès administrateur privilégié en général relève de CB-CICD-IAM-020 et CB-CICD-IAM-021.
+rationale: |
+  Si la production peut être modifiée à la main, les protections du pipeline (revue, approbation,
+  analyse, signatures) ne protègent qu'une des voies d'entrée. Supprimer l'accès direct en écriture
+  fait du pipeline le seul chemin, et la détection des dérives rattrape ce qui passe malgré tout :
+  correctifs manuels, administrateur compromis, ou attaquant qui a modifié une charge de travail pour
+  persister. Annuler automatiquement les dérives supprime aussi les modifications d'un attaquant, qui
+  doit alors passer par le chemin relu.
+impact: |
+  Les opérateurs perdent l'habitude de corriger la production à la main ; les procédures d'incident
+  doivent passer par le pipeline ou par le chemin d'urgence. Les ressources qui changent légitimement
+  à l'exécution (mise à l'échelle automatique, contrôleurs qui modifient des champs) doivent être
+  exclues de la comparaison.
+notes: |
+  Dans Argo CD, la synchronisation automatique avec `selfHeal` annule les modifications faites dans le
+  cluster ; sans elle, Argo CD se contente de signaler l'application comme désynchronisée. Dans Flux,
+  les Kustomizations réappliquent l'état déclaré à chaque intervalle, et la détection de dérive des
+  HelmRelease se règle avec `spec.driftDetection.mode` (`warn` pour signaler, `enabled` pour
+  corriger).
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les politiques d'accès des environnements de production et la
+    configuration des outils de déploiement.
+
+    1. Lister qui a un accès en écriture aux clusters, comptes cloud et serveurs de production
+       (liaisons de rôles, politiques IAM, accès SSH ou console) et vérifier que seuls les identités de
+       déploiement et le groupe d'urgence le détiennent.
+    2. Prendre des changements récents de production dans le journal d'audit et vérifier que chacun
+       vient d'une exécution de pipeline ou de contrôleur GitOps liée à un commit relu.
+    3. Vérifier la détection des dérives :
+       - **Argo CD** : les applications de production utilisent `spec.syncPolicy.automated` avec
+         `selfHeal: true`, ou l'état désynchronisé déclenche une alerte.
+       - **Flux** : les ressources `Kustomization` de production se réconcilient avec un
+         `spec.interval` court, et les ressources `HelmRelease` posent
+         `spec.driftDetection.mode: enabled` (ou `warn` avec alerte).
+       - Déploiements par pipeline : une tâche planifiée compare l'état réel à l'état déclaré (par
+         exemple `terraform plan` avec code de sortie détaillé, `kubectl diff`) et alerte en cas de
+         différence.
+    4. Vérifier que les sessions d'urgence sont journalisées et que leurs changements ont été
+       reportés dans la gestion de versions.
+    5. Échec si des personnes hors du groupe d'urgence peuvent modifier directement la production, ou
+       si une dérive entre la production et son état déclaré n'est ni corrigée ni alertée.
+remediation:
+  manual: |
+    1. Supprimer l'accès humain permanent en écriture à la production et ne donner aux identités de
+       déploiement que le nécessaire (CB-CICD-DEPLOY-009) ; mettre en place un chemin d'urgence limité
+       dans le temps et journalisé.
+    2. Activer la gestion des dérives :
+       - **Argo CD** : activer la synchronisation automatique avec `selfHeal: true` sur les
+         applications de production (`argocd app set <app> --self-heal`), ou alerter sur l'état
+         désynchronisé.
+       - **Flux** : garder les Kustomizations en réconciliation à intervalle court et poser
+         `spec.driftDetection.mode: enabled` sur les HelmRelease.
+       - Déploiements par pipeline : planifier une vérification de dérive par rapport à l'état déclaré
+         et envoyer son résultat au système d'alerte.
+    3. Diriger les alertes de dérive vers l'équipe responsable et traiter toute dérive inexpliquée
+       comme un événement de sécurité (CB-CICD-LOG-006).

@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Analyser les images de conteneur avant leur envoi dans un registre
+finding:
+  title: Les images construites par les pipelines sont poussées sans analyse de vulnérabilités
+  description: Des images portant des vulnérabilités critiques et connues comme exploitées arrivent dans le registre et sont tirées dans des environnements avant que quiconque ne les examine.
+parameters:
+  blocking_severity: Gravité de vulnérabilité la plus basse qui fait échouer le build avant l'envoi.
+description: |
+  Chaque image de conteneur construite par un pipeline est analysée pour les vulnérabilités
+  connues juste après l'étape de build et avant son envoi dans un registre partagé. Le build échoue
+  quand l'analyse trouve une vulnérabilité de gravité `{{ blocking_severity }}` ou supérieure pour
+  laquelle un correctif existe, sauf exception consignée. Les résultats d'analyse sont conservés
+  avec le build.
+
+  L'analyse des dépendances et la production du SBOM de l'application relèvent de CB-DEP-VULN-001
+  et CB-DEP-INV-001 ; les contrôles à l'admission au déploiement de CB-CICD-ART-006.
+rationale: |
+  Une image vulnérable dans un registre tourne bientôt quelque part. Analyser avant l'envoi empêche
+  la publication même des failles critiques connues, et donne le résultat à l'équipe pendant que la
+  modification est encore fraîche. Une analyse côté registre seule signale le problème une fois
+  l'image déjà disponible pour tous ses consommateurs.
+impact: |
+  Les builds échouent quand de nouvelles vulnérabilités critiques apparaissent dans les images de
+  base, parfois sans changement de code ; les équipes ont besoin d'un moyen de reconstruire sur une
+  image de base à jour ou de consigner une exception.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux définitions de pipeline et aux journaux de build récents.
+
+    1. Pour chaque pipeline qui construit des images, vérifier l'ordre des étapes : build, analyse,
+       puis envoi.
+       - **Google Cloud Build** : `cloudbuild.yaml` exécute `gcloud artifacts docker images scan`
+         (On-Demand Scanning), lit les résultats avec `list-vulnerabilities` et échoue sur la
+         gravité choisie avant l'étape d'envoi.
+       - **Buildkite** : une étape ou un plugin d'analyse (par exemple Trivy ou Snyk) tourne avant
+         l'envoi.
+       - **Autres plates-formes** : un job d'analyse (par exemple container scanning GitLab, Trivy,
+         Grype) tourne sur l'image construite avant son envoi dans le registre partagé.
+    2. Vérifier dans les journaux de build récents que l'analyse a tourné et qu'un résultat au
+       seuil a fait échouer le build.
+    3. Échec si une image peut être poussée sans analyse, ou si des résultats de gravité
+       `{{ blocking_severity }}` ou supérieure ne font pas échouer le build.
+remediation:
+  manual: |
+    1. Ajouter une étape d'analyse entre build et envoi dans chaque pipeline d'image, idéalement
+       depuis un modèle commun :
+       - **Google Cloud Build** : activer l'API On-Demand Scanning, ajouter une étape qui analyse
+         l'image construite localement et une étape qui échoue quand la gravité est atteinte, avant
+         `docker push`.
+       - **Buildkite** : ajouter une étape de plugin d'analyse avant l'envoi.
+       - **Autres plates-formes** : exécuter l'analyseur sur l'image locale et ne pousser qu'en cas
+         de succès.
+    2. Définir comment les exceptions sont consignées et revues.

@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-IAM-021
+title: Administer production CI/CD from dedicated privileged workstations
+finding:
+  title: Production CI/CD platforms are administered from everyday workstations
+  description: An administrator who reads mail, browses the web and administers the production CI/CD platform from the same machine exposes the administrator session to any malware on that machine.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [privileged-access, admin-workstation, paw, monitoring]
+
+description: |
+  Administration of the CI/CD platforms and build services that produce or deploy production
+  software is treated as privileged administration of the information system:
+
+  - administrative actions are done with dedicated administrator accounts, from dedicated
+    administration workstations or a hardened bastion, not from the office workstation used for mail
+    and browsing;
+  - nobody has routine interactive access (SSH, console, exec) to production build infrastructure;
+    changes go through configuration as code (CB-CICD-PLAT-015);
+  - privileged sessions are logged and monitored.
+
+  The platform settings that support this (SSO, MFA, step-up) are covered by CB-CICD-IAM-001,
+  CB-CICD-IAM-006 and CB-CICD-IAM-020.
+rationale: |
+  ANSSI treats actions on production CI/CD as administration actions, and NIST SP 800-204D asks for an
+  isolated CI/CD environment with elevated administrator credentials. An administrator's office
+  workstation is the most exposed machine they use: phishing, browser exploits and infostealers there
+  give the attacker the administrator's CI/CD session, and from it the whole software supply chain.
+impact: |
+  Administrators need a second device or a hardened bastion, and separate accounts. Interactive
+  troubleshooting of production runners goes through a break-glass procedure.
+
+audit:
+  manual: |
+    This control is organizational; no platform has a single setting for it.
+
+    1. Read the administration policy for the CI/CD platforms and check that production CI/CD is in
+       the scope of privileged administration.
+    2. Check in the identity provider that administrator accounts are separate from daily accounts
+       and that their sign-in is limited by device compliance or source network to the
+       administration workstations or bastion (conditional access, IP allowlist).
+    3. Check that interactive access to production runners and build hosts (SSH, Kubernetes exec,
+       cloud console) is not granted to anyone by default.
+    4. Check that privileged sessions and administrative actions are sent to the SIEM
+       (CB-CICD-LOG-003) and reviewed.
+    5. Fail if production CI/CD is administered from everyday workstations or accounts, or if routine
+       interactive access to production build infrastructure exists.
+
+remediation:
+  manual: |
+    1. Include production CI/CD platforms in the privileged administration policy.
+    2. Give administrators dedicated accounts and dedicated workstations or a bastion, and restrict
+       administrator sign-in to them in the identity provider.
+    3. Remove standing SSH, console and exec access to production runners; provide a break-glass
+       procedure with approval and logging.
+    4. Forward administrative events and bastion sessions to the SIEM and define alerts
+       (CB-CICD-LOG-006).
+
+references:
+  - title: Recommandations relatives à l'administration sécurisée des systèmes d'information
+    url: https://messervices.cyber.gouv.fr/documents-guides/anssi-guide-admin_securisee_si_v3-0.pdf
+    publisher: ANSSI
+    kind: guide
+    accessed: 2026-11-03
+  - title: NIST SP 800-204D - Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6(2)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-17(4)
+    relation: related
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R9"
+    relation: partial
+    note: Applies the dedicated administration workstation recommendation to production CI/CD administration.
+  - framework: anssi-admin
+    framework_version: "3.0"
+    id: "R27"
+    relation: related
+related_controls:
+  - id: CB-CICD-IAM-020
+    type: related
+  - id: CB-CICD-PLAT-015
+    type: related
+  - id: CB-CICD-LOG-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

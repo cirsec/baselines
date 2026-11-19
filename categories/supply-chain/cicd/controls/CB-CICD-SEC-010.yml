@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-010
+title: Block pushes that contain secrets on every repository
+finding:
+  title: Commits containing credentials are accepted by the Git server
+  description: Without push protection, a token committed by mistake reaches the server, its forks and every clone before any scan raises an alert, and must then be treated as leaked.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, push-protection, prevention, secret-scanning]
+
+description: |
+  Secret push protection is enabled on every repository, including new ones: the Git server
+  rejects pushes, web edits and API commits that contain detected secrets. A contributor who
+  believes a match is a false positive can bypass it only with a recorded reason, and every bypass
+  creates an alert that is reviewed.
+
+  When `{{ bypass }}` is `delegated`, contributors cannot bypass on their own: a bypass request is
+  approved by a named reviewer team, and pull requests cannot be merged into default branches while
+  they introduce open secret scanning alerts.
+
+  Detection on existing content and alert handling are covered by CB-CICD-SEC-009.
+parameters:
+  - name: bypass
+    type: enum
+    description: reason-required enables push protection on all repositories and lets contributors bypass with a recorded reason; delegated requires a reviewer team to approve each bypass and blocks merges while secret alerts are open.
+    allowed: [reason-required, delegated]
+    default: reason-required
+    profile_defaults:
+      hardened: delegated
+rationale: |
+  Once a secret is pushed it must be revoked, because copies exist outside the organization's
+  control. Blocking the push is the only point where a mistake costs nothing more than an amended
+  commit. Restricting bypass to reviewers prevents a contributor under time pressure from pushing
+  a real credential past the check.
+impact: |
+  Developers occasionally have to rewrite local commits that contain test values that look like
+  secrets. Delegated bypass adds a review step. Push protection on private repositories requires a
+  paid secret protection product on GitHub and Azure DevOps and GitLab Ultimate.
+notes: |
+  Push protection covers only high-confidence patterns supported by each product, and may not
+  block legacy token formats; it complements, not replaces, scanning (CB-CICD-SEC-009). GitLab's
+  **Prevent pushing secret files** push rule (Premium) only blocks files by name, such as private
+  key files, not secret values in other files.
+
+audit:
+  manual: |
+    Use a security manager or auditor role that can read code security settings.
+
+    1. Check that push protection is on for every repository and for new ones:
+       - **GitHub**: the code security configuration attached to all repositories enables **Push
+         protection** under **Secret Protection** (REST: `security_and_analysis.secret_scanning_push_protection.status`
+         is `enabled` on each repository).
+       - **GitLab** (Ultimate): on self-managed instances, **Admin** > **Settings** > **Security and
+         compliance** > **Secret detection** > **Allow secret push protection** is selected, and each
+         project has **Secure** > **Security configuration** > **Secret push protection** on.
+       - **Azure DevOps**: **Advanced Security** or **Secret Protection** is on for every repository
+         (push protection is enabled with it) and push protection has not been turned off in the
+         repository settings.
+    2. Review bypasses over the last period: GitHub push protection bypass alerts, GitLab audit
+       events for skipped secret push protection, Azure DevOps alerts created by pushes that used
+       `skip-secret-scanning:true`. Check that each bypass has a reason and was reviewed.
+    3. When `{{ bypass }}` is `delegated`, also check:
+       - **GitHub**: in the configuration, **Push protection** > **Bypass privileges** names
+         specific roles or teams; and a branch ruleset on default branches includes **Require
+         secret scanning alerts are resolved**.
+    4. Fail if a repository has no push protection, if bypasses are not reviewed, or, for
+       `delegated`, if any contributor can bypass without approval.
+
+remediation:
+  manual: |
+    1. Enable push protection everywhere:
+       - **GitHub**: edit the organization or enterprise code security configuration, enable
+         **Push protection**, apply it to all repositories and set it as default for new ones.
+       - **GitLab**: administrators select **Allow secret push protection**; then enable **Secret
+         push protection** per project or for all projects of a group through the API.
+       - **Azure DevOps**: enable **Secret Protection** at organization or project level with
+         automatic enablement for new repositories.
+    2. Publish the bypass procedure: GitHub asks for a reason in the interface; GitLab users skip
+       with `git push -o secret_push_protection.skip_all` or `[skip secret push protection]` in a
+       commit message; Azure DevOps users add `skip-secret-scanning:true` to the commit message.
+       Review the resulting alerts or audit events weekly.
+    3. When `{{ bypass }}` is `delegated` on GitHub (with GitHub Secret Protection): set **Bypass
+       privileges** to a reviewer team, and add the **Require secret scanning alerts are resolved**
+       rule (public preview) to a ruleset targeting default branches.
+
+references:
+  - title: About push protection
+    url: https://docs.github.com/en/code-security/concepts/secret-security/push-protection
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Delegated bypass for push protection
+    url: https://docs.github.com/en/code-security/concepts/secret-security/delegated-bypass
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Block merges with unresolved secret scanning alerts
+    url: https://docs.github.com/en/code-security/how-tos/secure-your-secrets/prevent-future-leaks/block-merges-with-secrets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secret push protection
+    url: https://docs.gitlab.com/user/application_security/secret_detection/secret_push_protection/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set up secret scanning for GitHub Advanced Security for Azure DevOps
+    url: https://learn.microsoft.com/azure/devops/repos/security/github-advanced-security-secret-scanning
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers prevention of secrets in source code at push time.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-4
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-CICD-SEC-021
+    type: related
+  - id: CB-CICD-SCM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

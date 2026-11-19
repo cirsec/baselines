@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-034
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exécuter chaque pipeline avec une identité cloud dédiée de moindre privilège
+finding:
+  title: Les builds tournent avec une identité de service par défaut ou partagée trop large
+  description: Le code de n'importe quel dépôt construit peut faire tout ce que l'identité de build peut faire ; un compte de service par défaut avec des rôles de niveau éditeur ou un rôle de pipeline partagé par de nombreux projets transforme un build compromis en accès à tout le projet cloud.
+parameters:
+  default_build_identity: Traitement de l'identité de build par défaut de la plate-forme. `unused` signifie qu'aucun build ni déclencheur ne l'utilise et qu'elle n'a aucun rôle superflu ; `blocked-by-policy` empêche aussi son usage par une stratégie d'organisation.
+description: |
+  Chaque projet de build, déclencheur ou pipeline tourne sous sa propre identité cloud (rôle de
+  service IAM ou compte de service choisi par l'utilisateur) qui n'a que les permissions dont le job a
+  besoin, sur les ressources dont il a besoin. Les actions de déploiement qui atteignent d'autres
+  comptes ou projets endossent des rôles distincts limités à la cible. L'identité de build par défaut
+  de la plate-forme est `{{ default_build_identity }}` : jamais utilisée par les builds et privée des
+  rôles inutiles, et avec `blocked-by-policy` son usage est empêché par une stratégie d'organisation.
+
+  Qui peut modifier les builds ou agir sous leur identité relève de CB-CICD-IAM-036 ; les identifiants
+  cloud des autres plates-formes CI de CB-CICD-SEC-015 ; les identités des pods de build Kubernetes de
+  CB-CICD-RUN-019.
+rationale: |
+  L'identité de build est disponible pour chaque commande du build, y compris les scripts
+  d'installation des dépendances et le code de test du dépôt. Une identité par défaut ou partagée aux
+  rôles larges (compte de service Compute Engine par défaut avec Editor, rôle CodePipeline réutilisé
+  pour tous les pipelines) permet à un build piégé de lire les artefacts d'autres projets, de modifier
+  l'infrastructure ou d'escalader par IAM.
+impact: |
+  Chaque projet a besoin de son propre rôle ou compte de service et d'un inventaire des permissions
+  qu'il utilise. Les builds qui reposaient sur des permissions implicites de l'identité par défaut
+  échouent tant que les rôles nécessaires ne sont pas accordés à la nouvelle.
+notes: |
+  Sur Google Cloud Build, pour les builds déclenchés, le compte de service indiqué dans le fichier de
+  configuration de build est ignoré : seul le compte de service défini sur le déclencheur est utilisé.
+audit:
+  manual: |
+    Utiliser un rôle cloud qui peut lire les configurations de build et les politiques IAM (par
+    exemple un rôle de lecteur plus la lecture IAM).
+
+    1. **AWS CodeBuild** : pour chaque projet, le rôle de service (`serviceRole`) est propre au
+       projet, ses politiques nomment les ressources du projet plutôt que `*`, et sa politique de
+       confiance pour `codebuild.amazonaws.com` utilise les conditions `aws:SourceArn` et
+       `aws:SourceAccount`.
+    2. **AWS CodePipeline** : chaque pipeline a son propre rôle de service (`roleArn`), les actions de
+       déploiement qui atteignent d'autres comptes utilisent un `roleArn` au niveau de l'action limité
+       à la cible, et les rôles créés par la console ont été réduits à ce que le pipeline utilise.
+    3. **Google Cloud Build** : chaque déclencheur a un compte de service choisi par l'utilisateur avec
+       les seuls rôles nécessaires ; aucun build ne tourne sous le compte de service Cloud Build
+       hérité (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) ni sous le compte de service Compute
+       Engine par défaut, et ces comptes n'ont pas de rôles inutiles (comme `roles/editor`). Avec
+       `blocked-by-policy`, la stratégie d'organisation règle
+       `constraints/cloudbuild.useBuildServiceAccount` et
+       `constraints/cloudbuild.useComputeServiceAccount` sur non appliquées, et applique
+       `constraints/cloudbuild.disableCreateDefaultServiceAccount`.
+    4. Échec si un build tourne avec une identité par défaut ou partagée, ou si une identité de build
+       a des permissions sur des ressources sans rapport avec son projet.
+remediation:
+  manual: |
+    1. Créer un rôle ou compte de service par projet de build, déclencheur ou pipeline, et n'accorder
+       que les actions et ressources utilisées (CloudTrail ou Cloud Audit Logs montrent ce qu'il
+       appelle).
+    2. **AWS** : attacher le rôle au projet CodeBuild et au pipeline CodePipeline ; ajouter les
+       conditions `aws:SourceArn` et `aws:SourceAccount` à la politique de confiance ; utiliser des
+       rôles au niveau de l'action pour les déploiements inter-comptes.
+    3. **Google Cloud Build** : définir le compte de service sur chaque déclencheur ; retirer les rôles
+       inutiles des comptes de service hérité et Compute Engine par défaut. Avec `blocked-by-policy`,
+       régler `constraints/cloudbuild.useBuildServiceAccount` et
+       `constraints/cloudbuild.useComputeServiceAccount` sur non appliquées, et appliquer
+       `constraints/cloudbuild.disableCreateDefaultServiceAccount`, au niveau de l'organisation ou du
+       dossier.
+    4. Supprimer les anciens rôles partagés une fois que les builds tournent sous leur propre
+       identité.

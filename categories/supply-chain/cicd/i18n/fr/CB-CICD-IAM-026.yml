@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-026
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Inventorier et revoir les identités humaines et programmatiques de la chaîne CI/CD
+finding:
+  title: Personne ne sait quels utilisateurs, jetons, clés et applications ont accès à la chaîne CI/CD
+  description: Sans inventaire, les jetons d'accès personnels, clés de déploiement, comptes de service et installations d'applications oubliés gardent leur accès, et les permissions excessives ne sont jamais repérées.
+parameters:
+  review_frequency: Fréquence de revue des identités et de leurs permissions.
+description: |
+  Un inventaire, tenu à jour à partir des listes fournies par les plates-formes, couvre chaque
+  identité qui peut agir sur les plates-formes SCM, CI, CD et registres : utilisateurs et leurs
+  rôles, comptes de service, jetons d'accès personnels, de projet et de groupe, clés de déploiement et
+  clés SSH, installations OAuth et d'applications, et relations de confiance entre systèmes
+  (connexions de service, politiques de confiance OIDC). Chaque entrée a un propriétaire. Une revue
+  `{{ review_frequency }}` compare les permissions accordées et utilisées et retire ce qui n'est pas
+  nécessaire.
+
+  Les identifiants utilisés par les pipelines relèvent de CB-CICD-SEC-001, les applications tierces de
+  CB-CICD-COMP-005, la revue périodique des journaux d'audit de CB-CICD-LOG-008.
+rationale: |
+  Les accès s'accumulent : jetons créés pour un script ponctuel, clés ajoutées pour une migration,
+  applications installées pour un essai. Chacun est un identifiant qui peut fuir et dont l'abus ne
+  manquera à personne. Un inventaire avec propriétaires et une revue périodique est le seul moyen de
+  les trouver et de les retirer, et il donne à l'équipe de réponse à incident la liste de ce qu'il
+  faut révoquer.
+impact: |
+  La revue prend du temps à chaque cycle, surtout la première. Les plates-formes qui n'exposent pas la
+  liste des jetons ou clés aux administrateurs exigent une demande à chaque propriétaire.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur ou d'auditeur sur chaque plate-forme.
+
+    1. Vérifier qu'un inventaire existe, avec un propriétaire par identité et identifiant, et que la
+       dernière revue date de moins d'une période.
+    2. Le comparer aux listes des plates-formes, par exemple :
+       - **Buildkite** : **Settings** > **API Access Audit** liste chaque jeton d'accès API ayant accès
+         à l'organisation, filtrable par portée, adresse IP et privilèges d'administration.
+       - **GitHub** : **Organization settings** > **Personal access tokens** > **Active tokens**
+         (jetons fine-grained), installations de **GitHub Apps** et d'**OAuth app**, clés de
+         déploiement par dépôt. Les jetons classiques n'y figurent pas.
+       - **GitLab** : **Admin** > **Access** > **Credentials** (inventaire des identifiants, Ultimate)
+         liste les jetons d'accès personnels, de groupe et de projet et les clés SSH.
+       - **Azure DevOps** : utilisateurs et niveaux d'accès, connexions de service et principaux de
+         service par projet.
+    3. Pour un échantillon d'entrées, vérifier que les permissions correspondent à l'usage (date de
+       dernière utilisation, portées).
+    4. Échec s'il n'y a pas d'inventaire, si la dernière revue dépasse la période, ou si des
+       identités inutilisées ou sans propriétaire sont trouvées.
+remediation:
+  manual: |
+    1. Construire l'inventaire à partir des listes des plates-formes et attribuer un propriétaire à
+       chaque entrée.
+    2. Retirer ou réduire les identités sans propriétaire ou sans usage récent :
+       - **Buildkite** : dans **API Access Audit**, retirer l'organisation des jetons obsolètes.
+       - **GitHub** : révoquer les jetons fine-grained dans **Active tokens**, désinstaller les
+         applications inutilisées, supprimer les clés de déploiement inutilisées.
+       - **GitLab** : révoquer les jetons et supprimer les clés SSH depuis l'inventaire des
+         identifiants.
+    3. Planifier la revue `{{ review_frequency }}` et en consigner le résultat.

@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Réserver aux propriétaires le changement de visibilité, la suppression et le transfert des dépôts
+finding:
+  title: Les administrateurs de dépôt peuvent rendre un dépôt public, le supprimer ou le transférer
+  description: N'importe quel administrateur de dépôt peut publier du code privé en le passant en public, ou supprimer ou transférer un dépôt dont le nom est encore référencé par des workflows, ce qui permet à un attaquant de réenregistrer ce nom et de servir du code malveillant.
+description: |
+  Seuls les propriétaires de l'organisation ou de l'entreprise peuvent changer la visibilité d'un
+  dépôt, supprimer ou transférer un dépôt, et supprimer des issues. Les administrateurs de dépôt
+  gardent l'administration courante mais ne peuvent pas prendre seuls ces décisions irréversibles
+  ou exposantes.
+
+  La visibilité par défaut des nouveaux dépôts relève de CB-CICD-SCM-002 ; le droit de créer des
+  dépôts de CB-CICD-SCM-001.
+rationale: |
+  Rendre public un dépôt privé expose tout son historique et change la façon dont GitHub Actions le
+  traite : pull requests de forks venant de n'importe qui, et runners auto-hébergés joignables
+  depuis du code public. Supprimer ou transférer un dépôt libère son nom ; si d'autres workflows
+  référencent encore `owner/name@ref`, un attaquant qui recrée ce nom leur sert son code
+  (repo-jacking). Supprimer des issues efface la trace des problèmes signalés. Le contrôle réservé
+  aux propriétaires garde ces actions rares et visibles.
+impact: |
+  Les administrateurs de dépôt demandent à un propriétaire de publier, d'archiver plutôt que de
+  supprimer, ou de transférer un dépôt. Les propriétaires doivent traiter ces demandes rapidement
+  et les tracer.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire d'organisation (ou de propriétaire d'entreprise pour les
+    politiques d'entreprise).
+
+    1. Vérifier les politiques d'entreprise dans **Enterprise** > **Policies** > **Repositories**
+       (affiché **Member privileges** sur les versions récentes de GitHub Enterprise Cloud) :
+       **Repository visibility change**, **Repository deletion and transfer** et **Repository issue
+       deletion** sont réservés aux propriétaires, ou délégués aux organisations.
+    2. En cas de délégation, vérifier dans chaque organisation **Settings** > **Member privileges** >
+       **Admin repository permissions** : les options qui autorisent les membres à changer la
+       visibilité, à supprimer ou transférer des dépôts et à supprimer des issues sont décochées.
+    3. Rechercher dans le journal d'audit les événements `repo.access` (visibilité), `repo.destroy`
+       et `repo.transfer` effectués par des non-propriétaires.
+    4. Échec si un membre disposant seulement du droit d'administration du dépôt peut changer la
+       visibilité, supprimer ou transférer un dépôt, ou supprimer des issues.
+remediation:
+  manual: |
+    1. En tant que propriétaire d'entreprise, régler **Repository visibility change**,
+       **Repository deletion and transfer** et **Repository issue deletion** sur la politique
+       réservée aux propriétaires ; sinon, en tant que propriétaire d'organisation, décocher les
+       options correspondantes dans **Member privileges** > **Admin repository permissions**.
+    2. Documenter comment les équipes demandent une publication, une suppression ou un transfert,
+       et préférer l'archivage à la suppression.
+    3. Avant de supprimer ou transférer un dépôt dont le nom peut être référencé par des workflows
+       ou des manifestes de paquets, garder un dépôt de substitution ou une redirection pour que le
+       nom ne puisse pas être réenregistré.

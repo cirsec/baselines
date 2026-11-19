@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-011
+title: Disable unauthenticated diagnostic and information endpoints
+finding:
+  title: Profiling, metrics or information endpoints answer without authentication
+  description: The platform exposes profiling data, Prometheus metrics, API explorers, status badges or stack traces to anyone; an attacker learns repository and application names, versions and internal paths, and profiling endpoints can also be used to exhaust the server.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [information-disclosure, metrics, profiling, attack-surface, self-managed]
+applicability:
+  versions: [argo-cd, gitea, forgejo, woodpecker, teamcity, buildkite]
+
+description: |
+  Diagnostic endpoints are never reachable without authentication: profiling (pprof) is off or
+  bound to localhost, and metrics endpoints require a token or listen only on a private interface
+  scraped by the monitoring system.
+
+  With `exposure_scope` set to `all` (**{{ exposure_scope }}** here), information endpoints that are
+  useful but unauthenticated are also turned off: API explorers (Swagger UI), status badges, and
+  stack traces shown on error pages.
+
+  Anonymous access to the platform itself is covered by CB-CICD-IAM-011, and visibility of build
+  logs by CB-CICD-PIPE-022.
+rationale: |
+  Profiling and metrics endpoints reveal internal structure (repository counts and names,
+  application names, versions, memory layout) and profiling handlers can be called repeatedly to
+  load the server. Status badges are served without authentication and leak project and application
+  names and their state; API explorers and stack traces help an attacker map the platform and its
+  dependencies before choosing an exploit.
+impact: |
+  Monitoring needs a token or a private scrape path. Teams that embed status badges in READMEs or
+  dashboards lose them when badges are disabled under `all`.
+
+parameters:
+  - name: exposure_scope
+    type: enum
+    description: Endpoints that must not be exposed without authentication. `diagnostics` covers profiling and metrics; `all` also covers API explorers (Swagger UI), status badges and stack traces on error pages.
+    allowed: [diagnostics, all]
+    default: diagnostics
+    profile_defaults:
+      hardened: all
+
+audit:
+  manual: |
+    Use read access to the platform configuration, and a client outside the monitoring network to
+    test the endpoints without credentials.
+
+    1. Request the metrics and profiling URLs without a token (for example `/metrics`,
+       `/debug/pprof/`, port 6060) and check that they are refused or unreachable.
+    2. Check the product settings:
+       - **Gitea / Forgejo**: `app.ini` `[server] ENABLE_PPROF = false` (default); `[metrics]` is
+         either `ENABLED = false` or has a non-empty `TOKEN`. With `all`: `[api] ENABLE_SWAGGER =
+         false` (default `true`).
+       - **Woodpecker**: `WOODPECKER_METRICS_SERVER_ADDR` is empty (it opens an unprotected metrics
+         endpoint) or bound to a private address; `/metrics` is enabled only with
+         `WOODPECKER_PROMETHEUS_AUTH_TOKEN` (or `_FILE`).
+       - **Argo CD** (with `all`): `argocd-cmd-params-cm` `server.disable.swagger.ui: "true"` and
+         `argocd-cm` `statusbadge.enabled` absent or `"false"`.
+       - **TeamCity** (with `all`): the internal property
+         `teamcity.web.runtimeError.showStacktrace=false` is set.
+       - **Buildkite** (with `all`): build status badges (pipeline **Settings** > **Build Badges**)
+         are not published for pipelines whose name or status is sensitive, since badges need no
+         authentication.
+    3. Fail if profiling or metrics answer without authentication from outside the monitoring
+       network, or (with `all`) if Swagger UI, status badges or stack traces are exposed.
+
+remediation:
+  manual: |
+    Use an administrator account that can change the configuration and restart the service.
+
+    1. **Gitea / Forgejo**: set `ENABLE_PPROF = false`; under `[metrics]`, set `TOKEN` to a random
+       value and configure Prometheus with `bearer_token`, or set `ENABLED = false`. For `all`, set
+       `[api] ENABLE_SWAGGER = false`.
+    2. **Woodpecker**: unset `WOODPECKER_METRICS_SERVER_ADDR` or bind it to a private address, and
+       set `WOODPECKER_PROMETHEUS_AUTH_TOKEN_FILE` for the protected `/metrics` endpoint.
+    3. **Argo CD** (for `all`): set `server.disable.swagger.ui: "true"` in `argocd-cmd-params-cm`
+       and `statusbadge.enabled: "false"` in `argocd-cm`, then restart `argocd-server`.
+    4. **TeamCity** (for `all`): add `teamcity.web.runtimeError.showStacktrace=false` to the internal
+       properties.
+    5. **Buildkite** (for `all`): remove badge links for sensitive pipelines from READMEs and
+       dashboards.
+    6. Restrict metrics ports at the network level to the monitoring system.
+
+references:
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Server configuration
+    url: https://woodpecker-ci.org/docs/administration/configuration/server
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security (Argo CD operator manual)
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/security/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: How To... (TeamCity)
+    url: https://www.jetbrains.com/help/teamcity/how-to.html
+    publisher: JetBrains
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1592
+related_controls:
+  - id: CB-CICD-IAM-011
+    type: related
+  - id: CB-CICD-PIPE-022
+    type: related
+  - id: CB-CICD-PLAT-014
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

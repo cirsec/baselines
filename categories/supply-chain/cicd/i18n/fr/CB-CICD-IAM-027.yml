@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-027
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire tourner l'automatisation sous des identités non humaines dédiées
+finding:
+  title: L'automatisation tourne sous des comptes utilisateurs personnels ou partagés
+  description: Les scripts et intégrations qui utilisent le compte d'une personne ou un identifiant partagé héritent de tous les accès de cette personne, continuent de fonctionner après son départ, et ne peuvent être ni attribués ni révoqués isolément.
+description: |
+  Chaque automatisation (intégration, robot, script, contrôleur GitOps) s'authentifie auprès des
+  plates-formes SCM et CI/CD avec sa propre identité non humaine : compte de service, principal de
+  service, identité managée, installation d'application ou rôle de projet. Ces identités :
+
+  - ne sont pas partagées entre automatisations et ne sont jamais le compte d'une personne ;
+  - ne peuvent pas se connecter de façon interactive ;
+  - utilisent des identifiants qui expirent (jetons à courte durée de vie quand la plate-forme en
+    émet) ;
+  - ne sont créées que par des administrateurs et ont un propriétaire.
+
+  La façon dont les secrets sont fournis aux pipelines relève de CB-CICD-SEC-002 et CB-CICD-SEC-015 ;
+  la durée de vie et la portée des jetons de CB-CICD-IAM-028 et CB-CICD-IAM-029.
+rationale: |
+  Un compte personnel utilisé par l'automatisation porte tout ce que son titulaire peut atteindre, en
+  général bien plus que ce dont l'intégration a besoin, et ses identifiants sont copiés dans des
+  scripts et des serveurs. Au départ du titulaire, l'automatisation casse ou, pire, le compte est
+  maintenu en vie. Les comptes partagés rendent chaque action anonyme. Des identités dédiées peuvent
+  être restreintes, surveillées et révoquées sans effet de bord.
+impact: |
+  Chaque intégration a besoin de sa propre identité et d'un changement d'identifiant. Certaines
+  plates-formes facturent les comptes de service comme des utilisateurs.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur sur chaque plate-forme.
+
+    1. Lister les identités utilisées par l'automatisation et vérifier qu'aucune n'est le compte d'une
+       personne ou un identifiant partagé (noms comme `ci-bot` utilisés par plusieurs systèmes,
+       comptes avec une adresse électronique humaine).
+    2. Vérifier les mécanismes des plates-formes :
+       - **Azure DevOps** : les automatisations utilisent des principaux de service ou identités
+         managées Entra ajoutés comme utilisateurs (ils ne peuvent ni se connecter de façon
+         interactive ni créer de PAT) ou des connexions de service à identité de charge de travail,
+         pas des PAT de comptes utilisateurs.
+       - **GitLab** : les automatisations utilisent des comptes de service ou des jetons d'accès de
+         projet et de groupe ; en auto-hébergé, **Admin** > **Settings** > **General** > **Account and
+         limit** > **Allow top-level group owners to create Service accounts** est décoché sauf
+         délégation revue (Premium).
+       - **Harness** : les automatisations utilisent des comptes de service dont les jetons de clé
+         d'API ont une date d'expiration (pas **No Expiration**) et des liaisons de rôles limitées à
+         ce qu'elles font.
+       - **TeamCity** : les automatisations utilisent des utilisateurs dédiés dont les jetons d'accès
+         ont une expiration et une portée de permissions limitée.
+       - **Argo CD** : les automatisations utilisent des jetons de rôle de projet créés avec une
+         expiration (`argocd proj role create-token <project> <role> -e <durée>`) ou des comptes
+         locaux avec `apiKey` seulement (sans `login`) ; les comptes locaux inutilisés ont
+         `accounts.<name>.enabled: "false"`.
+       - **Buildkite** : les services utilisent OAuth Token Exchange (jetons à courte durée de vie) au
+         lieu d'un jeton d'accès API longue durée lié à un utilisateur.
+    3. Échec si une automatisation utilise un compte personnel ou partagé, si une identité non
+       humaine peut se connecter de façon interactive, ou si ses identifiants n'expirent jamais.
+remediation:
+  manual: |
+    1. Créer une identité non humaine par automatisation, détenue par l'équipe qui l'exploite.
+    2. Y basculer l'automatisation :
+       - **Azure DevOps** : enregistrer une application Entra ou une identité managée, l'ajouter à
+         l'organisation avec les groupes nécessaires, et utiliser des jetons Entra ou une connexion de
+         service à identité de charge de travail.
+       - **GitLab** : créer un compte de service (administrateur) ou un jeton d'accès de projet avec
+         expiration ; laisser désactivée la création de comptes de service par les propriétaires de
+         groupe sauf revue.
+       - **Harness** : créer un compte de service, lier un rôle étroit, et créer des jetons de clé
+         d'API avec une date d'expiration.
+       - **TeamCity** : créer un utilisateur dédié dans un groupe restreint et émettre un jeton d'accès
+         avec une durée limitée et des permissions restreintes.
+       - **Argo CD** : créer un rôle de projet avec les politiques nécessaires et émettre des jetons
+         avec `-e`.
+       - **Buildkite** : mettre en place OAuth Token Exchange pour le service.
+    3. Révoquer les identifiants personnels ou partagés utilisés auparavant, et désactiver les comptes
+       partagés.

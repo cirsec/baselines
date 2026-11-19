@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les secrets partagés aux projets et pipelines qui en ont besoin
+finding:
+  title: Des secrets et connexions de service de niveau organisation sont disponibles pour tous les projets
+  description: Un secret partagé au niveau organisation, dossier ou instance sans liste de projets atteint les pipelines de tous les dépôts ; un accès en écriture à n'importe lequel d'entre eux suffit pour le lire.
+description: |
+  Les secrets, identifiants et connexions de service définis au-dessus du niveau projet
+  (organisation, groupe, dossier, espace de travail ou instance) sont accordés à une liste
+  explicite de projets, dépôts ou pipelines. Aucun n'est disponible par défaut pour tous les
+  projets, et aucun n'est accordé à la création à tous les pipelines par commodité.
+
+  La même règle s'applique aux identités qui lisent des secrets dans un gestionnaire de secrets
+  pour le compte d'un build : leur politique nomme les secrets précis dont elles ont besoin, pas
+  tous les secrets du compte.
+
+  La restriction par groupe de l'usage des conteneurs de secrets relève de CB-CICD-SEC-006 ; la
+  liaison des secrets aux branches et environnements protégés, de CB-CICD-SEC-008.
+rationale: |
+  Sur la plupart des plates-formes, quiconque peut pousser une modification de pipeline dans un
+  dépôt peut lire tous les secrets que les pipelines de ce dépôt peuvent atteindre. Un secret
+  partagé avec tous les dépôts est donc exposé au dépôt le moins protégé de l'organisation. Une
+  liste explicite garde chaque secret partagé au sein des projets qui le justifient et fait
+  démarrer les nouveaux dépôts sans aucun secret partagé.
+impact: |
+  Chaque nouveau projet qui a besoin d'un secret partagé doit être ajouté à sa liste, ce qui
+  ajoute une petite étape d'administration. Les pipelines qui reposaient sur un accès ouvert
+  échouent tant qu'ils ne sont pas autorisés.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de secrets au niveau organisation et projet et les
+    politiques IAM des identités de build (les valeurs ne sont pas nécessaires).
+
+    1. Lister les secrets et connexions de service définis au-dessus du niveau projet.
+    2. Pour chacun, vérifier quels projets ou pipelines peuvent l'utiliser :
+       - **GitHub** : **Organization** > **Settings** > **Secrets and variables** > **Actions** :
+         le réglage **Repository access** de chaque secret d'organisation vaut **Selected repositories**, pas
+         **All repositories** ni **Private repositories** (API : `visibility` de
+         `GET /orgs/{org}/actions/secrets` vaut `selected`).
+       - **CircleCI** : **Organization Settings** > **Contexts** : les secrets sont répartis en un
+         contexte par système ou environnement plutôt qu'un seul contexte `org-global`, et chaque
+         contexte a des **Project restrictions** qui ne listent que les projets qui l'utilisent.
+       - **Azure DevOps** : pour chaque connexion de service, pool d'agents, groupe de variables,
+         fichier sécurisé, environnement et dépôt, **Sécurité** > **Autorisations de pipeline**
+         liste des pipelines précis et l'**accès ouvert** est désactivé.
+       - **Jenkins** : les identifiants sont stockés dans le dossier des jobs qui les utilisent, pas
+         dans le magasin racine (global), car les identifiants de portée globale sont visibles de
+         tous les jobs situés sous leur magasin.
+       - **Woodpecker** : **Admin** > **Secrets** (secrets globaux) ne contient aucun identifiant
+         de forte valeur, car les secrets globaux atteignent tous les pipelines de l'instance ;
+         les secrets d'organisation atteignent tous les dépôts de l'organisation.
+       - **AWS CodeBuild** : la politique du rôle de service de chaque projet n'autorise
+         `secretsmanager:GetSecretValue`, `ssm:GetParameters` et `kms:Decrypt` que sur les ARN des
+         secrets et paramètres que lit le buildspec du projet, pas `*`.
+       - **Google Cloud Build** : `roles/secretmanager.secretAccessor` est accordé sur chaque
+         secret au compte de service dédié du déclencheur qui l'utilise, pas au niveau du projet
+         et pas au compte de service Cloud Build historique.
+    3. Échec si un secret, identifiant ou connexion de service partagé est disponible pour tous les
+       projets, dépôts ou pipelines, ou si une identité de build peut lire des secrets qu'elle
+       n'utilise pas.
+remediation:
+  manual: |
+    1. Pour chaque secret partagé, lister les projets qui l'utilisent (d'après les fichiers de
+       pipeline et l'inventaire, CB-CICD-SEC-001) et ne l'accorder qu'à eux :
+       - **GitHub** : régler **Repository access** sur **Selected repositories** et ajouter les
+         dépôts (`gh secret set NOM --org ORG --repos depot1,depot2`). Déplacer les identifiants de
+         déploiement en secrets d'environnement quand c'est possible (CB-CICD-SEC-008).
+       - **CircleCI** : découper `org-global` en un contexte par système ou environnement et
+         ajouter des **Project restrictions** à chacun.
+       - **Azure DevOps** : sur chaque ressource protégée, désactiver l'**accès ouvert** et ajouter
+         les pipelines sous **Autorisations de pipeline** ; ne pas cocher **Accorder une
+         autorisation d'accès à tous les pipelines** à la création d'une connexion de service.
+       - **Jenkins** : déplacer les identifiants du magasin global vers le dossier qui contient les
+         jobs qui les utilisent.
+       - **Woodpecker** : déplacer les secrets globaux de forte valeur vers les dépôts qui en ont
+         besoin.
+       - **AWS CodeBuild** : remplacer les entrées `Resource` génériques du rôle de service par les
+         ARN exacts, un rôle par projet.
+       - **Google Cloud Build** : exécuter les builds avec un compte de service dédié par
+         déclencheur et ne lui accorder Secret Accessor que sur les secrets précis.
+    2. Renouveler les secrets qui étaient atteignables depuis des dépôts hors de la nouvelle liste.

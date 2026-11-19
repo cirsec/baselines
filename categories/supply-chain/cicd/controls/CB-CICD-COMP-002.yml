@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-002
+title: Fetch CI components only from controlled, authenticated sources
+finding:
+  title: Short component references resolve to an external forge or an unsigned update site
+  description: A short reference such as `actions/checkout@v4` in a workflow on a self-hosted forge silently downloads code from an outside service at run time, and a plugin update site without signature checks lets anyone on the network path serve modified plugins.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [third-party-components, mirror, update-site, actions, plugins, self-hosted]
+
+applicability:
+  versions: [forgejo, gitea, github, jenkins]
+
+parameters:
+  - name: component_source
+    type: enum
+    description: Where pipeline components may come from. `explicit` = the default source is set on purpose and plugin downloads are signature-checked; `internal-mirror` = only an internal mirror of reviewed components.
+    default: explicit
+    profile_defaults:
+      hardened: internal-mirror
+    allowed: [explicit, internal-mirror]
+
+description: |
+  Self-hosted forges and CI servers fetch pipeline components from a source the administrator
+  chose on purpose, never by an implicit default. Short references (`uses: owner/repo@ref`
+  without a host) resolve to a known location, and plugin update sites are checked against their
+  signature.
+
+  The required level is `{{ component_source }}`:
+  - `explicit`: the default action source is set deliberately (internal instance, or an external
+    forge the organization accepts) and documented; workflows that use another forge give its full
+    URL; Jenkins downloads plugins from the official or a mirrored update center with signature
+    checking on.
+  - `internal-mirror`: components come only from an internal mirror of reviewed components
+    (GitHub Enterprise Server synced with `actions-sync`, Gitea `DEFAULT_ACTIONS_URL = self`, a
+    Forgejo instance address); no direct fetch from an external forge at run time.
+
+  Which components are allowed is covered by CB-CICD-COMP-001.
+rationale: |
+  An implicit external default turns every short reference into a run-time download from a
+  service the organization does not control: a renamed or taken-over upstream owner then serves
+  code directly to internal runners. On GitHub Enterprise Server with GitHub Connect, an internal
+  organization whose name matches a github.com owner takes precedence, which allows name
+  squatting. An update site without signature checks lets a network attacker or a rogue mirror
+  push modified plugins with full controller access.
+impact: |
+  An internal mirror needs an owner who reviews and syncs new component versions; teams wait for
+  the sync before using a new release. Changing the default source breaks workflows that relied on
+  the old default until they use full URLs or the mirror holds the component.
+notes: |
+  Gitea defaults `DEFAULT_ACTIONS_URL` to `github` and Forgejo to `https://data.forgejo.org`.
+  GitHub Enterprise Server cannot use github.com actions until an enterprise owner turns it on;
+  `actions-sync` is meant for instances where GitHub Connect is off.
+
+audit:
+  manual: |
+    Use an instance administrator account or read access to the server configuration files.
+
+    1. Check the source of components on each platform in scope:
+       - **Gitea**: `app.ini` section `[actions]`, key `DEFAULT_ACTIONS_URL` (`github` or `self`).
+       - **Forgejo**: `app.ini` section `[actions]`, key `DEFAULT_ACTIONS_URL` (an instance
+         address).
+       - **GitHub Enterprise Server**: **Enterprise** > **Settings** > **GitHub Connect** > **Users
+         can utilize actions from GitHub.com in workflow runs**; whether actions are synced into a
+         curated organization with `actions-sync`; **Site admin** > **Retired namespaces**.
+       - **Jenkins**: **Manage Jenkins** > **Plugins** > **Advanced settings** > **Update Site**
+         URL, and the system property `hudson.model.DownloadService.noSignatureCheck` in the
+         controller start options.
+    2. Fail if the default action source was never set on purpose, if Jenkins signature checking
+       is disabled (`noSignatureCheck=true`) or points to an unknown update site, or, when
+       `{{ component_source }}` is `internal-mirror`, if workflows can still fetch components from
+       an external forge at run time.
+
+remediation:
+  manual: |
+    1. Decide where reviewed components live (internal organization or instance, mirror).
+    2. Set the source:
+       - **Gitea**: set `[actions] DEFAULT_ACTIONS_URL = self` and mirror the reviewed actions on
+         the instance, or keep `github` and require full URLs in workflows (`uses:
+         https://host/owner/repo@sha`).
+       - **Forgejo**: set `[actions] DEFAULT_ACTIONS_URL` to the internal instance holding the
+         reviewed actions.
+       - **GitHub Enterprise Server** (enterprise owner): keep **Users can utilize actions from
+         GitHub.com in workflow runs** disabled and sync reviewed actions with `actions-sync`
+         into a dedicated organization, or enable it together with an allowlist policy
+         (CB-CICD-COMP-001) and review **Retired namespaces**.
+       - **Jenkins** (administrator): use the official update center or an internal mirror that
+         keeps upstream signatures, and remove `-Dhudson.model.DownloadService.noSignatureCheck=true`
+         from the controller options.
+    3. Restart the services after changing `app.ini` or Java options.
+
+references:
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enabling automatic access to GitHub.com actions using GitHub Connect
+    url: https://docs.github.com/en/admin/managing-github-actions-for-your-enterprise/managing-access-to-actions-from-githubcom/enabling-automatic-access-to-githubcom-actions-using-github-connect
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manually syncing actions from GitHub.com
+    url: https://docs.github.com/en/admin/managing-github-actions-for-your-enterprise/managing-access-to-actions-from-githubcom/manually-syncing-actions-from-githubcom
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Jenkins features controlled with system properties
+    url: https://www.jenkins.io/doc/book/managing/system-properties/
+    publisher: Jenkins
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-03
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-14
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SR-3
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1195.002
+related_controls:
+  - id: CB-CICD-COMP-001
+    type: related
+  - id: CB-CICD-COMP-012
+    type: related
+  - id: CB-CICD-PLAT-003
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-020
+title: Test the merged result before merging and keep a linear history
+finding:
+  title: Pull requests are merged without testing the combined result with the target branch
+  description: Checks ran on a branch that is behind the target, so the code actually merged, the combination of both, was never built or scanned, and a merge commit can hide changes that no reviewer saw in the diff.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [merge-queue, merge-train, up-to-date-branch, linear-history]
+
+applicability:
+  versions: [github, gitlab, azure-devops]
+
+description: |
+  On critical repositories, the result that lands on a protected branch is the result that was
+  tested:
+
+  - the source branch must be up to date with the target before merging, or merges go through a
+    merge queue or merge train that tests each change on top of the others;
+  - protected branches keep a linear history (squash, rebase or fast-forward merges), so each
+    commit on the branch corresponds to a reviewed change.
+
+  Required checks themselves are covered by CB-CICD-SCM-019.
+rationale: |
+  Two changes that pass their checks separately can break the build, a test or a security control
+  once combined. Testing the merged result removes that gap. A linear history also makes review
+  and incident analysis simpler: merge commits with conflict resolutions can carry changes that
+  appear in no pull request diff. The security value is moderate, which is why this control is
+  only in the hardened profile.
+impact: |
+  Busy repositories see more pipeline runs or wait in a queue. Teams that rely on merge commits to
+  keep the history of feature branches must switch to squash or rebase merges.
+
+audit:
+  manual: |
+    Use a role that can read branch protection, merge request and branch policy settings.
+
+    1. Check the merge settings on protected branches:
+       - **GitHub**: the status check rule enables **Require branches to be up to date before
+         merging**, or the ruleset enables **Require merge queue**; the ruleset also enables
+         **Require linear history**.
+       - **GitLab**: **Settings** > **Merge requests** > **Merge method** is **Merge commit with
+         semi-linear history** or **Fast-forward merge** (both require the source branch to be up to
+         date), or merge trains with merged results pipelines are enabled.
+       - **Azure DevOps**: branch policy **Limit merge types** allows only **Squash merge** or
+         **Rebase and fast-forward**, and **Build validation** expires **Immediately when** the
+         target branch is updated.
+    2. Fail if a protected branch accepts merges of out-of-date branches without a merge queue or
+       train, or allows non-linear merges.
+
+remediation:
+  manual: |
+    1. Enable up-to-date testing:
+       - **GitHub**: enable **Require branches to be up to date before merging** in the status
+         check rule, or **Require merge queue** with workflows triggered on `merge_group`.
+       - **GitLab**: choose **Merge commit with semi-linear history** or **Fast-forward merge**, or
+         enable merged results pipelines and merge trains.
+       - **Azure DevOps**: set the build validation expiration to **Immediately when** the branch is
+         updated.
+    2. Enforce a linear history:
+       - **GitHub**: enable **Require linear history** in the ruleset.
+       - **GitLab**: use the semi-linear or fast-forward merge method.
+       - **Azure DevOps**: turn on **Limit merge types** with squash or rebase only.
+
+references:
+  - title: Available rules for rulesets
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing a merge queue
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge methods
+    url: https://docs.gitlab.com/user/project/merge_requests/methods/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge trains
+    url: https://docs.gitlab.com/ci/pipelines/merge_trains/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.10"
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.13"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-019
+    type: requires
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

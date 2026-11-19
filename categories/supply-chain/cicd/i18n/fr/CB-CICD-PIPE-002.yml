@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'activer l'exécution des pipelines que pour les dépôts qui en ont besoin
+finding:
+  title: Tous les dépôts peuvent exécuter des workflows CI/CD
+  description: "Les workflows s'exécutent par défaut dans n'importe quel dépôt, y compris dormant, de test ou oublié : un attaquant qui a l'accès en écriture à l'un d'eux peut exécuter du code avec les runners, les jetons et les secrets partagés de l'organisation."
+description: |
+  L'exécution des workflows CI/CD est sur adhésion. Au niveau organisation ou instance, Actions n'est
+  activé que pour une liste explicite de dépôts qui construisent, testent ou déploient quelque
+  chose ; les nouveaux dépôts n'ont pas Actions par défaut, et les dépôts archivés ou dormants l'ont
+  désactivé.
+
+  Les actions et workflows réutilisables qu'un dépôt activé peut appeler relèvent de
+  CB-CICD-COMP-001 ; l'archivage des dépôts non maintenus relève de CB-CICD-SCM-025.
+rationale: |
+  Chaque dépôt où des workflows peuvent s'exécuter est un endroit où un fichier de workflow poussé
+  s'exécute avec les runners de l'organisation, le jeton du dépôt et les secrets d'organisation
+  partagés avec lui. Les dépôts non maintenus sont rarement surveillés, ont des collaborateurs
+  obsolètes et une protection faible, ce qui en fait un point d'entrée commode. Limiter l'exécution
+  aux dépôts qui ont besoin de CI supprime cette surface.
+impact: |
+  Les équipes doivent demander l'activation d'Actions quand elles créent un dépôt qui a besoin de CI.
+  Sur GitHub, désactiver Actions pour un dépôt y désactive aussi la configuration par défaut de
+  CodeQL ; les mises à jour Dependabot continuent de s'exécuter.
+audit:
+  manual: |
+    Utiliser un compte propriétaire d'organisation ou administrateur d'instance avec accès en lecture
+    aux réglages Actions.
+
+    1. Lire la politique d'activation d'Actions :
+       - **GitHub** : **Organization** > **Settings** > **Actions** > **General** > **Policies** (ou
+         **Enterprise** > **Policies** > **Actions**), ou `GET /orgs/{org}/actions/permissions` et
+         vérifier `enabled_repositories`.
+       - **Gitea / Forgejo** : `app.ini` `[actions] ENABLED`, et `[repository] DEFAULT_REPO_UNITS` :
+         vérifier si `repo.actions` fait partie des unités par défaut des nouveaux dépôts.
+    2. Lister les dépôts où Actions est activé et les comparer aux dépôts qui ont réellement un
+       pipeline en service.
+    3. Échec si Actions est activé pour tous les dépôts (`enabled_repositories: all` sur GitHub,
+       `repo.actions` dans les unités par défaut sur Gitea/Forgejo), ou si un dépôt archivé ou
+       dormant a encore Actions activé.
+remediation:
+  manual: |
+    1. Établir la liste des dépôts qui ont besoin de CI à partir de leurs exécutions récentes.
+    2. Restreindre Actions à cette liste :
+       - **GitHub** : en tant que propriétaire d'organisation, régler **Policies** pour autoriser
+         Actions sur les dépôts sélectionnés et ajouter les dépôts, ou appeler
+         `PUT /orgs/{org}/actions/permissions` avec `enabled_repositories: selected` puis définir les
+         dépôts sélectionnés. Les propriétaires d'entreprise peuvent l'imposer dans **Enterprise** >
+         **Policies** > **Actions**.
+       - **Gitea / Forgejo** : retirer `repo.actions` de `[repository] DEFAULT_REPO_UNITS` dans
+         `app.ini` pour que les nouveaux dépôts démarrent sans Actions, et n'activer l'unité Actions
+         que dans les dépôts qui en ont besoin ; mettre `[actions] ENABLED = false` sur les instances
+         qui n'exécutent pas de CI.
+    3. Désactiver Actions dans les dépôts archivés et dormants.
+  rollback: |
+    Remettre le dépôt dans la liste sélectionnée (GitHub) ou réactiver son unité Actions
+    (Gitea/Forgejo).

@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: N'autoriser que les composants CI tiers approuvés
+finding:
+  title: Les pipelines peuvent exécuter n'importe quelle action, orb, plugin ou tâche tierce
+  description: Tout membre qui modifie un pipeline peut y ajouter un composant d'un éditeur inconnu, qui s'exécute alors avec les secrets et le jeton du job ; il suffit à un attaquant d'un composant populaire ou d'un sosie pour atteindre de nombreux pipelines.
+description: |
+  Les composants tiers exécutés par les pipelines (actions et workflows réutilisables GitHub, orbs
+  CircleCI, plugins Buildkite, tâches Marketplace d'Azure Pipelines, composants du catalogue CI/CD
+  GitLab, plugins d'exécuteur Argo Workflows, plugins serveur TeamCity) sont limités à une liste
+  d'autorisation tenue au niveau de l'organisation ou de l'instance. Cette liste contient les
+  composants détenus par l'organisation, ceux publiés par l'éditeur de la plate-forme et des
+  composants tiers revus un par un. Les composants des autres éditeurs sont bloqués tant qu'ils ne
+  sont pas revus et ajoutés.
+
+  Un badge d'éditeur comme « verified creator » sur GitHub ou un orb certifié ne suffit pas à lui
+  seul : il indique qui a publié le composant, pas que son code a été revu.
+
+  L'épinglage des composants autorisés relève de CB-CICD-COMP-011, et le retrait des composants
+  vulnérables ou compromis de CB-CICD-COMP-003.
+rationale: |
+  Un composant tiers s'exécute dans le job avec les mêmes accès que le pipeline : secrets, jeton
+  du job, identifiants cloud et code source. Des composants compromis ou malveillants ont servi à
+  vider les secrets CI de milliers de dépôts d'un coup. Une liste d'autorisation réduit les éditeurs
+  auxquels l'organisation fait confiance aux quelques-uns qu'elle a revus, et fait de l'ajout d'un
+  nouvel éditeur une décision délibérée.
+impact: |
+  Les équipes ont besoin d'un circuit de demande et de revue pour ajouter un composant, sinon elles
+  recopient le code dans des scripts. Les pipelines existants qui utilisent des composants hors
+  liste échouent tant que ces composants ne sont pas revus ou remplacés. Prévoir un inventaire des
+  composants utilisés avant d'activer la politique.
+notes: |
+  Sur GitHub, les actions référencées par `./` dans le même dépôt ne sont jamais restreintes par la
+  politique. Une fois un workflow intégré à un fichier de verrouillage, la liste d'autorisation est
+  comparée aux SHA de commit verrouillés : les entrées épinglées sur des tags ne correspondent plus.
+  Buildkite applique la liste par agent : chaque agent de chaque file doit avoir le même réglage.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de l'organisation ou de l'instance (propriétaire
+    d'organisation, administrateur de collection de projets, administrateur d'instance) ; aucun
+    droit d'écriture n'est nécessaire.
+
+    1. Lister les composants tiers utilisés par les pipelines (par exemple avec zizmor
+       `forbidden-uses`, poutine ou une recherche des mots-clés `uses:`, `orbs:`, `plugins:` et
+       `task:`).
+    2. Vérifier le réglage de la plate-forme qui restreint les composants exécutables :
+       - **GitHub** : **Settings** > **Actions** > **General** > **Policies** au niveau entreprise,
+         organisation ou dépôt, ou REST `GET /orgs/{org}/actions/permissions` et
+         `GET /orgs/{org}/actions/permissions/selected-actions`. La politique est **Allow
+         enterprise, and select non-enterprise, actions and reusable workflows** avec seulement les
+         actions créées par GitHub et des motifs `OWNER/REPO` explicites ; **Allow Marketplace
+         actions by verified creators** n'est pas le seul filtre.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Pipelines** > **Paramètres** >
+         **Restrictions de tâches** : **Disable Marketplace tasks** est activé, et les tâches
+         supplémentaires nécessaires sont installées comme tâches privées revues.
+       - **CircleCI** : **Organization Settings** > **Security** : les orbs non certifiés ne sont
+         pas autorisés ; **Organization Settings** > **Orbs** > **Allowed URL Orb prefixes** ne
+         liste que des préfixes internes.
+       - **Buildkite** : chaque agent définit `allowed-plugins` (ou `BUILDKITE_ALLOWED_PLUGINS`)
+         avec des motifs ancrés vers des sources revues, ou `no-plugins=true`.
+       - **GitLab** : **Admin** > **Settings** > **CI/CD** > **Catalog** : la **CI/CD Catalog
+         publishing allowlist** ne liste que les projets de composants approuvés (GitLab Premium
+         ou Ultimate, auto-hébergé ou Dedicated, version 18.7 et suivantes).
+       - **TeamCity** : **Server Administration** > **Plugins** ne liste que des plugins revus
+         issus de sources de confiance.
+       - **Argo Workflows** : le contrôleur de workflows ne définit `ARGO_EXECUTOR_PLUGINS` que si
+         des plugins d'exécuteur sont nécessaires, et chaque ConfigMap de plugin correspond à un
+         plugin revu qui vérifie le jeton `Authorization`.
+    3. Échec si les pipelines peuvent exécuter des composants tiers non revus, ou si la seule
+       restriction est un badge d'éditeur (verified creator, orb certifié).
+remediation:
+  manual: |
+    1. Inventorier les composants utilisés, revoir ceux qui sont conservés et convenir d'un
+       circuit de demande pour les nouveaux.
+    2. Passer la plate-forme en liste d'autorisation :
+       - **GitHub** (propriétaire d'organisation ou d'entreprise) : **Settings** > **Actions** >
+         **General** > **Policies** > **Allow enterprise, and select non-enterprise, actions and
+         reusable workflows**, cocher **Allow actions created by GitHub**, ajouter les motifs
+         `OWNER/REPO@*` revus, ou appeler `PUT /orgs/{org}/actions/permissions` avec
+         `allowed_actions: selected`.
+       - **Azure DevOps** (Project Collection Administrator) : activer **Disable Marketplace
+         tasks** dans **Paramètres de l'organisation** > **Pipelines** > **Paramètres** >
+         **Restrictions de tâches** ; installer les tâches revues avec `tfx` comme tâches privées.
+         Ne pas désactiver les tâches intégrées.
+       - **CircleCI** (administrateur de l'organisation) : désactiver les orbs non certifiés dans
+         **Organization Settings** > **Security**, publier les orbs revus dans un espace de noms
+         privé ou comme URL orbs et n'autoriser que des préfixes d'URL internes dans
+         **Organization Settings** > **Orbs**.
+       - **Buildkite** : définir `allowed-plugins` avec les ancres `^` et `$` sur chaque agent, par
+         exemple `^github\.com/my-org/.*$`.
+       - **GitLab** (administrateur) : renseigner la **CI/CD Catalog publishing allowlist**.
+       - **TeamCity** : désinstaller les plugins non revus.
+       - **Argo Workflows** : laisser `ARGO_EXECUTOR_PLUGINS` non défini sauf besoin et
+         n'installer que des plugins d'exécuteur revus.
+    3. Forker ou copier en miroir dans l'organisation les composants tiers revus quand la revue
+       doit porter sur une copie figée.
+  rollback: |
+    Ajouter le composant bloqué à la liste d'autorisation après revue ; ne pas revenir à « tout
+    autoriser ».

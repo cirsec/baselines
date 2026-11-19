@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-021
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Ne jamais écrire de secrets en dur dans les définitions de pipeline, les réglages ou les URL
+finding:
+  title: Des identifiants sont écrits dans des fichiers de pipeline, des réglages de projet ou des URL de dépôt
+  description: Un mot de passe ou un jeton écrit dans un fichier de pipeline, une variable d'environnement simple d'un projet de build ou une URL de clonage est lisible par tous ceux qui peuvent lire le dépôt ou les réglages du projet, se retrouve dans les journaux et l'historique, et ne peut pas être renouvelé sans modifier le code.
+description: |
+  Aucune valeur d'identifiant n'apparaît dans les fichiers de pipeline (`.github/workflows`,
+  `.gitlab-ci.yml`, `azure-pipelines.yml`, `.circleci/config.yml`, `pipeline.yml`,
+  `cloudbuild.yaml`, buildspecs, Jenkinsfiles), dans les réglages versionnés de la plate-forme
+  (Kotlin DSL ou XML de TeamCity), dans des variables simples de job ou de projet, dans la
+  configuration des actions ou tâches, dans les substitutions ou métadonnées de build, ni dans les
+  URL de dépôt et d'API (`https://utilisateur:jeton@hôte`, `?job_token=`). Les pipelines
+  référencent les secrets par leur nom dans le coffre de la plate-forme ou un gestionnaire de
+  secrets, et les jetons sont envoyés dans des en-têtes, pas dans des URL.
+
+  Quand la plate-forme peut refuser les définitions de pipeline qui contiennent des valeurs
+  secrètes, ce contrôle est activé.
+
+  Le stockage de type secret relève de CB-CICD-SEC-003 ; la recherche de secrets dans tout le code,
+  de CB-CICD-SEC-009 ; les secrets dans les livrables de build, de CB-CICD-SEC-024.
+rationale: |
+  Les fichiers de pipeline et les réglages de projet sont lus par beaucoup plus de personnes et de
+  systèmes que le coffre de secrets : chaque développeur, chaque fork et clone, l'interface et
+  l'API de la plate-forme, et ses journaux. Un identifiant écrit là leur est exposé à tous et reste
+  dans l'historique après sa suppression. Les URL contenant des identifiants finissent dans
+  `.git/config`, les journaux de proxy et les listes de processus.
+impact: |
+  Les pipelines existants qui contiennent des valeurs en dur doivent être modifiés pour
+  référencer des secrets, et ces valeurs doivent être renouvelées.
+notes: |
+  Sur TeamCity, les utilisateurs qui peuvent lire le dépôt des réglages peuvent retrouver les mots
+  de passe stockés sous forme brouillée ; utiliser des jetons dans les réglages versionnés. Le
+  contrôle AWS Security Hub CodeBuild.2 ne détecte que `AWS_ACCESS_KEY_ID` et
+  `AWS_SECRET_ACCESS_KEY` dans les variables de projet en clair ; les autres noms d'allure secrète
+  demandent une vérification manuelle.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts et aux réglages des projets.
+
+    1. Analyser les fichiers de pipeline et les réglages versionnés à la recherche de valeurs
+       d'identifiants (gitleaks, TruffleHog, contrôles de secrets de Checkov, audit zizmor
+       `hardcoded-container-credentials` pour les workflows GitHub).
+    2. Vérifier chaque plate-forme :
+       - **AWS CodeBuild / CodePipeline** : les variables d'environnement de projet de type
+         `PLAINTEXT` ne contiennent pas de secrets (les secrets utilisent `SECRETS_MANAGER` ou
+         `PARAMETER_STORE`, ou `env.secrets-manager` / `env.parameter-store` dans le buildspec) ;
+         les emplacements de source du projet (primaire et secondaires) ne contiennent ni jeton ni
+         mot de passe (Security Hub CodeBuild.1) ; la configuration des actions et les valeurs par
+         défaut des variables de pipeline ne contiennent pas de secrets et référencent Secrets
+         Manager à la place.
+       - **Google Cloud Build** : les secrets sont lus par `availableSecrets.secretManager` et le
+         `secretEnv` des steps, référencés par `$$VAR` dans des steps `bash -c` ; aucune
+         substitution ni argument de step ne porte d'identifiant en clair.
+       - **GitHub** : `jobs.<id>.container.credentials` et `services.<id>.credentials` utilisent
+         `${{ secrets.NOM }}`, pas des mots de passe littéraux.
+       - **Azure DevOps** : aucune valeur secrète n'apparaît dans les variables YAML ni dans des
+         commandes `##vso[task.setvariable ...]` avec une valeur littérale ; les secrets viennent de
+         variables secrètes, de groupes de variables ou de Key Vault.
+       - **TeamCity** : les réglages versionnés (Kotlin DSL ou XML) contiennent des jetons
+         `credentialsJSON:`, pas des mots de passe.
+       - **CircleCI** : `.circleci/config.yml` ne contient aucune valeur secrète ; elles viennent
+         des contextes ou des variables d'environnement du projet.
+       - **Buildkite** : aucun secret dans les réglages du pipeline, `pipeline.yml`, les commandes
+         des steps ou les métadonnées de build ; les agents exécutent
+         `buildkite-agent pipeline upload --reject-secrets` (l'agent v3 ne vérifie pas par défaut)
+         et personne n'utilise `--allow-secrets`.
+       - **GitLab** : les scripts envoient `CI_JOB_TOKEN` ou d'autres jetons avec
+         `--header "JOB-TOKEN: ..."` (ou `PRIVATE-TOKEN`), pas par `?job_token=` ni des URL
+         `https://jeton@hôte`.
+    3. Échec si une valeur d'identifiant est trouvée dans un fichier de pipeline, un réglage
+       versionné, une variable simple, une configuration d'action, une substitution, des
+       métadonnées ou une URL.
+remediation:
+  manual: |
+    1. Déplacer chaque valeur en dur dans le coffre de secrets (CB-CICD-SEC-003) et la référencer
+       par son nom, puis la renouveler, puisqu'elle est dans l'historique.
+       - **AWS CodeBuild / CodePipeline** : passer les secrets `PLAINTEXT` en `SECRETS_MANAGER` ou
+         `PARAMETER_STORE` ; reconnecter les sources par CodeConnections ou OAuth et ne garder que
+         le chemin du dépôt dans l'emplacement de source ; remplacer les secrets de la
+         configuration des actions par des références Secrets Manager.
+       - **Google Cloud Build** : stocker la valeur dans Secret Manager et la lire par
+         `availableSecrets.secretManager`.
+       - **GitHub** : utiliser `${{ secrets.NOM }}` pour les identifiants de conteneur et de
+         service, ou l'OIDC vers le registre.
+       - **Azure DevOps** : déplacer les valeurs vers des variables secrètes ou des groupes de
+         variables liés à Key Vault.
+       - **TeamCity** : générer des jetons pour les mots de passe utilisés dans les réglages
+         versionnés et remplacer les valeurs brouillées par des références `credentialsJSON:`.
+       - **Buildkite** : utiliser les secrets Buildkite ou un coffre externe, et ajouter
+         `--reject-secrets` à chaque `pipeline upload` sur l'agent v3.
+       - **GitLab** : modifier les scripts pour envoyer les jetons dans des en-têtes.
+    2. Ajouter un outil d'analyse des secrets à la revue des fichiers de pipeline
+       (CB-CICD-TEST-004) pour éviter les régressions.

@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-ART-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Enregistrer dans la provenance chaque dépendance consommée par le build
+finding:
+  title: La provenance du build ne liste que la source de premier niveau, pas les dépendances récupérées par le build
+  description: Quand la provenance omet les paquets, images de base et outils récupérés pendant le build, une dépendance empoisonnée ne laisse aucune trace dans l'enregistrement de la version et ne peut pas être retrouvée rapidement dans les versions publiées après l'annonce d'une compromission.
+description: |
+  La provenance des artefacts critiques publiés liste tous les artefacts consommés par le build, dans
+  son champ `resolvedDependencies` (ou équivalent), avec une empreinte pour chacun : dépôts source,
+  images de base, paquets, outils de build et sorties des tâches précédentes ou des pipelines enfants.
+
+  Pour que la liste soit complète, les dépendances sont récupérées dans une étape dédiée observée par
+  la plate-forme (préchargement), tirées à travers un proxy qui les enregistre, ou embarquées dans le
+  dépôt source, et les pipelines composés de plusieurs tâches rapportent les entrées de chaque tâche,
+  pas seulement celles de l'exécution de premier niveau.
+
+  Un SBOM de l'artefact livré est un autre enregistrement (ce que contient l'artefact) et relève du
+  standard dépendances (CB-DEP-INV-001).
+rationale: |
+  Les attaques de la chaîne d'approvisionnement passent souvent par une dépendance résolue pendant le
+  build, pas par le code de l'application. Avec une liste complète des entrées consommées dans une
+  provenance signée, une équipe peut répondre à « quelles versions ont été construites avec ce paquet
+  ou cette image compromis ? » à partir des enregistrements, sans reconstruire ni deviner, et un
+  vérificateur peut refuser les artefacts construits à partir d'entrées non approuvées.
+impact: |
+  Les builds doivent récupérer leurs dépendances d'une manière observable par la plate-forme, ce qui
+  peut obliger à restructurer les pipelines (étapes de préchargement, proxy d'enregistrement,
+  dépendances embarquées). Les documents de provenance grossissent. L'exigence d'exhaustivité va
+  au-delà des niveaux publiés de SLSA v1.2.
+notes: |
+  L'exigence SLSA « dépendances complètes » est un projet pour un futur niveau Build (v1.3) et ne fait
+  pas partie de SLSA v1.2. Tekton Chains n'inspecte que les résultats au niveau du pipeline sauf si
+  `artifacts.pipelinerun.enable-deep-inspection` vaut `"true"` ; dans ce cas, les entrées et sorties
+  des TaskRuns enfants sont aussi capturées.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les définitions de pipeline, la configuration de la plate-forme et
+    les attestations.
+
+    1. Prendre une version critique récente et ouvrir sa provenance.
+    2. Comparer `resolvedDependencies` (ou le champ équivalent de la plate-forme) aux entrées
+       réellement utilisées par le build : fichiers de verrouillage, références d'images de base,
+       téléchargements d'outils, sorties des tâches précédentes.
+    3. Vérifier comment les dépendances arrivent dans le build : étape de préchargement, proxy
+       d'enregistrement ou sources embarquées, plutôt que des téléchargements ponctuels dans les
+       scripts de build.
+    4. Réglages de la plate-forme :
+       - **Tekton** : dans la ConfigMap `chains-config`, `artifacts.pipelinerun.enable-deep-inspection`
+         vaut `"true"` et le format est `slsa/v2alpha4` ; vérifier avec
+         `kubectl get configmap chains-config -n tekton-chains -o yaml`.
+       - Autres plates-formes : relire le contenu de la provenance à la main ; aucun réglage ne la
+         rend complète à lui seul.
+    5. Échec si une dépendance utilisée par le build manque dans la provenance, ou si elle y figure
+       sans empreinte.
+remediation:
+  manual: |
+    1. Déplacer la résolution des dépendances dans une étape dédiée, en début de pipeline, qui
+       récupère tout par empreinte ou depuis un fichier de verrouillage, et garder les étapes
+       suivantes hors ligne quand c'est possible (CB-CICD-RUN-024).
+    2. Faire passer les téléchargements de paquets et d'images par un proxy ou un registre interne
+       qui enregistre ce que chaque build a récupéré (CB-DEP-SRC-001), ou embarquer les dépendances.
+    3. Faire figurer ces entrées dans la provenance :
+       - **Tekton** : poser `artifacts.pipelinerun.enable-deep-inspection: "true"` dans
+         `chains-config` et utiliser des résultats typés dans les tâches pour que Chains enregistre
+         les entrées de chaque tâche.
+       - Autres plates-formes : ajouter les entrées résolues aux éléments attestés via les options du
+         générateur de provenance, ou joindre une attestation signée qui les liste.
+    4. Contrôler une version par trimestre en comparant sa provenance à ses fichiers de verrouillage.

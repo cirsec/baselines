@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-DEPLOY-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les déploiements en production hors des fenêtres de changement autorisées et les sérialiser
+finding:
+  title: Les déploiements et synchronisations de production peuvent s'exécuter à tout moment, y compris pendant les gels, et en parallèle
+  description: Sans fenêtres de changement imposées, un déploiement peut arriver pendant un gel, la nuit ou pendant un incident quand personne ne surveille, et des exécutions concurrentes sur le même environnement peuvent laisser la production dans un état mixte.
+description: |
+  Les déploiements en production et les synchronisations GitOps ne sont autorisés que dans les
+  fenêtres de changement définies par l'organisation (par exemple les heures ouvrées) et sont bloqués
+  pendant les gels déclarés. Le blocage est imposé par la plate-forme, pas laissé à chaque auteur de
+  pipeline, et les synchronisations ou déploiements manuels sont aussi bloqués pendant les gels, sauf
+  par le chemin d'urgence.
+
+  Un seul déploiement à la fois s'exécute sur un environnement de production donné : les exécutions
+  suivantes attendent un verrou exclusif ou sont mises en file d'attente.
+
+  Empêcher des pipelines plus anciens d'écraser des déploiements plus récents relève de
+  CB-CICD-DEPLOY-007.
+rationale: |
+  Les gels et fenêtres de changement existent parce que les déploiements sont la première cause
+  d'incidents et qu'il faut quelqu'un de disponible pour surveiller et revenir en arrière. Un
+  déploiement qui se glisse hors de la fenêtre, par erreur ou par un attaquant qui a choisi un moment
+  calme, a le plus de chances de passer inaperçu. Sérialiser les déploiements évite les situations de
+  concurrence qui laissent la production exécuter un mélange de versions.
+impact: |
+  Les correctifs urgents pendant un gel passent par le chemin d'urgence. Les déploiements en file
+  d'attente prennent plus de temps. Les fenêtres doivent être entretenues (jours fériés, fuseaux
+  horaires).
+notes: |
+  Les fenêtres de synchronisation Argo CD s'appliquent aux synchronisations manuelles et automatiques,
+  mais une fenêtre peut autoriser les synchronisations manuelles avec `manualSync: true` ; les
+  fenêtres `deny` l'emportent sur les fenêtres `allow`. Les gels de déploiement GitLab ne font que
+  positionner la variable `CI_DEPLOY_FREEZE` : les jobs de déploiement doivent avoir une règle dessus
+  pour être bloqués. Dans Azure Pipelines, la valeur par défaut de `lockBehavior` est `runLatest` ;
+  utiliser `sequential` quand chaque exécution doit déployer dans l'ordre.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les projets GitOps, les réglages des pipelines et les vérifications
+    des environnements.
+
+    1. Obtenir les fenêtres de changement et le calendrier des gels de l'organisation.
+    2. Vérifier l'application sur chaque chemin de déploiement en production :
+       - **Argo CD** : les ressources `AppProject` de production définissent `spec.syncWindows` avec
+         `kind: deny` pour les périodes de gel (ou `kind: allow` pour les fenêtres autorisées)
+         couvrant les applications, espaces de noms ou clusters de production, avec `manualSync`
+         différent de `true` sur les fenêtres de refus ; vérifier avec
+         `argocd proj windows list <projet>`.
+       - **GitLab** : **Settings** > **CI/CD** > **Deploy freezes** liste les périodes de gel, et
+         chaque job de déploiement en production a une règle comme `- if: $CI_DEPLOY_FREEZE` avec
+         `when: never` ; les jobs de déploiement en production utilisent `resource_group` pour qu'un
+         seul s'exécute à la fois.
+       - **Azure DevOps** : **Approbations et vérifications** de l'environnement de production
+         contient **Business hours** avec la fenêtre autorisée et **Exclusive lock** ; les pipelines
+         règlent `lockBehavior` comme prévu.
+    3. Échec si un déploiement ou une synchronisation de production peut démarrer hors de la fenêtre
+       autorisée ou pendant un gel sans passer par le chemin d'urgence, ou si deux déploiements
+       peuvent s'exécuter en même temps sur le même environnement de production.
+remediation:
+  manual: |
+    1. Inscrire les fenêtres de changement et les gels dans la plate-forme :
+       - **Argo CD** : ajouter des `syncWindows` aux ressources `AppProject` de production, par
+         exemple une fenêtre `deny` avec un `schedule` cron, une `duration` et les `applications` ou
+         `namespaces` de production, et laisser `manualSync` absent ou à `false`.
+       - **GitLab** : créer les gels dans **Settings** > **CI/CD** > **Deploy freezes** (cron de
+         début, cron de fin, fuseau horaire), ajouter `rules: - if: $CI_DEPLOY_FREEZE` `when: never`
+         aux jobs de déploiement en production (par exemple via un modèle partagé), et leur ajouter un
+         `resource_group`.
+       - **Azure DevOps** : ajouter les vérifications **Business hours** et **Exclusive lock** à
+         l'environnement de production et poser `lockBehavior: sequential` quand chaque exécution
+         doit déployer.
+    2. Documenter le chemin d'urgence pour les changements urgents pendant un gel.

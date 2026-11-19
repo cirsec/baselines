@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PIPE-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Protéger les modèles de pipeline partagés et les imposer aux pipelines de mise en production
+finding:
+  title: Les modèles de pipeline partagés sont modifiables par de nombreux utilisateurs ou ne sont pas imposés aux pipelines de mise en production
+  description: "Un modèle, une bibliothèque ou un workflow central inclus par de nombreux pipelines s'exécute avec les secrets de chaque appelant : une seule modification non relue compromet tous les pipelines consommateurs ; et les équipes qui ne l'étendent pas peuvent sauter les étapes d'analyse et de provenance obligatoires."
+description: |
+  Les modèles de pipeline partagés, bibliothèques partagées, workflows réutilisables et workflows
+  injectés centralement résident dans des dépôts dédiés dont l'accès en écriture est limité à
+  l'équipe qui en est propriétaire, avec la même protection de branche et la même revue que le code
+  de production. Ils ne sont partagés qu'avec les dépôts ou projets qui les consomment, et les
+  consommateurs les référencent à une version figée.
+
+  Le niveau attendu est `{{ template_enforcement }}` :
+
+  - `protected-sources` : les sources des modèles partagés sont protégées en écriture et partagées
+    uniquement avec les consommateurs qui en ont besoin ;
+  - `mandatory-templates` : en plus, les pipelines de mise en production et de production doivent
+    étendre ou inclure les modèles imposés par un mécanisme de la plate-forme (workflows requis,
+    politiques d'exécution de pipeline, contrôles de modèle requis, restrictions de workflow), pour
+    qu'une équipe ne puisse pas retirer les étapes obligatoires.
+
+  Le figeage des composants tiers relève de CB-CICD-COMP-011 ; les analyses que doivent exécuter les
+  modèles imposés relèvent de CB-CICD-TEST-001.
+rationale: |
+  Les modèles multiplient la confiance : leur code s'exécute dans chaque pipeline consommateur avec
+  les secrets et les droits de ce pipeline. Quiconque peut pousser dans le dépôt du modèle peut donc
+  agir dans tous à la fois. À l'inverse, si les modèles sont facultatifs, une équipe sous pression
+  peut retirer l'analyse de sécurité ou l'étape de provenance de son pipeline de mise en production
+  sans que rien n'empêche la livraison.
+impact: |
+  Les propriétaires des modèles deviennent une dépendance pour toutes les équipes consommatrices et
+  ont besoin d'un processus de publication. Les mécanismes d'application diffèrent selon la
+  plate-forme, et certains demandent une édition supérieure (GitHub Enterprise pour les workflows de
+  ruleset à l'échelle d'une organisation, GitLab Ultimate pour les politiques d'exécution de
+  pipeline).
+notes: |
+  Les bibliothèques globales de confiance de Jenkins s'exécutent hors du bac à sable Groovy avec
+  tous les droits du contrôleur ; les bibliothèques de dossier ne sont jamais de confiance. Sur
+  GitLab, les pipelines de conformité sont dépréciés au profit des politiques d'exécution de
+  pipeline et les deux ne doivent pas être combinés dans le même projet. Les workflows de ruleset
+  GitHub ne peuvent pas exécuter la plupart des actions CodeQL (seulement `upload-sarif`).
+parameters:
+  template_enforcement: protected-sources exige des sources de modèles protégées en écriture et partagées au plus juste ; mandatory-templates impose aussi leur usage aux pipelines de mise en production.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les droits des dépôts, la protection de branche et les politiques
+    de pipeline.
+
+    1. Lister les dépôts de modèles, bibliothèques et workflows réutilisables partagés, ainsi que les
+       personnes et équipes qui y ont l'accès en écriture. Vérifier la protection de branche et la
+       revue obligatoire sur leurs branches par défaut et de version.
+    2. Vérifier comment chaque plate-forme les partage et les impose :
+       - **GitHub** : dans le dépôt qui contient les workflows réutilisables, **Settings** >
+         **Actions** > **General** > **Access** vaut **Not accessible** ou est limité à
+         l'organisation qui en a besoin. Pour `mandatory-templates`, un ruleset d'organisation ou
+         d'entreprise utilise **Require workflows to pass before merging** avec le dépôt source, le
+         chemin du workflow et une référence figée (GitHub Enterprise).
+       - **GitLab** : pour `mandatory-templates`, le groupe a une politique d'exécution de pipeline
+         dans son projet de politiques de sécurité (**Secure** > **Policies**) qui injecte les jobs
+         requis dans les projets du cadre de conformité correspondant (GitLab Ultimate).
+       - **Azure DevOps** : les pipelines de production utilisent `extends: template: <fichier>@<dépôt>`
+         vers un dépôt central de modèles, et pour `mandatory-templates` les ressources protégées
+         (environnements, connexions de service) ont un contrôle **Modèle requis**.
+       - **Jenkins** : **Manage Jenkins** > **System** > **Global Trusted Pipeline Libraries** ne
+         liste que des bibliothèques dont les dépôts sont protégés comme la configuration du
+         contrôleur.
+       - **Gitea** : les sources de workflows à portée (**Site administration** ou **Actions** de
+         l'organisation > sources de workflows à portée) se limitent à des dépôts sources protégés ;
+         les sources de niveau instance s'appliquent à tous les dépôts sans possibilité de retrait.
+       - **Argo Workflows** : pour `mandatory-templates`, `workflow-controller-configmap` définit
+         `workflowRestrictions.templateReferencing: Secure`.
+    3. Échec si une source de modèle partagé est modifiable par des utilisateurs extérieurs à
+       l'équipe propriétaire ou partagée au-delà de ses consommateurs, ou, pour
+       `{{ template_enforcement }}` = `mandatory-templates`, si un pipeline de mise en production ou
+       de production peut s'exécuter sans le modèle imposé.
+remediation:
+  manual: |
+    1. Déplacer les modèles, bibliothèques et workflows réutilisables partagés dans des dépôts
+       dédiés appartenant à une équipe, avec protection de branche, revue obligatoire et code owners.
+    2. Restreindre le partage :
+       - **GitHub** : régler **Access** sur **Not accessible** ou sur l'organisation seule dans les
+         réglages du dépôt source du workflow.
+       - **Jenkins** : ne garder dans **Global Trusted Pipeline Libraries** que des bibliothèques
+         relues ; déplacer les autres en bibliothèques de dossier, qui s'exécutent dans le bac à
+         sable.
+       - **Gitea** : déclarer les sources de workflows à portée au niveau de l'organisation plutôt
+         que de l'instance, sauf si tous les dépôts doivent les exécuter, et laisser
+         `SCOPED_WORKFLOW_DIRS` vide si la fonctionnalité n'est pas utilisée.
+    3. Pour `mandatory-templates`, imposer les modèles :
+       - **GitHub** : ajouter un ruleset avec **Require workflows to pass before merging** sur les
+         branches par défaut des dépôts cibles (GitHub Enterprise), en commençant en mode
+         **Evaluate**.
+       - **GitLab** : créer une politique d'exécution de pipeline (stratégie `inject_policy`) dans le
+         projet de politiques de sécurité du groupe, limitée à un cadre de conformité.
+       - **Azure DevOps** : faire étendre le modèle central par les pipelines de production et
+         ajouter un contrôle **Modèle requis** sur les environnements et connexions de service de
+         production.
+       - **Argo Workflows** : définir `workflowRestrictions.templateReferencing: Secure` pour que
+         seuls les workflows `workflowTemplateRef` s'exécutent et que la surcharge des champs de
+         sécurité soit refusée.

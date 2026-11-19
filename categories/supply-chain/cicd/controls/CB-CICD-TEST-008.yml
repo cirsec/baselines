@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-TEST-008
+title: Run dynamic and security regression tests before release
+finding:
+  title: Applications are released without dynamic or security regression testing
+  description: Flaws that only show in a running application, such as broken access control between user profiles or missing security headers, ship because no test exercises the deployed application before release.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [security-testing, dast, regression-testing, access-control]
+
+description: |
+  Before a deployable application is released, the pipeline tests it running in a test
+  environment:
+  - dynamic application security testing (DAST) runs against the deployed application, with
+    authentication so that it reaches the protected parts;
+  - security regression tests, written by the team, check the security behaviour that matters to
+    the application, including isolation between user profiles and tenants (one user cannot read
+    or change another's data, a low-privilege role cannot call administrative functions), and
+    the fixes of past vulnerabilities;
+  - failures of these tests stop the release or require a recorded decision.
+
+  Static analysis is covered by CB-CICD-TEST-002.
+rationale: |
+  Access control, session handling and configuration flaws depend on how the running application
+  behaves and are rarely visible to static tools. Broken access control between users is among the
+  most common serious web flaws. Regression tests that encode these rules, and dynamic scans,
+  catch them before each release and keep fixed vulnerabilities from coming back.
+impact: |
+  Teams need a test environment with realistic accounts and data, and time to write and maintain
+  security tests. Dynamic scans lengthen release pipelines; run the long ones on a schedule and the
+  essential ones on each release.
+
+audit:
+  manual: |
+    Use read access to the release pipelines and their test results.
+
+    1. For each deployable application, find the release pipeline and check that it deploys to a
+       test environment and runs a DAST job (for example OWASP ZAP or GitLab DAST) and a security
+       regression test suite.
+    2. Check that the regression suite covers isolation between user profiles or tenants and the
+       vulnerabilities fixed in the past year.
+    3. Fail if an application is released without dynamic testing or without security
+       regression tests, or if failures of these tests do not stop the release.
+
+remediation:
+  manual: |
+    1. Add a test stage after deployment to the test environment: an authenticated DAST scan and
+       the security regression suite.
+    2. Write regression tests for access control between profiles, roles and tenants, and add a
+       test for each vulnerability fixed.
+    3. Make failures block the release, with a recorded decision path for exceptions.
+
+references:
+  - title: OWASP Web Security Testing Guide
+    url: https://owasp.org/www-project-web-security-testing-guide/
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+  - title: ZAP documentation
+    url: https://www.zaproxy.org/docs/
+    publisher: ZAP
+    kind: tool
+    accessed: 2026-11-03
+  - title: Dynamic application security testing (DAST)
+    url: https://docs.gitlab.com/user/application_security/dast/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: NIST SP 800-218, Secure Software Development Framework (SSDF) 1.1
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PW.8.2"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11(8)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-11
+    relation: related
+related_controls:
+  - id: CB-CICD-TEST-002
+    type: related
+  - id: CB-CICD-DEPLOY-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

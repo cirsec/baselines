@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-022
+title: Mask every secret value in job logs
+finding:
+  title: Secret values appear in clear text in job logs
+  description: Job logs are kept for months and readable by every project member and often by anyone who can see the pipeline, so a token printed once by a script or a debug flag is exposed to all of them.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [secrets, log-masking, redaction, job-logs]
+
+description: |
+  Log masking or redaction is enabled for every secret the platform delivers to jobs, including
+  secrets fetched at runtime from external providers, which the platform does not know about unless
+  they are registered with its redactor. No job disables redaction, and secret values meet the
+  platform's conditions for masking (length, single line, no transformation).
+
+  Existing job logs are checked for exposed secrets; logs that contain one are deleted and the
+  secret is rotated.
+
+  Avoiding exposure in scripts (no echo, no command-line arguments, one value per secret) is
+  covered by CB-CICD-SEC-023; debug logging by CB-CICD-PIPE-019; log access by CB-CICD-PIPE-022.
+rationale: |
+  Logs are the most widely readable artifact of a pipeline: they are shown in the interface,
+  returned by the API, exported to log platforms and kept long after the run. A secret that reaches
+  a log is as exposed as if it were committed. Masking is a safety net against accidental printing;
+  it does not stop a malicious script, which is why the other secret controls remain necessary.
+impact: |
+  Secrets shorter than the platform's minimum length or that contain unsupported characters must be
+  replaced by longer values to be masked. Masking can hide harmless strings that match a secret.
+notes: |
+  Masking is best effort on every platform: encoded or transformed values (base64, URL-encoded,
+  escaped by the shell) are not masked. On GitLab, `CI_DEBUG_SERVICES` can reveal variable values,
+  and hiding a variable is only possible at creation. On Buildkite, setting `redacted-vars`
+  replaces the default patterns, and values shorter than six bytes are never redacted. Woodpecker
+  masks secrets from its own store but not values that steps fetch from external providers.
+
+audit:
+  manual: |
+    Use a role that can read CI/CD variable settings, agent configuration and job logs.
+
+    1. Check how secrets are masked on each platform:
+       - **GitLab**: every variable holding a secret has **Visibility** set to **Masked** or, for new
+         variables, **Masked and hidden**, and **Expand variable reference** is cleared; values meet
+         the masking requirements (single line, 8 characters or more).
+       - **Buildkite**: the agent's `redacted-vars` setting (in `buildkite-agent.cfg`) includes
+         patterns matching every secret variable name, plus the defaults if it was changed; steps
+         that fetch secrets from an external store call `buildkite-agent redactor add` with the
+         value; no step calls `buildkite-agent secret get --skip-redaction`.
+       - **Woodpecker**: secrets come from the Woodpecker secret store (or a secret extension), not
+         from steps that print values fetched from an external provider.
+       - Other platforms: secrets are stored as secret-typed values (CB-CICD-SEC-003), which are
+         masked by default.
+    2. Search a sample of recent job logs, and logs exported to log platforms, for known secret
+       prefixes and values (with a secret scanner).
+    3. Fail if a secret is delivered without masking, if any job skips redaction, or if a log
+       containing a secret value is still available.
+
+remediation:
+  manual: |
+    1. Turn on masking for every secret:
+       - **GitLab**: edit each secret variable, set **Visibility** to **Masked** and clear **Expand
+         variable reference**; to also hide it in the settings page, recreate it with **Masked and
+         hidden**. Prefer file-type variables or external secrets for sensitive values.
+       - **Buildkite**: extend `redacted-vars` with patterns for every secret name while keeping
+         the defaults; register runtime secrets with `buildkite-agent redactor add`; remove
+         `--skip-redaction`.
+       - **Woodpecker**: move secrets into the Woodpecker secret store, or make sure steps that
+         fetch external secrets never print them.
+    2. Delete job logs that contain secrets, in the platform and in log exports, and rotate the
+       exposed secrets.
+
+references:
+  - title: Mask a CI/CD variable
+    url: https://docs.gitlab.com/ci/variables/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Managing log output - redacted environment variables
+    url: https://buildkite.com/docs/pipelines/configure/managing-log-output
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist - secrets management
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secrets
+    url: https://woodpecker-ci.org/docs/usage/secrets
+    publisher: Woodpecker CI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-6 Insufficient Credential Hygiene
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-06-Insufficient-Credential-Hygiene
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers masking of secrets in job logs.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-023
+    type: related
+  - id: CB-CICD-SEC-003
+    type: related
+  - id: CB-CICD-PIPE-019
+    type: related
+  - id: CB-CICD-PIPE-022
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

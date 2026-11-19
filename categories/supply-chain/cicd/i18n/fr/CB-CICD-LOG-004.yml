@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-004
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Conserver les journaux de build et de job dans un stockage maîtrisé pour une durée définie
+finding:
+  title: Les journaux de build disparaissent avec les pods ou restent aux valeurs par défaut de l'éditeur
+  description: Les journaux de job sont supprimés avec les pods qui les ont exécutés, conservés seulement pour la durée par défaut de l'éditeur, ou stockés là où n'importe qui peut les effacer ; après un incident, personne ne peut voir ce qu'un build malveillant a exécuté ni quels secrets il a touchés.
+description: |
+  Les journaux de build et de job et l'historique d'exécution des pipelines (qui a déclenché quoi,
+  sur quel commit, avec quel résultat) sont conservés au moins **{{ build_log_retention_days }}**
+  jours dans un stockage maîtrisé par l'organisation : un bucket ou une plate-forme de journaux dans
+  le compte de l'organisation, ou le stockage propre de la plate-forme configuré avec cette durée.
+  L'accès aux journaux est réservé aux membres du projet et à l'équipe sécurité, et les développeurs
+  ne peuvent pas supprimer l'historique des builds de déploiement.
+
+  Les journaux ne restent pas uniquement dans des lieux qui disparaissent d'eux-mêmes : pods
+  Kubernetes supprimés par le ramasse-miettes, disques temporaires de runner, ou bucket par défaut
+  du fournisseur à la conservation inconnue.
+
+  La visibilité des journaux pour les non-membres relève de CB-CICD-PIPE-022, le masquage des
+  secrets dans les journaux de CB-CICD-SEC-022, et la conservation des artefacts et journaux en
+  général de CB-CICD-ART-014.
+rationale: |
+  Les journaux de build sont la preuve de ce qu'un pipeline a réellement exécuté : commandes
+  injectées, scripts téléchargés, accès aux secrets, artefacts produits. Les attaques contre les
+  pipelines CI/CD sont souvent découvertes des semaines plus tard, après la rotation des journaux,
+  et un attaquant ayant un accès en écriture à un projet peut supprimer des exécutions pour masquer
+  ses actions. Conserver les journaux dans un stockage maîtrisé, avec une durée définie et une
+  suppression restreinte, préserve cette preuve.
+impact: |
+  Les coûts de stockage augmentent avec la durée de conservation. Les journaux peuvent contenir des
+  données sensibles malgré le masquage : le stockage doit avoir les mêmes restrictions d'accès que
+  les pipelines.
+parameters:
+  build_log_retention_days: Nombre minimal de jours de conservation des journaux de build et de job et de l'historique d'exécution.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux réglages du projet ou de la plate-forme et au stockage des
+    journaux.
+
+    1. Pour chaque plate-forme CI/CD, trouver où sont stockés les journaux de job et combien de temps
+       ils sont gardés ; ouvrir les journaux d'un build de déploiement plus ancien que la durée
+       attendue.
+    2. Vérifier les produits :
+       - **AWS CodeBuild** : le `logsConfig` du projet a CloudWatch Logs (activé par défaut) ou les
+         journaux S3 activés ; le groupe de journaux CloudWatch a une conservation d'au moins
+         {{ build_log_retention_days }} jours et un `logs:GetLogEvents` restreint ; les journaux S3
+         gardent `encryptionDisabled` à false.
+       - **Google Cloud Build** : les builds écrivent leurs journaux dans un bucket de l'organisation
+         (`logsBucket`, ou `defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET`) ou dans Cloud
+         Logging avec une conservation définie, pas seulement dans le bucket de journaux par défaut.
+       - **Argo Workflows** : `workflow-controller-configmap` pose `archiveLogs: true` avec un dépôt
+         d'artefacts, et l'archive des workflows (`persistence.archive`) conserve les exécutions pour
+         la durée voulue.
+       - **Tekton** : les journaux des étapes, qui vivent dans les pods des TaskRun, sont collectés par
+         l'agent de journaux du cluster ou Tekton Results avant la suppression des pods.
+       - **GitLab** : **Admin** > **Settings** > **CI/CD** > **Archive pipelines** archive les anciens
+         pipelines (les journaux restent visibles, les jobs ne peuvent plus être relancés) ; les
+         journaux de job ne sont pas supprimés avant la fin de la durée de conservation.
+       - **TeamCity** : les **Clean-up Rules** du projet conservent les builds de déploiement et leurs
+         journaux pour la durée voulue, et les développeurs n'ont pas la permission **Remove build**.
+       - **Buildkite** : l'archivage des journaux de job vers le bucket S3 de l'organisation ou les
+         exports de builds sont configurés (offre Enterprise) quand la durée dépasse la conservation
+         des builds de l'offre.
+    3. Vérifier qui peut supprimer des exécutions ou des journaux.
+    4. Échec si les journaux des builds de déploiement ne sont pas disponibles pendant
+       {{ build_log_retention_days }} jours, sont stockés seulement dans un stockage éphémère ou par
+       défaut du fournisseur, ou peuvent être supprimés par les développeurs.
+remediation:
+  manual: |
+    1. Fixer la durée de conservation par type de pipeline, avec au moins
+       {{ build_log_retention_days }} jours pour les builds qui déploient ou publient.
+    2. Configurer stockage et conservation :
+       - **AWS CodeBuild** : garder CloudWatch Logs activé, régler la conservation du groupe de
+         journaux et une clé KMS, ou activer les journaux S3 vers un bucket de l'organisation avec
+         chiffrement.
+       - **Google Cloud Build** : définir `logsBucket` sur un bucket de l'organisation ou
+         `defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET`, et régler la conservation du
+         bucket.
+       - **Argo Workflows** : poser `archiveLogs: true` et un dépôt d'artefacts dans
+         `workflow-controller-configmap`, et activer l'archive des workflows avec un `archiveTTL`
+         conforme à la durée.
+       - **Tekton** : déployer un collecteur de journaux de cluster ou Tekton Results et conserver
+         les journaux de façon centrale.
+       - **GitLab** : régler **Archive pipelines** sur la période après laquelle les exécutions
+         passent en lecture seule, et aligner l'expiration des journaux et artefacts de job sur la
+         durée de conservation.
+       - **TeamCity** : ajuster les **Clean-up Rules** pour garder plus longtemps les builds de
+         déploiement, et retirer la permission **Remove build** des rôles de développeur.
+       - **Buildkite** : configurer l'archivage des journaux de job ou les exports de builds vers le
+         bucket de l'organisation.
+    3. Réserver la lecture et la suppression sur le stockage aux membres du projet, administrateurs
+       de la plate-forme et équipe sécurité.

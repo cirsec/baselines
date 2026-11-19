@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-012
+title: Restrict who can start, schedule or cancel sensitive pipeline runs
+finding:
+  title: Any contributor can start, schedule or cancel release and deployment pipelines
+  description: Write access to a repository is enough to run the release pipeline with its secrets, own a schedule that keeps running with that user's rights after they leave, or cancel a security job, so a stolen developer account can trigger privileged runs.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [trigger-authorization, schedules, actor-restrictions, pipeline-cancellation]
+
+description: |
+  Release and deployment pipelines can only be started by named teams or dedicated bot accounts,
+  separately from who may contribute code. Scheduled pipelines are owned by an active maintainer
+  or a service account and their variables are reviewed. Cancelling pipelines and jobs is limited
+  to maintainers, so a contributor cannot stop a security job mid-run.
+
+  Approval of deployments to production is covered by CB-CICD-DEPLOY-003; external contributor
+  approval by CB-CICD-PIPE-009.
+rationale: |
+  On most platforms the right to push code implies the right to run every workflow. Separating
+  "can contribute" from "can run the release pipeline" means a compromised contributor account, or
+  an over-broad bot, cannot by itself start a privileged run. Schedules run with their owner's
+  permissions and are easily forgotten when the owner leaves.
+impact: |
+  Release teams must maintain the list of allowed actors, including automation identities such as
+  `dependabot[bot]` when workflows need them. GitHub workflow execution protections need GitHub
+  Team or Enterprise for private repositories; GitLab cancellation restrictions need Premium or
+  Ultimate.
+notes: |
+  Buildkite: `BUILDKITE_BUILD_CREATOR_TEAMS` can only be trusted when Buildkite authenticated the
+  creator (`BUILDKITE_SOURCE` is `ui` or `api`); for webhook builds the creator comes from the
+  unverified commit author. On AWS CodeBuild a build starts if any filter group matches, so every
+  group needs the actor filter.
+
+audit:
+  manual: |
+    Use a role that can read workflow policies, pipeline schedules and project settings.
+
+    1. List the release and deployment pipelines and who can currently start them.
+    2. Check per platform:
+       - **GitHub**: **Settings** > **Actions** > **Policies**: a workflow execution policy with
+         **Restrict actors** targets the release and deploy workflows (by repository, custom
+         property or workflow path) and allows only the release team and named bots.
+       - **GitLab**: **Build** > **Pipeline schedules** (or `GET /projects/:id/pipeline_schedules`):
+         each schedule is owned by an active maintainer or a service account; **Settings** >
+         **CI/CD** > **General pipelines** > **Minimum role required to cancel a pipeline or job**
+         is Maintainer or higher.
+       - **AWS CodeBuild**: on projects building public repositories, every webhook filter group
+         contains an `ACTOR_ACCOUNT_ID` filter listing trusted account IDs.
+       - **Buildkite**: an agent hook on production queues checks `BUILDKITE_BUILD_CREATOR_TEAMS`
+         for UI and API builds, and webhook-triggered deployments pass a block step checked with
+         `BUILDKITE_UNBLOCKER_TEAMS`.
+    3. Fail if a contributor outside the allowed teams can start a release or deploy pipeline, if a
+       schedule is owned by an inactive or departed user, or if developers can cancel pipelines.
+
+remediation:
+  manual: |
+    1. Define the teams and bot accounts allowed to run each sensitive pipeline.
+    2. Apply it per platform:
+       - **GitHub**: create a workflow execution policy with **Restrict actors** for the release and
+         deploy workflows; add automation identities explicitly.
+       - **GitLab**: take ownership of orphaned schedules with a service account or maintainer
+         (**Take ownership**), review schedule variables, and set **Minimum role required to cancel
+         a pipeline or job** to Maintainer.
+       - **AWS CodeBuild**: add an `ACTOR_ACCOUNT_ID` filter to every filter group of the webhook.
+       - **Buildkite**: add an agent `environment` hook on production queues that rejects builds
+         whose verified creator is not in an allowed team, and gate webhook-triggered deployments
+         with a block step.
+    3. Review the allowed actor lists and schedule owners when people leave or change role.
+
+references:
+  - title: Governing execution of GitHub Actions workflows
+    url: https://docs.github.com/en/actions/how-tos/administer/control-workflow-execution
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Scheduled pipelines
+    url: https://docs.gitlab.com/ci/pipelines/schedules/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Customize pipeline configuration (cancellation role)
+    url: https://docs.gitlab.com/ci/pipelines/settings/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Filter GitHub webhook events in AWS CodeBuild
+    url: https://docs.aws.amazon.com/codebuild/latest/userguide/github-webhook.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1078
+related_controls:
+  - id: CB-CICD-DEPLOY-003
+    type: related
+  - id: CB-CICD-IAM-036
+    type: related
+  - id: CB-CICD-PIPE-011
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

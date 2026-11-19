@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Stocker les identifiants comme valeurs de type secret dans un coffre de secrets
+finding:
+  title: Des identifiants sont stockés en variables simples ou en clair dans la configuration de la plate-forme
+  description: Un jeton conservé dans une variable CI simple ou un fichier de configuration est affiché dans l'interface, renvoyé par l'API et écrit dans les journaux ; quiconque a un accès en lecture au projet ou au serveur peut le copier.
+description: |
+  Chaque identifiant utilisé par les pipelines ou par la plate-forme CI/CD elle-même est stocké
+  dans le coffre de secrets de la plate-forme ou dans un gestionnaire de secrets, comme valeur de
+  type secret : secret, secured, masquée ou de type mot de passe. Ces valeurs sont chiffrées au
+  repos, ne peuvent plus être relues dans l'interface une fois enregistrées et sont masquées dans
+  les journaux de job.
+
+  Les variables simples, les paramètres de type texte et les entrées en clair des fichiers de
+  configuration de la plate-forme ne contiennent que des valeurs non sensibles. Les identifiants de
+  production sont placés au niveau le plus étroit que propose la plate-forme (variables de
+  déploiement ou d'environnement plutôt que variables d'organisation ou d'espace de travail).
+
+  Les secrets en dur dans les fichiers de pipeline relèvent de CB-CICD-SEC-021, le masquage dans
+  les journaux de CB-CICD-SEC-022, et l'usage d'un gestionnaire externe pour les secrets de forte
+  valeur de CB-CICD-SEC-004.
+rationale: |
+  Les variables simples sont faites pour être vues : elles apparaissent dans les pages de réglages,
+  les réponses d'API, la configuration exportée et les journaux de job. Un identifiant stocké ainsi
+  est exposé à tous les lecteurs du projet et à toutes les sauvegardes de la plate-forme. Le
+  stockage de type secret tient la valeur hors de ces vues et active le masquage dans les
+  journaux, ce qui supprime les divulgations accidentelles les plus fréquentes.
+impact: |
+  Les valeurs sécurisées ne peuvent pas être relues : la personne qui les renouvelle a besoin de
+  la source de référence (le système émetteur ou un gestionnaire de secrets). Convertir les
+  variables existantes impose de ressaisir leurs valeurs.
+notes: |
+  Sur Harness, les clés du gestionnaire de secrets intégré ne peuvent pas être renouvelées, et
+  Self-Managed Enterprise Edition utilise par défaut un stockage MongoDB local que Harness ne
+  recommande pas en production. Sur TeamCity, les paramètres de type mot de passe ne sont que
+  brouillés dans les réglages versionnés : les garder hors du dépôt des réglages (CB-CICD-SEC-021).
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lister les variables, paramètres et secrets avec
+    leur type (les valeurs ne sont pas nécessaires).
+
+    1. Lister les variables à chaque niveau (instance, organisation ou espace de travail, groupe ou
+       projet, dépôt, environnement ou déploiement) et vérifier le type de chaque valeur qui
+       ressemble à un identifiant (noms contenant `TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `PAT`,
+       `CREDENTIALS`).
+    2. Vérifier chaque plate-forme :
+       - **GitHub** : les identifiants sont sous **Settings** > **Secrets and variables** >
+         **Actions** > **Secrets**, pas **Variables** (lues dans les workflows par `vars.*`).
+       - **Azure DevOps** : les variables de pipeline qui contiennent des identifiants ont **Garder
+         cette valeur secrète** coché ; les groupes de variables sous **Pipelines** >
+         **Bibliothèque** qui contiennent des identifiants sont de type secret ou **liés à un coffre
+         de clés Azure**, et les rôles de sécurité de la bibliothèque limitent qui peut les
+         utiliser et les administrer.
+       - **Bitbucket** : les identifiants sous **Repository settings** > **Pipelines** >
+         **Repository variables**, **Workspace settings** > **Pipelines** > **Workspace variables**
+         et **Repository settings** > **Pipelines** > **Deployments** sont **Secured** ; les
+         identifiants de production sont des variables de déploiement, pas des variables d'espace
+         de travail (celles-ci atteignent les builds de tous les dépôts).
+       - **TeamCity** : **Build configuration** ou **Project** > **Parameters** : les paramètres
+         qui contiennent des identifiants sont de type **Password**, pas **Text**.
+       - **Harness** : les **Connectors** du compte, de l'organisation ou du projet comprennent un
+         gestionnaire de secrets (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager ou
+         Azure Key Vault) utilisé pour les secrets des pipelines ; sur Self-Managed Enterprise
+         Edition, le stockage local par défaut ne sert pas aux secrets de production.
+       - **Spinnaker** : les fichiers de configuration des services et la configuration Halyard ou
+         Kustomize contiennent des références `encrypted:<moteur>!...` ou
+         `encryptedFile:<moteur>!...` (S3, GCS ou un autre moteur pris en charge) au lieu de mots
+         de passe, jetons ou kubeconfigs en clair.
+    3. Échec si un identifiant est stocké en variable simple, en paramètre texte ou en clair dans
+       la configuration de la plate-forme, ou si un identifiant de production est stocké au niveau
+       organisation ou espace de travail alors qu'un périmètre déploiement ou environnement existe.
+remediation:
+  manual: |
+    1. Pour chaque identifiant trouvé dans une variable simple, créer une valeur de type secret de
+       même nom au niveau le plus étroit qui fonctionne, puis supprimer la variable simple.
+       - **GitHub** : créer la valeur sous **Secrets** et remplacer `vars.NOM` par `secrets.NOM`
+         dans les workflows.
+       - **Azure DevOps** : cocher **Garder cette valeur secrète** sur la variable de pipeline, ou
+         déplacer la valeur dans Azure Key Vault et la lier à un groupe de variables ; passer
+         explicitement les variables secrètes aux seuls steps qui en ont besoin (`env:`).
+       - **Bitbucket** : recréer la variable en cochant **Secured** ; déplacer les identifiants de
+         production dans les variables de l'environnement de déploiement.
+       - **TeamCity** : modifier le paramètre et régler son type (**Spec**) sur **Password**.
+       - **Harness** : ajouter un connecteur vers un gestionnaire de secrets externe, authentifié
+         par OIDC quand c'est possible, et y référencer les secrets des pipelines ; ne garder le
+         gestionnaire intégré que pour les identifiants de ce connecteur.
+       - **Spinnaker** : stocker les valeurs dans un moteur de secrets pris en charge et les
+         remplacer dans la configuration par des références `encrypted:`, puis donner aux services
+         Spinnaker un accès en lecture à ce seul stockage.
+    2. Renouveler chaque identifiant qui a été stocké en clair, car il a pu être lu depuis
+       l'interface, l'API ou une sauvegarde.

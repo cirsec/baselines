@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-004
+title: Admit pipeline runs only after a central policy check
+finding:
+  title: Pipeline configuration runs without any policy check outside the repository
+  description: Whatever a pipeline file declares (images, components, commands, deployment targets) is executed as written, so a contributor can add an unapproved image, skip an approval stage or override agent behaviour from the repository itself.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [policy-as-code, admission, pipeline-governance, agent-hooks]
+
+description: |
+  Before a pipeline runs, a policy engine or an agent-side hook that the repository cannot change
+  checks its configuration and rejects non-compliant runs. Typical rules cover allowed images,
+  components and connectors, allowed repositories and commands, required approval stages, and the
+  contexts or runners a job may use. Policies are stored and changed in a separate reviewed
+  repository and run in blocking mode once tested.
+
+  Agent-side settings that let a repository override behaviour (local hooks, checkout flags) are
+  disabled or kept in their strictest mode, so the policy cannot be bypassed from the pipeline file.
+
+  Policy gates on deployments to production are covered by CB-CICD-DEPLOY-005; the list of approved
+  third-party components by CB-CICD-COMP-001.
+rationale: |
+  Pipeline files are written by the same people the controls are meant to constrain. A check that
+  lives outside the repository and runs before the job starts turns rules such as "no images from
+  public registries" or "release pipelines must include an approval stage" into enforced
+  conditions instead of conventions, and blocks a poisoned pipeline definition before it gets
+  credentials.
+impact: |
+  Policies need to be written, tested in warning mode and maintained; a wrong rule blocks
+  legitimate builds. CircleCI config policies require the Scale plan. On Buildkite, disabling
+  local hooks also disables plugins on that agent.
+
+audit:
+  manual: |
+    Use a role that can read the platform's policy configuration or the agent configuration.
+
+    1. Identify the policy mechanism in place for each platform and where its rules are stored.
+    2. Check it per platform:
+       - **Harness**: **Policies** and **Policy Sets** exist for the **Pipeline** entity, evaluated
+         **On Run** (and **On Save**), with severity **Error and exit** for the blocking rules.
+       - **CircleCI**: `circleci policy settings --owner-id <org-id>` reports policy evaluation as
+         enabled, and the policy bundle is stored in a reviewed repository.
+       - **Buildkite** (self-hosted agents): every agent runs a `pre-bootstrap` hook that rejects
+         unexpected repositories, commands or environment variables; `buildkite-agent.cfg` sets
+         `no-local-hooks=true` and the checkout-override mode is `strict`.
+       - **Other platforms**: an admission step (OPA or similar) runs before any job that gets
+         credentials and the pipeline cannot remove it.
+    3. Fail if no policy check runs before privileged jobs, if blocking rules are only in warning
+       mode, or if the repository can disable or override the check.
+
+remediation:
+  manual: |
+    1. Write the rules in a dedicated policy repository with required review.
+    2. Turn on evaluation, first in warning mode, then blocking:
+       - **Harness**: create a policy set for the **Pipeline** entity on **On Run**, test with
+         **Warn & continue**, then switch the blocking rules to **Error and exit**.
+       - **CircleCI**: push the bundle with `circleci policy push` and enable it with
+         `circleci policy settings --enabled=true --owner-id <org-id>` (Scale plan).
+       - **Buildkite**: deploy a `pre-bootstrap` hook on every self-hosted agent that validates the
+         job against an allowlist, set `no-local-hooks=true`, and set the agent checkout-override
+         mode to `strict`.
+    3. Review policy decisions and blocked runs regularly and adjust rules through the policy
+       repository.
+
+references:
+  - title: Config policy management overview
+    url: https://circleci.com/docs/guides/config-policies/config-policy-management-overview/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite agent hooks
+    url: https://buildkite.com/docs/agent/hooks
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Buildkite security checklist
+    url: https://buildkite.com/docs/platform/security/checklist
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SP 800-204D, Strategies for the Integration of Software Supply Chain Security in DevSecOps CI/CD Pipelines
+    url: https://csrc.nist.gov/pubs/sp/800/204/d/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-1 Insufficient Flow Control Mechanisms
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-01-Insufficient-Flow-Control-Mechanisms
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Enforces flow rules at pipeline admission; approvals and branch flow are covered by SCM and DEPLOY controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-DEPLOY-005
+    type: related
+  - id: CB-CICD-COMP-001
+    type: related
+  - id: CB-CICD-RUN-020
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

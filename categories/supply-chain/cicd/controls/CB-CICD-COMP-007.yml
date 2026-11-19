@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-COMP-007
+title: Connect CI services to source repositories through scoped apps
+finding:
+  title: A CI service reaches repositories through a personal OAuth grant or token
+  description: When a CI service uses a member's OAuth grant or personal access token, it acts with all of that member's access, breaks when the member leaves, and a leak of the stored token exposes every repository the member can see.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [scm-integration, github-app, oauth, least-privilege, ci-service]
+
+applicability:
+  versions: [aws-codesuite, azure-devops, buildkite, circleci]
+
+description: |
+  Hosted CI/CD services that build code from a separate source platform connect to it through an
+  installed app (for example a GitHub App) limited to the repositories they build, not through a
+  user's OAuth grant, a personal access token or a deprecated OAuth-based connector. The app
+  identity, not a person, appears in commit statuses and audit logs.
+
+  Where only a token-based connection is possible, it uses a dedicated machine identity with
+  fine-grained, repository-scoped, read-only access (CB-CICD-SEC-014).
+rationale: |
+  A user OAuth grant or personal token gives the CI service everything that user can reach, often
+  many more repositories than the pipelines build, with write access. The token is stored by the
+  vendor, so a breach of the vendor or of the service connection exposes it. An installed app has
+  its own identity, permissions set by the organization, short-lived installation tokens and a
+  repository selection that owners control.
+impact: |
+  Switching an existing connection to an app means installing the app in the source
+  organization, changing the service connection or source action and running the pipelines once.
+  Some vendor features differ by connection type; check the vendor comparison before migrating.
+notes: |
+  CircleCI documents a feature comparison between GitHub App and GitHub OAuth organizations: for
+  example, building pull requests from forks is listed as available for OAuth organizations only.
+  Azure Pipelines lists the GitHub App as the recommended authentication type and the only one that
+  works with GitHub Checks.
+
+audit:
+  manual: |
+    Use a role that can read service connections or project settings on the CI service, and an
+    organization owner on the source platform to read app installations.
+
+    1. List how each CI service connects to the source platform:
+       - **Azure DevOps**: **Project settings** > **Service connections**: GitHub connections use
+         the Azure Pipelines **GitHub App**, not **OAuth** or a **Personal access token**; on
+         GitHub, the app's repository access is **Only select repositories**.
+       - **CircleCI**: the organization type is a GitHub App organization, and the CircleCI GitHub
+         App is installed on selected repositories only.
+       - **Buildkite**: repositories are connected through the Buildkite GitHub App integration.
+       - **AWS CodePipeline**: source actions use the **GitHub (via GitHub App)** action
+         (`CodeStarSourceConnection`), not the **GitHub (via OAuth app)** version 1 action.
+    2. Fail if a CI service reaches repositories through a member's OAuth grant or personal
+       token where an app-based connection exists, or if the app has access to all repositories
+       without need.
+
+remediation:
+  manual: |
+    1. Install the CI vendor's app in the source organization (organization owner) and limit it
+       to the repositories that are built.
+    2. Switch the connections:
+       - **Azure DevOps** (Project Administrator): create a GitHub service connection with the
+         **GitHub App** authentication type, point the pipelines to it and delete the OAuth or PAT
+         connection.
+       - **CircleCI**: use a GitHub App organization for new projects, or install the CircleCI
+         GitHub App in the OAuth organization where the vendor supports it.
+       - **Buildkite**: connect the repositories through the Buildkite GitHub App.
+       - **AWS CodePipeline**: replace the **GitHub (via OAuth app)** source action with **GitHub
+         (via GitHub App)** using a connection, as described in the AWS update guide.
+    3. Revoke the old OAuth grant or personal access token on the source platform.
+
+references:
+  - title: Build GitHub repositories (authentication types)
+    url: https://learn.microsoft.com/en-us/azure/devops/pipelines/repos/github
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Version control system integration overview
+    url: https://circleci.com/docs/guides/integration/version-control-system-integration-overview/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: GitHub source control integration
+    url: https://buildkite.com/docs/pipelines/source-control/github
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Update a GitHub (via OAuth app) source action to a GitHub (via GitHub App) source action
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/update-github-action-connections.html
+    publisher: Amazon Web Services
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-08
+    relation: related
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.3"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SA-9
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1528
+related_controls:
+  - id: CB-CICD-SEC-014
+    type: related
+  - id: CB-CICD-SEC-002
+    type: related
+  - id: CB-CICD-COMP-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

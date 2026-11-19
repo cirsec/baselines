@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-012
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Exiger une approbation indépendante avant toute fusion sur une branche protégée
+finding:
+  title: Des pull requests peuvent être fusionnées sur des branches protégées sans revue approuvée
+  description: Sans approbation obligatoire, un seul développeur, ou un attaquant qui détient le jeton d'un développeur, peut fusionner n'importe quelle modification, y compris un pipeline modifié ou une porte dérobée, dans le code qui est construit et livré.
+description: |
+  Une pull request ou merge request vers une branche par défaut ou de release ne peut être
+  fusionnée qu'après `{{ required_approvals }}` revue(s) approuvée(s) par des personnes ayant un
+  accès en écriture et qui ne sont pas l'auteur. Les approbations du jeton d'automatisation de la
+  plate-forme ou d'agents d'IA agissant sous leur propre identité ne comptent pas dans ce nombre (CB-CICD-SCM-013).
+
+  La règle est imposée par la plate-forme (bloquante), pas affichée comme un avertissement.
+  L'auto-approbation et l'approbation par le dernier pousseur relèvent de CB-CICD-SCM-013, la
+  réinitialisation des approbations sur nouveaux commits de CB-CICD-SCM-014, et la revue des
+  chemins sensibles par les propriétaires du code de CB-CICD-SCM-018.
+rationale: |
+  La revue indépendante est la principale barrière entre un compte compromis ou malveillant et le
+  code de production. Elle détecte aussi les erreurs de bonne foi dans les définitions de pipeline
+  qui exposeraient des secrets. Deux approbations sur les dépôts critiques signifient qu'il faut
+  tromper deux personnes, ou compromettre deux comptes, avant qu'un code soit livré.
+impact: |
+  Chaque modification attend un relecteur, ce qui ralentit les petites équipes ; convenir de
+  délais de revue. Les dépôts maintenus par une seule personne ont besoin d'un second relecteur
+  venant d'une autre équipe. Les bots qui fusionnent leurs propres pull requests (mises à jour de
+  dépendances) ont besoin d'une règle de revue ou d'une exception à portée étroite.
+notes: |
+  GitHub ajoute par défaut une approbation obligatoire pour les pull requests ouvertes par Copilot
+  sans attribution à une personne (réglage en préversion **Require an additional approval for
+  unattributed Copilot pull requests**) ; le laisser activé. Sur GitLab, les approbations
+  obligatoires nécessitent Premium ; l'offre Free n'a que des approbations facultatives. Sur
+  Bitbucket Cloud, les contrôles de fusion ne bloquent qu'avec Premium (**Prevent a merge with
+  unresolved merge checks**) ; en Standard ce sont des avertissements. Sur Azure DevOps, les
+  approbations des demandeurs ne comptent pas sauf si **Autoriser les demandeurs à approuver leurs
+  propres modifications** est coché.
+parameters:
+  required_approvals: Nombre minimal de revues approuvées par des personnes autres que l'auteur.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les réglages de protection de branche, de merge requests et de
+    stratégies de branche.
+
+    1. Pour chaque dépôt, vérifier l'exigence de revue sur les branches par défaut et de release :
+       - **GitHub** : la règle de ruleset **Require a pull request before merging** a des **Required
+         approvals** d'au moins `{{ required_approvals }}` (ou la règle de protection de branche
+         **Require a pull request before merging** > **Require approvals**). Scorecard `Code-Review` et legitify aident à grande échelle.
+       - **GitLab** (Premium) : **Settings** > **Merge requests** > **Merge request approvals** :
+         les règles d'approbation ciblant les branches protégées exigent au moins
+         `{{ required_approvals }}` approbations, ou une politique d'approbation de merge request
+         l'impose.
+       - **Azure DevOps** : la stratégie de branche **Exiger un nombre minimal de réviseurs** est
+         activée avec au moins `{{ required_approvals }}` réviseurs (stratégie du dépôt ou
+         inter-dépôts).
+       - **Bitbucket Cloud** : **Branch restrictions** > contrôles de fusion : **Minimum number of
+         approvals** vaut au moins `{{ required_approvals }}` et **Prevent a merge with unresolved
+         merge checks** est coché (Premium).
+       - **Bitbucket Data Center** : **Repository settings** (ou **Project settings**) > **Merge
+         checks** > **Minimum approvals** est activé avec au moins `{{ required_approvals }}`.
+       - **Gitea / Forgejo** : **Required approvals** de la règle de branche vaut au moins
+         `{{ required_approvals }}`.
+    2. Examiner un échantillon de pull requests récemment fusionnées et confirmer que chacune a reçu
+       les approbations requises de personnes autres que l'auteur.
+    3. Échec si une branche protégée accepte des fusions avec moins de `{{ required_approvals }}`
+       approbations indépendantes, ou si le contrôle n'est qu'un avertissement.
+remediation:
+  manual: |
+    1. S'assurer que chaque dépôt compte au moins deux personnes capables de relire, en empruntant
+       des relecteurs à une autre équipe si nécessaire.
+    2. Poser l'exigence :
+       - **GitHub** : dans le ruleset, activer **Require a pull request before merging** et régler
+         **Required approvals** sur `{{ required_approvals }}`.
+       - **GitLab** : ajouter une règle d'approbation pour les branches protégées avec
+         `{{ required_approvals }}` approbations obligatoires, ou une politique d'approbation de
+         merge request au niveau du groupe.
+       - **Azure DevOps** : activer **Exiger un nombre minimal de réviseurs** avec
+         `{{ required_approvals }}` réviseurs, en stratégie inter-dépôts si possible.
+       - **Bitbucket Cloud** : régler **Minimum number of approvals** et activer **Prevent a merge
+         with unresolved merge checks** (Premium).
+       - **Bitbucket Data Center** : activer le contrôle de fusion **Minimum approvals**.
+       - **Gitea / Forgejo** : régler **Required approvals** dans la règle de branche, éventuellement
+         limité à une liste de relecteurs autorisés.

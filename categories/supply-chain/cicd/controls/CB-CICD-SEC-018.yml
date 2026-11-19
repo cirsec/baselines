@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SEC-018
+title: Keep GitOps secrets encrypted in Git or inject them on the destination cluster
+finding:
+  title: Secrets delivered by GitOps are stored in plaintext in Git or injected while rendering manifests
+  description: Anyone who can read the configuration repository, its history or the GitOps controller's cache can read the secrets it deploys, and a single repository leak exposes every environment it manages.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [gitops, secrets, sops, sealed-secrets, external-secrets]
+applicability:
+  versions: [argo-cd, flux]
+
+description: |
+  Secrets that a GitOps controller deploys never appear in plaintext in Git, including history.
+  They are either stored encrypted (SOPS with a KMS, age or PGP key, Sealed Secrets) and decrypted
+  by the controller or an operator at reconcile time on the cluster, or created on the destination
+  cluster by an operator that reads them from a secrets manager (for example External Secrets
+  Operator), with Git holding only a reference.
+
+  Plugins that inject secret values into manifests while the controller renders them are avoided,
+  because the rendered manifests, secrets included, are cached and served by the controller.
+
+  When `{{ key_isolation }}` is `per-tenant`, each tenant (team, environment class) has its own
+  key-encryption key and access policy, so that one tenant's key cannot decrypt another's secrets.
+
+  Scanning repositories for committed secrets is covered by CB-CICD-SEC-009; the identities of
+  GitOps controllers by CB-CICD-IAM-035.
+parameters:
+  - name: key_isolation
+    type: enum
+    description: encrypted requires GitOps secrets to be encrypted in Git or injected on the destination cluster; per-tenant also requires one key-encryption key with its own access policy per tenant.
+    allowed: [encrypted, per-tenant]
+    default: encrypted
+    profile_defaults:
+      hardened: per-tenant
+rationale: |
+  GitOps makes the repository the source of truth, so it is copied to every developer, CI job and
+  mirror that reads it. Plaintext secrets there are exposed to all of them forever, since history
+  keeps them. Encryption in Git or injection on the cluster keeps the secret value out of the
+  repository. Rendering-time injection is weaker: Argo CD stores generated manifests in its Redis
+  cache and exposes them through the repo-server, so anyone who reaches those components reads
+  the secrets. Shared keys across tenants turn one tenant's compromise into access to all.
+impact: |
+  Teams need tooling to encrypt secrets (SOPS, kubeseal) or to declare references for an operator,
+  and an operator or decryption key must be managed on each cluster. Per-tenant keys multiply the
+  keys and policies to manage.
+notes: |
+  Argo CD recommends destination-cluster secret management and documents the risks of
+  Config Management Plugins that inject secrets; if such a plugin is kept, restrict network access
+  to Redis and the repo-server.
+
+audit:
+  manual: |
+    Use read access to the GitOps repositories and the controller configuration.
+
+    1. Scan the GitOps repositories, including history, for Kubernetes `Secret` manifests with
+       `data` or `stringData` in plaintext and for other credentials (gitleaks, TruffleHog).
+    2. Check how secrets reach the clusters:
+       - **Argo CD**: applications deploy `SealedSecret`, `ExternalSecret` or similar resources
+         reconciled by an operator on the destination cluster; no Config Management Plugin or
+         vault plugin injects secret values into manifests at render time. If one does, network
+         policies restrict access to Redis and the repo-server.
+       - **Flux**: `Kustomization` objects that apply secrets set `spec.decryption.provider: sops`
+         with a `spec.decryption.secretRef` (or a cloud KMS identity), and the files in Git are
+         SOPS-encrypted; or the secrets come from an operator such as External Secrets.
+    3. When `{{ key_isolation }}` is `per-tenant`, check that each tenant's SOPS or Sealed Secrets
+       key is distinct, that the KMS key policies or age key secrets are readable only by that
+       tenant's controller identity, and that cluster-level keys are used only for secrets shared
+       on purpose.
+    4. Fail if a plaintext secret exists in a GitOps repository or its history, if secrets are
+       injected at render time without restriction of the controller's cache, or, for
+       `per-tenant`, if tenants share a key-encryption key.
+
+remediation:
+  manual: |
+    1. Choose one approach per platform: SOPS (with a cloud KMS or age key), Sealed Secrets, or an
+       operator that reads from a secrets manager on the destination cluster.
+    2. Convert existing secrets:
+       - **Argo CD**: replace plaintext `Secret` manifests and render-time injection with
+         `SealedSecret` or `ExternalSecret` resources; remove secret-injecting plugins.
+       - **Flux**: encrypt the files with SOPS, add `spec.decryption` with provider `sops` and the
+         key reference to the `Kustomization`, and keep the decryption key out of Git.
+    3. For `per-tenant`, create one KMS key or age key per tenant, restrict its policy to that
+       tenant's controller identity, and point each tenant's `Kustomization` or sealed secrets
+       controller to its own key.
+    4. Rotate every secret that was in plaintext in Git, then rewrite or archive the history if
+       policy requires it.
+
+references:
+  - title: Secret management
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/secret-management/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secrets management
+    url: https://fluxcd.io/flux/security/secrets-management/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Manage Kubernetes secrets with SOPS
+    url: https://fluxcd.io/flux/guides/mozilla-sops/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Flux security best practices
+    url: https://fluxcd.io/flux/security/best-practices/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.8"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-28
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-06
+    relation: partial
+    note: Covers secrets delivered by GitOps controllers.
+threats:
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-SEC-009
+    type: related
+  - id: CB-CICD-SEC-004
+    type: related
+  - id: CB-CICD-IAM-035
+    type: related
+  - id: CB-CICD-DEPLOY-008
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

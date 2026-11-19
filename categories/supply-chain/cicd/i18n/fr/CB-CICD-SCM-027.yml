@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SCM-027
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Tenir les exécutables et artefacts binaires hors des dépôts de sources
+finding:
+  title: Des dépôts de sources contiennent des exécutables ou des artefacts binaires commités
+  description: Un binaire commité ne peut pas être relu comme du code source ; un outil de build, une bibliothèque ou un wrapper piégé peut donc entrer dans le build par une pull request d'apparence normale et s'exécuter dans chaque pipeline.
+description: |
+  Les dépôts de sources contiennent du code source, pas des exécutables. Les binaires (`.exe`,
+  `.dll`, `.so`, `.jar`, `.class`, `.pyc` et similaires) sont construits par le pipeline CI à partir
+  des sources, ou récupérés depuis un registre approuvé avec une version et une empreinte figées. Des
+  règles de push bloquent ces types de fichiers sur les dépôts critiques, avec des exceptions
+  documentées pour les fichiers qui doivent être commités (jeux de test, wrapper de build vérifié).
+
+  La façon dont les outils et dépendances récupérés par les pipelines sont figés et vérifiés relève
+  de CB-CICD-COMP-014 et du référentiel dépendances (CB-DEP-SRC-001).
+rationale: |
+  Les relecteurs ne peuvent pas lire un diff binaire, et les scanners voient un binaire comme une
+  boîte noire. Une pull request qui met à jour un `gradle-wrapper.jar` commité ou un outil embarqué
+  peut le remplacer par une version malveillante qui s'exécute à chaque build, avec accès aux secrets
+  du pipeline. Construire les binaires en CI à partir de sources revues, ou les récupérer avec une
+  empreinte, garde tout ce qui s'exécute dans le pipeline rattaché à du contenu revu.
+impact: |
+  Les binaires existants doivent être retirés et remplacés par des étapes de build ou des
+  téléchargements depuis un registre. Les dépôts qui stockent légitimement des données de test
+  binaires ont besoin d'exceptions ou d'un dépôt séparé.
+notes: |
+  Sur GitHub, les rulesets de push sur les dépôts privés et internes nécessitent GitHub Team ou
+  Enterprise, et leur liste de contournement s'applique aussi au réseau de forks du dépôt. Un type de
+  fichier qui doit être autorisé ponctuellement peut être traité par une règle **Restrict file
+  paths** avec une exception autorisée.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire le contenu des dépôts et les règles de push.
+
+    1. Analyser les dépôts à la recherche d'exécutables et d'artefacts binaires commités ; le check
+       `Binary-Artifacts` de Scorecard les liste sur GitHub et GitLab.
+    2. Pour chaque binaire trouvé, vérifier qu'il s'agit d'une exception documentée.
+    3. Vérifier que des règles de push bloquent les types binaires sur les dépôts critiques :
+       - **GitHub** : un ruleset de push avec **Restrict file extensions** listant les extensions
+         d'exécutables et d'archives est **Active**.
+       - **GitLab** (Premium) : règle de push **Prohibited filenames** avec une expression régulière
+         correspondant aux extensions binaires.
+       - **Azure DevOps** : la stratégie de dépôt **Validation du chemin de fichier** (File path
+         validation) bloque les motifs binaires (**Paramètres du projet** > **Dépôts** >
+         **Stratégies** > **Stratégies de dépôt**).
+    4. Échec si un dépôt critique contient des exécutables ou artefacts binaires non documentés, ou
+       en accepte de nouveaux.
+remediation:
+  manual: |
+    1. Remplacer chaque binaire commité par une étape de build CI, ou par un téléchargement depuis un
+       registre approuvé figé par version et empreinte.
+    2. Retirer les binaires de la branche par défaut (la réécriture de l'historique n'est nécessaire
+       que si un binaire est connu comme malveillant, via la procédure de purge de CB-CICD-SCM-009).
+    3. Bloquer les nouveaux binaires :
+       - **GitHub** : créer un ruleset de push avec **Restrict file extensions** (par exemple `.exe`,
+         `.dll`, `.so`, `.jar`, `.class`).
+       - **GitLab** : renseigner **Prohibited filenames** dans les règles de push au niveau du groupe
+         ou du projet.
+       - **Azure DevOps** : activer **Validation du chemin de fichier** avec les motifs binaires.
+    4. Documenter les exceptions autorisées et les faire revoir par les propriétaires du code
+       (CB-CICD-SCM-018).

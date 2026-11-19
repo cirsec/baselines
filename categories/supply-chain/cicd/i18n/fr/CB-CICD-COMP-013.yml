@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-013
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Épingler les images de job, de service et de build sur des versions immuables
+finding:
+  title: Les jobs de pipeline exécutent des images référencées par latest, sans tag ou par une variable
+  description: Une image référencée en `latest`, sans tag ou via une variable change à chaque push sur ce nom, si bien qu'un compte de registre compromis ou une variable injectée place du code d'attaquant dans tous les jobs qui l'utilisent.
+parameters:
+  image_pin: Forme des références d'images. `version-tag` = tag de version explicite depuis un registre de confiance, jamais latest, sans tag ou construit à partir de variables ; `digest` = empreinte d'image (`@sha256:...`).
+description: |
+  Les images de conteneur exécutées par les pipelines (images de job, conteneurs de service, images
+  de build et d'étape, pipes, actions conteneur) viennent d'un registre de confiance et sont
+  référencées au niveau `{{ image_pin }}` :
+  - `version-tag` : un tag de version explicite ; jamais `latest`, un tag omis (qui vaut `latest`)
+    ni une référence assemblée à partir de variables de pipeline ;
+  - `digest` : une empreinte d'image (`name@sha256:<digest>`, éventuellement après le tag pour la
+    lisibilité).
+
+  Les composants de pipeline autres que les images relèvent de CB-CICD-COMP-011, et le
+  durcissement des images de runner de CB-CICD-RUN-021.
+rationale: |
+  Un tag d'image est un pointeur modifiable comme un tag Git. Quiconque peut pousser dans le dépôt
+  d'images, ou le compromet, change ce qu'exécutent tous les pipelines, et l'image du job voit le
+  code source, les secrets et le jeton du job. Une empreinte désigne une image exacte. Les
+  références construites à partir de variables peuvent être détournées par quiconque peut définir
+  ces variables.
+impact: |
+  Empreintes et tags exacts doivent être mis à jour délibérément ; un robot de mise à jour qui gère
+  les références d'images (CB-CICD-COMP-009) les tient à jour. Certaines images de build gérées ne
+  sont proposées que sous des tags mobiles entretenus par l'éditeur.
+notes: |
+  Bitbucket Pipelines utilise `atlassian/default-image:latest` quand aucune image n'est définie.
+  Sur AWS CodeBuild, les images gérées utilisent `imagePullCredentialsType` `CODEBUILD`, tandis que
+  les images ECR privées ou d'un autre compte demandent `SERVICE_ROLE`. La décision d'inventaire a
+  placé les empreintes au niveau renforcé ; une organisation peut monter le niveau de base à
+  `digest`.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux fichiers de pipeline et aux réglages de projet.
+
+    1. Rechercher dans les fichiers de pipeline les références d'images sans tag, en `latest`,
+       construites à partir de variables, ou (pour `digest`) sans `@sha256:`. zizmor
+       `unpinned-images` (GitHub) et Checkov `CKV_GITLABCI_3`, `CKV_AZUREPIPELINES_1`,
+       `CKV_AZUREPIPELINES_2`, `CKV_CIRCLECIPIPELINES_1`, `CKV_CIRCLECIPIPELINES_2`,
+       `CKV_BITBUCKETPIPELINES_1` aident.
+    2. Emplacements à vérifier par plate-forme :
+       - **GitHub** : `jobs.<id>.container.image`, `jobs.<id>.services.<id>.image` et
+         `uses: docker://...`.
+       - **GitLab** : `image:` et `services:`.
+       - **Azure DevOps** : `resources.containers[].image` et `container:`.
+       - **CircleCI** : `docker: - image:`.
+       - **Bitbucket Pipelines** : `image:` (global et par step) et versions de `pipe:`.
+       - **Google Cloud Build** : `steps[].name` dans `cloudbuild.yaml`.
+       - **AWS CodeBuild** : `environment.image` du projet.
+       - **Woodpecker** : `steps[].image`.
+    3. Échec si une image est sans tag, utilise `latest` ou une référence construite à partir de
+       variables, vient d'un registre non approuvé, ou, quand `{{ image_pin }}` vaut `digest`,
+       n'est pas référencée par empreinte.
+remediation:
+  manual: |
+    1. Copier en miroir dans un registre de confiance les images utilisées, quand c'est possible.
+    2. Remplacer chaque référence par un tag de version explicite, ou par
+       `name:tag@sha256:<digest>` pour `digest` (obtenir l'empreinte avec
+       `docker buildx imagetools inspect <image>` ou l'interface du registre).
+    3. Supprimer les noms d'images construits à partir de variables, ou limiter ces variables à
+       des valeurs fixes.
+    4. Configurer le robot de mise à jour pour proposer les mises à jour d'images (Dependabot
+       `package-ecosystem: docker`, gestionnaires Renovate des fichiers CI).

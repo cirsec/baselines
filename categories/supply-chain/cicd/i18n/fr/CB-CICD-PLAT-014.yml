@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-014
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Désactiver les fonctions et protocoles d'accès GitLab inutilisés
+finding:
+  title: Des protocoles et fonctions GitLab inutilisés restent actifs
+  description: Protocoles d'accès Git, sources d'import, export de projets, e-mail entrant et registre de conteneurs sont actifs alors que personne ne s'en sert, ce qui élargit la surface d'attaque avec des chemins ni surveillés ni nécessaires.
+description: |
+  Sur une instance GitLab Self-Managed durcie, les fonctions qui font entrer ou sortir des données
+  ne sont actives que si l'organisation les utilise :
+
+  - **Enabled Git access protocols** vaut **Only SSH** ou **Only HTTP(S)** quand l'un des deux ne
+    sert pas.
+  - **Import sources** ne liste que les sources réellement utilisées ; **Project export** et
+    **Allow migrating GitLab groups and projects by direct transfer** sont désactivés sauf besoin.
+  - L'e-mail entrant (réponse par e-mail, Service Desk) n'est pas configuré ; s'il est nécessaire,
+    il utilise une boîte dédiée avec sous-adressage, et les comptes qui y écrivent utilisent la MFA.
+  - Le registre de conteneurs est désactivé s'il ne sert pas (il s'active automatiquement quand
+    Let's Encrypt est configuré), ou restreint à localhost sur un système autonome.
+
+  Le filtrage sortant et Gravatar relèvent de CB-CICD-PLAT-010 ; les plugins et intégrations
+  inutilisés de CB-CICD-COMP-004.
+rationale: |
+  Chacune de ces fonctions est un moyen supplémentaire de faire entrer du contenu dans l'instance
+  (projets importés avec leur propre `.gitlab-ci.yml`, tickets créés par e-mail) ou d'en sortir des
+  données (export de projet, transfert direct, téléchargements depuis le registre). Une fonction
+  inutilisée n'est surveillée par personne et devient un chemin discret d'exfiltration ou
+  d'implantation de pipeline. La désactiver supprime le chemin au lieu de compter sur la
+  supervision.
+impact: |
+  Les utilisateurs qui s'appuyaient sur un protocole, une source d'import ou un export désactivé
+  doivent passer par un administrateur. Les fichiers de pipeline des projets importés doivent être
+  relus avant d'autoriser leurs pipelines.
+audit:
+  manual: |
+    Utiliser un compte administrateur de GitLab Self-Managed et un accès en lecture à
+    `/etc/gitlab/gitlab.rb`.
+
+    1. Dans **Admin** > **Settings** > **General**, comparer **Visibility and access controls** >
+       **Enabled Git access protocols**, et **Import and export settings** > **Import sources**,
+       **Project export** et **Allow migrating GitLab groups and projects by direct transfer**, aux
+       usages documentés par le responsable de l'instance.
+    2. Dans `/etc/gitlab/gitlab.rb`, vérifier si `incoming_email` ou `service_desk_email` est actif,
+       et si le registre de conteneurs l'est (`registry_external_url`, `registry['enable']`).
+    3. Si le registre sert, vérifier dans **Admin** > **Settings** > **CI/CD** > **Container
+       registry** qu'il n'est pas activé automatiquement pour chaque nouveau projet.
+    4. Échec si un protocole, une source d'import, une fonction d'export, l'e-mail entrant ou le
+       registre de conteneurs est actif sans usage documenté.
+remediation:
+  manual: |
+    Utiliser un compte administrateur ; prévenir les utilisateurs des fonctions concernées.
+
+    1. Dans **Admin** > **Settings** > **General** :
+       - dans **Visibility and access controls**, régler **Enabled Git access protocols** sur
+         **Only SSH** ou **Only HTTP(S)** si l'un ne sert pas ;
+       - dans **Import and export settings**, décocher les **Import sources** inutilisées ;
+       - désactiver **Project export** et le transfert direct sauf besoin ;
+       - choisir **Save changes**.
+    2. Dans `/etc/gitlab/gitlab.rb`, retirer ou désactiver `incoming_email` et `service_desk_email`
+       s'ils ne servent pas ; sinon, utiliser une boîte dédiée avec sous-adressage et la MFA sur les
+       comptes expéditeurs.
+    3. Désactiver le registre de conteneurs s'il ne sert pas (`registry['enable'] = false`), ou le
+       lier à localhost sur un système autonome, puis lancer `gitlab-ctl reconfigure`.
+    4. Relire le `.gitlab-ci.yml` des projets importés avant d'activer leurs pipelines.

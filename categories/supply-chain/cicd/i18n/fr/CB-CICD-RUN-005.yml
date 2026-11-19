@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-RUN-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Faire expirer et protéger les identifiants d'authentification des runners
+finding:
+  title: Les identifiants des runners n'expirent jamais et sont lisibles par les jobs
+  description: Un jeton de runner ou d'agent sans expiration, partagé par de nombreux hôtes et stocké là où les jobs peuvent le lire, permet à quiconque exécute un job de cloner le runner et de continuer à recevoir d'autres jobs et leurs secrets depuis n'importe où.
+parameters:
+  token_binding: Niveau de contrainte des identifiants de runner. expiring signifie propre à un runner ou groupe de runners, expirant sous 90 jours et illisible par les jobs ; bound ajoute une restriction aux adresses source des réseaux de runners et des jetons par job quand la plate-forme le permet.
+description: |
+  L'identifiant qu'un runner, un agent ou un delegate utilise pour s'authentifier auprès de la
+  plate-forme CI/CD après l'enregistrement :
+
+  - est propre à un runner ou à un groupe de runners, jamais un jeton unique partagé par toute la flotte ;
+  - expire sous 90 jours et est renouvelé automatiquement ou par une procédure documentée, et est
+    révoqué quand le runner est retiré ;
+  - est stocké dans un fichier ou un secret lisible seulement par le compte de service du runner (par
+    exemple `config.toml` en mode `0600`, appartenant à l'utilisateur du runner), ou récupéré dans un
+    gestionnaire de secrets, et ne peut pas être lu par les jobs que le runner exécute.
+
+  Avec `{{ token_binding }}` à `bound`, les jetons sont aussi limités aux adresses source des réseaux de
+  runners, et les runners éphémères reçoivent un identifiant par job au lieu de l'identifiant durable.
+  Les jetons d'enregistrement relèvent de CB-CICD-RUN-004.
+rationale: |
+  L'identifiant du runner est ce que la plate-forme utilise pour décider où envoyer les jobs. Une copie
+  permet à un attaquant de faire tourner un clone qui dispute les jobs et reçoit leurs secrets, depuis
+  n'importe quel réseau et tant que le jeton vit. Les jobs sont l'endroit le plus simple pour le voler
+  quand il se trouve dans un fichier lisible par l'utilisateur du job.
+impact: |
+  Le renouvellement demande de l'automatisation ou une procédure ; les runners GitLab renouvellent leur
+  jeton automatiquement avant la fin de l'intervalle d'expiration. Révoquer un jeton partagé déconnecte
+  tous les runners qui l'utilisent : séparer les jetons partagés avant de les renouveler. Restreindre les
+  jetons par adresse IP déconnecte les agents hors des plages autorisées.
+notes: |
+  Sur GitLab, un runner cloné partage son jeton d'authentification ; en cas de fuite, supprimer et
+  recréer le runner. Sur Harness, tous les delegates d'un nouveau compte partagent un jeton par défaut
+  tant que des jetons par groupe ne sont pas créés ; renouveler un jeton de delegate impose de redéployer
+  le delegate. Sur Buildkite, les jetons d'agent créés dans l'interface web n'expirent pas : les créer via
+  l'API avec une expiration.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur de la plate-forme en lecture et un accès en lecture aux hôtes des
+    runners ou à leurs manifestes de déploiement.
+
+    1. Lister les identifiants de runner (jetons par runner, groupe de runners, cluster ou groupe de
+       delegates) avec leur date de création, leur expiration et les runners qui utilisent chacun.
+    2. Sur un échantillon d'hôtes de runner, vérifier qui peut lire le fichier d'identifiant et si un job
+       peut le lire (par exemple depuis un job exécuté sous l'utilisateur du runner avec un exécuteur
+       shell).
+    3. Vérifier les réglages de la plate-forme :
+       - **GitLab** : **Admin** > **Settings** > **CI/CD** > **Continuous Integration and Deployment** >
+         **Runners expiration** est renseigné (vide signifie pas d'expiration) ; `config.toml` n'est
+         lisible que par le compte de service du runner.
+       - **Buildkite** : les **Agent Tokens** de chaque cluster ont une expiration (`expires_at`, réglable
+         uniquement via l'API REST ou GraphQL) et, avec `{{ token_binding }}` à `bound`, des **Allowed IP
+         Addresses** ; les agents éphémères utilisent des job acquisition tokens (par défaut sur Agent
+         Stack for Kubernetes).
+       - **Harness** : **Delegates** > **Tokens** à chaque niveau : les groupes de delegates ne partagent
+         pas tous le jeton par défaut, les jetons sont stockés dans un gestionnaire de secrets et les jetons
+         révoqués sont supprimés.
+    4. Échec si un identifiant de runner n'a pas d'expiration ou a plus de 90 jours, est partagé par des
+       runners de niveaux de confiance différents, ou peut être lu par les jobs ; avec
+       `{{ token_binding }}` à `bound`, échec aussi si les jetons acceptent des connexions de n'importe
+       quelle adresse.
+remediation:
+  manual: |
+    1. Séparer les identifiants partagés pour que chaque groupe de runners ait le sien.
+    2. Poser l'expiration et le renouvellement :
+       - **GitLab** : en tant qu'administrateur, renseigner **Runners expiration** (par exemple 30 à 90
+         jours) ; garder `config.toml` en mode `0600` appartenant à l'utilisateur du runner.
+       - **Buildkite** : créer les jetons d'agent via l'API avec `expires_at`, les stocker dans un
+         gestionnaire de secrets, ajouter des **Allowed IP Addresses** pour les sous-réseaux des agents en
+         profil durci, et utiliser des job acquisition tokens pour les agents éphémères.
+       - **Harness** : créer un jeton par groupe de delegates dans **Delegates** > **Tokens**, le stocker
+         dans un gestionnaire de secrets référencé par le déploiement du delegate, redéployer, puis
+         révoquer le jeton par défaut.
+    3. Exécuter les jobs sous un utilisateur qui ne peut pas lire l'identifiant du runner
+       (CB-CICD-RUN-018), ou utiliser des runners éphémères dont l'identifiant vaut pour un job
+       (CB-CICD-RUN-012).
+    4. Ajouter le renouvellement et la révocation des jetons à la procédure de retrait des runners.

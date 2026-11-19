@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-011
+title: Limit branch protection bypass to an audited break-glass group
+finding:
+  title: Administrators or broad groups can bypass or disable branch protection
+  description: When repository administrators bypass protection by default, or protection can be switched off for a quick fix, every review and check requirement depends on the goodwill of each administrator account, and one stolen admin token defeats them all.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [branch-protection, bypass, break-glass, administrators, continuity]
+
+description: |
+  Protection rules on default and release branches apply to administrators too. Bypass lists and
+  bypass permissions are empty, or hold only a break-glass group whose use is exceptional,
+  approved and logged. Protection is never disabled "temporarily" to push a change: urgent
+  changes go through a pull request, and when the break-glass group is used, the bypass is
+  reviewed afterwards.
+
+  The scope of who may change the rules themselves is set by `{{ rule_change_scope }}`:
+
+  - `repository-admins`: repository administrators or maintainers may edit the rules, but not
+    bypass them.
+  - `owners`: only organization owners or a named administrators group can edit, unprotect or
+    disable the rules (organization or enterprise rulesets, unprotect permission), and the
+    organization keeps evidence that each rule was continuously enforced (audit log of rule
+    changes).
+
+  Expunging history is the documented exception covered by CB-CICD-SCM-009; deployment protection
+  bypass by CB-CICD-DEPLOY-004.
+rationale: |
+  On several platforms administrators bypass branch protection by default. Attackers who obtain
+  an administrator token, and insiders under time pressure, use exactly that path. SLSA's source
+  track also requires continuity: a claim that a branch is reviewed only holds if the protection
+  was never lifted in between, which the platform's audit trail must show.
+impact: |
+  Administrators lose the ability to push hotfixes past the rules; the break-glass procedure
+  must be documented and fast enough for incidents. With `owners`, repository teams ask an owner
+  to change their protection rules.
+
+parameters:
+  - name: rule_change_scope
+    type: enum
+    description: Who may edit, unprotect or disable branch protection rules.
+    allowed: [repository-admins, owners]
+    default: repository-admins
+    profile_defaults:
+      hardened: owners
+
+audit:
+  manual: |
+    Use a role that can read rulesets, branch protection and repository security, and the audit
+    log.
+
+    1. For each protection rule on default and release branches, list who can bypass it:
+       - **GitHub**: ruleset **Bypass list** (roles, teams, apps; **Always allow** or **For pull
+         requests only**); in branch protection rules, **Do not allow bypassing the above
+         settings** is selected. legitify flags users allowed to bypass rulesets.
+       - **GitLab**: users in **Allowed to push and merge** skip merge request rules; with
+         `owners`, the protected branch API shows `unprotect_access_levels` limited to Owners or a
+         named group (Premium, API only).
+       - **Azure DevOps**: **Project settings** > **Repositories** > **Security**: **Bypass policies
+         when completing pull requests** and **Bypass policies when pushing** are not allowed for
+         any group or user except the break-glass group; with `owners`, **Edit policies** is
+         limited to Project Administrators.
+    2. With `owners`, check that the rules are defined at organization or enterprise level (or that
+       unprotect and edit rights are restricted), so repository administrators cannot change them.
+    3. Review the audit log for bypass events and for rule changes, disabling or deletion over the
+       last period, and confirm each one matches an approved break-glass use.
+    4. Fail if administrators or broad groups can bypass the rules, if a rule was disabled outside
+       the break-glass procedure, or, with `owners`, if repository administrators can edit or
+       remove the rules.
+
+remediation:
+  manual: |
+    1. Create a small break-glass group, document when it may be used, and require an incident or
+       change ticket for each use.
+    2. Remove other bypass rights:
+       - **GitHub**: empty ruleset bypass lists or keep only the break-glass team with **For pull
+         requests only**; select **Do not allow bypassing the above settings** in branch protection
+         rules. With `owners`, move the rules to organization or enterprise rulesets.
+       - **GitLab**: keep **Allowed to push and merge** to **No one** or a bot; with `owners`, set
+         `allowed_to_unprotect` on protected branches through the API to Owners or the
+         administrators group, keeping at least one principal able to unprotect.
+       - **Azure DevOps**: set **Bypass policies when completing pull requests** and **Bypass
+         policies when pushing** to **Not set** for all groups except the break-glass group; with
+         `owners`, limit **Edit policies**.
+    3. Alert on bypass and rule-change events (CB-CICD-LOG-006) and review them with the audit log
+       (CB-CICD-LOG-008).
+
+references:
+  - title: Creating rulesets for a repository
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: About protected branches
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Protected branches
+    url: https://docs.gitlab.com/user/project/repository/branches/protected/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: SLSA Source Track - Continuity
+    url: https://slsa.dev/spec/v1.2/source-requirements
+    publisher: OpenSSF
+    kind: standard
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers bypass of branch protection; other flow-control mechanisms are separate controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.14"
+    relation: related
+  - framework: slsa
+    framework_version: "1.2"
+    id: Source-L3
+    relation: partial
+    note: The owners setting keeps evidence of continuous enforcement; SLSA also expects it to be published in source attestations.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1098
+related_controls:
+  - id: CB-CICD-SCM-006
+    type: related
+  - id: CB-CICD-SCM-007
+    type: related
+  - id: CB-CICD-DEPLOY-004
+    type: related
+  - id: CB-CICD-LOG-006
+    type: related
+  - id: CB-CICD-IAM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

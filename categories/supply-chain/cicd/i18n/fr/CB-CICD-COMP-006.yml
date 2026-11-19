@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-006
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Revoir périodiquement les intégrations installées et retirer celles qui ne servent plus
+finding:
+  title: Les applications installées, autorisations OAuth et webhooks ne sont jamais revus
+  description: Des intégrations installées il y a des années gardent des permissions larges sur les dépôts et les pipelines après le départ de leur responsable ou l'abandon du service, et un attaquant qui prend le contrôle de l'une d'elles hérite de cet accès.
+description: |
+  L'organisation tient un inventaire des applications installées, autorisations et consommateurs
+  OAuth, intégrations et webhooks de ses plates-formes CI/CD et de gestion de code, avec un
+  responsable, les permissions accordées et les dépôts atteints. L'inventaire est revu au moins
+  chaque trimestre :
+  - les intégrations sans responsable ou inutilisées sont retirées ;
+  - les permissions et l'accès aux dépôts sont réduits à ce qui sert (dépôts sélectionnés plutôt
+    que tous, pas d'écriture sur le code ou les workflows sans besoin) ;
+  - les secrets d'intégration et de webhook sont renouvelés quand les responsables changent.
+
+  L'approbation des nouvelles intégrations relève de CB-CICD-COMP-005, et le transport et la
+  signature des webhooks de CB-CICD-COMP-008.
+rationale: |
+  Les intégrations s'accumulent. Chacune est un identifiant permanent détenu par un tiers, souvent
+  avec un accès en écriture au code ou aux fichiers de pipeline. Les intégrations oubliées sont
+  rarement surveillées, si bien que leur compromission ou leur détournement passe inaperçu. Une
+  revue régulière retire les accès dont plus personne n'a besoin et repère les autorisations trop
+  larges.
+impact: |
+  La revue prend du temps aux propriétaires de l'organisation et suppose que les responsables
+  d'intégrations répondent. Retirer une intégration encore utilisée casse le processus qui en
+  dépend ; la suspendre d'abord quand la plate-forme le permet.
+audit:
+  manual: |
+    Utiliser un compte propriétaire d'organisation, administrateur d'espace de travail ou
+    administrateur d'instance en lecture.
+
+    1. Récupérer le dernier compte rendu de revue et le comparer aux listes actuelles :
+       - **GitHub** : **Settings** de l'organisation > **Third-party Access** > **GitHub Apps**
+         (**Configure** sur chaque application montre les permissions et l'accès aux dépôts) et
+         **OAuth app policy** ; **Settings** > **Webhooks**.
+       - **GitLab** : **Settings** > **Integrations** et **Settings** > **Webhooks** au niveau
+         projet et groupe ; **Admin** > **Applications** sur les instances auto-hébergées.
+       - **Bitbucket Cloud** : **Workspace settings** > **Apps and features** > **OAuth
+         consumers** ; **Repository settings** > **Webhooks**.
+       - **Autres plates-formes** : la liste des applications, plugins, autorisations OAuth et
+         jetons installés.
+    2. Échec s'il n'y a pas eu de revue dans les trois derniers mois, s'il reste des intégrations
+       sans responsable ni usage récent, ou si une intégration a accès à tous les dépôts ou en
+       écriture aux fichiers de workflow sans besoin consigné.
+remediation:
+  manual: |
+    1. Exporter les listes actuelles dans un inventaire avec responsable, objet, permissions et
+       dépôts.
+    2. Retirer ou réduire :
+       - **GitHub** (propriétaire d'organisation) : dans **Third-party Access** > **GitHub Apps** >
+         **Configure**, passer l'accès aux dépôts à **Only select repositories**, suspendre ou
+         désinstaller les applications inutilisées, et refuser les applications OAuth qui ne
+         servent plus.
+       - **GitLab** (Maintainer ou Owner) : désactiver les intégrations inutilisées et supprimer
+         les webhooks inutilisés dans **Settings** > **Integrations** et **Settings** > **Webhooks**.
+       - **Bitbucket Cloud** (administrateur de l'espace de travail) : supprimer les consommateurs
+         OAuth et webhooks inutilisés.
+    3. Planifier la revue suivante et l'attribuer à un responsable.

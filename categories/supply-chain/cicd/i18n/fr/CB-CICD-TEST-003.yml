@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-TEST-003
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Bloquer les fusions qui introduisent de nouveaux résultats de sécurité de gravité élevée
+finding:
+  title: Des demandes de modification peuvent être fusionnées avec de nouveaux résultats de sécurité élevés ou critiques
+  description: Les résultats d'analyse ne sont que consultatifs, si bien qu'une modification qui ajoute une vulnérabilité grave est fusionnée dès que les contrôles fonctionnels passent, et le résultat attend dans un arriéré pendant que le code part en production.
+parameters:
+  blocking_severity: Gravité la plus basse d'un nouveau résultat qui bloque la fusion.
+description: |
+  Sur les branches par défaut et de publication, une demande de modification qui introduit un
+  nouveau résultat de sécurité de gravité `{{ blocking_severity }}` ou supérieure ne peut pas être
+  fusionnée tant que le résultat n'est pas corrigé, ou qu'un membre de l'équipe sécurité n'a pas
+  approuvé une exception. Le contrôle est configuré au niveau de l'organisation ou du groupe et
+  couvre les analyseurs de sécurité utilisés (analyse statique, détection de secrets, analyse des
+  dépendances et des conteneurs quand elles remontent leurs résultats dans la plate-forme).
+
+  Les résultats de licence sont contrôlés par CB-CICD-TEST-007 ; les contrôles d'état obligatoires
+  en général par CB-CICD-SCM-019.
+rationale: |
+  Analyser sans bloquer revient à compter sur les développeurs pour agir sur les résultats sous la
+  pression des livraisons. Un blocage de fusion sur les nouveaux résultats arrête les problèmes les
+  plus graves avant qu'ils n'atteignent une branche de publication, tout en laissant les résultats
+  existants au processus normal de correction.
+impact: |
+  Les développeurs sont bloqués jusqu'à correction ou approbation d'une exception : les faux
+  positifs ont besoin d'un circuit rapide de rejet ou d'approbation. Nécessite GitHub code scanning
+  (GitHub Code Security pour les dépôts privés ; rulesets au niveau organisation sur les offres
+  GitHub Enterprise) ou GitLab Ultimate.
+notes: |
+  La protection de fusion par code scanning de GitHub ne s'applique ni aux groupes de merge queue
+  ni aux pull requests Dependabot analysées par la configuration par défaut, et ne prend en compte
+  que les alertes portant sur des lignes du diff de la pull request.
+audit:
+  manual: |
+    Utiliser un rôle propriétaire d'organisation ou Owner de groupe en lecture.
+
+    1. Vérifier le contrôle :
+       - **GitHub** : **Settings** de l'organisation ou du dépôt > **Rules** > **Rulesets** : un
+         ruleset de branche actif sur les branches par défaut et de publication contient **Require
+         code scanning results** avec chaque outil utilisé et un seuil d'alertes de sécurité de
+         `{{ blocking_severity }}` ou plus strict.
+       - **GitLab** : **Secure** > **Policies** du groupe de premier niveau : une politique
+         d'approbation de merge request avec une règle `scan_finding` sur les résultats nouvellement
+         détectés, des `severity_levels` incluant `{{ blocking_severity }}` et au-delà,
+         `vulnerabilities_allowed: 0`, et une action d'approbation qui exige l'équipe sécurité.
+    2. Examiner les demandes de modification récemment fusionnées avec de nouveaux résultats de
+       cette gravité et vérifier qu'ils ont été corrigés ou approuvés par l'équipe sécurité.
+    3. Échec s'il n'existe aucun contrôle, s'il ne couvre pas les branches par défaut et de
+       publication, ou si son seuil est plus bas que `{{ blocking_severity }}`.
+remediation:
+  manual: |
+    1. S'assurer que les analyseurs remontent leurs résultats dans la plate-forme
+       (CB-CICD-TEST-002).
+    2. Configurer le contrôle :
+       - **GitHub** (propriétaire d'organisation ou administrateur du dépôt) : créer un ruleset de
+         branche, ajouter **Require code scanning results**, choisir les outils et régler le seuil
+         d'alertes de sécurité ; commencer avec le ruleset en mode **Evaluate** quand il est
+         disponible, puis **Active**.
+       - **GitLab** (Owner du groupe, Ultimate) : créer une politique d'approbation de merge
+         request avec une règle `scan_finding` pour les analyseurs utilisés, les gravités choisies
+         et une action d'approbation par l'équipe sécurité.
+    3. Documenter le circuit d'exception et le délai de réponse de l'équipe sécurité.

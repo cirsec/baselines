@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-006
+title: Block production deployments outside allowed change windows and serialize them
+finding:
+  title: Production deployments and syncs can run at any time, including during freezes, and in parallel
+  description: Without enforced change windows, a deployment can land during a freeze, at night or during an incident when nobody is watching, and concurrent runs against the same environment can leave production in a mixed state.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [deployment, change-windows, deploy-freeze, sync-windows, exclusive-lock]
+
+description: |
+  Production deployments and GitOps syncs are only allowed inside the change windows defined by the
+  organization (for example business hours) and are blocked during declared freezes. The block is
+  enforced by the platform, not left to each pipeline author, and manual syncs or deployments are
+  also blocked during freeze windows except through the break-glass path.
+
+  Only one deployment to a given production environment runs at a time: later runs wait for an
+  exclusive lock or are queued.
+
+  Preventing older pipelines from overwriting newer deployments is covered by CB-CICD-DEPLOY-007.
+rationale: |
+  Freezes and change windows exist because deployments are the main cause of incidents and because
+  someone must be available to watch and roll back. A deployment that slips in outside the window,
+  whether by mistake or by an attacker who chose a quiet moment, has the highest chance of going
+  unnoticed. Serializing deployments avoids race conditions that leave production running a mix of
+  versions.
+impact: |
+  Urgent fixes during a freeze need the break-glass path. Queued deployments take longer. Windows
+  must be maintained (holidays, time zones).
+notes: |
+  Argo CD sync windows apply to manual and automated syncs, but a window can allow manual syncs with
+  `manualSync: true`; `deny` windows take precedence over `allow` windows. GitLab deploy freezes
+  only set the `CI_DEPLOY_FREEZE` variable: deployment jobs must have a rule on it to be blocked. In
+  Azure Pipelines, the `lockBehavior` default is `runLatest`; use `sequential` when every run must
+  deploy in order.
+
+audit:
+  manual: |
+    Use a role that can read GitOps projects, pipeline settings and environment checks.
+
+    1. Get the organization's change window and freeze calendar.
+    2. Check the enforcement on each production deployment path:
+       - **Argo CD**: production `AppProject` resources define `spec.syncWindows` with `kind: deny`
+         for freeze periods (or `kind: allow` for the permitted windows) covering the production
+         applications, namespaces or clusters, with `manualSync` not `true` on deny windows; check
+         with `argocd proj windows list <project>`.
+       - **GitLab**: **Settings** > **CI/CD** > **Deploy freezes** lists the freeze periods, and every
+         production deployment job has a rule such as `- if: $CI_DEPLOY_FREEZE` with `when: never`;
+         production deployment jobs use `resource_group` so only one runs at a time.
+       - **Azure DevOps**: the production environment's **Approvals and checks** includes **Business
+         hours** with the allowed window and **Exclusive lock**; pipelines set `lockBehavior` as
+         intended.
+    3. Fail if a production deployment or sync can start outside the allowed window or during a
+       freeze without the break-glass path, or if two deployments can run against the same
+       production environment at once.
+
+remediation:
+  manual: |
+    1. Encode the change windows and freezes in the platform:
+       - **Argo CD**: add `syncWindows` to production `AppProject` resources, for example a `deny`
+         window with a cron `schedule`, a `duration` and the production `applications` or
+         `namespaces`, and leave `manualSync` unset or `false`.
+       - **GitLab**: create the freezes in **Settings** > **CI/CD** > **Deploy freezes** (cron start,
+         cron end, time zone), add `rules: - if: $CI_DEPLOY_FREEZE` `when: never` to production
+         deployment jobs (for example through a shared template), and add a `resource_group` to them.
+       - **Azure DevOps**: add the **Business hours** and **Exclusive lock** checks to the production
+         environment and set `lockBehavior: sequential` where every run must deploy.
+    2. Document the break-glass path for emergency changes during a freeze.
+
+references:
+  - title: Sync Windows
+    url: https://argo-cd.readthedocs.io/en/stable/user-guide/sync_windows/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Deployment safety
+    url: https://docs.gitlab.com/ci/environments/deployment_safety/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Releases - Prevent unintentional releases by setting a deploy freeze
+    url: https://docs.gitlab.com/user/project/releases/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Define approvals and checks
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: related
+related_controls:
+  - id: CB-CICD-DEPLOY-007
+    type: related
+  - id: CB-CICD-DEPLOY-004
+    type: related
+  - id: CB-CICD-DEPLOY-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

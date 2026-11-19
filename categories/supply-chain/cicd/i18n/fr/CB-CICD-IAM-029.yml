@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-029
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Restreindre les jetons d'accès aux ressources et permissions minimales
+finding:
+  title: Utilisateurs et intégrations détiennent des jetons à portée complète ou multi-organisations
+  description: Un jeton à portée complète donne à qui l'obtient tous les droits de son titulaire dans toutes les organisations qu'il atteint, alors que l'intégration qui l'utilise n'avait besoin que de lire un statut.
+description: |
+  Les jetons d'accès sont limités à leur usage : une seule organisation, la portée la plus étroite qui
+  fonctionne (lecture seule ou statut quand c'est possible), et une surface d'API restreinte pour les
+  intégrations. Les stratégies de plate-forme qui interdisent les jetons à portée complète ou valables
+  pour toutes les organisations sont activées quand elles existent.
+
+  La durée de vie des jetons relève de CB-CICD-IAM-028, les jetons des jobs de pipeline de
+  CB-CICD-SEC-012 et CB-CICD-SEC-013.
+rationale: |
+  Les jetons sont souvent créés avec toutes les portées parce que c'est le moyen le plus rapide de
+  faire marcher un script. Quand un tel jeton fuit, l'attaquant obtient l'écriture et l'administration
+  partout où le titulaire les a, y compris dans des organisations sans rapport avec l'intégration. Des
+  jetons restreints transforment la même fuite en incident limité.
+impact: |
+  Les utilisateurs doivent choisir des portées en créant les jetons, et certains outils qui demandent
+  la portée complète doivent être configurés ou remplacés. Les jetons à portée complète existants
+  restent valides jusqu'à leur expiration.
+audit:
+  manual: |
+    Utiliser un rôle d'administrateur (rôle Azure DevOps Administrator dans Entra pour les stratégies
+    de locataire).
+
+    1. Vérifier les restrictions de portée :
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Microsoft Entra** : **Restrict
+         full-scoped personal access token creation** et **Restrict global personal access token
+         creation** sont activés (exceptions uniquement par la liste d'autorisation Entra).
+       - **CircleCI** : **Project Settings** > **API Permissions** ne liste que des jetons **Status** ou
+         **Read Only** ; les jetons de projet **Admin** ont une raison documentée. Les jetons d'API
+         personnels créés dans l'application web ont un accès complet en lecture et écriture : ils ne
+         servent pas aux intégrations.
+       - **Buildkite** : les jetons d'accès API utilisent les portées REST les plus étroites et sont
+         limités à une organisation ; les jetons avec **Enable GraphQL API access** (accès GraphQL
+         complet) sont remplacés par des portails GraphQL qui n'exposent que les opérations dont une
+         intégration a besoin.
+    2. Échec si des jetons à portée complète ou pour toutes les organisations peuvent être créés là où
+       une stratégie existe, ou si des intégrations utilisent des jetons plus larges que leur
+       fonction.
+remediation:
+  manual: |
+    1. **Azure DevOps** : activer **Restrict full-scoped personal access token creation** et
+       **Restrict global personal access token creation** ; n'ajouter à la liste d'autorisation que
+       des groupes justifiés.
+    2. **CircleCI** : remplacer les jetons de projet **Admin** par **Status** ou **Read Only** quand
+       l'intégration ne fait que lire, et sortir les intégrations des jetons personnels.
+    3. **Buildkite** : recréer les jetons avec des portées minimales pour une seule organisation, et
+       créer un portail pour chaque intégration GraphQL.
+    4. Révoquer les jetons larges une fois les remplaçants opérationnels.

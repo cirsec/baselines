@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-021
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Administrer la CI/CD de production depuis des postes d'administration dédiés
+finding:
+  title: Les plates-formes CI/CD de production sont administrées depuis des postes bureautiques
+  description: Un administrateur qui lit ses courriels, navigue sur le web et administre la plate-forme CI/CD de production depuis la même machine expose sa session d'administration à tout logiciel malveillant présent sur cette machine.
+description: |
+  L'administration des plates-formes CI/CD et des services de build qui produisent ou déploient des
+  logiciels de production est traitée comme une administration privilégiée du système d'information :
+
+  - les actions d'administration se font avec des comptes d'administration dédiés, depuis des postes
+    d'administration dédiés ou un bastion durci, pas depuis le poste bureautique utilisé pour la
+    messagerie et la navigation ;
+  - personne n'a d'accès interactif courant (SSH, console, exec) à l'infrastructure de build de
+    production ; les changements passent par la configuration as code (CB-CICD-PLAT-015) ;
+  - les sessions privilégiées sont journalisées et surveillées.
+
+  Les réglages de plate-forme qui y contribuent (SSO, MFA, réauthentification) relèvent de
+  CB-CICD-IAM-001, CB-CICD-IAM-006 et CB-CICD-IAM-020.
+rationale: |
+  L'ANSSI considère les actions sur la CI/CD de production comme des actions d'administration, et la
+  NIST SP 800-204D demande un environnement CI/CD isolé avec des identifiants d'administration
+  élevés. Le poste bureautique d'un administrateur est la machine la plus exposée qu'il utilise :
+  hameçonnage, exploits de navigateur et voleurs d'informations y donnent à l'attaquant la session
+  CI/CD de l'administrateur, et par elle toute la chaîne d'approvisionnement logicielle.
+impact: |
+  Les administrateurs ont besoin d'un second poste ou d'un bastion durci, et de comptes séparés. Le
+  dépannage interactif des runners de production passe par une procédure de secours.
+audit:
+  manual: |
+    Ce contrôle est organisationnel ; aucune plate-forme n'a de réglage unique pour lui.
+
+    1. Lire la politique d'administration des plates-formes CI/CD et vérifier que la CI/CD de
+       production est dans le périmètre de l'administration privilégiée.
+    2. Vérifier dans le fournisseur d'identité que les comptes d'administration sont distincts des
+       comptes courants et que leur connexion est limitée, par conformité de l'appareil ou réseau
+       source, aux postes d'administration ou au bastion (accès conditionnel, liste d'adresses IP).
+    3. Vérifier qu'aucun accès interactif à l'infrastructure de build de production (SSH, exec
+       Kubernetes, console cloud) n'est accordé par défaut.
+    4. Vérifier que les sessions privilégiées et les actions d'administration sont envoyées au SIEM
+       (CB-CICD-LOG-003) et revues.
+    5. Échec si la CI/CD de production est administrée depuis des postes ou comptes courants, ou s'il
+       existe un accès interactif courant à l'infrastructure de build de production.
+remediation:
+  manual: |
+    1. Inclure les plates-formes CI/CD de production dans la politique d'administration privilégiée.
+    2. Fournir aux administrateurs des comptes dédiés et des postes dédiés ou un bastion, et
+       restreindre la connexion des administrateurs à ces derniers dans le fournisseur d'identité.
+    3. Retirer les accès SSH, console et exec permanents aux runners de production ; prévoir une
+       procédure de secours avec approbation et journalisation.
+    4. Transmettre les événements d'administration et les sessions du bastion au SIEM et définir des
+       alertes (CB-CICD-LOG-006).

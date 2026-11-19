@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-SCM-016
+title: Block merges while review threads are open or a reviewer rejects
+finding:
+  title: Pull requests can be merged with unresolved review comments or a rejecting vote
+  description: A reviewer who spots a problem and leaves a comment or a reject vote does not stop the merge, so the required approval from someone else is enough to ship code that a reviewer flagged.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [code-review, review-threads, merge-checks, flow-control]
+
+applicability:
+  versions: [github, gitlab, azure-devops, bitbucket]
+
+description: |
+  A pull or merge request into a protected branch cannot be completed while review threads are
+  unresolved, or while a reviewer has requested changes or voted to reject or wait. The author
+  addresses each thread, and the reviewer, not the author, decides that a blocking vote is
+  cleared.
+
+  Who may dismiss a blocking review is covered by CB-CICD-SCM-015.
+rationale: |
+  Required approvals count positive votes only. Without this rule, a security reviewer's
+  objection can be outvoted silently by any other approver, or left unanswered in a thread while
+  the change is merged. Making open threads and negative votes blocking keeps the concerns of every
+  reviewer in the merge decision.
+impact: |
+  Authors must resolve or answer every thread before merging, and a reviewer who is away can
+  block a request until someone with the right permission dismisses the vote.
+notes: |
+  On GitHub, a review that requests changes already blocks the merge until that reviewer approves,
+  but anyone with write access can dismiss it unless dismissal is restricted (CB-CICD-SCM-015).
+  On Bitbucket Cloud, the merge checks only block with Premium.
+
+audit:
+  manual: |
+    Use a role that can read branch protection and merge settings.
+
+    1. Check the rules on default and release branches:
+       - **GitHub**: the ruleset rule **Require a pull request before merging** requires all
+         conversations to be resolved (branch protection: **Require conversation resolution before
+         merging**).
+       - **GitLab**: **Settings** > **Merge requests** > **Merge checks** > **All threads must be
+         resolved** is selected.
+       - **Azure DevOps**: branch policy **Check for comment resolution** is **On** and
+         **Required**, and **Require a minimum number of reviewers** has **Allow completion even if
+         some reviewers vote to wait or reject** cleared.
+       - **Bitbucket Cloud**: branch restriction merge checks include **No changes are requested**
+         and **No unresolved pull request tasks**, with **Prevent a merge with unresolved merge
+         checks** (Premium).
+    2. Fail if a pull request can be merged with an unresolved thread or a reject, wait or
+       changes-requested vote still in place.
+
+remediation:
+  manual: |
+    1. Make open threads and negative votes blocking:
+       - **GitHub**: enable conversation resolution in the ruleset's pull request rule.
+       - **GitLab**: select **All threads must be resolved** in the project merge checks.
+       - **Azure DevOps**: set **Check for comment resolution** to **Required** and clear **Allow
+         completion even if some reviewers vote to wait or reject**.
+       - **Bitbucket Cloud**: add the **No changes are requested** and **No unresolved pull request
+         tasks** merge checks and enforce them (Premium).
+    2. Agree on how reviewers mark threads as resolved, so that authors do not resolve threads
+       without an answer.
+
+references:
+  - title: About protected branches
+    url: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Merge requests
+    url: https://docs.gitlab.com/user/project/merge_requests/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Set branch policies and settings
+    url: https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Suggest or require checks before a merge
+    url: https://support.atlassian.com/bitbucket-cloud/docs/suggest-or-require-checks-before-a-merge/
+    publisher: Atlassian
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "1.1.11"
+    relation: related
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers unresolved threads and negative votes; other flow-control mechanisms are separate controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-012
+    type: related
+  - id: CB-CICD-SCM-015
+    type: related
+  - id: CB-CICD-SCM-019
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

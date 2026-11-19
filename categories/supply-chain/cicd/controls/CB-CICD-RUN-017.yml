@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-RUN-017
+title: Keep host sockets, host paths and pod-spec overrides away from jobs
+finding:
+  title: Jobs can mount the container engine socket or host paths
+  description: A job that reaches the Docker socket or a host directory can start privileged containers, read other jobs' containers and secrets, and take over the runner host, without needing privileged mode itself.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [containers, docker-socket, volumes, kubernetes, runners]
+
+description: |
+  Jobs cannot reach the runner host's container engine or file system:
+
+  - the Docker or Podman socket of the host is not mounted into job, service or step containers, and
+    the engine endpoint is not shared with them; jobs that need to build images use a per-job engine
+    (Docker-in-Docker on a dedicated runner, rootless builder, VM);
+  - host paths are not mounted into jobs, except read-only paths without secrets that the platform
+    team has listed;
+  - pipeline authors cannot override the pod specification that the runner controller defines on
+    Kubernetes.
+rationale: |
+  The container engine socket is root on the host: whoever can talk to it can start a privileged
+  container, mount the host file system or exec into other jobs' containers, including on Forgejo the
+  Forgejo instance itself when it shares the engine. Host volumes are readable and writable by any job
+  that mounts them, so their content can be neither confidential nor trusted as build input.
+impact: |
+  Pipelines that use the host's Docker for image builds must move to a per-job engine or a rootless
+  builder, which loses the host image cache.
+notes: |
+  GitLab documents Docker socket binding as a way to avoid privileged mode, but sharing the daemon
+  disables container isolation: jobs see and can stop each other's containers. On Gitea and Forgejo
+  runners, `container.docker_host` set to `-` lets the runner find the engine without mounting it into
+  jobs.
+
+audit:
+  manual: |
+    Use read access to runner configuration files and runner deployment manifests.
+
+    1. List volumes, sockets and pod-spec patches that runners add to jobs.
+    2. Per product:
+       - **GitLab**: `config.toml` `[runners.docker]` `volumes` does not contain
+         `/var/run/docker.sock` or other host paths with secrets; Kubernetes runners have no
+         `[[runners.kubernetes.volumes.host_path]]` for the socket.
+       - **Gitea / Forgejo**: runner `config.yml` has `container.valid_volumes: []` (default) or only
+         read-only, non-secret paths; `container.docker_host` is `-` or a per-runner Docker-in-Docker
+         endpoint, not the host socket.
+       - **Buildkite**: Agent Stack for Kubernetes runs with `prohibit-kubernetes-plugin: true`, so
+         pipelines cannot override the controller-defined pod specification.
+    3. Search pipeline definitions for socket mounts and host volumes (`/var/run/docker.sock`,
+       `hostPath`, `-v /`).
+    4. Fail if any job can mount the host's container engine socket, a host path that is writable or
+       holds secrets, or override the runner's pod specification.
+remediation:
+  manual: |
+    1. Provide a supported way to build images without the host engine (rootless builder, per-job
+       Docker-in-Docker on a dedicated runner).
+    2. Per product:
+       - **GitLab**: remove `/var/run/docker.sock` and host paths from `volumes` and from Kubernetes
+         `host_path` volumes on shared runners.
+       - **Gitea / Forgejo**: set `container.valid_volumes: []` and `container.docker_host: "-"`, or
+         run Docker-in-Docker per runner, LXC or a VM when jobs need Docker.
+       - **Buildkite**: set `prohibit-kubernetes-plugin: true` in the Agent Stack for Kubernetes
+         controller configuration.
+    3. On Kubernetes runners, enforce Pod Security Admission `baseline` or `restricted`, which rejects
+       `hostPath` volumes.
+
+references:
+  - title: Use Docker to build Docker images (Known issues with Docker socket binding)
+    url: https://docs.gitlab.com/ci/docker/using_docker_build/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing Forgejo Actions deployments (container.valid_volumes, container.docker_host)
+    url: https://forgejo.org/docs/latest/admin/actions/security/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea Actions runner configuration example
+    url: https://gitea.com/gitea/act_runner/src/branch/main/internal/pkg/config/config.example.yaml
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Securing the Agent Stack for Kubernetes
+    url: https://buildkite.com/docs/agent/self-hosted/agent-stack-k8s/securing-the-stack
+    publisher: Buildkite
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Kubernetes Pod Security Standards
+    url: https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    publisher: Kubernetes
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-39
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-6
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1611
+  - framework: mitre-attack
+    id: T1610
+related_controls:
+  - id: CB-CICD-RUN-016
+    type: related
+  - id: CB-CICD-RUN-018
+    type: related
+  - id: CB-CICD-RUN-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

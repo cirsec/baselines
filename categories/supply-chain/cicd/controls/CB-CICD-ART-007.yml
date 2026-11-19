@@ -1,0 +1,131 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-007
+title: Hold artifact signing keys in a KMS or HSM with rotation and revocation
+finding:
+  title: Artifact and attestation signing keys are stored as files, CI variables or cluster secrets
+  description: A signing key kept in a Kubernetes secret, a CI variable or on a build host can be copied by anyone who reaches that store, and every artifact the attacker then signs is trusted by consumers until the key is revoked.
+status: draft
+profiles: [hardened]
+risk:
+  severity: medium
+assessment: manual
+tags: [signing-keys, kms, hsm, key-rotation, keyless, tekton-chains]
+
+description: |
+  Keys that sign artifacts, images and attestations never exist as exportable material in the CI/CD
+  platform. Signing uses either a keyless identity (a short-lived certificate issued to the
+  pipeline's workload identity, for example by Sigstore Fulcio) or a key that stays inside a cloud
+  KMS, HSM or Vault transit engine, used through an API call by a narrowly scoped identity.
+
+  For key-based signing, the organization has a written procedure to rotate keys on a schedule and
+  revoke them on compromise, consumers learn about new and revoked keys through a trusted channel,
+  and the root of trust (root keys, offline signing of the key list or trust policy) is kept offline
+  and used only for those operations.
+
+  Whether artifacts are signed at all is covered by CB-CICD-ART-005.
+rationale: |
+  A stolen signing key lets an attacker produce malware that passes every verification step built on
+  that key. Keys stored as cluster or CI secrets are exposed to every administrator, backup and
+  compromised controller with access to that store. Keyless signing removes the long-lived key, and
+  KMS or HSM keys cannot be copied out, only used, with every use logged. Rotation and revocation
+  limit how long a compromise stays useful.
+impact: |
+  A KMS, HSM or Vault must be available to the signing component, with IAM policies limiting who can
+  sign. Rotation needs consumers to accept several valid keys during the transition. Offline root
+  keys need a ceremony and safe storage.
+notes: |
+  By default Tekton Chains signs with the `x509` signer using a cosign key stored in the Kubernetes
+  secret `signing-secrets` in the `tekton-chains` namespace, readable by anyone allowed to read
+  secrets there. Fulcio keyless signing (`signers.x509.fulcio.enabled`) is off by default.
+
+audit:
+  manual: |
+    Use a role that can read signing configuration, KMS key policies and CI secret names.
+
+    1. List the identities and keys that sign release artifacts and attestations.
+    2. For each key, check where it lives: fail if the private key is stored in a CI variable,
+       a file on a runner or build host, or a Kubernetes secret.
+    3. Platform settings:
+       - **Tekton**: in `chains-config`, `artifacts.taskrun.signer`, `artifacts.pipelinerun.signer`
+         and `artifacts.oci.signer` are `kms` with `signers.kms.kmsref` set to a `gcpkms://`,
+         `awskms://`, `azurekms://` or `hashivault://` URI, or `x509` with
+         `signers.x509.fulcio.enabled: "true"`; none is `none`; the `signing-secrets` secret holds no
+         key.
+       - **GitHub / GitLab**: signing uses artifact attestations or cosign keyless with the job's
+         OIDC token, or `cosign sign --key` with a KMS URI.
+    4. For KMS keys, check the key policy: only the signing identity can use the key, rotation is
+       configured, and key use is logged.
+    5. Check that a rotation and revocation procedure exists and was exercised, and that root keys
+       are kept offline.
+    6. Fail if any release signing key can be exported from the CI/CD platform, or if there is no
+       documented way to revoke it.
+
+remediation:
+  manual: |
+    1. Switch each signer to keyless signing or to a KMS-held key:
+       - **Tekton**: set `artifacts.taskrun.signer`, `artifacts.pipelinerun.signer` and
+         `artifacts.oci.signer` to `kms` and `signers.kms.kmsref` to the KMS key URI, or keep `x509`
+         and set `signers.x509.fulcio.enabled: "true"`; then delete the key from `signing-secrets`.
+       - **GitHub / GitLab / other platforms**: use artifact attestations or cosign keyless with the
+         job's OIDC token; where a key is required, use `cosign sign --key <kms-uri>`.
+    2. Restrict the KMS key policy to the signing identity, enable rotation where the KMS supports
+       it, and send key usage logs to the SIEM (CB-CICD-LOG-003).
+    3. Write the rotation and revocation procedure, including how consumers get the new public key
+       or trust policy, and keep root keys offline.
+    4. Revoke and retire old keys once all consumers verify with the new ones.
+
+references:
+  - title: Tekton Chains signing
+    url: https://tekton.dev/docs/chains/signing/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Tekton Chains configuration
+    url: https://tekton.dev/docs/chains/config/
+    publisher: Tekton
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Cosign key management overview
+    url: https://docs.sigstore.dev/cosign/key_management/overview/
+    publisher: Sigstore
+    kind: tool
+    accessed: 2026-11-03
+  - title: CNCF Software Supply Chain Best Practices
+    url: https://github.com/cncf/tag-security/tree/main/community/working-groups/supply-chain-security/supply-chain-security-paper
+    publisher: CNCF TAG Security
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-09
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PS.2.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-12
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-13
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1552.004
+related_controls:
+  - id: CB-CICD-ART-005
+    type: related
+  - id: CB-CICD-SEC-005
+    type: related
+  - id: CB-CICD-SEC-017
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

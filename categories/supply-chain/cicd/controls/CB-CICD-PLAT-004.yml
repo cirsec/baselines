@@ -1,0 +1,186 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-004
+title: Serve and reach CI/CD platforms over TLS 1.2 or later with verified certificates
+finding:
+  title: CI/CD traffic travels over plain HTTP or unverified TLS
+  description: The platform web UI, API or Git endpoint accepts plain HTTP, or the platform connects to registries and clusters without checking certificates; an attacker on the network reads session cookies, tokens and source code or substitutes the content fetched.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [tls, encryption-in-transit, cryptography, certificates, self-managed]
+
+description: |
+  Self-managed CI/CD platforms serve their web UI, API and Git over HTTPS only, with TLS 1.2 or
+  later and a certificate issued by a CA that clients trust. Plain HTTP is either closed or only
+  redirects to HTTPS, and session cookies carry the `Secure` flag. TLS may be terminated at a
+  reverse proxy or ingress, provided the hop from the proxy to the platform is on a protected
+  network.
+
+  Connections that the platform opens itself, to Git repositories, Helm and OCI registries,
+  clusters, and between runners or agents and the server, use TLS and verify the server
+  certificate. Options that disable verification or allow plain HTTP are not set in production.
+
+  With `tls_scope` set to `all` (**{{ tls_scope }}** here), the cipher suites are also restricted
+  to modern AEAD suites, and service-to-service traffic inside the platform (Redis, Consul, Gitaly,
+  internal APIs between microservices) is encrypted or mutually authenticated.
+
+  Certificate and host key checks for SCM connections made by pipelines are covered by
+  CB-CICD-SEC-019, and webhook delivery by CB-CICD-COMP-008.
+rationale: |
+  CI/CD traffic carries credentials (session cookies, personal access tokens, runner tokens,
+  registry passwords) and the code and images that end up in production. Plain HTTP or skipped
+  certificate checks let anyone on the path, including a compromised neighbour in a cluster,
+  capture these secrets or serve a modified chart or image that the platform then deploys.
+impact: |
+  Needs certificates from a trusted CA and their renewal. Restricting protocols to TLS 1.2 and
+  later can break very old clients. Encrypting internal service traffic adds configuration and
+  certificate management for multi-node deployments.
+
+parameters:
+  - name: tls_scope
+    type: enum
+    description: Which traffic must meet the requirement. `external` covers user, API and Git endpoints and the connections the platform opens to repositories, registries, clusters and runners; `all` also requires restricted cipher suites and encrypted or mutually authenticated traffic between the platform's internal services.
+    allowed: [external, all]
+    default: external
+    profile_defaults:
+      hardened: all
+
+audit:
+  manual: |
+    Use an administrator account with read access to the platform configuration, and a client
+    that can test TLS (for example `openssl s_client`, `curl -v` or `testssl.sh`).
+
+    1. For each platform URL (web, API, Git over HTTPS), check that `http://` either refuses the
+       connection or redirects to `https://`, that TLS 1.0 and 1.1 are refused, and that the
+       certificate chains to a trusted CA and matches the host name.
+    2. Check the product settings:
+       - **GitHub Enterprise Server**: **Site admin** > **Management Console** > **Privacy**:
+         **TLS only (recommended)** is selected, **TLS Protocol support** excludes versions below
+         TLS 1.2, and the certificate is CA-issued (uploaded or Let's Encrypt), not the self-signed
+         certificate created at first start.
+       - **GitLab (Linux package)**: `/etc/gitlab/gitlab.rb` sets `external_url` to `https://`,
+         `nginx['ssl_protocols']` to `"TLSv1.2 TLSv1.3"` or stricter; with `all`, also
+         `nginx['ssl_ciphers']` limited to ECDHE with AES-GCM suites, and TLS or encryption for
+         Consul, Redis and Gitaly on multi-node installs.
+       - **Gitea / Forgejo**: `app.ini` `[server] PROTOCOL = https` (or a TLS reverse proxy),
+         `ROOT_URL` starting with `https://`, and `[session] COOKIE_SECURE = true`.
+       - **Azure DevOps Server**: the web site uses the **HTTPS and HTTP (with redirect)** or an
+         HTTPS-only binding, not the default HTTP binding on port 8080.
+       - **TeamCity**: the web UI is served over HTTPS (built-in or reverse proxy) and the server
+         cannot be reached over plain HTTP.
+       - **Argo CD**: `argocd-cmd-params-cm` `server.insecure` is `"false"`, or is `"true"` only
+         when an ingress terminates TLS; `--tlsminversion` is `1.2` or higher (default); with
+         `all`, the repo-server and application controller connect to Redis with `--redis-use-tls`
+         and without `--redis-insecure-skip-tls-verify`.
+       - **Argo Workflows**: `argo server` runs with `--secure` (`ARGO_SECURE=true`) and a
+         CA-issued certificate, not the default self-signed one; CLI and clients do not use
+         `--insecure-skip-verify`.
+       - **Flux**: no `HelmRepository` or `OCIRepository` sets `spec.insecure: true`; private CAs
+         are provided with `spec.certSecretRef` (`ca.crt`).
+       - **Tekton Chains**: `chains-config` `storage.oci.repository.insecure` is `"false"`.
+       - **Woodpecker**: agents set `WOODPECKER_GRPC_SECURE=true` and keep certificate
+         verification on; the server's gRPC endpoint is behind a TLS proxy.
+       - **Spinnaker**: the UI (Deck) and API (Gate) are served over SSL; with `all`, internal
+         services are reachable only over TLS or from an isolated network.
+    3. Fail if any endpoint accepts plain HTTP without redirect, accepts TLS below 1.2, presents a
+       self-signed or mismatched certificate, if an outbound connection skips certificate
+       verification, or (with `all`) if weak cipher suites are offered or internal services
+       communicate in clear text over a shared network.
+
+remediation:
+  manual: |
+    1. Obtain a certificate from the organization's CA or a public CA for each platform host name,
+       and plan its renewal.
+    2. Enable HTTPS and disable plain HTTP (or keep it only as a redirect):
+       - **GitHub Enterprise Server**: in **Management Console** > **Privacy**, select **TLS only
+         (recommended)**, choose TLS 1.2 and 1.3 under **TLS Protocol support**, upload the
+         certificate and key (or enable Let's Encrypt), then **Save settings**.
+       - **GitLab (Linux package)**: set `external_url 'https://...'`,
+         `nginx['ssl_protocols'] = "TLSv1.2 TLSv1.3"` and, for `all`, a restricted
+         `nginx['ssl_ciphers']` list; run `gitlab-ctl reconfigure`.
+       - **Gitea / Forgejo**: set `PROTOCOL = https` with `CERT_FILE` and `KEY_FILE`, or put a TLS
+         reverse proxy in front; set `ROOT_URL` to `https://` and `COOKIE_SECURE = true`.
+       - **Azure DevOps Server**: change the web site settings to an HTTPS binding with a
+         CA-issued certificate.
+       - **TeamCity**: enable HTTPS on the server or a reverse proxy (NGINX, Apache) and close the
+         HTTP port.
+       - **Argo CD**: keep `server.insecure: "false"` unless TLS ends at the ingress; for `all`,
+         enable Redis TLS on the controller and repo-server.
+       - **Argo Workflows**: start `argo server --secure` with a certificate from a trusted CA
+         mounted as the TLS secret.
+       - **Flux / Tekton Chains**: remove `spec.insecure: true` and set
+         `storage.oci.repository.insecure: "false"`; distribute private CAs with
+         `certSecretRef`.
+       - **Woodpecker**: set `WOODPECKER_GRPC_SECURE=true` on agents and front the gRPC port with
+         a TLS proxy.
+    3. For `all`, enable encryption or mTLS between internal services and restrict their ports to
+       peer nodes with a firewall.
+  rollback: |
+    Keep the HTTP to HTTPS redirect during the transition so that bookmarks and old clone URLs
+    still work; re-enable an older protocol version only for a named client and a set period.
+
+references:
+  - title: Configuring TLS (GitHub Enterprise Server)
+    url: https://docs.github.com/en/enterprise-server@latest/admin/configuring-settings/hardening-security-for-your-enterprise/configuring-tls
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Hardening - Configuration recommendations
+    url: https://docs.gitlab.com/security/hardening_configuration_recommendations/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: TLS configuration
+    url: https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Transport Layer Security (Argo Workflows)
+    url: https://argo-workflows.readthedocs.io/en/latest/tls/
+    publisher: Argo Project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: OCI Repositories
+    url: https://fluxcd.io/flux/components/source/ocirepositories/
+    publisher: Flux
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Configuration Cheat Sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-8(1)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-13
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-23
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1557
+related_controls:
+  - id: CB-CICD-SEC-019
+    type: related
+  - id: CB-CICD-COMP-008
+    type: related
+  - id: CB-CICD-RUN-007
+    type: related
+  - id: CB-CICD-PLAT-005
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

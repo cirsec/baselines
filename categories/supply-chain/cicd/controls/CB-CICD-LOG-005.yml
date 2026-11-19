@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-LOG-005
+title: Retain CI/CD audit logs and evidence and protect them from tampering
+finding:
+  title: CI/CD audit logs can be deleted by the people they record, or expire too soon
+  description: Audit logs, identity provider logs and development evidence are kept for a short or undefined time, and platform administrators can delete or alter them; an intruder with admin rights erases their trail and old intrusions cannot be investigated.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [log-retention, log-integrity, immutability, separation-of-duties, evidence]
+
+description: |
+  CI/CD audit logs, the identity provider sign-in and provisioning logs for CI/CD applications, and
+  development evidence (approvals, release records, provenance) are kept for at least
+  **{{ audit_log_retention_days }}** days, in line with the organization's legal and regulatory
+  obligations.
+
+  The copy kept for that period cannot be altered or deleted by the people whose actions it records:
+  it is stored in the SIEM or an archive administered by a different team than the CI/CD platforms,
+  on immutable or write-once storage (object lock, retention policies), with deletion possible only
+  after the retention period. Access to read the logs is itself logged.
+
+  Exporting the logs is covered by CB-CICD-LOG-003; build logs by CB-CICD-LOG-004; release records
+  by CB-CICD-ART-012.
+rationale: |
+  An attacker who obtains administrator rights on a CI/CD platform, or an insider with those rights,
+  can usually clear or edit the platform's own logs. Logs held by another team on immutable storage
+  keep the evidence intact. Retention must also cover the time it takes to detect supply chain
+  intrusions, which is often several months, and the identity provider logs are needed to tie a CI/CD
+  action to a person.
+impact: |
+  Storage costs grow with retention and immutability. Retention must be balanced with data
+  protection rules, since the logs contain personal data.
+notes: |
+  On GitHub the audit log shows 180 days of events and 7 days of Git events in the web interface;
+  streaming is not retroactive, so it must be set up before the evidence is needed. The identity
+  provider sign-in and SCIM provisioning logs for GitHub (and other CI/CD SaaS) should be kept in the
+  SIEM with the same retention as the platform audit log.
+
+parameters:
+  - name: audit_log_retention_days
+    type: integer
+    description: Minimum number of days CI/CD audit logs, related identity provider logs and development evidence are kept in protected storage.
+    unit: days
+    default: 365
+    minimum: 180
+
+audit:
+  manual: |
+    Ask the SOC or log platform owner for the retention and protection settings of the CI/CD log
+    sources, and use read access to the SIEM.
+
+    1. For each CI/CD audit source and the identity provider logs of CI/CD applications (for example
+       GitHub SSO sign-ins and SCIM provisioning), check the retention configured in the SIEM or
+       archive against {{ audit_log_retention_days }} days, and run a query on the oldest expected
+       date.
+    2. Check that the storage is immutable for the retention period (object lock, retention policy,
+       WORM) or that deletion requires a role held by a different team.
+    3. Compare the list of SIEM or archive administrators with the CI/CD platform administrators:
+       nobody should hold both roles without a documented exception.
+    4. Check that development evidence (approvals, release records) is kept for the same period.
+    5. Fail if any source is kept for less than {{ audit_log_retention_days }} days, if CI/CD
+       administrators can delete or modify the retained copy, or if identity provider logs for CI/CD
+       applications are not retained.
+
+remediation:
+  manual: |
+    1. Set the retention of CI/CD and related identity provider logs in the SIEM or archive to at
+       least {{ audit_log_retention_days }} days, aligned with legal obligations.
+    2. Store the long-term copy on immutable storage (for example a bucket with object lock in
+       compliance mode, or a log analytics retention policy that cannot be shortened by the CI/CD
+       team).
+    3. Give administration of the log platform to a team other than the CI/CD administrators, and
+       log access to the logs.
+    4. Add the identity provider sign-in and provisioning logs for CI/CD applications to the SIEM
+       with the same retention.
+
+references:
+  - title: About the audit log for your enterprise
+    url: https://docs.github.com/en/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/about-the-audit-log-for-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Secure Software Development Framework (SSDF) Version 1.1 (SP 800-218)
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    publisher: NIST
+    kind: standard
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-10 Insufficient Logging and Visibility
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-10-Insufficient-Logging-And-Visibility
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.3.3"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.4.2"
+    relation: related
+  - framework: nist-ssdf
+    framework_version: "1.1"
+    id: "PO.5.1"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-9(4)
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AU-11
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1070
+  - framework: mitre-attack
+    id: T1562.008
+related_controls:
+  - id: CB-CICD-LOG-003
+    type: related
+  - id: CB-CICD-LOG-004
+    type: related
+  - id: CB-CICD-ART-012
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

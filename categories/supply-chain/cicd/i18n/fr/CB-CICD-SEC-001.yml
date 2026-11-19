@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-SEC-001
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Inventorier les identifiants des pipelines et limiter chacun à un seul usage
+finding:
+  title: Les identifiants des pipelines n'ont pas de propriétaire, ont des droits larges ou sont partagés entre pipelines
+  description: Personne ne sait quels pipelines détiennent un jeton donné ni ce qu'il permet d'atteindre, et le même identifiant sert à plusieurs systèmes ; une seule fuite ouvre alors tous les systèmes qui lui font confiance, et il ne peut pas être révoqué sans casser des builds inconnus.
+description: |
+  Chaque identifiant utilisé par les pipelines et les plates-formes CI/CD, de la récupération du
+  code au déploiement (secrets et variables CI, connexions de service, clés de déploiement,
+  identifiants cloud et registre, jetons d'intégrations), est inventorié avec son propriétaire, le
+  système qu'il atteint, ses permissions, son lieu de stockage et les pipelines qui l'utilisent.
+
+  Chaque identifiant ne reçoit que les permissions et le périmètre de ressources dont son pipeline
+  a besoin (un groupe de ressources, un dépôt de registre, un flux de paquets), et ne sert que dans
+  un seul contexte : un pipeline ou une cible de déploiement, un environnement. Le même identifiant
+  n'est pas réutilisé entre test et production, entre projets sans lien, ni entre un pipeline et
+  une personne.
+
+  Le type d'identifiant à utiliser (jeton de job, application, fédération) relève de
+  CB-CICD-SEC-002 et CB-CICD-SEC-015 ; la restriction des secrets partagés aux projets, de
+  CB-CICD-SEC-007 ; le renouvellement, de CB-CICD-SEC-011.
+rationale: |
+  Après une compromission de pipeline, les équipes de réponse doivent savoir en quelques heures
+  quels identifiants ont été exposés et ce que chacun permet d'atteindre. Sans inventaire, des
+  clés restent valides parce que personne ne sait qu'elles existent, ou ne sont pas renouvelées
+  parce que personne ne sait ce qui casserait. Un identifiant limité à une cible et à un pipeline
+  borne l'effet d'une fuite à cette cible, alors qu'un identifiant partagé à l'échelle de
+  l'abonnement ou de l'organisation transforme n'importe quel job compromis en accès à tout.
+impact: |
+  Le premier inventaire demande du temps sur l'ensemble des plates-formes et des comptes cloud.
+  Séparer les identifiants partagés en multiplie le nombre, ce que compense le passage à des
+  identifiants fédérés à courte durée de vie quand c'est possible.
+audit:
+  manual: |
+    Utiliser un rôle de la plate-forme qui peut lister les secrets, variables et connexions de
+    service (noms et métadonnées seulement) et lire les politiques IAM cloud.
+
+    1. Obtenir l'inventaire des identifiants et vérifier que chaque entrée a un propriétaire, le
+       système cible, les permissions, le lieu de stockage et les pipelines qui l'utilisent.
+    2. Comparer l'inventaire avec ce qui est réellement configuré : secrets et variables au niveau
+       organisation, groupe, projet et environnement, connexions de service, clés de déploiement,
+       intégrations et les identités correspondantes dans les comptes cloud et les registres.
+    3. Pour un échantillon d'identifiants, lire les permissions accordées côté cible et vérifier
+       qu'elles correspondent au besoin du pipeline (pas de rôle propriétaire ou administrateur,
+       pas de périmètre abonnement ou organisation entière quand une seule ressource est déployée).
+    4. Vérifier qu'un même identifiant (valeur ou identité) n'est pas utilisé par plusieurs
+       pipelines sans lien, par le test et la production, ou par des personnes.
+       - **Azure DevOps** : **Paramètres du projet** > **Connexions de service** : chaque connexion
+         Azure Resource Manager est limitée à un groupe de ressources quand c'est possible, le rôle
+         Azure attribué à son identité n'est pas Contributeur ou Propriétaire sur tout
+         l'abonnement, et l'**historique d'utilisation** ne montre que les pipelines attendus.
+    5. Échec si un identifiant utilisé par des pipelines est absent de l'inventaire ou n'a pas de
+       propriétaire, si ses permissions ou son périmètre dépassent le besoin de son pipeline, ou si
+       un identifiant est partagé entre environnements, pipelines sans lien ou personnes.
+remediation:
+  manual: |
+    1. Construire l'inventaire à partir des listes des plates-formes et de l'IAM cloud et
+       registre, et désigner un propriétaire pour chaque identifiant. Le conserver avec la
+       configuration de la plate-forme pour qu'il soit mis à jour quand les identifiants changent.
+    2. Supprimer les identifiants sans propriétaire ou sans usage actuel (CB-CICD-SEC-011).
+    3. Séparer les identifiants partagés : créer une identité par pipeline ou cible de déploiement
+       et par environnement, ne lui donner que les permissions nécessaires, puis révoquer
+       l'identifiant partagé.
+       - **Azure DevOps** : créer des connexions de service Azure Resource Manager limitées à un
+         groupe de ressources précis, avec un rôle de moindre privilège sur ce seul groupe, et
+         autoriser chaque connexion pour les seuls pipelines qui en ont besoin (CB-CICD-SEC-007).
+    4. Revoir l'inventaire au moins une fois par an et après chaque incident.

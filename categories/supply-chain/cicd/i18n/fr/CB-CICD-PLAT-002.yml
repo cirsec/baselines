@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-PLAT-002
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Inventorier les plates-formes CI/CD et les maintenir sur une version supportée et corrigée
+finding:
+  title: Les plates-formes CI/CD tournent sur des versions non supportées ou non corrigées
+  description: Un SCM, un serveur de CI ou un contrôleur GitOps auto-hébergé tourne sur une version aux vulnérabilités publiées ; un attaquant s'appuie sur l'avis public pour prendre le contrôle de la plate-forme, de ses secrets et de tous les pipelines qu'elle exécute.
+description: |
+  Chaque système CI/CD figure dans un inventaire avec son responsable, son hébergement, sa version
+  en service et ses plugins ou extensions : SCM, serveurs de CI et de CD, runners et agents,
+  registres, contrôleurs GitOps et services SaaS utilisés.
+
+  Chaque système auto-hébergé tourne sur une version encore supportée par son éditeur. Quelqu'un
+  est abonné aux avis de sécurité et annonces de versions de l'éditeur, et les versions de sécurité
+  sont installées sous **{{ critical_patch_days }}** jours pour les vulnérabilités que l'éditeur
+  classe critiques, et dans la fenêtre de correctifs habituelle de l'organisation pour les autres.
+  Un système qui ne peut pas être corrigé à temps est isolé des réseaux et utilisateurs non fiables
+  jusqu'à sa correction, ou retiré.
+
+  Les plugins et extensions suivent la même règle (voir aussi CB-CICD-COMP-003). Les images des
+  runners et hôtes de build relèvent de CB-CICD-RUN-021.
+rationale: |
+  Les serveurs CI/CD sont des cibles de valeur qui font l'objet d'un flux régulier d'avis publics
+  (contournement d'authentification, exécution de code à distance, divulgation de secrets). Les
+  exploits apparaissent souvent quelques jours après l'avis. Une plate-forme inconnue de l'équipe
+  sécurité, ou corrigée seulement à la prochaine montée de version majeure, offre à l'attaquant une
+  porte d'entrée connue vers le code source, les secrets et la chaîne de déploiement.
+impact: |
+  Exige un responsable et une fenêtre de maintenance par plate-forme. Des délais de correction
+  courts peuvent nécessiter une instance de préproduction et une sauvegarde testée
+  (CB-CICD-PLAT-008) pour appliquer rapidement les mises à jour.
+notes: |
+  Sur les éditions SaaS (GitHub.com, GitLab.com, Bitbucket Cloud, Azure DevOps Services, CircleCI
+  Cloud), l'éditeur corrige la plate-forme ; le contrôle porte alors sur l'inventaire et sur les
+  composants auto-hébergés comme les runners, agents et connecteurs sur site. La règle poutine
+  `known_vulnerability_in_build_platform` signale les versions de SCM et de CI ayant des avis connus.
+parameters:
+  critical_patch_days: Nombre maximal de jours entre la publication d'une version de sécurité corrigeant une vulnérabilité critique et son installation.
+audit:
+  manual: |
+    Utiliser un compte qui peut lire la version de chaque plate-forme (une vue administrateur est
+    souvent nécessaire sur les produits auto-hébergés).
+
+    1. Obtenir l'inventaire CI/CD et vérifier que chaque système a un responsable, une version en
+       service et un lieu d'hébergement, et qu'il inclut runners, agents et plugins.
+    2. Pour chaque système auto-hébergé, comparer la version en service à la liste des versions
+       supportées par l'éditeur et à la dernière version de sécurité :
+       - **GitHub Enterprise Server** : la version affichée dans le tableau de bord **Site admin** ou
+         par `ghe-version` dans le shell SSH d'administration ; la comparer au dernier correctif
+         d'une version fonctionnelle supportée.
+       - **GitLab auto-hébergé** : **Admin** > **Overview** > **Dashboard** affiche la version ;
+         **Admin** > **Settings** > **Metrics and profiling** > **Usage statistics** > **Enable
+         version check** est coché pour signaler les versions obsolètes.
+       - **Jenkins** : **Manage Jenkins** > **About Jenkins** affiche la version ; la comparer à la
+         ligne LTS courante et aux avis de sécurité Jenkins, et vérifier dans le gestionnaire de
+         plugins ceux qui portent un avertissement de sécurité.
+       - **TeamCity** : **Administration** > **Updates** affiche les versions disponibles ; TeamCity
+         télécharge automatiquement les mises à jour de sécurité critiques mais un administrateur
+         doit encore les installer.
+       - **Gitea / Forgejo** : `GET /api/v1/version` renvoie la version en service ; la comparer à
+         la dernière version et aux annonces de sécurité du projet.
+       - Autres produits auto-hébergés (Azure DevOps Server, Bitbucket Data Center, CircleCI
+         Server, Argo CD, Flux, Spinnaker) : comparer la version installée aux versions supportées
+         et aux avis de sécurité de l'éditeur.
+    3. Pour la dernière version de sécurité critique de chaque produit, comparer sa date de
+       publication à sa date d'installation (enregistrements de changement, journaux de mise à jour).
+    4. Échec si un système CI/CD manque à l'inventaire, tourne sur une version que son éditeur ne
+       supporte plus, ou a installé une version de sécurité critique plus de
+       {{ critical_patch_days }} jours après sa publication sans mesure d'isolement documentée.
+remediation:
+  manual: |
+    1. Construire l'inventaire à partir des plates-formes, runners, plugins et services SaaS
+       réellement utilisés, et désigner un responsable pour chacun.
+    2. Abonner les responsables aux avis de sécurité des éditeurs (notes de version GitHub
+       Enterprise Server, versions de sécurité GitLab, avis de sécurité Jenkins, bulletins de
+       sécurité TeamCity, annonces de versions Gitea et Forgejo).
+    3. Garder une instance de préproduction et une sauvegarde à jour pour tester les mises à jour et
+       pouvoir revenir en arrière.
+    4. Appliquer les versions de sécurité sous {{ critical_patch_days }} jours pour les
+       vulnérabilités critiques :
+       - **GitHub Enterprise Server** : installer le dernier correctif (hotpatch) d'une version
+         fonctionnelle supportée en suivant la procédure de mise à jour ; planifier les montées de
+         version fonctionnelle avant la fin de support.
+       - **GitLab auto-hébergé** : cocher **Enable version check** dans **Admin** > **Settings** >
+         **Metrics and profiling** > **Usage statistics** et passer au dernier correctif.
+       - **Jenkins** : passer à la dernière LTS et mettre à jour ou retirer les plugins qui portent
+         un avertissement de sécurité.
+       - **TeamCity** : approuver et installer la mise à jour dans **Administration** > **Updates**.
+       - **Gitea / Forgejo** : remplacer le binaire ou l'image par la dernière version d'une branche
+         maintenue.
+    5. Quand un correctif ne peut pas être appliqué à temps, restreindre l'accès réseau au système
+       et consigner l'exception avec une date de fin.

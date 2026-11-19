@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-005
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Approuver les applications et intégrations tierces avant qu'elles obtiennent un accès
+finding:
+  title: Les membres peuvent donner à des applications tierces l'accès au code et aux pipelines de l'organisation
+  description: Sans étape d'approbation, tout membre peut autoriser une application OAuth ou installer une extension qui lit les dépôts privés ou modifie les pipelines, et une application d'éditeur malveillante ou compromise conserve alors cet accès.
+parameters:
+  app_approval: Niveau de contrôle des applications tierces. `owner-approval` = l'accès des applications OAuth est restreint et les installations sont approuvées par les propriétaires ; `no-user-apps` = en plus, les utilisateurs ne peuvent pas enregistrer leurs propres applications OAuth et l'enregistrement dynamique de clients est désactivé.
+description: |
+  Les applications, applications OAuth, extensions et intégrations de marketplace n'accèdent aux
+  données ou aux pipelines de l'organisation qu'après approbation par un propriétaire ou l'équipe
+  sécurité, avec les permissions les plus réduites qui fonctionnent. Le niveau exigé est
+  `{{ app_approval }}` :
+  - `owner-approval` : l'accès des applications OAuth à l'organisation est limité aux applications
+    approuvées ; l'installation d'applications et d'extensions requiert un propriétaire ou un
+    administrateur, qui vérifie l'éditeur et les permissions demandées.
+  - `no-user-apps` : en plus, sur les plates-formes auto-hébergées, les utilisateurs ne peuvent pas
+    enregistrer leurs propres applications OAuth, et l'enregistrement dynamique de clients OAuth
+    est désactivé ; les applications appartiennent à l'instance ou à un groupe.
+
+  La revue périodique de ce qui est installé relève de CB-CICD-COMP-006, et la façon dont les
+  services CI se connectent aux dépôts de CB-CICD-COMP-007.
+rationale: |
+  Une application tierce détient une autorisation durable sur les données de l'organisation. Les
+  attaquants compromettent des éditeurs d'applications ou publient des applications sosies pour
+  collecter ces autorisations, puis clonent les dépôts privés, lisent les secrets présents dans le
+  code ou poussent dans les pipelines. Une étape d'approbation limite les autorisations aux
+  éditeurs vérifiés et garde des permissions étroites.
+impact: |
+  Les membres attendent l'approbation avant d'utiliser une nouvelle intégration. Sur GitHub,
+  activer les restrictions d'accès des applications OAuth retire l'accès à l'organisation à toutes
+  les applications OAuth pas encore approuvées : lister d'abord les applications utilisées.
+  Désactiver l'enregistrement dynamique de clients sur GitLab supprime les applications
+  enregistrées dynamiquement et révoque leurs jetons.
+audit:
+  manual: |
+    Utiliser un compte propriétaire d'organisation ou administrateur d'instance en lecture.
+
+    1. Vérifier les réglages d'approbation :
+       - **GitHub** : **Settings** de l'organisation > **Third-party Access** > **OAuth app
+         policy** : les restrictions d'accès sont actives et seules des applications revues sont
+         approuvées ; les demandes d'installation d'applications des membres sont examinées par
+         les propriétaires.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Extensions** : seuls les Project
+         Collection Administrators installent des extensions ; les extensions demandées sont revues
+         (éditeur, permissions, décorateurs de pipeline) avant approbation.
+       - **GitLab** (auto-hébergé, Dedicated) : **Admin** > **Settings** > **General** > **Account
+         and limit** > **User OAuth applications**, et le réglage applicatif
+         `dynamic_client_registration_enabled` (GitLab 19.3 et suivantes).
+       - **Autres plates-formes** : la politique d'installation de la marketplace ou des
+         applications exige un administrateur.
+    2. Échec si des membres peuvent donner à des applications tierces l'accès aux données de
+       l'organisation sans approbation, ou, quand `{{ app_approval }}` vaut `no-user-apps`, si les
+       utilisateurs peuvent enregistrer leurs propres applications OAuth ou si l'enregistrement
+       dynamique de clients est actif.
+remediation:
+  manual: |
+    1. Lister les applications et extensions utilisées et garder celles qui ont un responsable et
+       un besoin.
+    2. Activer l'approbation :
+       - **GitHub** (propriétaire d'organisation) : sous **Third-party application access policy**,
+         cliquer sur **Setup application access restrictions**, puis **Restrict third-party
+         application access** ; approuver une à une les applications nécessaires.
+       - **Azure DevOps** (Project Collection Administrator) : traiter les demandes d'extensions
+         dans **Paramètres de l'organisation** > **Extensions**, vérifier permissions et éditeur
+         avant installation, et désinstaller les autres.
+       - **GitLab** (administrateur) : décocher **User OAuth applications**, enregistrer les
+         applications au niveau de l'instance ou d'un groupe, et passer
+         `dynamic_client_registration_enabled` à `false` via l'API des réglages applicatifs.
+    3. Consigner chaque approbation avec son responsable, ses permissions et sa date de revue.

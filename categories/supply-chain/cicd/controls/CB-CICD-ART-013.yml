@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-ART-013
+title: Treat artifacts passed between pipelines and jobs as untrusted input
+finding:
+  title: Privileged jobs execute or unpack artifacts produced by less trusted workflows
+  description: An artifact uploaded by a pull request build can carry a script, a modified binary or a file that overwrites the checkout; when a privileged workflow downloads and runs it, the attacker gets that workflow's secrets and write token.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [artifacts, workflow-run, artifact-poisoning, untrusted-input, workspace-isolation]
+
+description: |
+  Artifacts produced by another workflow, pipeline or job, especially one triggered by untrusted
+  code such as a fork pull request, are handled as untrusted data by the job that consumes them.
+  Isolation level: `{{ workspace_isolation }}`.
+
+  - `validate`: the consuming job never executes, sources, `eval`s or installs content from the
+    artifact; it extracts the artifact into a dedicated directory outside the workspace and outside
+    paths that later steps execute (scripts, hooks, tool caches), and validates the content (expected
+    file names, size, format, values parsed as data) before use.
+  - `isolated-read-only`: in addition, each producer and consumer pair exchanges artifacts through
+    its own storage location or workspace, which the consumer can only read and no other job can
+    write, so one compromised job cannot poison artifacts consumed by another.
+
+  The trigger rules that keep untrusted code out of privileged workflows are covered by
+  CB-CICD-PIPE-014; verification of signed release artifacts by CB-CICD-ART-006.
+rationale: |
+  Splitting a pipeline into an unprivileged build for pull requests and a privileged follow-up that
+  comments, labels or deploys is the recommended pattern, but the hand-off is an artifact the
+  attacker fully controls. If the privileged side unzips it into the workspace or runs a script from
+  it, the split gives no protection: the attacker's code runs with the privileged job's secrets and
+  token. Treating the artifact as data, and isolating the exchange, closes that path.
+impact: |
+  Workflows that relied on running scripts shipped in artifacts must be rewritten to take only data
+  (for example a pull request number or a report file) and run trusted code from the default branch.
+  The hardened isolation needs per-pair storage and more pipeline configuration.
+notes: |
+  On GitHub, `actions/download-artifact` extracts into the workspace by default; set `path` to a
+  directory outside `$GITHUB_WORKSPACE` (for example under `${{ runner.temp }}`) in privileged
+  workflows triggered by `workflow_run` or `pull_request_target`.
+
+parameters:
+  - name: workspace_isolation
+    type: enum
+    description: How artifacts exchanged between jobs are isolated. validate means consumers treat artifacts as data, extract them outside the workspace and validate them; isolated-read-only also gives each producer and consumer pair its own read-only exchange location.
+    allowed: [validate, isolated-read-only]
+    default: validate
+    profile_defaults:
+      hardened: isolated-read-only
+
+audit:
+  manual: |
+    Use a role that can read pipeline definitions.
+
+    1. List the pipelines and jobs that consume artifacts produced by another workflow, pipeline or
+       job, starting with privileged ones (with secrets, write tokens or deployment rights) that
+       consume artifacts from pull request or fork builds.
+    2. For each one, check how the artifact is used:
+       - **GitHub**: in workflows triggered by `workflow_run` or `pull_request_target`, the
+         `actions/download-artifact` step sets `path` outside `$GITHUB_WORKSPACE`; no later step runs
+         a file from that path, passes its content to a shell, or uses it in `${{ }}` expressions
+         without validation.
+       - Other platforms: the consuming job downloads the artifact into a separate directory and does
+         not execute or install from it.
+    3. With `isolated-read-only`: check that each producer and consumer pair uses its own storage
+       location or workspace, that the consumer has read-only access, and that no other job can write
+       there.
+    4. Fail if a job with more privileges than the producer executes, sources or installs content
+       from the artifact, extracts it over the workspace, or (hardened) shares a writable exchange
+       location with other jobs.
+
+remediation:
+  manual: |
+    1. Redesign privileged follow-up jobs so the artifact carries only data, and the code that
+       processes it comes from the trusted branch.
+    2. Extract artifacts outside the workspace:
+       - **GitHub**: in `actions/download-artifact`, set `path: ${{ runner.temp }}/artifacts` (or
+         another directory outside the workspace) in `workflow_run` and `pull_request_target`
+         workflows; parse values with a strict format and pass them to scripts through environment
+         variables, never through `${{ }}` in `run:`.
+       - Other platforms: download into a dedicated temporary directory and validate before use.
+    3. Validate the content: expected file names only, size limits, values matched against a strict
+       pattern (for example a number for a pull request id).
+    4. For `isolated-read-only`: give each producer and consumer pair its own bucket prefix,
+       artifact name or workspace volume, mounted read-only in the consumer.
+
+references:
+  - title: Secure use reference - Mitigating the risks of untrusted code checkout
+    url: https://docs.github.com/en/actions/reference/security/secure-use
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Workflow artifacts
+    url: https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Keeping your GitHub Actions and workflows secure - Preventing pwn requests
+    url: https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
+    publisher: GitHub Security Lab
+    kind: guide
+    accessed: 2026-11-03
+  - title: download-artifact
+    url: https://github.com/actions/download-artifact
+    publisher: GitHub
+    kind: tool
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-04
+    relation: partial
+    note: Covers poisoned execution through artifacts handed between workflows; other poisoned pipeline execution paths are PIPE controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-7
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1059
+  - framework: mitre-attack
+    id: T1552.001
+related_controls:
+  - id: CB-CICD-PIPE-014
+    type: related
+  - id: CB-CICD-PIPE-015
+    type: related
+  - id: CB-CICD-PIPE-010
+    type: related
+  - id: CB-CICD-ART-006
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

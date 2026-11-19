@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-028
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Imposer une durée de vie maximale aux jetons d'accès personnels et d'API
+finding:
+  title: Des jetons d'accès personnels peuvent être créés sans expiration ou pour un an ou plus
+  description: Un jeton qui n'expire jamais continue de fonctionner longtemps après sa fuite depuis un script, un poste ou un journal CI, et il est rarement révoqué car personne ne se souvient qu'il existe.
+parameters:
+  max_token_lifetime_days: Durée de vie maximale autorisée pour les jetons d'accès personnels, de groupe, de projet et d'API.
+description: |
+  Les jetons d'accès personnels et autres jetons d'API émis par les utilisateurs doivent avoir une
+  date d'expiration d'au plus {{ max_token_lifetime_days }} jours, imposée par une stratégie de la
+  plate-forme quand elle existe. Quand la plate-forme laisse seulement l'utilisateur choisir une
+  expiration, la règle de l'organisation est la même et elle est vérifiée lors de la revue des
+  identités. Les jetons qui ne peuvent pas expirer ne servent pas à accéder à l'organisation.
+
+  La portée des jetons relève de CB-CICD-IAM-029, leur approbation de CB-CICD-IAM-030, la révocation
+  des jetons divulgués ou inutilisés de CB-CICD-IAM-031.
+rationale: |
+  Les jetons fuient par l'historique du shell, les journaux CI, les fichiers de configuration et les
+  voleurs d'informations, et ils contournent le SSO et la MFA. Une date d'expiration borne la fenêtre
+  pendant laquelle un jeton divulgué est utile et force une rotation régulière, ce qui supprime aussi
+  les jetons dont plus personne ne se sert.
+impact: |
+  Les utilisateurs et scripts doivent renouveler leurs jetons régulièrement. Les jetons existants qui
+  dépassent la nouvelle limite sont bloqués ou doivent être régénérés selon la plate-forme ; les
+  automatisations de longue durée doivent passer à des identités non humaines avec des identifiants à
+  courte durée de vie (CB-CICD-IAM-027).
+notes: |
+  Sur GitHub, les jetons existants non conformes sont bloqués lorsqu'ils sont utilisés contre
+  l'organisation, pas révoqués. Sur Azure DevOps, la stratégie de locataire s'applique à la création
+  ou au renouvellement d'un PAT. Sur Buildkite, les jetons de type Public Key n'expirent jamais.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Vérifier la stratégie de durée de vie :
+       - **GitHub** : **Enterprise settings** ou **Organization settings** > **Personal access
+         tokens** > **Set maximum lifetimes for personal access tokens**, sur les onglets
+         **Fine-grained tokens** et **Tokens (classic)**, vaut au plus {{ max_token_lifetime_days }}
+         jours (défaut 366 jours pour les jetons fine-grained, aucune exigence pour les jetons
+         classiques).
+       - **GitLab auto-hébergé** : **Admin** > **Settings** > **General** > **Account and limit** :
+         **Require expiration date** est coché (activé par défaut depuis GitLab 17.3), et **Limit the
+         lifetime of access tokens** vaut au plus {{ max_token_lifetime_days }} jours (Ultimate,
+         défaut 365). Pour les comptes de service, le réglage d'application
+         `service_access_tokens_expiration_enforced` est activé.
+       - **Azure DevOps** : **Paramètres de l'organisation** > **Microsoft Entra** > **Enforce maximum
+         personal access token lifespan** est activé avec au plus {{ max_token_lifetime_days }} jours.
+       - **Buildkite** : les jetons listés dans **API Access Audit** sont de type Token avec une
+         **Token Expiry** dans la limite (sept jours par défaut si elle n'est pas renseignée).
+       - **CircleCI** : les jetons d'API personnels sont créés avec une date d'expiration dans la
+         limite.
+    2. Lister les jetons existants avec leur expiration quand la plate-forme l'affiche.
+    3. Échec si la stratégie de la plate-forme autorise des jetons de plus de
+       {{ max_token_lifetime_days }} jours, ou si des jetons sans expiration ont accès à
+       l'organisation.
+remediation:
+  manual: |
+    1. Définir la stratégie :
+       - **GitHub** : régler la durée maximale sur les deux onglets au niveau de l'entreprise (les
+         propriétaires d'organisation ne peuvent que la resserrer) ; ne pas exempter les
+         administrateurs sauf si une automatisation l'exige.
+       - **GitLab auto-hébergé** : garder **Require expiration date** coché et régler **Limit the
+         lifetime of access tokens** (administrateur de l'instance).
+       - **Azure DevOps** : activer **Enforce maximum personal access token lifespan** et saisir le
+         nombre de jours (rôle Azure DevOps Administrator dans Entra).
+       - **Buildkite / CircleCI** : communiquer l'expiration maximale aux utilisateurs, et retirer les
+         jetons qui la dépassent lors de la revue des identités (CB-CICD-IAM-026).
+    2. Demander aux titulaires de jetons non conformes de les régénérer, puis révoquer les anciens.

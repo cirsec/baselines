@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-011
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Épingler les composants CI et les inclusions sur des références immuables
+finding:
+  title: Les pipelines référencent actions, orbs, plugins ou modèles par des tags ou branches modifiables
+  description: Un tag, une branche ou une référence « latest » peut être déplacé par quiconque contrôle le dépôt amont, si bien qu'un seul push malveillant change le code exécuté dans tous les pipelines qui l'utilisent, sans aucune modification du fichier de pipeline.
+parameters:
+  pinning: Niveau d'épinglage. `immutable-ref` = SHA de commit complet, empreinte ou version exacte, imposé par la politique de la plate-forme quand elle existe ; `lockfile` = en plus, les composants transitifs sont verrouillés par un fichier de verrouillage exigé par la plate-forme, et les versions des bibliothèques partagées ne peuvent pas être surchargées.
+description: |
+  Tout code de pipeline externe est référencé d'une manière qui ne peut pas changer sans
+  modification du fichier de pipeline : actions, workflows réutilisables, orbs, plugins, fichiers
+  inclus, modèles, composants de catalogue, bibliothèques partagées et tâches distantes. Le niveau
+  exigé est `{{ pinning }}` :
+  - `immutable-ref` : les références utilisent un SHA de commit complet, une empreinte d'image ou
+    une version publiée exacte (jamais une branche, `latest`, `volatile`, une version d'orb `dev:`
+    ou une version partielle) ; les inclusions distantes sont évitées ou portent une empreinte
+    d'intégrité ; la politique de la plate-forme qui impose l'épinglage par SHA est active quand
+    elle existe.
+  - `lockfile` : en plus, les composants utilisés indirectement par d'autres composants sont
+    verrouillés aussi (fichier de verrouillage GitHub Actions avec la politique **Require
+    lockfile** active), et les bibliothèques partagées chargées implicitement utilisent une
+    version fixe que les pipelines ne peuvent pas surcharger.
+
+  Les références d'images de conteneur relèvent de CB-CICD-COMP-013, les outils installés par les
+  scripts de pipeline de CB-CICD-COMP-014, et la vérification que les références épinglées pointent
+  vers le vrai dépôt amont de CB-CICD-COMP-012.
+rationale: |
+  Les tags et les branches sont des pointeurs que le propriétaire amont, ou quiconque compromet son
+  compte, peut déplacer. Le vol massif de secrets par des actions dont les tags ont été réécrits a
+  montré qu'épingler sur un tag ne protège pas. Un SHA de commit ou une empreinte désigne un contenu
+  exact : une compromission amont n'atteint pas les pipelines tant que quelqu'un n'a pas revu et
+  accepté la nouvelle référence. Les composants imbriqués restent modifiables s'ils ne sont pas
+  verrouillés aussi.
+impact: |
+  Les références épinglées doivent être mises à jour délibérément ; associer l'épinglage à un robot
+  de mise à jour (CB-CICD-COMP-009) sinon les composants prennent du retard sur les correctifs.
+  L'application du fichier de verrouillage bloque les workflows non intégrés : la piloter avant
+  activation.
+notes: |
+  Sur GitHub, les alertes Dependabot ne se déclenchent pas pour les actions épinglées par SHA, mais
+  les mises à jour de version mettent les SHA à jour. Le fichier de verrouillage Actions ne couvre
+  pas les workflows réutilisables appelés par `jobs.<id>.uses` : les épingler par SHA. Les actions
+  Docker et composites peuvent encore récupérer du contenu non épinglé à l'exécution. Les versions
+  d'orb CircleCI `dev:` sont des versions de développement modifiables.
+audit:
+  manual: |
+    Utiliser un accès en lecture aux dépôts et aux réglages de l'organisation.
+
+    1. Rechercher les références modifiables dans les définitions de pipeline (zizmor
+       `unpinned-uses`, Scorecard `Pinned-Dependencies`, Checkov `CKV_CIRCLECIPIPELINES_3` et
+       `CKV_CIRCLECIPIPELINES_4`, poutine `unpinnable_action` aident).
+    2. Vérifier chaque plate-forme utilisée :
+       - **GitHub** : les `uses:` des steps et des jobs se terminent par un SHA de 40 caractères
+         (un commentaire `# vX.Y.Z` peut suivre) ; **Settings** > **Actions** > **General** >
+         **Policies** > **Require actions to be pinned to a full-length commit SHA** est actif au
+         niveau entreprise ou organisation. Pour `lockfile` : `.github/workflows/actions.lock`
+         existe, `gh actions-lock --verify` tourne comme contrôle obligatoire, et la politique
+         d'exécution de workflow **Require lockfile** est **Active** (GitHub Enterprise Cloud).
+       - **GitLab** : `include:project` utilise `ref:` avec un SHA de commit ou un tag protégé ;
+         `include:component` utilise une version complète, pas `~latest` ni une version partielle ;
+         `include:remote` est absent ou porte `integrity: sha256-...`.
+       - **Azure DevOps** : le `resources.repositories[].ref` utilisé par `template@alias` pointe
+         vers un tag protégé ou un commit, pas une branche.
+       - **CircleCI** : les `orbs:` utilisent `x.y.z`, jamais `volatile`, une version partielle ou
+         `dev:`.
+       - **Buildkite** : les `plugins:` utilisent `name#<SHA de commit>`.
+       - **Jenkins** : **Manage Jenkins** > **System** > **Global Trusted Pipeline Libraries** :
+         **Default version** est un tag ou un commit et, pour `lockfile`, **Allow default version
+         to be overridden** est décoché.
+       - **Tekton** : les références du résolveur bundles utilisent une empreinte ; la `revision`
+         du résolveur git est un SHA de commit.
+       - **Flux** : kustomize-controller tourne avec `--no-remote-bases=true`.
+    3. Échec si une référence est modifiable, si une inclusion distante n'a pas d'empreinte
+       d'intégrité, si la politique d'épinglage par SHA est disponible mais inactive, ou, quand
+       `{{ pinning }}` vaut `lockfile`, si le fichier de verrouillage manque, n'est pas vérifié ou
+       pas imposé, ou si les versions de bibliothèques peuvent être surchargées.
+remediation:
+  manual: |
+    1. Remplacer les références modifiables par un SHA, une empreinte ou une version exacte, en
+       gardant la version lisible en commentaire ; des outils comme zizmor (`--fix`) ou le robot de
+       mise à jour peuvent le faire en masse.
+    2. L'imposer :
+       - **GitHub** (propriétaire d'entreprise ou d'organisation) : activer **Require actions to
+         be pinned to a full-length commit SHA**. Pour `lockfile` : générer `actions.lock` avec
+         `gh actions-lock`, ajouter un job de vérification comme contrôle obligatoire, protéger le
+         fichier par des code owners, puis créer une politique **Require lockfile** dans
+         **Settings** > **Actions** > **Policies**, commencer en mode **Evaluate** et passer en
+         **Active**.
+       - **GitLab** : passer les entrées `include:` en SHA ou version complète, préférer
+         `include:local` à `include:remote`, et ajouter `integrity:` aux inclusions distantes
+         restantes.
+       - **Azure DevOps** : définir `ref: refs/tags/<version>` ou un commit sur les dépôts de
+         modèles, avec le tag protégé.
+       - **CircleCI** : définir des versions d'orb exactes.
+       - **Buildkite** : utiliser des références `plugin#<sha>`.
+       - **Jenkins** (administrateur) : régler **Default version** sur un tag ou un commit et
+         décocher **Allow default version to be overridden**.
+       - **Tekton** : référencer les bundles par empreinte et les tâches du résolveur git par SHA
+         de commit.
+       - **Flux** (administrateur du cluster) : ajouter `--no-remote-bases=true` aux arguments de
+         kustomize-controller et intégrer les bases distantes au dépôt.
+    3. Garder un robot de mise à jour sur les références épinglées (CB-CICD-COMP-009).

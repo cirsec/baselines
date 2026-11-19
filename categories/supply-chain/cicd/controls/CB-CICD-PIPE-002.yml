@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PIPE-002
+title: Enable pipeline execution only for repositories that need it
+finding:
+  title: Every repository can run CI/CD workflows
+  description: Workflows run in any repository by default, including dormant, test or forgotten ones, so an attacker with write access to any of them can run code with the organization's runners, tokens and shared secrets.
+status: draft
+profiles: [hardened]
+risk:
+  severity: low
+assessment: manual
+tags: [actions-policy, attack-surface, repository-allowlist]
+applicability:
+  versions: [forgejo, gitea, github]
+
+description: |
+  Running CI/CD workflows is opt-in. At organization or instance level, Actions is enabled only for
+  an explicit list of repositories that build, test or deploy something; new repositories do not
+  get Actions by default, and archived or dormant repositories have it turned off.
+
+  Which actions and reusable workflows an enabled repository may call is covered by
+  CB-CICD-COMP-001; archiving unmaintained repositories by CB-CICD-SCM-025.
+rationale: |
+  Every repository where workflows can run is a place where a pushed workflow file executes with
+  the organization's runners, the repository token and any organization secrets shared with it.
+  Unmaintained repositories are rarely watched, have stale collaborators and weak protection, which
+  makes them a convenient foothold. Limiting execution to the repositories that need CI removes
+  that surface.
+impact: |
+  Teams must ask for Actions to be enabled when they create a repository that needs CI. On GitHub,
+  disabling Actions for a repository also disables CodeQL default setup in it; Dependabot updates
+  still run.
+
+audit:
+  manual: |
+    Use an organization owner or instance administrator account with read access to Actions
+    settings.
+
+    1. Read the Actions enablement policy:
+       - **GitHub**: **Organization** > **Settings** > **Actions** > **General** > **Policies** (or
+         **Enterprise** > **Policies** > **Actions**), or
+         `GET /orgs/{org}/actions/permissions` and check `enabled_repositories`.
+       - **Gitea / Forgejo**: `app.ini` `[actions] ENABLED`, and `[repository] DEFAULT_REPO_UNITS`:
+         check whether `repo.actions` is part of the default units of new repositories.
+    2. List the repositories where Actions is enabled and compare with the repositories that
+       actually have a pipeline in use.
+    3. Fail if Actions is enabled for all repositories (`enabled_repositories: all` on GitHub,
+       `repo.actions` in the default units on Gitea/Forgejo), or if an archived or dormant
+       repository still has Actions enabled.
+
+remediation:
+  manual: |
+    1. Build the list of repositories that need CI from their recent workflow runs.
+    2. Restrict Actions to that list:
+       - **GitHub**: as an organization owner, set **Policies** to allow Actions for selected
+         repositories and add the repositories, or call
+         `PUT /orgs/{org}/actions/permissions` with `enabled_repositories: selected` and then set
+         the selected repositories. Enterprise owners can enforce it under **Enterprise** >
+         **Policies** > **Actions**.
+       - **Gitea / Forgejo**: remove `repo.actions` from `[repository] DEFAULT_REPO_UNITS` in
+         `app.ini` so new repositories start without Actions, and enable the Actions unit only in
+         the repositories that need it; set `[actions] ENABLED = false` on instances that do not run
+         CI at all.
+    3. Turn Actions off in archived and dormant repositories.
+  rollback: |
+    Add the repository back to the selected list (GitHub) or re-enable its Actions unit
+    (Gitea/Forgejo).
+
+references:
+  - title: Enforcing policies for GitHub Actions in your enterprise
+    url: https://docs.github.com/en/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Disabling or limiting GitHub Actions for your organization
+    url: https://docs.github.com/en/organizations/managing-organization-settings/disabling-or-limiting-github-actions-for-your-organization
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gitea configuration cheat sheet
+    url: https://docs.gitea.com/administration/config-cheat-sheet
+    publisher: Gitea
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Forgejo configuration cheat sheet
+    url: https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+    publisher: Forgejo
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Top 10 CI/CD Security Risks - CICD-SEC-7 Insecure System Configuration
+    url: https://owasp.org/www-project-top-10-ci-cd-security-risks/CICD-SEC-07-Insecure-System-Configuration
+    publisher: OWASP
+    kind: guide
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-07
+    relation: partial
+    note: Covers only where pipelines may run; other insecure defaults are handled by other controls.
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-7
+    relation: related
+related_controls:
+  - id: CB-CICD-SCM-025
+    type: related
+  - id: CB-CICD-COMP-001
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

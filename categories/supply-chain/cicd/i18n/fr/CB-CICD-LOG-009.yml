@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-LOG-009
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Préparer et exercer un guide de réponse aux incidents CI/CD
+finding:
+  title: Il n'existe pas de plan testé face à une compromission CI/CD
+  description: Quand un jeton fuit, qu'un runner est compromis ou qu'un workflow ou une dépendance malveillante est découvert, les intervenants improvisent, révoquent les mauvais identifiants, laissent des secrets dans des journaux publics et laissent tourner les builds pendant que l'attaquant garde son accès.
+description: |
+  Un guide écrit couvre les scénarios d'incident CI/CD auxquels l'organisation peut faire face, au
+  moins : jeton ou secret divulgué (dans un journal, un dépôt ou un artefact), runner ou hôte de
+  build compromis, modification malveillante d'un pipeline ou d'un workflow, composant tiers ou
+  dépendance compromis, et compte administrateur CI/CD compromis.
+
+  Pour chaque scénario, le guide donne, par plate-forme en service, les étapes et le rôle autorisé
+  pour :
+
+  - arrêter les dégâts : désactiver ou annuler les pipelines et déclencheurs concernés, mettre les
+    runners hors ligne, suspendre des comptes, restreindre l'accès (par exemple une liste
+    d'autorisation d'IP) ;
+  - révoquer et renouveler les identifiants : jetons personnels et de groupe, jetons de runner et
+    d'agent, variables et secrets CI/CD, clés de déploiement, identifiants cloud accessibles depuis
+    les pipelines ;
+  - supprimer les données exposées : effacer les journaux de job et artefacts contenant des
+    secrets ;
+  - enquêter avec les journaux d'audit (CB-CICD-LOG-003) et décider de ce qui doit être reconstruit ;
+  - informer l'éditeur, les utilisateurs concernés et, si nécessaire, les autorités.
+
+  Le guide désigne un compte administrateur de bris de glace par plate-forme, est testé en exercice
+  au moins une fois par an, et mis à jour après chaque exercice ou incident réel. La réponse propre
+  aux dépendances relève aussi du standard DEP (CB-DEP-IR-001).
+rationale: |
+  Les incidents CI/CD vont vite : un jeton divulgué est souvent exploité en quelques minutes, et
+  chaque build en cours peut propager la compromission. Les gestes de confinement diffèrent selon la
+  plate-forme (révoquer un jeton d'agent Buildkite ne déconnecte pas les agents en cours ; effacer
+  les journaux d'exécution GitHub demande une action distincte ; les mainteneurs GitLab peuvent lire
+  les variables protégées) : ils doivent être connus à l'avance. Un guide exercé raccourcit le délai
+  entre détection et confinement et évite d'oublier un identifiant.
+impact: |
+  Demande du temps pour rédiger le guide par plate-forme et mener un exercice annuel. Renouveler de
+  nombreux secrets pendant un incident peut casser des déploiements : le guide doit lister les
+  responsables à contacter.
+audit:
+  manual: |
+    Demander le guide de réponse aux incidents CI/CD, le compte rendu du dernier exercice et la
+    liste des comptes de bris de glace.
+
+    1. Vérifier que le guide couvre les scénarios listés ci-dessus et les plates-formes en service.
+    2. Vérifier que chaque scénario a des étapes concrètes par plate-forme, par exemple :
+       - **GitHub** : révoquer les identifiants, activer une liste d'autorisation d'IP, suspendre des
+         utilisateurs, désactiver ou restreindre GitHub Actions par politique ; supprimer les
+         journaux d'exécution contenant des secrets (menu de l'exécution **Delete all logs**, ou
+         `DELETE /repos/{owner}/{repo}/actions/runs/{run_id}/logs`) ; sur GitHub Enterprise Cloud,
+         les actions d'urgence de l'entreprise pour révoquer les sessions SSO et supprimer les jetons
+         et clés des utilisateurs.
+       - **GitLab** : révoquer ou renouveler les jetons d'accès personnels, de groupe et de projet,
+         les jetons de runner, de déclencheur et les clés de déploiement ; renouveler les variables
+         CI/CD que les mainteneurs pouvaient lire ; examiner les événements d'audit de la période
+         d'exposition.
+       - **Buildkite** : retirer l'utilisateur compromis, révoquer les jetons d'agent et arrêter
+         aussi les agents déjà connectés, retirer l'organisation des jetons API compromis, renouveler
+         les secrets, désactiver les webhooks entrants et annuler les builds en cours.
+    3. Vérifier qu'un compte de bris de glace existe pour chaque plate-forme et que son usage est
+       testé.
+    4. Lire le compte rendu du dernier exercice : date (moins de 12 mois), scénario, lacunes
+       relevées et leur suivi.
+    5. Échec s'il n'y a pas de guide, s'il lui manque un scénario listé ou une plate-forme en
+       service, ou s'il n'a pas été exercé dans les 12 derniers mois.
+remediation:
+  manual: |
+    1. Rédiger le guide avec l'équipe sécurité et les responsables des plates-formes, en partant des
+       guides d'incident des éditeurs (GitHub « Prepare for a security incident », GitLab
+       « Responding to security incidents », Buildkite « Incident response »).
+    2. Pour chaque scénario et plate-forme, lister les gestes exacts de confinement, révocation,
+       purge des journaux et enquête, le rôle nécessaire, et les responsables à contacter pour les
+       secrets renouvelés.
+    3. Tenir un inventaire des identifiants accessibles depuis chaque pipeline (CB-CICD-SEC-001)
+       pour pouvoir les renouveler rapidement.
+    4. Créer et tester un compte de bris de glace par plate-forme.
+    5. Mener un exercice sur table ou technique au moins une fois par an (par exemple un jeton de
+       runner divulgué ou une modification malveillante de workflow) et mettre à jour le guide avec
+       les enseignements.

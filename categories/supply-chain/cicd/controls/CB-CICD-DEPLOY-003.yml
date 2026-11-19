@@ -1,0 +1,171 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-DEPLOY-003
+title: Require approval by someone other than the initiator for every production deployment
+finding:
+  title: Production deployments run without approval, or the person who triggered them can approve them
+  description: Without an independent approval, one person, or one stolen account, can push a change and send it to production alone, and nothing stops a deployment started by mistake or by an attacker.
+status: draft
+profiles: [baseline]
+risk:
+  severity: high
+assessment: manual
+tags: [deployment, approvals, separation-of-duties, four-eyes, production]
+
+description: |
+  Every deployment to production waits for an explicit approval from a designated approver group
+  before it runs. The person who triggered the deployment, or who authored the change being
+  deployed, cannot be the approver; approval by at least one other member of the group is
+  required. Pending approvals expire after a reasonable time.
+
+  Approval of the code change itself (pull request review) is covered by CB-CICD-SCM-012 and
+  CB-CICD-SCM-013; this control adds the approval of the release into production. Who can bypass
+  approvals is covered by CB-CICD-DEPLOY-004.
+rationale: |
+  Code review protects what is merged, but deployments can be triggered on many paths: re-runs,
+  manual pipelines, rollbacks, parameter changes. An approval step bound to the production
+  environment, with separation between initiator and approver, means a single compromised account
+  or a single careless person cannot put a change in production. It also creates a record of who
+  accepted each release.
+impact: |
+  Deployments wait for an approver, which slows releases and needs an on-call approver rota. Teams
+  with one maintainer need a second approver from another team. Some platforms need a paid tier for
+  environment approvals on private repositories.
+notes: |
+  GitHub required reviewers on private repositories need GitHub Enterprise (on Free, Pro and Team
+  they are available for public repositories only); only one of the listed reviewers needs to
+  approve. GitLab deployment approvals need Premium; by default the pipeline triggerer cannot approve,
+  and GitLab administrators can approve any deployment. In Azure DevOps, when a group is an approver,
+  one member's approval is enough. Google Cloud Build cannot approve pending builds older than two
+  months. In CircleCI any project member can approve a `hold` job; the restricted context on the
+  deploy job is what limits approval to its security group. Harness's **Disallow the executor from
+  approving the pipeline** only applies to manual runs, not to webhook or Git triggers.
+
+audit:
+  manual: |
+    Use a role that can read environment, pipeline and IAM settings.
+
+    1. List every path that deploys to production (pipelines, triggers, manual procedures).
+    2. For each path, check that an approval from a designated group is required and that the
+       initiator cannot approve:
+       - **GitHub**: **Settings** > **Environments** > production has **Required reviewers** set to an
+         approver team and **Prevent self-review** selected.
+       - **GitLab**: **Settings** > **CI/CD** > **Protected environments** > production has an
+         approval rule with at least one required approval from a group other than the deployers,
+         and **Allow pipeline triggerer to approve deployment** is cleared.
+       - **Azure DevOps**: **Pipelines** > **Environments** > production > **Approvals and checks**
+         has an **Approvals** check with a group of approvers, approvers not allowed to approve their
+         own runs, and a timeout.
+       - **AWS CodePipeline**: a manual approval action (`category: Approval`, `provider: Manual`)
+         runs before the production deploy action, and `codepipeline:PutApprovalResult` on that
+         action is granted only to the approver group, not to the people or roles that change or
+         start the pipeline.
+       - **Google Cloud Build**: triggers that deploy to production have **Approval** on
+         (`gcloud builds triggers describe` shows `approvalConfig.approvalRequired: true`) and the
+         **Cloud Build Approver** role is held only by the approver group.
+       - **Spinnaker**: production pipelines have a **Manual Judgment** stage before the deploy stage.
+       - **Harness**: production stages are preceded by an **Approval** step with approver **User
+         Groups**, **Number of approvers that are required at this step** of at least 1, and
+         **Disallow the executor from approving the pipeline** enabled.
+       - **Bitbucket**: the production step uses `deployment: production` with `trigger: manual`, and
+         deployment permissions restrict who can promote (Premium).
+       - **CircleCI**: production deploy jobs `requires` a `type: approval` job and use a context
+         restricted to the approver security group.
+    3. Review recent production deployments and check that the approver differs from the initiator.
+    4. Fail if a production deployment can run without approval, or if the initiator can approve their
+       own deployment.
+
+remediation:
+  manual: |
+    1. Create an approver group distinct from the deployers of each application.
+    2. Add the approval gate:
+       - **GitHub**: in the production environment, add the approver team under **Required
+         reviewers** and select **Prevent self-review**.
+       - **GitLab**: add an approval rule to the protected production environment
+         (`required_approval_count` of 1 or more for the approver group) and keep **Allow pipeline
+         triggerer to approve deployment** cleared.
+       - **Azure DevOps**: add an **Approvals** check to the production environment with the approver
+         group, disallow approving own runs, and set a timeout.
+       - **AWS CodePipeline**: add a manual approval action before the deploy action and grant
+         `codepipeline:PutApprovalResult` on that action ARN only to the approver role.
+       - **Google Cloud Build**: enable approval on deploying triggers (`gcloud builds triggers update
+         ... --require-approval`) and grant **Cloud Build Approver** only to approvers.
+       - **Spinnaker**: add a **Manual Judgment** stage before production deploy stages.
+       - **Harness**: add a **Harness Approval** step with the approver user groups and enable
+         **Disallow the executor from approving the pipeline**.
+       - **Bitbucket**: set `trigger: manual` on the production deployment step and restrict
+         deployment permissions.
+       - **CircleCI**: add a `type: approval` job before deploy jobs and put the deploy job in a
+         context restricted to the approver security group.
+    3. Write down the emergency procedure (who approves at night, how bypass is recorded,
+       CB-CICD-DEPLOY-004).
+
+references:
+  - title: Deployments and environments
+    url: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Deployment approvals
+    url: https://docs.gitlab.com/ci/environments/deployment_approvals/
+    publisher: GitLab
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Define approvals and checks
+    url: https://learn.microsoft.com/azure/devops/pipelines/process/approvals
+    publisher: Microsoft
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Grant approval permissions to an IAM user in CodePipeline
+    url: https://docs.aws.amazon.com/codepipeline/latest/userguide/approvals-iam-permissions.html
+    publisher: AWS
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Gate builds on approval
+    url: https://docs.cloud.google.com/build/docs/securing-builds/gate-builds-on-approval
+    publisher: Google Cloud
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Using contexts - Approve jobs that use restricted contexts
+    url: https://circleci.com/docs/guides/security/contexts/
+    publisher: CircleCI
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: owasp-cicd-top10
+    framework_version: "2022"
+    id: CICD-SEC-01
+    relation: partial
+    note: Covers approval of production deployments; review of code changes is in the SCM controls.
+  - framework: cis-sscs
+    framework_version: "1.0"
+    id: "2.3.5"
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-3
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: AC-5
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: CM-5(4)
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1072
+related_controls:
+  - id: CB-CICD-DEPLOY-002
+    type: related
+  - id: CB-CICD-DEPLOY-004
+    type: related
+  - id: CB-CICD-SCM-013
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

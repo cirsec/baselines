@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-COMP-007
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Connecter les services CI aux dépôts de code par des applications à périmètre limité
+finding:
+  title: Un service CI accède aux dépôts par une autorisation OAuth ou un jeton personnel
+  description: Quand un service CI utilise l'autorisation OAuth ou le jeton d'accès personnel d'un membre, il agit avec tous les accès de ce membre, cesse de fonctionner à son départ, et une fuite du jeton stocké expose tous les dépôts que ce membre peut voir.
+description: |
+  Les services CI/CD hébergés qui construisent du code venant d'une plate-forme de gestion de code
+  distincte s'y connectent par une application installée (par exemple une GitHub App) limitée aux
+  dépôts qu'ils construisent, et non par l'autorisation OAuth d'un utilisateur, un jeton d'accès
+  personnel ou un connecteur OAuth obsolète. L'identité de l'application, et non une personne,
+  apparaît dans les statuts de commit et les journaux d'audit.
+
+  Quand seule une connexion par jeton est possible, elle utilise une identité machine dédiée avec
+  un accès fin, limité aux dépôts et en lecture seule (CB-CICD-SEC-014).
+rationale: |
+  Une autorisation OAuth d'utilisateur ou un jeton personnel donne au service CI tout ce que cet
+  utilisateur peut atteindre, souvent bien plus de dépôts que ceux construits, avec un accès en
+  écriture. Le jeton est stocké chez l'éditeur : une compromission de l'éditeur ou de la connexion
+  de service l'expose. Une application installée a sa propre identité, des permissions fixées par
+  l'organisation, des jetons d'installation courts et une sélection de dépôts contrôlée par les
+  propriétaires.
+impact: |
+  Passer une connexion existante à une application suppose d'installer l'application dans
+  l'organisation source, de modifier la connexion de service ou l'action source et de lancer une
+  fois les pipelines. Certaines fonctions des éditeurs diffèrent selon le type de connexion ;
+  consulter la comparaison de l'éditeur avant de migrer.
+notes: |
+  CircleCI publie une comparaison des fonctions entre organisations GitHub App et GitHub OAuth :
+  par exemple, la construction des pull requests issues de forks n'y figure que pour les
+  organisations OAuth. Azure Pipelines présente la GitHub App comme le type d'authentification
+  recommandé et le seul compatible avec GitHub Checks.
+audit:
+  manual: |
+    Utiliser un rôle qui peut lire les connexions de service ou les réglages de projet du service
+    CI, et un propriétaire d'organisation sur la plate-forme de code pour lire les installations
+    d'applications.
+
+    1. Lister comment chaque service CI se connecte à la plate-forme de code :
+       - **Azure DevOps** : **Paramètres du projet** > **Connexions de service** : les connexions
+         GitHub utilisent la **GitHub App** Azure Pipelines, pas **OAuth** ni un **Personal access
+         token** ; côté GitHub, l'accès aux dépôts de l'application est **Only select
+         repositories**.
+       - **CircleCI** : l'organisation est de type GitHub App, et la GitHub App CircleCI n'est
+         installée que sur des dépôts sélectionnés.
+       - **Buildkite** : les dépôts sont connectés par l'intégration GitHub App de Buildkite.
+       - **AWS CodePipeline** : les actions source utilisent l'action **GitHub (via GitHub App)**
+         (`CodeStarSourceConnection`), pas l'action **GitHub (via OAuth app)** version 1.
+    2. Échec si un service CI accède aux dépôts par l'autorisation OAuth ou le jeton personnel
+       d'un membre alors qu'une connexion par application existe, ou si l'application a accès à
+       tous les dépôts sans besoin.
+remediation:
+  manual: |
+    1. Installer l'application de l'éditeur CI dans l'organisation source (propriétaire
+       d'organisation) et la limiter aux dépôts construits.
+    2. Basculer les connexions :
+       - **Azure DevOps** (Project Administrator) : créer une connexion de service GitHub avec le
+         type d'authentification **GitHub App**, y raccorder les pipelines et supprimer la
+         connexion OAuth ou PAT.
+       - **CircleCI** : utiliser une organisation GitHub App pour les nouveaux projets, ou
+         installer la GitHub App CircleCI dans l'organisation OAuth quand l'éditeur le permet.
+       - **Buildkite** : connecter les dépôts par la GitHub App Buildkite.
+       - **AWS CodePipeline** : remplacer l'action source **GitHub (via OAuth app)** par **GitHub
+         (via GitHub App)** avec une connexion, comme le décrit le guide de mise à jour AWS.
+    3. Révoquer l'ancienne autorisation OAuth ou le jeton d'accès personnel sur la plate-forme de
+       code.

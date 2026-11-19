@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=../../../../schema/control.schema.json
+id: CB-CICD-PLAT-013
+title: Keep the web UI protections against CSRF and cross-site scripting enabled
+finding:
+  title: CSRF protection, content security policy or user-content isolation is weakened
+  description: The platform runs with CSRF protection off, raw HTML descriptions, a relaxed content security policy or user content on the main domain; a crafted link or published report runs actions or scripts with the session of an administrator who opens it.
+status: draft
+profiles: [baseline]
+risk:
+  severity: medium
+assessment: manual
+tags: [csrf, xss, content-security-policy, web-ui, jenkins, github-enterprise-server]
+applicability:
+  versions: [jenkins, github]
+
+description: |
+  The browser-side protections of the platform stay at their secure defaults or stricter:
+
+  - Jenkins: CSRF protection is enabled (default crumb issuer), the system property
+    `hudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION` is not set; the
+    markup formatter is **Plain text** or **Safe HTML**, never raw HTML; the default
+    `Content-Security-Policy` for user-provided files (`hudson.model.DirectoryBrowserSupport.CSP`)
+    is not relaxed, and when richer reports are needed they are served from a separate **Resource
+    Root URL** host name instead.
+  - GitHub Enterprise Server: subdomain isolation is enabled, so raw files, pages, assets and
+    package content are served from separate subdomains.
+rationale: |
+  CI/CD platforms display content written by many users (job descriptions, test reports, HTML
+  published by builds, raw files). If that content can run script in the platform origin, or if
+  state-changing requests do not need a CSRF token, any user who can publish a report or a
+  description can act with the rights of the administrator who views it: create credentials,
+  change jobs, run the script console.
+impact: |
+  Some old plugins or scripts that post to Jenkins without a crumb stop working and must be
+  updated. Serving resources from another domain and enabling subdomain isolation both need an
+  additional host name, DNS records and a matching certificate (wildcard for GitHub Enterprise
+  Server).
+notes: |
+  In Jenkins, resource URLs served from the resource root domain work without authentication until
+  they expire (30 minutes by default). The **Enable proxy compatibility** crumb option was removed in
+  Jenkins 2.543.
+
+audit:
+  manual: |
+    Use an administrator account.
+
+    1. **Jenkins**:
+       - **Manage Jenkins** > **Security** > **CSRF Protection** shows a crumb issuer and the
+         controller start-up options (service file, `JAVA_OPTS`, container environment) do not set
+         `hudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true`.
+       - **Manage Jenkins** > **Security** > **Markup Formatter** is **Plain text** or **Safe
+         HTML** (OWASP Markup Formatter plugin).
+       - The start-up options do not set `hudson.model.DirectoryBrowserSupport.CSP` to a weaker
+         policy; if rich reports are needed, **Manage Jenkins** > **System** > **Serve resource
+         files from another domain** has a resource root URL on a different host name.
+    2. **GitHub Enterprise Server**: **Site admin** > **Management Console** > **Hostname**:
+       **Subdomain isolation (recommended)** is selected.
+    3. Fail if CSRF protection is disabled, raw HTML markup is allowed, the CSP for user files is
+       relaxed without a separate resource domain, or subdomain isolation is off.
+
+remediation:
+  manual: |
+    Use an administrator account and plan a restart where start-up options change.
+
+    1. **Jenkins**:
+       - remove `DISABLE_CSRF_PROTECTION` from the start-up options and select the default crumb
+         issuer in **Manage Jenkins** > **Security** > **CSRF Protection**; update plugins or
+         scripts that fail without a crumb;
+       - set **Markup Formatter** to **Plain text**, or **Safe HTML** if formatting is needed;
+       - remove any custom `hudson.model.DirectoryBrowserSupport.CSP` value; if HTML reports must
+         render, configure **Serve resource files from another domain** with a dedicated host name.
+    2. **GitHub Enterprise Server**: create a wildcard DNS record and a certificate covering
+       `HOSTNAME` and `*.HOSTNAME`, then in **Management Console** > **Hostname** select
+       **Subdomain isolation (recommended)** and **Save settings**.
+
+references:
+  - title: CSRF Protection
+    url: https://www.jenkins.io/doc/book/security/csrf-protection/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Markup formatters
+    url: https://www.jenkins.io/doc/book/security/markup-formatter/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: User Content
+    url: https://www.jenkins.io/doc/book/security/user-content/
+    publisher: Jenkins project
+    kind: vendor-doc
+    accessed: 2026-11-03
+  - title: Enabling subdomain isolation
+    url: https://docs.github.com/en/enterprise-server@latest/admin/configuring-settings/hardening-security-for-your-enterprise/enabling-subdomain-isolation
+    publisher: GitHub
+    kind: vendor-doc
+    accessed: 2026-11-03
+mappings:
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-18
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SI-10
+    relation: related
+  - framework: nist-800-53r5
+    framework_version: "5.1.1"
+    id: SC-23
+    relation: related
+threats:
+  - framework: mitre-attack
+    id: T1189
+related_controls:
+  - id: CB-CICD-PLAT-011
+    type: related
+  - id: CB-CICD-PLAT-012
+    type: related
+  - id: CB-CICD-PLAT-002
+    type: related
+
+authors:
+  - name: Alice
+    github: Sn0wAlice
+introduced_in: 0.1.0
+created: 2026-11-03
+updated: 2026-11-03

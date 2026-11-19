@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=../../../../../schema/control-i18n.schema.json
+id: CB-CICD-IAM-015
+locale: fr
+source_updated: 2026-11-03
+translators:
+  - name: Alice
+    github: Sn0wAlice
+title: Limiter les permissions par défaut de tous les membres à aucune ou à la lecture
+finding:
+  title: Chaque membre ou utilisateur authentifié obtient par défaut un accès en écriture ou d'administration
+  description: Une permission de base accordée à tous signifie que n'importe quel compte, y compris un compte tout juste invité ou compromis, peut pousser du code, modifier des pipelines ou déclencher des déploiements dans tous les projets.
+description: |
+  Les permissions accordées implicitement à chaque membre, au groupe « authenticated » ou
+  « everyone », ou par une politique par défaut, sont nulles ou en lecture seule. Les accès en
+  écriture, maintenance et administration sont accordés par des équipes ou groupes explicites, projet
+  par projet.
+
+  Le modèle d'autorisation lui-même relève de CB-CICD-IAM-014, la conception des rôles par groupes de
+  CB-CICD-IAM-016, et l'accès anonyme de CB-CICD-IAM-011.
+rationale: |
+  Les permissions de base s'appliquent à tous d'un coup, y compris aux comptes que personne ne revoit.
+  Sur Jenkins, accorder Overall/Administer à « authenticated » fait de chaque utilisateur un
+  administrateur. Même la lecture a un coût : sur GitHub, la permission de base en lecture sur les
+  dépôts privés permet à chaque membre de les dupliquer, d'ouvrir des pull requests qui lancent des
+  workflows et de lire les journaux de workflows ; le `role:readonly` d'Argo CD expose toutes les
+  définitions d'applications, de clusters et de dépôts.
+impact: |
+  Les membres qui dépendaient des permissions de base perdent l'accès aux dépôts ou pipelines où ils
+  ne sont dans aucune équipe. Créer les équipes avant d'abaisser la permission de base. Les
+  organisations en inner source peuvent garder la lecture comme permission de base, par décision
+  documentée.
+audit:
+  manual: |
+    Utiliser un rôle de propriétaire ou d'administrateur.
+
+    1. Vérifier les permissions par défaut :
+       - **GitHub** : **Organization settings** > **Member privileges** > **Base permissions** vaut
+         **No permission** ou **Read** (`default_repository_permission` dans `GET /orgs/{org}`) ; la
+         stratégie d'entreprise sur les permissions de base, si elle est définie, impose la même
+         chose.
+       - **Jenkins** : dans la matrice d'autorisation, `anonymous` n'a aucune permission et
+         `authenticated` a au plus `Overall/Read`.
+       - **Argo CD** : `policy.default` dans `argocd-rbac-cm` est vide ou un rôle minimal
+         personnalisé, pas `role:admin` (et `role:readonly` uniquement par décision documentée) ; les
+         permissions de la politique par défaut ne peuvent pas être retirées par une règle `deny`.
+       - **Buildkite** : les équipes sont activées ; l'équipe **Everyone** ne détient pas de pipelines
+         en **Full Access**, et les équipes accordent **Build & Read** ou **Read Only** sauf si les
+         mainteneurs ont besoin de plus (la permission la plus haute parmi les équipes d'un
+         utilisateur s'applique).
+       - **Bitbucket Cloud** : **Workspace settings** > **User groups** : les groupes par défaut ont
+         **Automatically assign permissions for new repositories** réglé sur aucun accès ou lecture.
+    2. Échec si une attribution implicite ou par défaut donne des droits d'écriture, de maintenance ou
+       d'administration.
+remediation:
+  manual: |
+    1. Créer les équipes ou groupes qui portent les accès en écriture et maintenance réellement
+       nécessaires.
+    2. Abaisser les valeurs par défaut :
+       - **GitHub** : régler **Base permissions** sur **No permission** (ou **Read** pour l'inner
+         source) ; l'imposer par la stratégie d'entreprise.
+       - **Jenkins** : retirer toute permission à `anonymous` et laisser au plus `Overall/Read` à
+         `authenticated`.
+       - **Argo CD** : poser `policy.default: ''` (ou un rôle personnalisé) dans `argocd-rbac-cm` et
+         accorder des rôles de projet aux groupes SSO.
+       - **Buildkite** : activer les équipes, retirer les pipelines de **Everyone** et donner aux
+         équipes la permission de pipeline la plus étroite.
+       - **Bitbucket Cloud** : régler les groupes par défaut sur aucun accès ou lecture pour les
+         nouveaux dépôts et revoir les permissions des dépôts existants.
